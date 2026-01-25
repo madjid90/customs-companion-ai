@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Calculator, AlertTriangle, FileDown, RefreshCw } from "lucide-react";
+import { Calculator, AlertTriangle, FileDown, RefreshCw, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -14,32 +14,30 @@ import {
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-
-// Mock data
-const mockHSCodes = [
-  { code: "8517.12", description: "Téléphones pour réseaux cellulaires", ddi: 2.5, tva: 20, controlled: false },
-  { code: "8471.30", description: "Machines automatiques de traitement de l'information", ddi: 0, tva: 20, controlled: false },
-  { code: "2204.21", description: "Vins de raisins frais en récipients ≤ 2 L", ddi: 40, tva: 20, controlled: true, authority: "ADII" },
-];
-
-const countries = [
-  { code: "MA", name: "Maroc" },
-  { code: "FR", name: "France" },
-  { code: "CN", name: "Chine" },
-  { code: "US", name: "États-Unis" },
-  { code: "ES", name: "Espagne" },
-];
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { hsCodesService, tariffsService, controlledService, countriesService, calculateDuties, type Country, type ControlledProduct } from "@/lib/supabase-services";
 
 interface CalculationResult {
   cifValue: number;
-  ddi: number;
-  ddiAmount: number;
-  tvaBase: number;
-  tva: number;
-  tvaAmount: number;
+  dutyRate: number;
+  dutyAmount: number;
+  vatBase: number;
+  vatRate: number;
+  vatAmount: number;
   total: number;
-  controlled: boolean;
-  authority?: string;
+  controlled: ControlledProduct[] | null;
 }
 
 export default function Calculate() {
@@ -47,45 +45,95 @@ export default function Calculate() {
   const initialCode = searchParams.get("code") || "";
 
   const [hsCode, setHsCode] = useState(initialCode);
+  const [hsCodeSearch, setHsCodeSearch] = useState("");
+  const [hsCodeSuggestions, setHsCodeSuggestions] = useState<{ code: string; description_fr: string }[]>([]);
   const [description, setDescription] = useState("");
   const [cifValue, setCifValue] = useState("");
   const [originCountry, setOriginCountry] = useState("");
   const [destCountry, setDestCountry] = useState("MA");
+  const [countries, setCountries] = useState<Country[]>([]);
   const [result, setResult] = useState<CalculationResult | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isCalculating, setIsCalculating] = useState(false);
+  const [codePopoverOpen, setCodePopoverOpen] = useState(false);
 
+  // Load countries on mount
   useEffect(() => {
-    if (hsCode) {
-      const found = mockHSCodes.find((c) => c.code === hsCode);
-      if (found) {
-        setDescription(found.description);
-      }
+    const loadCountries = async () => {
+      const { data } = await countriesService.getAll();
+      if (data) setCountries(data);
+    };
+    loadCountries();
+  }, []);
+
+  // Load initial code details
+  useEffect(() => {
+    if (initialCode) {
+      loadCodeDetails(initialCode);
     }
-  }, [hsCode]);
+  }, [initialCode]);
 
-  const handleCalculate = () => {
+  // Autocomplete HS codes
+  useEffect(() => {
+    const searchCodes = async () => {
+      if (hsCodeSearch.length < 2) {
+        setHsCodeSuggestions([]);
+        return;
+      }
+      setIsLoading(true);
+      try {
+        const { data } = await hsCodesService.autocomplete(hsCodeSearch, 10);
+        if (data) setHsCodeSuggestions(data);
+      } catch (error) {
+        console.error("Autocomplete error:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    const debounce = setTimeout(searchCodes, 200);
+    return () => clearTimeout(debounce);
+  }, [hsCodeSearch]);
+
+  const loadCodeDetails = async (code: string) => {
+    const { data } = await hsCodesService.getByCode(code);
+    if (data) {
+      setDescription(data.description_fr);
+    }
+  };
+
+  const handleCodeSelect = (code: string, desc: string) => {
+    setHsCode(code);
+    setDescription(desc);
+    setCodePopoverOpen(false);
+  };
+
+  const handleCalculate = async () => {
     const cif = parseFloat(cifValue);
-    if (isNaN(cif) || cif <= 0) return;
+    if (isNaN(cif) || cif <= 0 || !hsCode) return;
 
-    const hsData = mockHSCodes.find((c) => c.code === hsCode);
-    const ddiRate = hsData?.ddi || 17.5;
-    const tvaRate = hsData?.tva || 20;
+    setIsCalculating(true);
+    try {
+      // Get tariff from database
+      const { data: tariff } = await tariffsService.getForCode(destCountry, hsCode);
+      
+      const dutyRate = tariff?.duty_rate || 17.5;
+      const vatRate = tariff?.vat_rate || 20;
 
-    const ddiAmount = cif * (ddiRate / 100);
-    const tvaBase = cif + ddiAmount;
-    const tvaAmount = tvaBase * (tvaRate / 100);
-    const total = cif + ddiAmount + tvaAmount;
+      const calc = calculateDuties(cif, dutyRate, vatRate);
 
-    setResult({
-      cifValue: cif,
-      ddi: ddiRate,
-      ddiAmount,
-      tvaBase,
-      tva: tvaRate,
-      tvaAmount,
-      total,
-      controlled: hsData?.controlled || false,
-      authority: hsData?.authority,
-    });
+      // Check if controlled
+      const { data: controlled } = await controlledService.checkProduct(destCountry, hsCode);
+
+      setResult({
+        ...calc,
+        controlled: controlled && controlled.length > 0 ? controlled : null,
+      });
+    } catch (error) {
+      console.error("Calculate error:", error);
+    } finally {
+      setIsCalculating(false);
+    }
   };
 
   const handleReset = () => {
@@ -129,19 +177,52 @@ export default function Calculate() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="hsCode">Code SH</Label>
-                <Select value={hsCode} onValueChange={setHsCode}>
-                  <SelectTrigger id="hsCode">
-                    <SelectValue placeholder="Sélectionnez ou saisissez un code" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {mockHSCodes.map((code) => (
-                      <SelectItem key={code.code} value={code.code}>
-                        {code.code} - {code.description}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Code SH</Label>
+                <Popover open={codePopoverOpen} onOpenChange={setCodePopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      className="w-full justify-start font-normal h-12"
+                    >
+                      {hsCode || "Rechercher un code SH..."}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[400px] p-0" align="start">
+                    <Command>
+                      <CommandInput
+                        placeholder="Tapez un code ou une description..."
+                        value={hsCodeSearch}
+                        onValueChange={setHsCodeSearch}
+                      />
+                      <CommandList>
+                        {isLoading ? (
+                          <div className="flex items-center justify-center py-6">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          </div>
+                        ) : (
+                          <>
+                            <CommandEmpty>Aucun code trouvé</CommandEmpty>
+                            <CommandGroup>
+                              {hsCodeSuggestions.map((item) => (
+                                <CommandItem
+                                  key={item.code}
+                                  onSelect={() => handleCodeSelect(item.code, item.description_fr)}
+                                  className="cursor-pointer"
+                                >
+                                  <span className="font-mono font-medium">{item.code}</span>
+                                  <span className="ml-2 text-muted-foreground text-sm truncate">
+                                    {item.description_fr}
+                                  </span>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </>
+                        )}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
 
               {description && (
@@ -174,7 +255,7 @@ export default function Calculate() {
                     <SelectContent>
                       {countries.map((c) => (
                         <SelectItem key={c.code} value={c.code}>
-                          {c.name}
+                          {c.name_fr}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -182,7 +263,7 @@ export default function Calculate() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="dest">Pays de destination</Label>
+                  <Label htmlFor="dest">Destination</Label>
                   <Select value={destCountry} onValueChange={setDestCountry}>
                     <SelectTrigger id="dest">
                       <SelectValue />
@@ -190,7 +271,7 @@ export default function Calculate() {
                     <SelectContent>
                       {countries.map((c) => (
                         <SelectItem key={c.code} value={c.code}>
-                          {c.name}
+                          {c.name_fr}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -201,10 +282,19 @@ export default function Calculate() {
               <Button
                 onClick={handleCalculate}
                 className="w-full h-12 bg-accent hover:bg-accent/90 text-accent-foreground font-semibold"
-                disabled={!hsCode || !cifValue || !originCountry}
+                disabled={!hsCode || !cifValue || !originCountry || isCalculating}
               >
-                <Calculator className="h-5 w-5 mr-2" />
-                Calculer
+                {isCalculating ? (
+                  <>
+                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                    Calcul...
+                  </>
+                ) : (
+                  <>
+                    <Calculator className="h-5 w-5 mr-2" />
+                    Calculer
+                  </>
+                )}
               </Button>
             </CardContent>
           </Card>
@@ -232,21 +322,21 @@ export default function Calculate() {
 
                   <div className="flex justify-between items-center">
                     <span className="text-muted-foreground">
-                      Droit de douane (DDI) - {result.ddi}%
+                      Droit de douane (DDI) - {result.dutyRate}%
                     </span>
-                    <span className="font-medium">{formatCurrency(result.ddiAmount)}</span>
+                    <span className="font-medium">{formatCurrency(result.dutyAmount)}</span>
                   </div>
 
                   <div className="flex justify-between items-center text-sm text-muted-foreground">
                     <span>Base TVA</span>
-                    <span>{formatCurrency(result.tvaBase)}</span>
+                    <span>{formatCurrency(result.vatBase)}</span>
                   </div>
 
                   <div className="flex justify-between items-center">
                     <span className="text-muted-foreground">
-                      TVA - {result.tva}%
+                      TVA - {result.vatRate}%
                     </span>
-                    <span className="font-medium">{formatCurrency(result.tvaAmount)}</span>
+                    <span className="font-medium">{formatCurrency(result.vatAmount)}</span>
                   </div>
 
                   <Separator className="my-4" />
@@ -258,7 +348,7 @@ export default function Calculate() {
                     </span>
                   </div>
 
-                  {result.controlled && result.authority && (
+                  {result.controlled && (
                     <div className="mt-4 p-4 rounded-lg bg-destructive/10 border border-destructive/20">
                       <div className="flex items-start gap-3">
                         <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
@@ -266,12 +356,12 @@ export default function Calculate() {
                           <p className="font-medium text-destructive">
                             Produit soumis à contrôle
                           </p>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            Autorité compétente: {result.authority}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            Une autorisation préalable peut être requise.
-                          </p>
+                          {result.controlled.map((ctrl, i) => (
+                            <div key={i} className="text-sm text-muted-foreground mt-1">
+                              <p>Autorité: {ctrl.control_authority}</p>
+                              {ctrl.required_norm && <p>Norme: {ctrl.required_norm}</p>}
+                            </div>
+                          ))}
                         </div>
                       </div>
                     </div>
