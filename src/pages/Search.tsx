@@ -321,7 +321,7 @@ export default function Search() {
                           <div key={i} className="mt-2 text-sm">
                             <p><strong>Type:</strong> {ctrl.control_type}</p>
                             <p><strong>Autorité:</strong> {ctrl.control_authority}</p>
-                            {ctrl.required_norm && <p><strong>Norme:</strong> {ctrl.required_norm}</p>}
+                            {ctrl.standard_required && <p><strong>Norme:</strong> {ctrl.standard_required}</p>}
                           </div>
                         ))}
                       </div>
