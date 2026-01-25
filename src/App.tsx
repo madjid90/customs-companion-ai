@@ -19,6 +19,8 @@ import AdminLogin from "@/pages/admin/AdminLogin";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import AdminHSCodes from "@/pages/admin/AdminHSCodes";
 import AdminUpload from "@/pages/admin/AdminUpload";
+import AdminScraping from "@/pages/admin/AdminScraping";
+import AdminVeille from "@/pages/admin/AdminVeille";
 import AdminPlaceholder from "@/pages/admin/AdminPlaceholder";
 import NotFound from "@/pages/NotFound";
 
@@ -53,8 +55,8 @@ const App = () => (
               <Route index element={<AdminDashboard />} />
               <Route path="upload" element={<AdminUpload />} />
               <Route path="library" element={<AdminPlaceholder />} />
-              <Route path="scraping" element={<AdminPlaceholder />} />
-              <Route path="veille" element={<AdminPlaceholder />} />
+              <Route path="scraping" element={<AdminScraping />} />
+              <Route path="veille" element={<AdminVeille />} />
               <Route path="hs-codes" element={<AdminHSCodes />} />
               <Route path="tariffs" element={<AdminPlaceholder />} />
               <Route path="controlled" element={<AdminPlaceholder />} />
