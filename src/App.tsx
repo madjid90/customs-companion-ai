@@ -17,8 +17,9 @@ import Calculate from "@/pages/Calculate";
 // Admin pages
 import AdminLogin from "@/pages/admin/AdminLogin";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
+import AdminHSCodes from "@/pages/admin/AdminHSCodes";
+import AdminUpload from "@/pages/admin/AdminUpload";
 import AdminPlaceholder from "@/pages/admin/AdminPlaceholder";
-
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -50,11 +51,11 @@ const App = () => (
               }
             >
               <Route index element={<AdminDashboard />} />
-              <Route path="upload" element={<AdminPlaceholder />} />
+              <Route path="upload" element={<AdminUpload />} />
               <Route path="library" element={<AdminPlaceholder />} />
               <Route path="scraping" element={<AdminPlaceholder />} />
               <Route path="veille" element={<AdminPlaceholder />} />
-              <Route path="hs-codes" element={<AdminPlaceholder />} />
+              <Route path="hs-codes" element={<AdminHSCodes />} />
               <Route path="tariffs" element={<AdminPlaceholder />} />
               <Route path="controlled" element={<AdminPlaceholder />} />
               <Route path="documents" element={<AdminPlaceholder />} />
