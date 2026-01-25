@@ -359,7 +359,7 @@ export default function Calculate() {
                           {result.controlled.map((ctrl, i) => (
                             <div key={i} className="text-sm text-muted-foreground mt-1">
                               <p>Autorité: {ctrl.control_authority}</p>
-                              {ctrl.required_norm && <p>Norme: {ctrl.required_norm}</p>}
+                              {ctrl.standard_required && <p>Norme: {ctrl.standard_required}</p>}
                             </div>
                           ))}
                         </div>

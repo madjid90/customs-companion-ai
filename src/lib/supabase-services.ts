@@ -35,9 +35,13 @@ export interface ControlledProduct {
   hs_code: string;
   control_type: string;
   control_authority: string | null;
-  required_norm: string | null;
+  standard_required: string | null;
   required_documents: string[];
   is_active: boolean;
+  control_stage: string | null;
+  authority_website: string | null;
+  effective_date: string | null;
+  expiry_date: string | null;
 }
 
 export interface Country {
