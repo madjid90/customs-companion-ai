@@ -57,12 +57,12 @@ serve(async (req) => {
       );
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    if (!ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY is not configured");
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
@@ -235,22 +235,22 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => `- **${p.tit
 ---
 Réponds maintenant à la question de l'utilisateur en français, de manière claire et structurée.`;
 
-    // Call Lovable AI Gateway
+    // Call Claude AI (Anthropic API)
     const startTime = Date.now();
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        system: systemPrompt,
         messages: [
-          { role: "system", content: systemPrompt },
           { role: "user", content: question }
         ],
-        max_tokens: 3000,
-        temperature: 0.2,
       }),
     });
 
@@ -261,20 +261,23 @@ Réponds maintenant à la question de l'utilisateur en français, de manière cl
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (aiResponse.status === 402) {
+      if (aiResponse.status === 402 || aiResponse.status === 400) {
+        const errorData = await aiResponse.json().catch(() => ({}));
+        console.error("Claude API error:", aiResponse.status, errorData);
         return new Response(
-          JSON.stringify({ error: "Limite d'utilisation atteinte. Contactez l'administrateur." }),
+          JSON.stringify({ error: "Erreur API Claude. Vérifiez votre clé API." }),
           { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       const errorText = await aiResponse.text();
-      console.error("AI gateway error:", aiResponse.status, errorText);
-      throw new Error("AI gateway error");
+      console.error("Claude API error:", aiResponse.status, errorText);
+      throw new Error("Claude API error");
     }
 
     const aiData = await aiResponse.json();
     const responseTime = Date.now() - startTime;
-    const responseText = aiData.choices?.[0]?.message?.content || "Je n'ai pas pu générer de réponse.";
+    // Claude API returns content as an array of content blocks
+    const responseText = aiData.content?.[0]?.text || "Je n'ai pas pu générer de réponse.";
 
     // Determine confidence level from response
     let confidence: "high" | "medium" | "low" = "medium";
