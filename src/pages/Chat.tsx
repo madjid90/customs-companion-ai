@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Send, Bot, User, ThumbsUp, ThumbsDown, Loader2, Sparkles } from "lucide-react";
+import { Send, Bot, User, ThumbsUp, ThumbsDown, Loader2, Sparkles, Database, FileText, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import ReactMarkdown from "react-markdown";
 
 interface Message {
   id: string;
@@ -15,18 +16,19 @@ interface Message {
   confidence?: "high" | "medium" | "low";
   feedback?: "up" | "down";
   conversationId?: string;
+  context?: {
+    hs_codes_found: number;
+    tariffs_found: number;
+    controlled_found: number;
+    documents_found: number;
+    pdfs_used: number;
+  };
 }
 
-const confidenceIcons = {
-  high: "🟢",
-  medium: "🟡",
-  low: "🔴",
-};
-
-const confidenceLabels = {
-  high: "Confiance haute",
-  medium: "Confiance moyenne",
-  low: "Confiance faible",
+const confidenceConfig = {
+  high: { icon: "🟢", label: "Confiance haute", className: "text-success" },
+  medium: { icon: "🟡", label: "Confiance moyenne", className: "text-warning" },
+  low: { icon: "🔴", label: "Confiance faible", className: "text-destructive" },
 };
 
 export default function Chat() {
@@ -80,6 +82,7 @@ export default function Chat() {
         content: data.response,
         confidence: data.confidence as "high" | "medium" | "low",
         conversationId: data.conversationId,
+        context: data.context,
       };
 
       setMessages((prev) => [...prev, aiMessage]);
@@ -99,7 +102,6 @@ export default function Chat() {
         variant: "destructive",
       });
 
-      // Add error message to chat
       const errorMessageObj: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
@@ -129,7 +131,6 @@ export default function Chat() {
       )
     );
 
-    // Update feedback in database
     try {
       await supabase
         .from('conversations')
@@ -198,46 +199,104 @@ export default function Chat() {
 
               <div
                 className={cn(
-                  "max-w-[80%] rounded-2xl px-4 py-3",
+                  "max-w-[85%] rounded-2xl px-5 py-4",
                   message.role === "user"
                     ? "bg-chat-user text-chat-user-foreground rounded-br-md"
                     : "bg-chat-ai text-chat-ai-foreground rounded-bl-md"
                 )}
               >
-                <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                  {message.content}
-                </p>
+                {message.role === "assistant" && !message.content.startsWith("⚠️") ? (
+                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <ReactMarkdown
+                      components={{
+                        h2: ({ children }) => <h2 className="text-base font-semibold mt-4 mb-2 first:mt-0">{children}</h2>,
+                        h3: ({ children }) => <h3 className="text-sm font-semibold mt-3 mb-1">{children}</h3>,
+                        ul: ({ children }) => <ul className="my-2 space-y-1">{children}</ul>,
+                        ol: ({ children }) => <ol className="my-2 space-y-1 list-decimal pl-4">{children}</ol>,
+                        li: ({ children }) => <li className="text-sm">{children}</li>,
+                        p: ({ children }) => <p className="text-sm leading-relaxed my-2">{children}</p>,
+                        strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+                        code: ({ children }) => <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">{children}</code>,
+                        table: ({ children }) => (
+                          <div className="overflow-x-auto my-3">
+                            <table className="min-w-full text-sm border-collapse">{children}</table>
+                          </div>
+                        ),
+                        th: ({ children }) => <th className="border border-border px-2 py-1 bg-muted font-medium text-left">{children}</th>,
+                        td: ({ children }) => <td className="border border-border px-2 py-1">{children}</td>,
+                      }}
+                    >
+                      {message.content}
+                    </ReactMarkdown>
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">
+                    {message.content}
+                  </p>
+                )}
 
                 {message.role === "assistant" && !message.content.startsWith("⚠️") && (
-                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
-                    {message.confidence && (
-                      <span className="text-xs text-muted-foreground flex items-center gap-1">
-                        {confidenceIcons[message.confidence]} {confidenceLabels[message.confidence]}
-                      </span>
+                  <div className="mt-4 pt-3 border-t border-border/50">
+                    {/* Context info */}
+                    {message.context && (message.context.hs_codes_found > 0 || message.context.tariffs_found > 0 || message.context.controlled_found > 0) && (
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        {message.context.hs_codes_found > 0 && (
+                          <span className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-1 rounded-full">
+                            <Database className="h-3 w-3" />
+                            {message.context.hs_codes_found} codes SH
+                          </span>
+                        )}
+                        {message.context.tariffs_found > 0 && (
+                          <span className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-1 rounded-full">
+                            <Database className="h-3 w-3" />
+                            {message.context.tariffs_found} tarifs
+                          </span>
+                        )}
+                        {message.context.controlled_found > 0 && (
+                          <span className="inline-flex items-center gap-1 text-xs bg-warning/20 text-warning px-2 py-1 rounded-full">
+                            <AlertTriangle className="h-3 w-3" />
+                            {message.context.controlled_found} contrôles
+                          </span>
+                        )}
+                        {message.context.pdfs_used > 0 && (
+                          <span className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-1 rounded-full">
+                            <FileText className="h-3 w-3" />
+                            {message.context.pdfs_used} PDFs
+                          </span>
+                        )}
+                      </div>
                     )}
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn(
-                          "h-7 w-7",
-                          message.feedback === "up" && "text-success bg-success/10"
-                        )}
-                        onClick={() => handleFeedback(message.id, "up")}
-                      >
-                        <ThumbsUp className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn(
-                          "h-7 w-7",
-                          message.feedback === "down" && "text-destructive bg-destructive/10"
-                        )}
-                        onClick={() => handleFeedback(message.id, "down")}
-                      >
-                        <ThumbsDown className="h-4 w-4" />
-                      </Button>
+
+                    <div className="flex items-center justify-between">
+                      {message.confidence && (
+                        <span className={cn("text-xs flex items-center gap-1", confidenceConfig[message.confidence].className)}>
+                          {confidenceConfig[message.confidence].icon} {confidenceConfig[message.confidence].label}
+                        </span>
+                      )}
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={cn(
+                            "h-7 w-7",
+                            message.feedback === "up" && "text-success bg-success/10"
+                          )}
+                          onClick={() => handleFeedback(message.id, "up")}
+                        >
+                          <ThumbsUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={cn(
+                            "h-7 w-7",
+                            message.feedback === "down" && "text-destructive bg-destructive/10"
+                          )}
+                          onClick={() => handleFeedback(message.id, "down")}
+                        >
+                          <ThumbsDown className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -259,7 +318,7 @@ export default function Chat() {
               <div className="bg-chat-ai text-chat-ai-foreground rounded-2xl rounded-bl-md px-4 py-3">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>DouaneAI analyse votre question...</span>
+                  <span>Recherche dans la base de données et analyse...</span>
                 </div>
               </div>
             </div>
@@ -289,7 +348,7 @@ export default function Chat() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground text-center mt-2">
-            DouaneAI utilise la base de données officielle. Vérifiez toujours les informations importantes.
+            DouaneAI recherche dans la base officielle. Vérifiez toujours les informations importantes auprès des autorités.
           </p>
         </div>
       </div>
