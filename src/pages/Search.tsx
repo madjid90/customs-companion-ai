@@ -141,12 +141,12 @@ export default function Search() {
 
               {/* Filters */}
               <div className="flex flex-wrap gap-4 items-center">
-                <Select value={chapter} onValueChange={(v) => { setChapter(v); setPage(0); }}>
+                <Select value={chapter || "all"} onValueChange={(v) => { setChapter(v === "all" ? "" : v); setPage(0); }}>
                   <SelectTrigger className="w-40 h-12">
                     <SelectValue placeholder="Chapitre" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Tous</SelectItem>
+                    <SelectItem value="all">Tous</SelectItem>
                     {Array.from({ length: 99 }, (_, i) => (
                       <SelectItem key={i + 1} value={(i + 1).toString()}>
                         Chapitre {i + 1}
