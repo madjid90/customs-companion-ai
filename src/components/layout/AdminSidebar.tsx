@@ -3,6 +3,7 @@ import { Logo } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard,
   Upload,
@@ -45,10 +46,11 @@ const menuItems: MenuItem[] = [
 export function AdminSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { signOut, profile } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
 
-  const handleLogout = () => {
-    localStorage.removeItem("douaneai_admin_session");
+  const handleLogout = async () => {
+    await signOut();
     navigate("/admin/login");
   };
 
