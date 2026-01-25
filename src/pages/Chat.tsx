@@ -167,16 +167,16 @@ export default function Chat() {
               </p>
 
               {/* Suggested questions */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg mx-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl mx-auto">
                 {suggestedQuestions.map((q, i) => (
                   <Button
                     key={i}
                     variant="outline"
-                    className="text-left h-auto py-3 px-4 justify-start"
+                    className="text-left h-auto py-3 px-4 justify-start whitespace-normal"
                     onClick={() => handleSend(q)}
                   >
                     <Sparkles className="h-4 w-4 mr-2 text-accent flex-shrink-0" />
-                    <span className="text-sm">{q}</span>
+                    <span className="text-sm text-left">{q}</span>
                   </Button>
                 ))}
               </div>
