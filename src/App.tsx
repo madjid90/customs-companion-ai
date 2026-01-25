@@ -3,6 +3,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "@/hooks/useAuth";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 
@@ -23,40 +25,49 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          {/* Public routes */}
-          <Route element={<PublicLayout />}>
-            <Route path="/" element={<Home />} />
-            <Route path="/chat" element={<Chat />} />
-            <Route path="/search" element={<Search />} />
-            <Route path="/calculate" element={<Calculate />} />
-          </Route>
+    <AuthProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            {/* Public routes */}
+            <Route element={<PublicLayout />}>
+              <Route path="/" element={<Home />} />
+              <Route path="/chat" element={<Chat />} />
+              <Route path="/search" element={<Search />} />
+              <Route path="/calculate" element={<Calculate />} />
+            </Route>
 
-          {/* Admin routes */}
-          <Route path="/admin/login" element={<AdminLogin />} />
-          <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<AdminDashboard />} />
-            <Route path="upload" element={<AdminPlaceholder />} />
-            <Route path="library" element={<AdminPlaceholder />} />
-            <Route path="scraping" element={<AdminPlaceholder />} />
-            <Route path="veille" element={<AdminPlaceholder />} />
-            <Route path="hs-codes" element={<AdminPlaceholder />} />
-            <Route path="tariffs" element={<AdminPlaceholder />} />
-            <Route path="controlled" element={<AdminPlaceholder />} />
-            <Route path="documents" element={<AdminPlaceholder />} />
-            <Route path="conversations" element={<AdminPlaceholder />} />
-            <Route path="settings" element={<AdminPlaceholder />} />
-          </Route>
+            {/* Admin routes */}
+            <Route path="/admin/login" element={<AdminLogin />} />
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <AdminLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<AdminDashboard />} />
+              <Route path="upload" element={<AdminPlaceholder />} />
+              <Route path="library" element={<AdminPlaceholder />} />
+              <Route path="scraping" element={<AdminPlaceholder />} />
+              <Route path="veille" element={<AdminPlaceholder />} />
+              <Route path="hs-codes" element={<AdminPlaceholder />} />
+              <Route path="tariffs" element={<AdminPlaceholder />} />
+              <Route path="controlled" element={<AdminPlaceholder />} />
+              <Route path="documents" element={<AdminPlaceholder />} />
+              <Route path="conversations" element={<AdminPlaceholder />} />
+              <Route path="settings" element={<AdminPlaceholder />} />
+            </Route>
 
-          {/* 404 */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+            {/* 404 */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 

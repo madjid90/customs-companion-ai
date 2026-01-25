@@ -1,37 +1,61 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Lock, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { Lock, Eye, EyeOff, AlertCircle, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Logo } from "@/components/ui/Logo";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function AdminLogin() {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const { user, isAdmin, signIn, isLoading: authLoading } = useAuth();
+
+  // Redirect if already authenticated and admin
+  useEffect(() => {
+    if (!authLoading && user && isAdmin) {
+      const from = location.state?.from?.pathname || "/admin";
+      navigate(from, { replace: true });
+    }
+  }, [user, isAdmin, authLoading, navigate, location]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
 
-    // Simple password check - in production this should be done server-side
-    const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD || "admin123";
-    
-    setTimeout(() => {
-      if (password === adminPassword) {
-        localStorage.setItem("douaneai_admin_session", "authenticated");
-        navigate("/admin");
+    const { error } = await signIn(email, password);
+
+    if (error) {
+      if (error.message.includes("Invalid login credentials")) {
+        setError("Email ou mot de passe incorrect");
+      } else if (error.message.includes("Email not confirmed")) {
+        setError("Veuillez confirmer votre email");
       } else {
-        setError("Mot de passe incorrect");
+        setError(error.message);
       }
       setIsLoading(false);
-    }, 500);
+      return;
+    }
+
+    // Auth state listener will handle redirect
+    setIsLoading(false);
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sidebar to-sidebar/95">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sidebar to-sidebar/95 p-4">
@@ -50,6 +74,23 @@ export default function AdminLogin() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="admin@example.com"
+                  className="pl-10"
+                  autoFocus
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="password">Mot de passe</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -60,7 +101,7 @@ export default function AdminLogin() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Entrez votre mot de passe"
                   className="pl-10 pr-10"
-                  autoFocus
+                  required
                 />
                 <Button
                   type="button"
@@ -88,11 +129,15 @@ export default function AdminLogin() {
             <Button
               type="submit"
               className="w-full h-11 bg-accent hover:bg-accent/90 text-accent-foreground font-semibold"
-              disabled={isLoading || !password}
+              disabled={isLoading || !email || !password}
             >
               {isLoading ? "Connexion..." : "Se connecter"}
             </Button>
           </form>
+
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            Contactez l'administrateur pour obtenir un accès.
+          </p>
         </CardContent>
       </Card>
     </div>
