@@ -35,11 +35,18 @@ const CONFIG = {
     /actualite/i, /news/i, /communique/i, /bulletin/i,
     /document/i, /publication/i, /revision/i, /modification/i,
     /import/i, /export/i, /customs/i, /hts/i, /harmonized/i,
-    /legislation/i, /law/i, /code/i, /annonce/i, /announcement/i
+    /legislation/i, /law/i, /code/i, /annonce/i, /announcement/i,
+    /accord/i, /convention/i, /traite/i, /protocole/i  // Trade agreements
   ],
   ARCHIVE_PATTERNS: [
     /archive/i, /release/i, /version/i, /revision/i, /historique/i,
     /past/i, /previous/i, /ancien/i
+  ],
+  // Circulaire reference patterns (to extract from page content)
+  CIRCULAIRE_PATTERNS: [
+    /Circulaire\s+n[°o]?\s*(\d+\/\d+)\s+du\s+(\d{2}\/\d{2}\/\d{4})/gi,
+    /Note\s+n[°o]?\s*(\d+\/\d+)\s+du\s+(\d{2}\/\d{2}\/\d{4})/gi,
+    /Décision\s+n[°o]?\s*(\d+\/\d+)/gi,
   ],
   // URL exclusion patterns (avoid scraping these)
   EXCLUDE_PATTERNS: [
@@ -56,7 +63,7 @@ const CONFIG = {
   // JSF and dynamic page patterns to extract from fragments
   JSF_PATTERNS: [
     /\.jsf/i, /\.xhtml/i, /\.faces/i,
-    /accords/i, /conventions/i, /recherche/i
+    /accords/i, /conventions/i, /recherche/i, /circulaires/i
   ]
 };
 
@@ -248,6 +255,107 @@ function classifyUrl(url: string): 'download' | 'archive' | 'content' | 'other' 
   if (CONFIG.ARCHIVE_PATTERNS.some(p => p.test(url))) return 'archive';
   if (CONFIG.CONTENT_PATTERNS.some(p => p.test(url))) return 'content';
   return 'other';
+}
+
+// Extract circulaire references from content (for creating individual document entries)
+function extractCirculaireReferences(content: string, baseUrl: string): ScrapedDocument[] {
+  const documents: ScrapedDocument[] = [];
+  
+  // Pattern for "Circulaire n° XXXX/XXX du DD/MM/YYYY"
+  const circulaireRegex = /Circulaire\s+n[°o]?\s*(\d+\/\d+)\s+du\s+(\d{2}\/\d{2}\/\d{4})/gi;
+  let match;
+  
+  while ((match = circulaireRegex.exec(content)) !== null) {
+    const reference = match[1];
+    const dateStr = match[2];
+    
+    // Parse date DD/MM/YYYY to YYYY-MM-DD
+    const dateParts = dateStr.split('/');
+    const isoDate = dateParts.length === 3 
+      ? `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}` 
+      : null;
+    
+    documents.push({
+      title: `Circulaire n° ${reference} du ${dateStr}`,
+      summary: `Circulaire douanière marocaine référence ${reference}`,
+      date: isoDate || undefined,
+      category: 'circulaire',
+      importance: 'moyenne',
+      hs_codes: [],
+      tariff_changes: [],
+      content: `Référence: Circulaire n° ${reference}\nDate: ${dateStr}\nSource: ${baseUrl}`,
+      url: baseUrl,
+      confidence: 0.75,
+      source_type: 'document'
+    });
+  }
+  
+  // Pattern for "Note n° XXXX/XXX du DD/MM/YYYY"
+  const noteRegex = /Note\s+n[°o]?\s*(\d+\/\d+)\s+du\s+(\d{2}\/\d{2}\/\d{4})/gi;
+  
+  while ((match = noteRegex.exec(content)) !== null) {
+    const reference = match[1];
+    const dateStr = match[2];
+    
+    const dateParts = dateStr.split('/');
+    const isoDate = dateParts.length === 3 
+      ? `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}` 
+      : null;
+    
+    documents.push({
+      title: `Note n° ${reference} du ${dateStr}`,
+      summary: `Note douanière marocaine référence ${reference}`,
+      date: isoDate || undefined,
+      category: 'note',
+      importance: 'moyenne',
+      hs_codes: [],
+      tariff_changes: [],
+      content: `Référence: Note n° ${reference}\nDate: ${dateStr}\nSource: ${baseUrl}`,
+      url: baseUrl,
+      confidence: 0.75,
+      source_type: 'document'
+    });
+  }
+  
+  return documents;
+}
+
+// Extract trade agreement info from content
+function extractAccordInfo(content: string, baseUrl: string): ScrapedDocument[] {
+  const documents: ScrapedDocument[] = [];
+  
+  // Pattern for agreements with countries
+  const accordRegex = /(Convention|Accord|Traité)\s+(commerciale?|de libre[- ]échange|tarifaire)?\s*(Maroc[o-])?(\w+)\s*/gi;
+  let match;
+  
+  // Keep track of found agreements to avoid duplicates
+  const found = new Set<string>();
+  
+  while ((match = accordRegex.exec(content)) !== null) {
+    const type = match[1];
+    const qualifier = match[2] || '';
+    const country = match[4];
+    
+    if (country && country.length > 2 && !found.has(country.toLowerCase())) {
+      found.add(country.toLowerCase());
+      
+      documents.push({
+        title: `${type} ${qualifier} Maroc-${country}`.trim(),
+        summary: `Accord commercial entre le Maroc et ${country}`,
+        date: undefined,
+        category: 'regulation',
+        importance: 'haute',
+        hs_codes: [],
+        tariff_changes: [],
+        content: `${type} ${qualifier} avec ${country}\nSource: ${baseUrl}`,
+        url: baseUrl,
+        confidence: 0.7,
+        source_type: 'page_content'
+      });
+    }
+  }
+  
+  return documents;
 }
 
 // Process URLs in parallel batches
@@ -618,7 +726,40 @@ function generateJsfSearchUrls(baseUrl: string): string[] {
         additionalUrls.push(`https://www.douane.gov.ma/accords/${cat}`);
       }
       
-      // Known sections with documents
+      // === PAGINATED ACCORDS PAGES (Page 1 to 15 to capture all) ===
+      // The accords table has pagination - we need to generate URLs for each page
+      for (let page = 1; page <= 15; page++) {
+        // JSF pagination format - common patterns
+        additionalUrls.push(`https://www.douane.gov.ma/accords/rechercheAccords.jsf?page=${page}`);
+        additionalUrls.push(`https://www.douane.gov.ma/accords/rechercheAccords.jsf?first=${(page - 1) * 10}`);
+        additionalUrls.push(`https://www.douane.gov.ma/accords/rechercheAccords.jsf?start=${(page - 1) * 10}`);
+      }
+      
+      // === CIRCULAIRES PAGES (paginated) ===
+      // Circulaires database also has pagination
+      for (let page = 1; page <= 20; page++) {
+        additionalUrls.push(`https://www.douane.gov.ma/web/guest/circulaires?page=${page}`);
+        additionalUrls.push(`https://www.douane.gov.ma/circulaires/rechercheCirculaires.jsf?page=${page}`);
+        additionalUrls.push(`https://www.douane.gov.ma/circulaires/rechercheCirculaires.jsf?first=${(page - 1) * 20}`);
+      }
+      
+      // === KNOWN CIRCULAIRE SEARCH PARAMETERS ===
+      // Common search patterns for circulaires
+      const circulaireYears = ['2025', '2024', '2023', '2022', '2021', '2020'];
+      for (const year of circulaireYears) {
+        additionalUrls.push(`https://www.douane.gov.ma/circulaires/rechercheCirculaires.jsf?annee=${year}`);
+        additionalUrls.push(`https://www.douane.gov.ma/web/guest/circulaires?year=${year}`);
+      }
+      
+      // === ACCORDS BY COUNTRY ===
+      // Common country codes for bilateral agreements
+      const countryCodes = ['DZ', 'EG', 'GN', 'IQ', 'JO', 'TN', 'TR', 'AE', 'SA', 'US', 'EU', 'FR', 'ES', 'SN', 'ML', 'MR'];
+      for (const code of countryCodes) {
+        additionalUrls.push(`https://www.douane.gov.ma/accords/rechercheAccords.jsf?pays=${code}`);
+        additionalUrls.push(`https://www.douane.gov.ma/accords/detailAccord.jsf?pays=${code}`);
+      }
+      
+      // === KNOWN SECTIONS WITH DOCUMENTS ===
       const sections = [
         '/web/guest/accords-et-conventions',
         '/web/guest/notre-institution-a-l-international',
@@ -628,6 +769,9 @@ function generateJsfSearchUrls(baseUrl: string): string[] {
         '/web/16/76',  // Regulations
         '/web/16/74',  // Procedures
         '/web/16/200', // Services
+        '/web/guest/tarif-douanier',
+        '/web/guest/code-des-douanes',
+        '/web/guest/reglementation',
       ];
       
       for (const section of sections) {
@@ -874,11 +1018,20 @@ async function scrapeSingleUrl(
     // Analyze with Claude
     const analysisResult = await analyzeContent(claudeKey, content, site, url);
     
-    if (!analysisResult?.documents?.length) {
+    // Also extract circulaire references directly from content (regex-based)
+    const extractedCirculaires = extractCirculaireReferences(content, url);
+    
+    // Combine AI results with regex-extracted circulaires
+    const allDocuments = [
+      ...(analysisResult?.documents || []),
+      ...extractedCirculaires
+    ];
+    
+    if (!allDocuments.length) {
       return { found: 0, new: 0 };
     }
     
-    for (const doc of analysisResult.documents) {
+    for (const doc of allDocuments) {
       const docUrl = doc.url || url;
       const docTitle = doc.title || url.split('/').pop() || 'Document';
       
