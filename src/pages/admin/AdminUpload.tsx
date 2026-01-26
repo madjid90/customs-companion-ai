@@ -1,10 +1,7 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -15,7 +12,8 @@ import {
   CheckCircle2, 
   XCircle, 
   Sparkles,
-  AlertTriangle
+  Database,
+  Brain
 } from "lucide-react";
 
 interface UploadedFile {
@@ -29,29 +27,12 @@ interface UploadedFile {
     summary: string;
     key_points: string[];
     hs_codes: string[];
+    tariff_lines?: any[];
   };
 }
 
-interface PDFCategory {
-  value: string;
-  label: string;
-}
-
-const categories: PDFCategory[] = [
-  { value: "tarif", label: "Tarif douanier" },
-  { value: "circulaire", label: "Circulaire" },
-  { value: "note", label: "Note technique" },
-  { value: "avis", label: "Avis de classement" },
-  { value: "accord", label: "Accord commercial" },
-  { value: "reglementation", label: "Réglementation" },
-  { value: "autre", label: "Autre" },
-];
-
 export default function AdminUpload() {
   const [files, setFiles] = useState<UploadedFile[]>([]);
-  const [title, setTitle] = useState("");
-  const [category, setCategory] = useState("circulaire");
-  const [countryCode, setCountryCode] = useState("MA");
   const [isDragging, setIsDragging] = useState(false);
   const { toast } = useToast();
 
@@ -61,8 +42,35 @@ export default function AdminUpload() {
     );
   };
 
+  const detectDocumentType = (fileName: string): { category: string; label: string } => {
+    const name = fileName.toLowerCase();
+    
+    if (name.includes("tarif") || name.includes("ddi") || name.includes("chapitre")) {
+      return { category: "tarif", label: "Tarif douanier" };
+    }
+    if (name.includes("circulaire") || name.includes("circ")) {
+      return { category: "circulaire", label: "Circulaire" };
+    }
+    if (name.includes("note") || name.includes("technique")) {
+      return { category: "note", label: "Note technique" };
+    }
+    if (name.includes("avis") || name.includes("classement")) {
+      return { category: "avis", label: "Avis de classement" };
+    }
+    if (name.includes("accord") || name.includes("convention")) {
+      return { category: "accord", label: "Accord commercial" };
+    }
+    if (name.includes("reglement") || name.includes("loi") || name.includes("decret")) {
+      return { category: "reglementation", label: "Réglementation" };
+    }
+    
+    return { category: "autre", label: "Document douanier" };
+  };
+
   const uploadAndAnalyze = async (file: File) => {
     const fileId = crypto.randomUUID();
+    const docType = detectDocumentType(file.name);
+    
     const uploadedFile: UploadedFile = {
       id: fileId,
       name: file.name,
@@ -88,16 +96,16 @@ export default function AdminUpload() {
       if (uploadError) throw uploadError;
       updateFileStatus(fileId, { progress: 40 });
 
-      // 2. Create PDF document record
+      // 2. Create PDF document record with auto-detected category
       const { data: pdfDoc, error: insertError } = await supabase
         .from("pdf_documents")
         .insert({
-          title: title || file.name.replace(".pdf", ""),
+          title: file.name.replace(".pdf", "").replace(/_/g, " "),
           file_name: file.name,
           file_path: filePath,
           file_size_bytes: file.size,
-          category: category,
-          country_code: countryCode,
+          category: docType.category,
+          country_code: "MA",
           mime_type: "application/pdf",
           is_active: true,
           is_verified: false,
@@ -121,7 +129,6 @@ export default function AdminUpload() {
 
       if (analysisError) {
         console.warn("Analysis error (non-blocking):", analysisError);
-        // Analysis failed but upload succeeded
         updateFileStatus(fileId, {
           status: "success",
           progress: 100,
@@ -129,17 +136,26 @@ export default function AdminUpload() {
         });
         toast({
           title: "Document uploadé",
-          description: `${file.name} uploadé avec succès (analyse en attente)`,
+          description: `${file.name} stocké (analyse IA en attente)`,
         });
       } else {
+        // Store extracted tariff lines if available
+        if (analysisData?.tariff_lines?.length > 0) {
+          console.log(`Extracted ${analysisData.tariff_lines.length} tariff lines`);
+        }
+
         updateFileStatus(fileId, {
           status: "success",
           progress: 100,
           analysis: analysisData,
         });
+        
+        const hsCount = analysisData?.hs_codes?.length || 0;
+        const tariffCount = analysisData?.tariff_lines?.length || 0;
+        
         toast({
-          title: "Document analysé",
-          description: `${file.name} uploadé et analysé avec succès`,
+          title: "✅ Document analysé avec succès",
+          description: `${hsCount} codes SH et ${tariffCount} lignes tarifaires extraits`,
         });
       }
     } catch (error: any) {
@@ -172,7 +188,6 @@ export default function AdminUpload() {
       }
     });
     
-    // Reset input
     e.target.value = "";
   };
 
@@ -194,7 +209,7 @@ export default function AdminUpload() {
         }
       });
     },
-    [title, category, countryCode]
+    []
   );
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -218,9 +233,9 @@ export default function AdminUpload() {
       case "uploading":
         return <Loader2 className="h-5 w-5 animate-spin text-accent" />;
       case "analyzing":
-        return <Sparkles className="h-5 w-5 animate-pulse text-warning" />;
+        return <Brain className="h-5 w-5 animate-pulse text-warning" />;
       case "success":
-        return <CheckCircle2 className="h-5 w-5 text-success" />;
+        return <CheckCircle2 className="h-5 w-5 text-green-500" />;
       case "error":
         return <XCircle className="h-5 w-5 text-destructive" />;
     }
@@ -229,9 +244,9 @@ export default function AdminUpload() {
   const getStatusLabel = (status: UploadedFile["status"]) => {
     switch (status) {
       case "uploading":
-        return "Upload en cours...";
+        return "Upload...";
       case "analyzing":
-        return "Analyse IA en cours...";
+        return "Analyse IA...";
       case "success":
         return "Terminé";
       case "error":
@@ -243,76 +258,56 @@ export default function AdminUpload() {
     <div className="space-y-6">
       {/* Header */}
       <div className="animate-fade-in">
-        <h1 className="text-3xl font-bold text-foreground">Upload de documents</h1>
+        <h1 className="text-3xl font-bold text-foreground">Upload intelligent</h1>
         <p className="text-muted-foreground mt-1">
-          Uploadez des PDFs pour extraction automatique avec l'IA
+          Déposez vos PDFs — L'IA analyse et stocke automatiquement les données
         </p>
       </div>
 
+      {/* Process explanation */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="bg-accent/5 border-accent/20">
+          <CardContent className="pt-6 text-center">
+            <Upload className="h-8 w-8 mx-auto mb-2 text-accent" />
+            <p className="font-medium">1. Upload</p>
+            <p className="text-sm text-muted-foreground">Glissez vos PDFs</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-warning/5 border-warning/20">
+          <CardContent className="pt-6 text-center">
+            <Brain className="h-8 w-8 mx-auto mb-2 text-warning" />
+            <p className="font-medium">2. Analyse IA</p>
+            <p className="text-sm text-muted-foreground">Extraction automatique</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-green-500/5 border-green-500/20">
+          <CardContent className="pt-6 text-center">
+            <Database className="h-8 w-8 mx-auto mb-2 text-green-500" />
+            <p className="font-medium">3. Stockage</p>
+            <p className="text-sm text-muted-foreground">Données en base</p>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Upload Form */}
+        {/* Drop Zone */}
         <Card className="animate-slide-up">
           <CardHeader>
-            <CardTitle>Nouveau document</CardTitle>
+            <CardTitle>Déposer des documents</CardTitle>
             <CardDescription>
-              Configurez les métadonnées et uploadez votre PDF
+              PDFs de tarifs, circulaires, notes, avis de classement...
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="title">Titre du document (optionnel)</Label>
-              <Input
-                id="title"
-                placeholder="Laisser vide pour utiliser le nom du fichier"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="category">Catégorie</Label>
-                <select
-                  id="category"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                >
-                  {categories.map((cat) => (
-                    <option key={cat.value} value={cat.value}>
-                      {cat.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="country">Pays</Label>
-                <select
-                  id="country"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={countryCode}
-                  onChange={(e) => setCountryCode(e.target.value)}
-                >
-                  <option value="MA">🇲🇦 Maroc</option>
-                  <option value="SN">🇸🇳 Sénégal</option>
-                  <option value="CI">🇨🇮 Côte d'Ivoire</option>
-                  <option value="CM">🇨🇲 Cameroun</option>
-                  <option value="INT">🌍 International</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Drop Zone */}
+          <CardContent>
             <div
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               className={`
-                relative border-2 border-dashed rounded-xl p-8 text-center transition-all
+                relative border-2 border-dashed rounded-xl p-12 text-center transition-all cursor-pointer
                 ${isDragging
-                  ? "border-accent bg-accent/10"
-                  : "border-border hover:border-accent/50"
+                  ? "border-accent bg-accent/10 scale-[1.02]"
+                  : "border-border hover:border-accent/50 hover:bg-accent/5"
                 }
               `}
             >
@@ -323,18 +318,19 @@ export default function AdminUpload() {
                 onChange={handleFileSelect}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
-              <Upload className={`h-12 w-12 mx-auto mb-4 ${isDragging ? "text-accent" : "text-muted-foreground"}`} />
-              <p className="text-lg font-medium mb-1">
+              <Upload className={`h-16 w-16 mx-auto mb-4 transition-colors ${isDragging ? "text-accent" : "text-muted-foreground"}`} />
+              <p className="text-xl font-medium mb-2">
                 Glissez vos PDFs ici
               </p>
-              <p className="text-sm text-muted-foreground">
-                ou cliquez pour sélectionner des fichiers
+              <p className="text-muted-foreground">
+                ou cliquez pour sélectionner
               </p>
-            </div>
-
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <AlertTriangle className="h-4 w-4" />
-              <span>L'analyse IA extrait automatiquement les codes SH et résume le contenu</span>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <Badge variant="outline">Tarifs douaniers</Badge>
+                <Badge variant="outline">Circulaires</Badge>
+                <Badge variant="outline">Notes techniques</Badge>
+                <Badge variant="outline">Avis de classement</Badge>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -342,18 +338,19 @@ export default function AdminUpload() {
         {/* Upload Queue */}
         <Card className="animate-slide-up" style={{ animationDelay: "0.1s" }}>
           <CardHeader>
-            <CardTitle>File d'attente</CardTitle>
+            <CardTitle>Résultats</CardTitle>
             <CardDescription>
               {files.length === 0
-                ? "Aucun fichier en cours"
-                : `${files.filter((f) => f.status === "success").length}/${files.length} terminés`}
+                ? "En attente de fichiers..."
+                : `${files.filter((f) => f.status === "success").length}/${files.length} traités`}
             </CardDescription>
           </CardHeader>
           <CardContent>
             {files.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                <FileText className="h-12 w-12 mb-4 opacity-50" />
-                <p>Aucun document uploadé</p>
+              <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                <FileText className="h-16 w-16 mb-4 opacity-30" />
+                <p className="text-lg">Aucun document</p>
+                <p className="text-sm">Uploadez des PDFs pour commencer</p>
               </div>
             ) : (
               <ScrollArea className="h-[400px]">
@@ -361,13 +358,13 @@ export default function AdminUpload() {
                   {files.map((file) => (
                     <div
                       key={file.id}
-                      className="p-4 border rounded-lg space-y-3"
+                      className="p-4 border rounded-lg space-y-3 bg-card"
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
-                          <FileText className="h-8 w-8 text-destructive" />
-                          <div>
-                            <p className="font-medium truncate max-w-[200px]">
+                          <FileText className="h-8 w-8 text-red-500 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="font-medium truncate max-w-[180px]">
                               {file.name}
                             </p>
                             <p className="text-xs text-muted-foreground">
@@ -385,6 +382,7 @@ export default function AdminUpload() {
                                 ? "destructive"
                                 : "secondary"
                             }
+                            className="shrink-0"
                           >
                             {getStatusLabel(file.status)}
                           </Badge>
@@ -401,17 +399,32 @@ export default function AdminUpload() {
 
                       {file.analysis && (
                         <div className="pt-2 border-t space-y-2">
-                          <p className="text-sm">
-                            <strong>Résumé :</strong> {file.analysis.summary}
+                          <p className="text-sm line-clamp-2">
+                            <strong>Résumé:</strong> {file.analysis.summary}
                           </p>
                           {file.analysis.hs_codes?.length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {file.analysis.hs_codes.map((code, i) => (
-                                <Badge key={i} variant="outline" className="text-xs">
-                                  {code}
-                                </Badge>
-                              ))}
+                            <div>
+                              <p className="text-xs font-medium text-muted-foreground mb-1">
+                                Codes SH extraits:
+                              </p>
+                              <div className="flex flex-wrap gap-1">
+                                {file.analysis.hs_codes.slice(0, 8).map((code, i) => (
+                                  <Badge key={i} variant="outline" className="text-xs font-mono">
+                                    {code}
+                                  </Badge>
+                                ))}
+                                {file.analysis.hs_codes.length > 8 && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    +{file.analysis.hs_codes.length - 8}
+                                  </Badge>
+                                )}
+                              </div>
                             </div>
+                          )}
+                          {file.analysis.tariff_lines && file.analysis.tariff_lines.length > 0 && (
+                            <p className="text-xs text-green-600">
+                              ✓ {file.analysis.tariff_lines.length} lignes tarifaires stockées
+                            </p>
                           )}
                         </div>
                       )}
