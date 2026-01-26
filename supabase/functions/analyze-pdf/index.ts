@@ -6,6 +6,147 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+interface TariffLine {
+  national_code: string;
+  hs_code_6: string;
+  description: string;
+  duty_rate: number;
+  unit?: string;
+}
+
+interface AnalysisResult {
+  summary: string;
+  key_points: string[];
+  hs_codes: string[];
+  tariff_lines: TariffLine[];
+  chapter_info?: { number: number; title: string };
+  authorities?: string[];
+}
+
+async function analyzeWithAI(
+  base64Pdf: string,
+  title: string,
+  category: string,
+  apiKey: string,
+  maxLines: number
+): Promise<{ result: AnalysisResult | null; truncated: boolean }> {
+  
+  const analysisPrompt = `Tu es un expert en tarifs douaniers marocains. Analyse ce document PDF.
+
+Document : ${title}
+Catégorie : ${category}
+
+STRUCTURE HIÉRARCHIQUE DU TARIF MAROCAIN :
+Le tarif utilise un système de codes à 10 chiffres. Les sous-positions HÉRITENT du préfixe parent.
+
+RÈGLES D'HÉRITAGE DES CODES :
+1. Quand tu vois "04.01" → mémorise "0401" comme préfixe de position
+2. Quand tu vois "0401.10" → mémorise "040110" comme préfixe de sous-position  
+3. Quand tu vois une ligne avec juste "10 00" ou "90 00" → c'est un SUFFIXE à ajouter au préfixe courant
+
+EXEMPLE DE RECONSTITUTION :
+| Codification    | Ce que tu fais                                    |
+|-----------------|---------------------------------------------------|
+| 04.01           | Préfixe = "0401" (position parente)               |
+| 0401.10         | Préfixe = "040110" (sous-position)                |
+|      10 00      | Code = "040110" + "1000" = "0401101000"           |
+|      90 00      | Code = "040110" + "9000" = "0401109000"           |
+| 0401.20         | Préfixe = "040120" (nouvelle sous-position)       |
+|      10 00      | Code = "040120" + "1000" = "0401201000"           |
+
+IMPORTANT :
+- Chaque national_code doit avoir EXACTEMENT 10 chiffres
+- Retire TOUS les points, espaces et tirets
+- hs_code_6 = les 6 premiers chiffres du national_code
+- Extrais MAXIMUM ${maxLines} lignes tarifaires avec un taux DDI
+
+Réponds avec CE JSON (et rien d'autre) :
+{
+  "summary": "Résumé court du chapitre",
+  "key_points": ["Note 1", "Note 2"],
+  "hs_codes": ["0401", "0402"],
+  "tariff_lines": [
+    {"national_code": "0401101000", "hs_code_6": "040110", "description": "Description", "duty_rate": 10, "unit": "kg"}
+  ],
+  "chapter_info": {"number": 4, "title": "Titre"}
+}`;
+
+  const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-flash",
+      max_tokens: 32000,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: analysisPrompt },
+            {
+              type: "image_url",
+              image_url: { url: `data:application/pdf;base64,${base64Pdf}` }
+            }
+          ]
+        }
+      ],
+    }),
+  });
+
+  if (!aiResponse.ok) {
+    const errorText = await aiResponse.text();
+    console.error("Lovable AI error:", aiResponse.status, errorText);
+    throw new Error(`Lovable AI error: ${aiResponse.status}`);
+  }
+
+  const aiData = await aiResponse.json();
+  const finishReason = aiData.choices?.[0]?.finish_reason;
+  const truncated = finishReason === "length";
+  
+  console.log("AI response - finish_reason:", finishReason, "truncated:", truncated);
+  
+  const responseText = aiData.choices?.[0]?.message?.content || "{}";
+  
+  // Parse AI response
+  let cleanedResponse = responseText.trim();
+  if (cleanedResponse.startsWith("```json")) cleanedResponse = cleanedResponse.slice(7);
+  if (cleanedResponse.startsWith("```")) cleanedResponse = cleanedResponse.slice(3);
+  if (cleanedResponse.endsWith("```")) cleanedResponse = cleanedResponse.slice(0, -3);
+  cleanedResponse = cleanedResponse.trim();
+  
+  try {
+    const result = JSON.parse(cleanedResponse) as AnalysisResult;
+    
+    // Validate and fix national codes
+    if (result.tariff_lines) {
+      result.tariff_lines = result.tariff_lines
+        .map(line => {
+          // Remove all non-digit characters
+          let code = (line.national_code || "").replace(/\D/g, "");
+          // Pad to 10 digits if needed
+          if (code.length > 0 && code.length < 10) {
+            code = code.padEnd(10, "0");
+          }
+          return {
+            ...line,
+            national_code: code,
+            hs_code_6: code.substring(0, 6),
+          };
+        })
+        .filter(line => line.national_code.length === 10 && line.duty_rate !== undefined);
+    }
+    
+    console.log("Parsed result:", result.tariff_lines?.length || 0, "tariff lines");
+    return { result, truncated };
+  } catch (parseError) {
+    console.error("Failed to parse AI response:", parseError);
+    console.error("Raw response (first 1000):", responseText.substring(0, 1000));
+    return { result: null, truncated };
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -47,7 +188,7 @@ serve(async (req) => {
       new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
     );
 
-    console.log("PDF downloaded and converted to base64, size:", base64Pdf.length);
+    console.log("PDF downloaded, base64 size:", base64Pdf.length);
 
     // Get PDF document metadata
     const { data: pdfDoc } = await supabase
@@ -56,123 +197,36 @@ serve(async (req) => {
       .eq("id", pdfId)
       .single();
 
-    // Call Lovable AI to analyze the PDF
-    const analysisPrompt = `Tu es un expert en tarifs douaniers marocains. Analyse ce document PDF.
+    const title = pdfDoc?.title || "Tarif douanier";
+    const category = pdfDoc?.category || "tarif";
 
-Document : ${pdfDoc?.title || "Tarif douanier"}
-Catégorie : ${pdfDoc?.category || "tarif"}
-
-STRUCTURE HIÉRARCHIQUE DU TARIF MAROCAIN :
-Le tarif utilise un système de codes à 10 chiffres où les sous-positions HÉRITENT du code parent.
-
-EXEMPLE CONCRET du document :
-┌─────────────────┬─────────────────────────────────────┬───────┐
-│ Codification    │ Désignation                         │ DDI % │
-├─────────────────┼─────────────────────────────────────┼───────┤
-│ 03.01           │ Poissons vivants                    │       │
-│ 0301.11 00 00   │ -- D'eau douce                      │ 10    │
-│ 0301.91         │ -- Truites                          │       │
-│      10 00      │ --- destinées au repeuplement       │ 10    │
-│      90 00      │ --- autres                          │ 10    │
-└─────────────────┴─────────────────────────────────────┴───────┘
-
-RÈGLES DE RECONSTITUTION DES CODES :
-1. "03.01" = position (4 chiffres) → mémorise "0301" comme préfixe
-2. "0301.11 00 00" = code complet 10 chiffres → national_code = "0301110000"
-3. "0301.91" = sous-position 6 chiffres → mémorise "030191" comme préfixe courant
-4. "10 00" ou "90 00" = suffixe 4 chiffres → AJOUTE au préfixe courant
-   - Préfixe "030191" + "10 00" = "0301911000"
-   - Préfixe "030191" + "90 00" = "0301919000"
-
-IMPORTANT : Chaque code national doit avoir EXACTEMENT 10 chiffres !
-
-Génère ce JSON :
-{
-  "summary": "Résumé du chapitre avec son numéro et titre",
-  "key_points": ["Note légale 1", "Note légale 2"],
-  "hs_codes": ["0301", "0302"],  // Positions 4 chiffres UNIQUES trouvées
-  "tariff_lines": [
-    {
-      "national_code": "0301110000",  // TOUJOURS 10 chiffres, sans espaces/points
-      "hs_code_6": "030111",          // 6 premiers chiffres du national_code
-      "description": "Poissons d'ornement d'eau douce",
-      "duty_rate": 10,                // Taux DDI (nombre, pas texte)
-      "unit": "kg"
-    }
-  ],
-  "chapter_info": {"number": 3, "title": "Titre du chapitre"},
-  "authorities": []
-}
-
-VALIDATION : 
-- Vérifie que chaque national_code a 10 chiffres
-- hs_code_6 = les 6 premiers chiffres de national_code
-- N'inclus QUE les lignes avec un taux DDI
-
-Réponds UNIQUEMENT avec le JSON valide.`;
-
-    // Use Lovable AI Gateway with PDF as inline data
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        max_tokens: 16384,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: analysisPrompt
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:application/pdf;base64,${base64Pdf}`
-                }
-              }
-            ]
-          }
-        ],
-      }),
-    });
-
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error("Lovable AI error:", aiResponse.status, errorText);
-      throw new Error(`Lovable AI error: ${aiResponse.status} - ${errorText}`);
-    }
-
-    const aiData = await aiResponse.json();
-    console.log("AI response received:", JSON.stringify(aiData).substring(0, 500));
+    // Try with progressively fewer lines if truncated
+    const maxLinesToTry = [50, 30, 15];
+    let analysisResult: AnalysisResult | null = null;
     
-    const responseText = aiData.choices?.[0]?.message?.content || "{}";
-    
-    // Parse AI response - clean markdown if present
-    let analysisResult;
-    try {
-      let cleanedResponse = responseText.trim();
-      // Remove markdown code blocks if present
-      if (cleanedResponse.startsWith("```json")) {
-        cleanedResponse = cleanedResponse.slice(7);
-      }
-      if (cleanedResponse.startsWith("```")) {
-        cleanedResponse = cleanedResponse.slice(3);
-      }
-      if (cleanedResponse.endsWith("```")) {
-        cleanedResponse = cleanedResponse.slice(0, -3);
-      }
-      cleanedResponse = cleanedResponse.trim();
+    for (const maxLines of maxLinesToTry) {
+      console.log(`Attempting analysis with max ${maxLines} tariff lines...`);
       
-      analysisResult = JSON.parse(cleanedResponse);
-      console.log("Parsed analysis result:", JSON.stringify(analysisResult).substring(0, 300));
-    } catch (parseError) {
-      console.error("Failed to parse AI response:", parseError);
-      console.error("Raw response:", responseText.substring(0, 500));
+      const { result, truncated } = await analyzeWithAI(
+        base64Pdf,
+        title,
+        category,
+        LOVABLE_API_KEY,
+        maxLines
+      );
+      
+      if (result && !truncated) {
+        analysisResult = result;
+        console.log("Analysis successful with", maxLines, "max lines");
+        break;
+      } else if (result && truncated) {
+        console.log("Response truncated, retrying with fewer lines...");
+        // Keep the result in case all attempts fail
+        analysisResult = result;
+      }
+    }
+    
+    if (!analysisResult) {
       analysisResult = {
         summary: "Analyse en attente de traitement manuel",
         key_points: [],
@@ -190,7 +244,7 @@ Réponds UNIQUEMENT avec le JSON valide.`;
         summary: analysisResult.summary,
         key_points: analysisResult.key_points || [],
         mentioned_hs_codes: analysisResult.hs_codes || [],
-        detected_tariff_changes: analysisResult.tariff_lines || analysisResult.tariff_changes || [],
+        detected_tariff_changes: analysisResult.tariff_lines || [],
         extracted_data: {
           chapter_info: analysisResult.chapter_info || null,
           authorities: analysisResult.authorities || [],
@@ -205,13 +259,12 @@ Réponds UNIQUEMENT avec le JSON valide.`;
     }
 
     // Update PDF document with chapter info
-    const updateData: Record<string, any> = {
+    const updateData: Record<string, unknown> = {
       is_verified: true,
       verified_at: new Date().toISOString(),
       related_hs_codes: analysisResult.hs_codes || [],
     };
     
-    // Add chapter info to keywords if available
     if (analysisResult.chapter_info?.number) {
       updateData.keywords = `Chapitre ${analysisResult.chapter_info.number}`;
     }
@@ -221,7 +274,10 @@ Réponds UNIQUEMENT avec le JSON valide.`;
       .update(updateData)
       .eq("id", pdfId);
 
-    console.log("Analysis complete for PDF:", pdfId, "HS codes found:", analysisResult.hs_codes?.length || 0);
+    console.log("Analysis complete for PDF:", pdfId, 
+      "HS codes:", analysisResult.hs_codes?.length || 0,
+      "Tariff lines:", analysisResult.tariff_lines?.length || 0
+    );
 
     return new Response(
       JSON.stringify(analysisResult),
