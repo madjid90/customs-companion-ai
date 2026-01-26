@@ -438,16 +438,16 @@ export default function AdminScraping() {
                 <div className="space-y-2">
                   <Label htmlFor="country_code">Pays</Label>
                   <Select
-                    value={formData.country_code}
+                    value={formData.country_code || "international"}
                     onValueChange={(value) =>
-                      setFormData({ ...formData, country_code: value })
+                      setFormData({ ...formData, country_code: value === "international" ? "" : value })
                     }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="International" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">International</SelectItem>
+                      <SelectItem value="international">International</SelectItem>
                       {countries?.map((country) => (
                         <SelectItem key={country.code} value={country.code}>
                           {country.name_fr}
