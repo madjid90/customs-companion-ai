@@ -23,7 +23,7 @@ interface AnalysisResult {
   authorities?: string[];
 }
 
-async function analyzeWithAI(
+async function analyzeWithClaude(
   base64Pdf: string,
   title: string,
   category: string,
@@ -71,23 +71,29 @@ Réponds avec CE JSON (et rien d'autre) :
   "chapter_info": {"number": 4, "title": "Titre"}
 }`;
 
-  const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  // Call Claude API (Anthropic)
+  const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${apiKey}`,
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
-      max_tokens: 32000,
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 16000,
       messages: [
         {
           role: "user",
           content: [
             { type: "text", text: analysisPrompt },
             {
-              type: "image_url",
-              image_url: { url: `data:application/pdf;base64,${base64Pdf}` }
+              type: "document",
+              source: {
+                type: "base64",
+                media_type: "application/pdf",
+                data: base64Pdf,
+              }
             }
           ]
         }
@@ -97,17 +103,17 @@ Réponds avec CE JSON (et rien d'autre) :
 
   if (!aiResponse.ok) {
     const errorText = await aiResponse.text();
-    console.error("Lovable AI error:", aiResponse.status, errorText);
-    throw new Error(`Lovable AI error: ${aiResponse.status}`);
+    console.error("Claude API error:", aiResponse.status, errorText);
+    throw new Error(`Claude API error: ${aiResponse.status}`);
   }
 
   const aiData = await aiResponse.json();
-  const finishReason = aiData.choices?.[0]?.finish_reason;
-  const truncated = finishReason === "length";
+  const stopReason = aiData.stop_reason;
+  const truncated = stopReason === "max_tokens";
   
-  console.log("AI response - finish_reason:", finishReason, "truncated:", truncated);
+  console.log("Claude response - stop_reason:", stopReason, "truncated:", truncated);
   
-  const responseText = aiData.choices?.[0]?.message?.content || "{}";
+  const responseText = aiData.content?.[0]?.text || "{}";
   
   // Parse AI response
   let cleanedResponse = responseText.trim();
@@ -141,7 +147,7 @@ Réponds avec CE JSON (et rien d'autre) :
     console.log("Parsed result:", result.tariff_lines?.length || 0, "tariff lines");
     return { result, truncated };
   } catch (parseError) {
-    console.error("Failed to parse AI response:", parseError);
+    console.error("Failed to parse Claude response:", parseError);
     console.error("Raw response (first 1000):", responseText.substring(0, 1000));
     return { result: null, truncated };
   }
@@ -162,12 +168,12 @@ serve(async (req) => {
       );
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    if (!ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY is not configured");
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
@@ -207,11 +213,11 @@ serve(async (req) => {
     for (const maxLines of maxLinesToTry) {
       console.log(`Attempting analysis with max ${maxLines} tariff lines...`);
       
-      const { result, truncated } = await analyzeWithAI(
+      const { result, truncated } = await analyzeWithClaude(
         base64Pdf,
         title,
         category,
-        LOVABLE_API_KEY,
+        ANTHROPIC_API_KEY,
         maxLines
       );
       
@@ -250,8 +256,8 @@ serve(async (req) => {
           authorities: analysisResult.authorities || [],
           tariff_lines_count: analysisResult.tariff_lines?.length || 0,
         },
-        extraction_model: "google/gemini-2.5-flash",
-        extraction_confidence: 0.85,
+        extraction_model: "claude-sonnet-4-20250514",
+        extraction_confidence: 0.90,
       });
 
     if (insertError) {
@@ -275,7 +281,7 @@ serve(async (req) => {
       }));
 
       // Upsert to avoid duplicates (update if exists)
-      const { error: tariffError, count } = await supabase
+      const { error: tariffError } = await supabase
         .from("country_tariffs")
         .upsert(tariffRows, { 
           onConflict: "country_code,national_code",
