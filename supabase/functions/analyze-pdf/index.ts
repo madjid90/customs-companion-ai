@@ -30,13 +30,22 @@ interface AnalysisResult {
   authorities?: string[];
 }
 
+// Helper function to delay execution
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function analyzeWithClaude(
   base64Pdf: string,
   title: string,
   category: string,
   apiKey: string,
-  maxLines: number
-): Promise<{ result: AnalysisResult | null; truncated: boolean }> {
+  maxLines: number,
+  retryCount = 0
+): Promise<{ result: AnalysisResult | null; truncated: boolean; rateLimited: boolean }> {
+  
+  const MAX_RETRIES = 3;
+  const BASE_DELAY = 5000; // 5 seconds base delay
   
   const analysisPrompt = `Tu es un expert en tarifs douaniers marocains. Analyse ce document PDF.
 
@@ -117,6 +126,19 @@ Réponds avec CE JSON (et rien d'autre) :
     }),
   });
 
+  // Handle rate limiting with retry
+  if (aiResponse.status === 429) {
+    if (retryCount < MAX_RETRIES) {
+      const delayMs = BASE_DELAY * Math.pow(2, retryCount); // Exponential backoff
+      console.log(`Rate limited (429). Retry ${retryCount + 1}/${MAX_RETRIES} after ${delayMs}ms...`);
+      await delay(delayMs);
+      return analyzeWithClaude(base64Pdf, title, category, apiKey, maxLines, retryCount + 1);
+    } else {
+      console.error("Max retries reached for rate limiting");
+      return { result: null, truncated: false, rateLimited: true };
+    }
+  }
+
   if (!aiResponse.ok) {
     const errorText = await aiResponse.text();
     console.error("Claude API error:", aiResponse.status, errorText);
@@ -161,11 +183,11 @@ Réponds avec CE JSON (et rien d'autre) :
     }
     
     console.log("Parsed result:", result.tariff_lines?.length || 0, "tariff lines");
-    return { result, truncated };
+    return { result, truncated, rateLimited: false };
   } catch (parseError) {
     console.error("Failed to parse Claude response:", parseError);
     console.error("Raw response (first 1000):", responseText.substring(0, 1000));
-    return { result: null, truncated };
+    return { result: null, truncated, rateLimited: false };
   }
 }
 
@@ -229,13 +251,24 @@ serve(async (req) => {
     for (const maxLines of maxLinesToTry) {
       console.log(`Attempting analysis with max ${maxLines} tariff lines...`);
       
-      const { result, truncated } = await analyzeWithClaude(
+      const { result, truncated, rateLimited } = await analyzeWithClaude(
         base64Pdf,
         title,
         category,
         ANTHROPIC_API_KEY,
         maxLines
       );
+      
+      // If rate limited after all retries, return error to client
+      if (rateLimited) {
+        return new Response(
+          JSON.stringify({ 
+            error: "Rate limited by AI service. Please wait a few minutes before retrying.",
+            rateLimited: true 
+          }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
       
       if (result && !truncated) {
         analysisResult = result;
