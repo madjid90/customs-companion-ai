@@ -1,17 +1,8 @@
-import { useEffect } from "react";
-import { Outlet, useNavigate } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 import { AdminSidebar } from "./AdminSidebar";
 
 export function AdminLayout() {
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    const session = localStorage.getItem("douaneai_admin_session");
-    if (!session) {
-      navigate("/admin/login");
-    }
-  }, [navigate]);
-
+  // Authentication is handled by ProtectedRoute wrapper
   return (
     <div className="min-h-screen bg-background">
       <AdminSidebar />
