@@ -149,6 +149,7 @@ export default function AdminVeille() {
   const [editingSite, setEditingSite] = useState<VeilleSite | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<VeilleDocument | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [documentFilter, setDocumentFilter] = useState<"all" | "pending" | "verified">("all");
   const [isRunningVeille, setIsRunningVeille] = useState(false);
   
   const [keywordForm, setKeywordForm] = useState({
@@ -533,6 +534,13 @@ export default function AdminVeille() {
   const verifiedCount = documents?.filter((d) => d.is_verified).length || 0;
   const lastLog = logs?.[0];
 
+  // Filter documents based on selected filter
+  const filteredDocuments = documents?.filter((doc) => {
+    if (documentFilter === "pending") return !doc.is_verified;
+    if (documentFilter === "verified") return doc.is_verified;
+    return true;
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -652,8 +660,8 @@ export default function AdminVeille() {
 
         {/* Documents Tab */}
         <TabsContent value="documents" className="space-y-4">
-          <div className="flex gap-4">
-            <div className="relative flex-1">
+          <div className="flex gap-4 items-center flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
                 placeholder="Rechercher dans les documents..."
@@ -661,6 +669,31 @@ export default function AdminVeille() {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
               />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant={documentFilter === "all" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDocumentFilter("all")}
+              >
+                Tous ({documents?.length || 0})
+              </Button>
+              <Button
+                variant={documentFilter === "pending" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDocumentFilter("pending")}
+              >
+                <Clock className="w-4 h-4 mr-1" />
+                En attente ({pendingCount})
+              </Button>
+              <Button
+                variant={documentFilter === "verified" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDocumentFilter("verified")}
+              >
+                <CheckCircle className="w-4 h-4 mr-1" />
+                Validés ({verifiedCount})
+              </Button>
             </div>
           </div>
 
@@ -675,16 +708,24 @@ export default function AdminVeille() {
                   <div className="text-center py-8 text-muted-foreground">
                     Chargement...
                   </div>
-                ) : documents?.length === 0 ? (
+                ) : filteredDocuments?.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>Aucun document trouvé.</p>
-                    <p className="text-sm mt-2">Lancez la veille pour collecter des documents.</p>
+                    <p>
+                      {documentFilter === "all" 
+                        ? "Aucun document trouvé." 
+                        : documentFilter === "pending"
+                        ? "Aucun document en attente."
+                        : "Aucun document validé."}
+                    </p>
+                    {documentFilter === "all" && (
+                      <p className="text-sm mt-2">Lancez la veille pour collecter des documents.</p>
+                    )}
                   </div>
                 ) : (
                   <ScrollArea className="h-[500px]">
                     <div className="space-y-2">
-                      {documents?.map((doc) => (
+                      {filteredDocuments?.map((doc) => (
                         <div
                           key={doc.id}
                           className={`p-3 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors ${
