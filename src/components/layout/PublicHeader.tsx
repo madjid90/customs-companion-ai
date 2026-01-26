@@ -5,11 +5,9 @@ import { Settings, Menu, X } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
+// Only Chat is accessible to users
 const navLinks = [
-  { href: "/", label: "Accueil" },
-  { href: "/chat", label: "Chat" },
-  { href: "/search", label: "Recherche" },
-  { href: "/calculate", label: "Calculateur" },
+  { href: "/chat", label: "Assistant DouaneAI" },
 ];
 
 export function PublicHeader() {
