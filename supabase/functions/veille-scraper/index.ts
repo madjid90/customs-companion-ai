@@ -82,6 +82,7 @@ interface ScrapedDocument {
   content?: string;
   url?: string;
   confidence?: number;
+  source_type?: 'document' | 'page_content' | 'table' | 'article' | 'announcement';
 }
 
 // ============= UTILITY FUNCTIONS =============
@@ -382,17 +383,20 @@ function parseClaudeResponse(text: string): any {
 function buildAnalysisPrompt(content: string, site: VeilleSite, pageUrl: string, urlType: string): string {
   const isDownload = urlType === 'download' || /\.(pdf|xlsx?|docx?|csv|zip)$/i.test(pageUrl);
   const isArchive = urlType === 'archive';
+  const contentLength = content.length;
   
-  if (isDownload && content.length < 200) {
+  // Prompt pour liens de téléchargement avec peu de contenu
+  if (isDownload && contentLength < 200) {
     const fileName = pageUrl.split('/').pop() || 'Document';
     return `Ce lien pointe vers un fichier téléchargeable: ${pageUrl}
 Nom: ${fileName}
 Site: ${site.name}
 
 Crée une entrée basée sur ce lien. JSON uniquement:
-{"documents":[{"title":"Titre descriptif","summary":"Description probable","date":null,"category":"tarif|regulation|publication|other","importance":"haute|moyenne|basse","hs_codes":[],"tariff_changes":[],"content":"Téléchargement: ${pageUrl}","url":"${pageUrl}","confidence":0.7}]}`;
+{"documents":[{"title":"Titre descriptif","summary":"Description probable","date":null,"category":"tarif|regulation|publication|other","importance":"haute|moyenne|basse","hs_codes":[],"tariff_changes":[],"content":"Téléchargement: ${pageUrl}","url":"${pageUrl}","confidence":0.7,"source_type":"document"}]}`;
   }
   
+  // Prompt pour pages d'archives
   if (isArchive) {
     return `Page d'archives du site ${site.name}.
 URL: ${pageUrl}
@@ -400,21 +404,52 @@ URL: ${pageUrl}
 Contenu:
 ${content.substring(0, CONFIG.MAX_CONTENT_LENGTH)}
 
-Extrait TOUS les documents/fichiers disponibles. JSON:
-{"documents":[{"title":"Nom","summary":"Description","date":"YYYY-MM-DD ou null","category":"tarif|regulation|publication|archive|other","importance":"haute|moyenne|basse","hs_codes":[],"tariff_changes":[],"content":"Description","url":"URL si dispo","confidence":0.8}]}`;
+Extrait TOUS les documents/fichiers ET le contenu textuel pertinent (articles, réglementations, annonces). JSON:
+{"documents":[{"title":"Nom","summary":"Description","date":"YYYY-MM-DD ou null","category":"tarif|regulation|publication|archive|article|annonce|other","importance":"haute|moyenne|basse","hs_codes":[],"tariff_changes":[],"content":"Contenu extrait ou description","url":"URL si dispo","confidence":0.8,"source_type":"document|page_content"}]}`;
   }
   
-  return `Analyse ce contenu web d'un site douanier officiel (${site.name}).
+  // Prompt enrichi pour tout type de contenu web
+  return `Tu es un expert en réglementation douanière. Analyse ce contenu web du site officiel "${site.name}".
 URL: ${pageUrl}
+Longueur: ${contentLength} caractères
 
 Contenu:
 ${content.substring(0, CONFIG.MAX_CONTENT_LENGTH)}
 
-Extrait les documents, circulaires, notes, réglementations importantes.
-JSON uniquement:
-{"documents":[{"title":"Titre","summary":"Résumé","date":"YYYY-MM-DD","category":"circulaire|note|tarif|regulation|other","importance":"haute|moyenne|basse","hs_codes":["8501"],"tariff_changes":[{"hs_code":"8501","description":"changement"}],"content":"Extrait pertinent","url":"URL si dispo","confidence":0.85}]}
+=== INSTRUCTIONS ===
+Tu dois extraire DEUX types d'informations:
 
-Si aucun document pertinent: {"documents":[]}`;
+1. **DOCUMENTS TÉLÉCHARGEABLES**: PDF, circulaires, notes officielles référencées sur la page
+2. **CONTENU TEXTUEL DE LA PAGE**: Articles, actualités, réglementations, annonces, informations importantes qui sont DIRECTEMENT sur la page (pas dans un document externe)
+
+Pour le contenu textuel, extrait:
+- Les articles de presse/actualités douanières
+- Les annonces officielles (changements de taux, nouvelles procédures)
+- Les textes de loi/réglementation affichés in-page
+- Les tableaux de tarifs/droits de douane
+- Les guides/instructions affichés directement
+- Les FAQ importantes
+
+=== FORMAT JSON ===
+{"documents":[{
+  "title": "Titre clair et descriptif",
+  "summary": "Résumé 2-3 phrases du contenu",
+  "date": "YYYY-MM-DD ou null",
+  "category": "circulaire|note|tarif|regulation|article|annonce|guide|faq|tableau|other",
+  "importance": "haute|moyenne|basse",
+  "hs_codes": ["codes SH mentionnés"],
+  "tariff_changes": [{"hs_code":"","description":"","old_rate":"","new_rate":""}],
+  "content": "EXTRAIT COMPLET du texte pertinent (max 5000 caractères) - pour le contenu in-page, copier le texte entier",
+  "url": "URL du document ou de la page",
+  "confidence": 0.85,
+  "source_type": "document|page_content|table|article|announcement"
+}]}
+
+IMPORTANT:
+- Pour le contenu de page (source_type: page_content/article/announcement), copie le texte complet dans "content"
+- N'ignore pas les informations affichées directement sur la page même s'il n'y a pas de PDF
+- Si la page contient un tableau de tarifs, extrait-le entièrement avec source_type: "table"
+- Si aucun contenu pertinent: {"documents":[]}`;
 }
 
 async function analyzeContent(
@@ -559,11 +594,16 @@ async function scrapeSingleUrl(
     if (!scrapeData) return { found: 0, new: 0 };
     
     const content = scrapeData.markdown || "";
+    const contentLength = content.length;
     
-    // Skip if no content and not a download link
-    if (content.length < 100 && urlType !== 'download') {
+    // Skip only if really no content and not a download link
+    // Lower threshold to capture more page content
+    if (contentLength < 50 && urlType !== 'download') {
       return { found: 0, new: 0 };
     }
+    
+    // For pages with substantial text content, we want to capture it
+    const hasSubstantialContent = contentLength > 500;
     
     // Analyze with Claude
     const analysisResult = await analyzeContent(claudeKey, content, site, url);
@@ -578,12 +618,32 @@ async function scrapeSingleUrl(
       
       found++;
       
+      // Determine if this is page content vs document
+      const sourceType = doc.source_type || 'document';
+      const isPageContent = ['page_content', 'article', 'announcement', 'table'].includes(sourceType);
+      
+      // For page content, use the page URL; for documents, use the document URL
+      const finalUrl = isPageContent ? url : docUrl;
+      
       // Check for duplicates
-      const isDup = await checkDuplicate(supabase, docUrl, docTitle, site.name);
+      const isDup = await checkDuplicate(supabase, finalUrl, docTitle, site.name);
       if (isDup) {
         console.log(`[${site.name}] Duplicate: ${docTitle.substring(0, 50)}`);
         continue;
       }
+      
+      // Determine category based on source type
+      let category = doc.category || site.categories?.[0];
+      if (isPageContent && !doc.category) {
+        category = sourceType === 'article' ? 'actualite' : 
+                   sourceType === 'announcement' ? 'annonce' :
+                   sourceType === 'table' ? 'tarif' : 'page_content';
+      }
+      
+      // For page content, ensure we capture the full text
+      const contentToStore = isPageContent 
+        ? (doc.content || content)?.substring(0, 15000)  // More space for page content
+        : doc.content?.substring(0, 10000);
       
       // Insert new document
       const { error: insertError } = await supabase
@@ -591,22 +651,27 @@ async function scrapeSingleUrl(
         .insert({
           title: docTitle,
           source_name: site.name,
-          source_url: docUrl,
-          category: doc.category || site.categories?.[0],
+          source_url: finalUrl,
+          category: category,
+          subcategory: isPageContent ? sourceType : null,
           country_code: site.country_code,
           publication_date: doc.date || null,
-          importance: doc.importance || "moyenne",
+          importance: doc.importance || (isPageContent ? "moyenne" : "moyenne"),
           summary: doc.summary,
-          content: doc.content?.substring(0, 10000),
+          content: contentToStore,
           mentioned_hs_codes: doc.hs_codes || [],
           detected_tariff_changes: doc.tariff_changes || [],
-          confidence_score: doc.confidence || 0.8,
+          confidence_score: doc.confidence || (isPageContent ? 0.75 : 0.8),
           collected_by: "automatic",
+          tags: isPageContent ? [sourceType, 'web_content'] : ['document'],
         });
       
       if (!insertError) {
         newDocs++;
-        console.log(`[${site.name}] NEW: ${docTitle.substring(0, 60)}`);
+        const typeLabel = isPageContent ? `[${sourceType}]` : '[doc]';
+        console.log(`[${site.name}] NEW ${typeLabel}: ${docTitle.substring(0, 55)}`);
+      } else {
+        console.error(`[${site.name}] Insert error:`, insertError.message);
       }
     }
     
