@@ -826,14 +826,26 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => `- **${p.tit
         }
       }
     }
-    // Priority 4: Fallback to context-based confidence
-    if (confidence === "medium" && (hasDirectRate || hasInheritedRate)) {
-      confidence = "high";
-    } else if (hasRangeRate) {
-      confidence = "medium";
-    } else if (context.tariffs_with_inheritance.length === 0 && context.hs_codes.length === 0) {
-      confidence = "low";
+    
+    // Log for debugging
+    console.info(`Confidence detection: initial="${confidence}", hasEmoji=${responseText.includes("🟢") || responseText.includes("🟡") || responseText.includes("🔴")}, textLower contains "confiance élevée"=${responseTextLower.includes("confiance élevée")}, contains "haute"=${responseTextLower.includes("haute")}`);
+    
+    // Priority 4: Fallback to context-based confidence ONLY if no explicit confidence was found in text
+    const hasExplicitConfidence = responseText.includes("🟢") || responseText.includes("🟡") || responseText.includes("🔴") ||
+                                   responseTextLower.includes("confiance") || responseTextLower.includes("fiabilité");
+    
+    if (!hasExplicitConfidence) {
+      // Only use context-based logic if the AI didn't explicitly state confidence
+      if (hasDirectRate || hasInheritedRate) {
+        confidence = "high";
+      } else if (hasRangeRate) {
+        confidence = "medium";
+      } else if (context.tariffs_with_inheritance.length === 0 && context.hs_codes.length === 0) {
+        confidence = "low";
+      }
     }
+    
+    console.info(`Final confidence: ${confidence}`);
 
     // Save conversation to database
     const { data: conversation } = await supabase
