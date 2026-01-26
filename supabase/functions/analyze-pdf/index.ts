@@ -243,6 +243,29 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
+    // Check file size first to prevent memory issues
+    const { data: fileList, error: listError } = await supabase.storage
+      .from("pdf-documents")
+      .list(filePath.split('/').slice(0, -1).join('/') || '', {
+        search: filePath.split('/').pop()
+      });
+    
+    const fileInfo = fileList?.find(f => filePath.endsWith(f.name));
+    const fileSizeMB = fileInfo?.metadata?.size ? fileInfo.metadata.size / (1024 * 1024) : 0;
+    
+    // Limit to 10MB to stay within Edge Function memory limits
+    const MAX_FILE_SIZE_MB = 10;
+    if (fileSizeMB > MAX_FILE_SIZE_MB) {
+      console.error(`PDF too large: ${fileSizeMB.toFixed(2)}MB (max: ${MAX_FILE_SIZE_MB}MB)`);
+      return new Response(
+        JSON.stringify({ 
+          error: `Le PDF est trop volumineux (${fileSizeMB.toFixed(1)}MB). Limite: ${MAX_FILE_SIZE_MB}MB. Divisez le PDF en sections plus petites.`,
+          fileSizeMB: fileSizeMB.toFixed(2)
+        }),
+        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Download the PDF file
     const { data: pdfData, error: downloadError } = await supabase.storage
       .from("pdf-documents")
@@ -253,13 +276,33 @@ serve(async (req) => {
       throw new Error(`Failed to download PDF: ${downloadError.message}`);
     }
 
-    // Convert PDF to base64
+    // Convert PDF to base64 using streaming to reduce memory pressure
     const arrayBuffer = await pdfData.arrayBuffer();
-    const base64Pdf = btoa(
-      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-    );
+    const bytes = new Uint8Array(arrayBuffer);
+    
+    // Check actual byte size
+    const actualSizeMB = bytes.length / (1024 * 1024);
+    console.log(`PDF actual size: ${actualSizeMB.toFixed(2)}MB`);
+    
+    if (actualSizeMB > MAX_FILE_SIZE_MB) {
+      return new Response(
+        JSON.stringify({ 
+          error: `Le PDF est trop volumineux (${actualSizeMB.toFixed(1)}MB). Limite: ${MAX_FILE_SIZE_MB}MB.`,
+          fileSizeMB: actualSizeMB.toFixed(2)
+        }),
+        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    
+    // Convert to base64 in chunks to reduce memory spikes
+    const CHUNK_SIZE = 32768; // 32KB chunks
+    let base64Pdf = '';
+    for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+      const chunk = bytes.slice(i, Math.min(i + CHUNK_SIZE, bytes.length));
+      base64Pdf += btoa(String.fromCharCode(...chunk));
+    }
 
-    console.log("PDF downloaded, base64 size:", base64Pdf.length);
+    console.log("PDF converted to base64, size:", base64Pdf.length, "chars");
 
     // Get PDF document metadata
     const { data: pdfDoc } = await supabase
