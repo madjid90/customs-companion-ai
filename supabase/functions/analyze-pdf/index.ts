@@ -294,13 +294,15 @@ serve(async (req) => {
       );
     }
     
-    // Convert to base64 in chunks to reduce memory spikes
-    const CHUNK_SIZE = 32768; // 32KB chunks
-    let base64Pdf = '';
+    // Convert to base64 - build binary string first, then encode
+    // (Chunking base64 directly creates invalid data due to 3-byte boundary issues)
+    let binaryString = '';
+    const CHUNK_SIZE = 8192; // 8KB chunks for string building
     for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
       const chunk = bytes.slice(i, Math.min(i + CHUNK_SIZE, bytes.length));
-      base64Pdf += btoa(String.fromCharCode(...chunk));
+      binaryString += String.fromCharCode(...chunk);
     }
+    const base64Pdf = btoa(binaryString);
 
     console.log("PDF converted to base64, size:", base64Pdf.length, "chars");
 
