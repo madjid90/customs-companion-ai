@@ -79,8 +79,71 @@ async function analyzeWithClaude(apiKey: string, prompt: string, maxTokens: numb
   }
 }
 
-async function analyzeContent(apiKey: string, content: string, site: VeilleSite) {
-  const prompt = `Analyse ce contenu web d'un site douanier officiel (${site.name}).
+async function analyzeContent(apiKey: string, content: string, site: VeilleSite, pageUrl: string) {
+  // Detect if this is a download/archive page
+  const isDownloadLink = /\.(pdf|xlsx?|docx?|csv|zip)$/i.test(pageUrl);
+  const isArchivePage = /archive|download|release/i.test(pageUrl);
+  
+  let prompt: string;
+  
+  if (isDownloadLink) {
+    // For direct download links, create a document entry from the URL
+    const fileName = pageUrl.split('/').pop() || 'Document';
+    const fileExt = fileName.split('.').pop()?.toUpperCase() || 'FILE';
+    
+    prompt = `Ce lien pointe vers un fichier téléchargeable: ${pageUrl}
+    
+Nom du fichier: ${fileName}
+Type: ${fileExt}
+Site source: ${site.name}
+
+Crée une entrée de document basée sur ce lien. Réponds en JSON:
+{
+  "documents": [
+    {
+      "title": "Titre descriptif basé sur le nom du fichier",
+      "summary": "Description du contenu probable basé sur le nom",
+      "date": null,
+      "category": "tarif|regulation|publication|other",
+      "importance": "haute|moyenne|basse",
+      "hs_codes": [],
+      "tariff_changes": [],
+      "content": "Lien de téléchargement: ${pageUrl}",
+      "url": "${pageUrl}",
+      "confidence": 0.7
+    }
+  ]
+}`;
+  } else if (isArchivePage) {
+    prompt = `Cette page est une page d'archives/téléchargements du site ${site.name}.
+
+Contenu de la page:
+${content.substring(0, 10000)}
+
+Extrait TOUS les documents, fichiers et liens de téléchargement mentionnés.
+Crée une entrée pour CHAQUE fichier disponible au téléchargement.
+
+Réponds en JSON:
+{
+  "documents": [
+    {
+      "title": "Nom complet du document/fichier",
+      "summary": "Description ou version du fichier",
+      "date": "Date si disponible (YYYY-MM-DD)",
+      "category": "tarif|regulation|publication|archive|other",
+      "importance": "haute|moyenne|basse",
+      "hs_codes": [],
+      "tariff_changes": [],
+      "content": "Description et lien de téléchargement",
+      "url": "URL du fichier si disponible",
+      "confidence": 0.8
+    }
+  ]
+}
+
+IMPORTANT: Extrait TOUS les documents disponibles, même s'il y en a beaucoup.`;
+  } else {
+    prompt = `Analyse ce contenu web d'un site douanier officiel (${site.name}).
 Extrait les documents, circulaires, notes ou réglementations importantes.
 
 Contenu:
@@ -105,8 +168,9 @@ Réponds en JSON avec cette structure:
 }
 
 Si aucun document pertinent, retourne {"documents": []}`;
+  }
 
-  return await analyzeWithClaude(apiKey, prompt, 4096);
+  return await analyzeWithClaude(apiKey, prompt, 8192);
 }
 
 async function analyzeDocument(apiKey: string, content: string, title: string) {
@@ -216,28 +280,83 @@ serve(async (req) => {
           const discoveredUrls = mapData.links || mapData.data?.links || [];
           console.log(`Discovered ${discoveredUrls.length} URLs on ${site.name}`);
           
-          // Filter URLs to keep only relevant ones (documents, circulaires, etc.)
-          const relevantPatterns = [
-            /circulaire/i, /note/i, /decision/i, /arrete/i, /decret/i,
-            /tarif/i, /douane/i, /reglementation/i, /actualite/i, /news/i,
-            /pdf$/i, /\.pdf/i, /document/i, /publication/i, /communique/i
+          // Patterns for downloadable files (archives, PDFs, Excel, etc.)
+          const downloadPatterns = [
+            /\.pdf$/i, /\.xlsx?$/i, /\.docx?$/i, /\.csv$/i, /\.zip$/i,
+            /download/i, /telecharger/i, /archive/i, /release/i,
+            /HTS/i, /tarif/i, /nomenclature/i
           ];
           
-          allUrls = discoveredUrls.filter((url: string) => {
-            // Always include the main URL
+          // Patterns for regulatory content pages
+          const contentPatterns = [
+            /circulaire/i, /note/i, /decision/i, /arrete/i, /decret/i,
+            /tarif/i, /douane/i, /reglementation/i, /actualite/i, /news/i,
+            /document/i, /publication/i, /communique/i, /bulletin/i,
+            /revision/i, /modification/i, /version/i
+          ];
+          
+          // Separate downloadable files from content pages
+          const downloadUrls = discoveredUrls.filter((url: string) => 
+            downloadPatterns.some(pattern => pattern.test(url))
+          );
+          
+          const contentUrls = discoveredUrls.filter((url: string) => {
             if (url === site.url) return true;
-            // Check if URL matches relevant patterns
-            return relevantPatterns.some(pattern => pattern.test(url));
+            return contentPatterns.some(pattern => pattern.test(url));
           });
           
-          // If no filtered URLs, take all URLs (up to 100)
+          // Combine: prioritize download links, then content pages
+          allUrls = [...new Set([...downloadUrls, ...contentUrls])];
+          
+          // If no filtered URLs, take all URLs (up to 200 for thorough coverage)
           if (allUrls.length <= 1) {
-            allUrls = discoveredUrls.slice(0, 100);
+            allUrls = discoveredUrls.slice(0, 200);
           }
           
-          console.log(`Will scrape ${allUrls.length} relevant URLs from ${site.name}`);
+          console.log(`Will scrape ${allUrls.length} URLs (${downloadUrls.length} downloads + ${contentUrls.length} content pages) from ${site.name}`);
         } else {
           console.log(`Map failed for ${site.name}, will scrape main URL only`);
+        }
+        
+        // Step 1.5: Also extract direct links from the main page (for archive pages with download links)
+        try {
+          const mainPageResponse = await fetch("https://api.firecrawl.dev/v1/scrape", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${FIRECRAWL_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              url: site.url,
+              formats: ["links", "markdown"],
+              onlyMainContent: false, // Get ALL links including download links
+            }),
+          });
+          
+          if (mainPageResponse.ok) {
+            const mainPageData = await mainPageResponse.json();
+            const extractedLinks = mainPageData.data?.links || [];
+            
+            // Filter for download links (PDF, Excel, ZIP, etc.)
+            const directDownloads = extractedLinks.filter((link: string) => 
+              /\.(pdf|xlsx?|docx?|csv|zip)$/i.test(link) ||
+              /download/i.test(link) ||
+              /release/i.test(link)
+            );
+            
+            console.log(`Found ${directDownloads.length} direct download links on main page`);
+            
+            // Add these to allUrls (avoiding duplicates)
+            const existingUrls = new Set(allUrls);
+            for (const link of directDownloads) {
+              if (!existingUrls.has(link)) {
+                allUrls.push(link);
+                existingUrls.add(link);
+              }
+            }
+          }
+        } catch (e) {
+          console.log(`Could not extract direct links from main page: ${e}`);
         }
 
         // Update site status to "crawling"
@@ -279,9 +398,9 @@ serve(async (req) => {
             const scrapeData = await scrapeResponse.json();
             const content = scrapeData.data?.markdown || "";
 
-            // Analyze content with Claude AI
-            if (content.length > 100) {
-              const analysisResult = await analyzeContent(ANTHROPIC_API_KEY, content, site);
+            // Analyze content with Claude AI (or handle direct download links)
+            if (content.length > 100 || /\.(pdf|xlsx?|docx?|csv|zip)$/i.test(pageUrl)) {
+              const analysisResult = await analyzeContent(ANTHROPIC_API_KEY, content || "", site, pageUrl);
               
               if (analysisResult && analysisResult.documents?.length > 0) {
                 for (const doc of analysisResult.documents) {
