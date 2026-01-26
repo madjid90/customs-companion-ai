@@ -28,6 +28,23 @@ export interface TariffLine {
   unit?: string;
 }
 
+export interface PreferentialRate {
+  agreement_code: string;
+  agreement_name: string;
+  hs_code: string;
+  preferential_rate: number;
+  conditions?: string;
+  origin_countries?: string[];
+}
+
+export interface TradeAgreementMention {
+  code: string;
+  name: string;
+  type: string;
+  countries: string[];
+  mentioned_benefits?: string[];
+}
+
 export interface PDFExtractionResult {
   success: boolean;
   summary: string;
@@ -35,6 +52,8 @@ export interface PDFExtractionResult {
   hs_codes: ExtractedHSCode[];
   tariff_lines: TariffLine[];
   chapter_info?: { number: number; title: string };
+  trade_agreements?: TradeAgreementMention[];
+  preferential_rates?: PreferentialRate[];
   error?: string;
 }
 
@@ -199,6 +218,25 @@ export const analyzePDFWithEdgeFunction = async (
       unit: t.unit,
     }));
 
+    // Transformer les taux préférentiels
+    const preferential_rates: PreferentialRate[] = (data.preferential_rates || []).map((p: any) => ({
+      agreement_code: p.agreement_code,
+      agreement_name: p.agreement_name,
+      hs_code: p.hs_code,
+      preferential_rate: p.preferential_rate,
+      conditions: p.conditions,
+      origin_countries: p.origin_countries,
+    }));
+
+    // Transformer les accords commerciaux
+    const trade_agreements: TradeAgreementMention[] = (data.trade_agreements || []).map((a: any) => ({
+      code: a.code,
+      name: a.name,
+      type: a.type,
+      countries: a.countries || [],
+      mentioned_benefits: a.mentioned_benefits,
+    }));
+
     return {
       success: true,
       summary: data.summary || "",
@@ -206,6 +244,8 @@ export const analyzePDFWithEdgeFunction = async (
       hs_codes,
       tariff_lines,
       chapter_info: data.chapter_info,
+      trade_agreements,
+      preferential_rates,
     };
   } catch (error) {
     console.error("Analyze error:", error);
@@ -285,6 +325,8 @@ export const formatExtractionForDisplay = (extraction: PDFExtractionResult) => {
     keyPointsCount: extraction.key_points.length,
     hsCodesCount: extraction.hs_codes.length,
     tariffLinesCount: extraction.tariff_lines.length,
+    tradeAgreementsCount: extraction.trade_agreements?.length || 0,
+    preferentialRatesCount: extraction.preferential_rates?.length || 0,
     chapter: extraction.chapter_info?.number || null,
     chapterTitle: extraction.chapter_info?.title || null,
     // Preview des premiers codes
@@ -298,6 +340,20 @@ export const formatExtractionForDisplay = (extraction: PDFExtractionResult) => {
       code: formatHSCode(t.national_code),
       description: t.description.substring(0, 50) + (t.description.length > 50 ? "..." : ""),
       duty: `${t.duty_rate}%`,
+    })),
+    // Preview des accords commerciaux
+    previewAgreements: (extraction.trade_agreements || []).slice(0, 3).map((a) => ({
+      code: a.code,
+      name: a.name,
+      type: a.type,
+      countries: a.countries.slice(0, 3).join(", "),
+    })),
+    // Preview des taux préférentiels
+    previewPreferentialRates: (extraction.preferential_rates || []).slice(0, 5).map((p) => ({
+      agreement: p.agreement_code,
+      hsCode: p.hs_code,
+      rate: `${p.preferential_rate}%`,
+      conditions: p.conditions?.substring(0, 40) + (p.conditions && p.conditions.length > 40 ? "..." : ""),
     })),
   };
 };

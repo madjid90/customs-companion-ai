@@ -16,7 +16,9 @@ import {
   Database,
   Loader2,
   Download,
-  Upload
+  Upload,
+  Handshake,
+  Percent
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -36,12 +38,31 @@ interface TariffLine {
   unit?: string;
 }
 
+interface PreferentialRate {
+  agreement_code: string;
+  agreement_name: string;
+  hs_code: string;
+  preferential_rate: number;
+  conditions?: string;
+  origin_countries?: string[];
+}
+
+interface TradeAgreementMention {
+  code: string;
+  name: string;
+  type: string;
+  countries: string[];
+  mentioned_benefits?: string[];
+}
+
 interface ExtractionData {
   summary: string;
   key_points: string[];
   hs_codes: HSCodeEntry[];
   tariff_lines: TariffLine[];
   chapter_info?: { number: number; title: string };
+  trade_agreements?: TradeAgreementMention[];
+  preferential_rates?: PreferentialRate[];
 }
 
 interface ExtractionPreviewDialogProps {
@@ -405,6 +426,24 @@ export default function ExtractionPreviewDialog({
                   {validHs}/{hsCodes.length}
                 </Badge>
               </TabsTrigger>
+              {(extractionData?.trade_agreements?.length || 0) > 0 && (
+                <TabsTrigger value="agreements" className="flex items-center gap-2">
+                  <Handshake className="h-4 w-4" />
+                  Accords
+                  <Badge className="text-xs">
+                    {extractionData?.trade_agreements?.length || 0}
+                  </Badge>
+                </TabsTrigger>
+              )}
+              {(extractionData?.preferential_rates?.length || 0) > 0 && (
+                <TabsTrigger value="preferential" className="flex items-center gap-2">
+                  <Percent className="h-4 w-4" />
+                  Taux préf.
+                  <Badge className="text-xs">
+                    {extractionData?.preferential_rates?.length || 0}
+                  </Badge>
+                </TabsTrigger>
+              )}
             </TabsList>
             
             <div className="flex gap-2">
@@ -639,6 +678,104 @@ export default function ExtractionPreviewDialog({
                       </TableRow>
                     );
                   })}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          </TabsContent>
+
+          {/* Trade Agreements Tab */}
+          <TabsContent value="agreements" className="flex-1 overflow-hidden mt-4">
+            <ScrollArea className="h-[400px] border rounded-lg">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background">
+                  <TableRow>
+                    <TableHead className="w-[100px]">Code</TableHead>
+                    <TableHead>Nom de l'accord</TableHead>
+                    <TableHead className="w-[100px]">Type</TableHead>
+                    <TableHead>Pays concernés</TableHead>
+                    <TableHead>Avantages mentionnés</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(extractionData?.trade_agreements || []).map((agreement, index) => (
+                    <TableRow key={index}>
+                      <TableCell>
+                        <Badge variant="secondary" className="font-mono text-xs">
+                          {agreement.code}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-medium text-sm">
+                        {agreement.name}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {agreement.type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {agreement.countries.join(", ")}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {agreement.mentioned_benefits?.join("; ") || "-"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {(!extractionData?.trade_agreements || extractionData.trade_agreements.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                        Aucun accord commercial détecté dans ce document
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          </TabsContent>
+
+          {/* Preferential Rates Tab */}
+          <TabsContent value="preferential" className="flex-1 overflow-hidden mt-4">
+            <ScrollArea className="h-[400px] border rounded-lg">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background">
+                  <TableRow>
+                    <TableHead className="w-[100px]">Accord</TableHead>
+                    <TableHead className="w-[120px]">Code SH</TableHead>
+                    <TableHead className="w-[100px]">Taux préf.</TableHead>
+                    <TableHead>Conditions</TableHead>
+                    <TableHead>Pays d'origine</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(extractionData?.preferential_rates || []).map((rate, index) => (
+                    <TableRow key={index}>
+                      <TableCell>
+                        <Badge variant="secondary" className="font-mono text-xs">
+                          {rate.agreement_code}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <code className="text-xs">{rate.hs_code}</code>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={rate.preferential_rate === 0 ? "default" : "outline"} className="text-xs">
+                          {rate.preferential_rate}%
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {rate.conditions || "-"}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {rate.origin_countries?.join(", ") || "-"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {(!extractionData?.preferential_rates || extractionData.preferential_rates.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                        Aucun taux préférentiel détecté dans ce document
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </ScrollArea>
