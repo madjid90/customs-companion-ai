@@ -17,49 +17,82 @@ interface InteractiveQuestionsProps {
 export function parseQuestionsFromResponse(content: string): Question[] {
   const questions: Question[] = [];
   
-  // Pattern 1: Numbered questions with options after dash
-  // e.g., "1. **Type spécifique** - Smartphone, téléphone basique, téléphone satellite ?"
-  const numberedPattern = /(\d+)\.\s*\*?\*?([^*\n-]+)\*?\*?\s*[-–:]\s*([^?\n]+)\?/g;
-  let match;
+  // Split content into lines
+  const lines = content.split('\n');
   
-  while ((match = numberedPattern.exec(content)) !== null) {
-    const label = match[2].trim();
-    const optionsText = match[3].trim();
+  let currentQuestion: { label: string; options: string[] } | null = null;
+  let questionIndex = 0;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
     
-    // Split options by comma or "ou"
-    const options = optionsText
-      .split(/,|(?:\s+ou\s+)/)
-      .map(opt => opt.trim())
-      .filter(opt => opt.length > 0 && opt.length < 50);
-    
-    if (options.length >= 2) {
-      questions.push({
-        id: `q${match[1]}`,
-        label,
-        options,
-      });
+    // Detect question line (starts with ** and ends with ** or ?)
+    // Pattern: **Question text** or **Question text ?**
+    const questionMatch = line.match(/^\*\*([^*]+)\*\*\s*[-–]?\s*.*$/);
+    if (questionMatch) {
+      // Check if next lines have options (starting with -)
+      const nextLinesAreOptions = [];
+      for (let j = i + 1; j < lines.length && j < i + 10; j++) {
+        const nextLine = lines[j].trim();
+        if (nextLine.startsWith('- ') || nextLine.startsWith('• ')) {
+          nextLinesAreOptions.push(nextLine.slice(2).trim());
+        } else if (nextLine === '' || nextLine.startsWith('>')) {
+          continue; // Skip empty lines or quote continuations
+        } else if (nextLinesAreOptions.length > 0) {
+          break; // Stop if we have options and hit non-option line
+        }
+      }
+      
+      if (nextLinesAreOptions.length >= 2) {
+        // Save previous question if exists
+        if (currentQuestion && currentQuestion.options.length >= 2) {
+          questions.push({
+            id: `q${questionIndex}`,
+            label: currentQuestion.label,
+            options: currentQuestion.options.filter(opt => opt.length > 0 && opt.length < 60),
+          });
+          questionIndex++;
+        }
+        
+        currentQuestion = {
+          label: questionMatch[1].replace(/\?$/, '').trim(),
+          options: nextLinesAreOptions,
+        };
+      }
     }
   }
   
-  // Pattern 2: Questions starting with emoji or bullet
-  // e.g., "• Pays d'origine - Chine, Vietnam, Inde ?"
-  const bulletPattern = /[•●▪]\s*\*?\*?([^*\n-]+)\*?\*?\s*[-–:]\s*([^?\n]+)\?/g;
+  // Add last question if exists
+  if (currentQuestion && currentQuestion.options.length >= 2) {
+    questions.push({
+      id: `q${questionIndex}`,
+      label: currentQuestion.label,
+      options: currentQuestion.options.filter(opt => opt.length > 0 && opt.length < 60),
+    });
+  }
   
-  while ((match = bulletPattern.exec(content)) !== null) {
-    const label = match[1].trim();
-    const optionsText = match[2].trim();
+  // Fallback: Pattern for inline options after dash
+  // e.g., "1. **Type spécifique** - Smartphone, téléphone basique, téléphone satellite ?"
+  if (questions.length === 0) {
+    const numberedPattern = /(\d+)\.\s*\*?\*?([^*\n-]+)\*?\*?\s*[-–:]\s*([^?\n]+)\?/g;
+    let match;
     
-    const options = optionsText
-      .split(/,|(?:\s+ou\s+)/)
-      .map(opt => opt.trim())
-      .filter(opt => opt.length > 0 && opt.length < 50);
-    
-    if (options.length >= 2) {
-      questions.push({
-        id: `qb${questions.length}`,
-        label,
-        options,
-      });
+    while ((match = numberedPattern.exec(content)) !== null) {
+      const label = match[2].trim();
+      const optionsText = match[3].trim();
+      
+      const options = optionsText
+        .split(/,|(?:\s+ou\s+)/)
+        .map(opt => opt.trim())
+        .filter(opt => opt.length > 0 && opt.length < 60);
+      
+      if (options.length >= 2) {
+        questions.push({
+          id: `q${match[1]}`,
+          label,
+          options,
+        });
+      }
     }
   }
   
@@ -70,13 +103,12 @@ export function InteractiveQuestions({ questions, onAnswer, disabled }: Interact
   if (questions.length === 0) return null;
   
   return (
-    <div className="mt-4 space-y-4">
-      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-        Cliquez pour répondre :
+    <div className="mt-4 pt-3 border-t border-border/30 space-y-3">
+      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide flex items-center gap-1">
+        <span>👆</span> Cliquez pour répondre
       </p>
       {questions.map((question) => (
         <div key={question.id} className="space-y-2">
-          <p className="text-sm font-medium text-foreground">{question.label}</p>
           <div className="flex flex-wrap gap-2">
             {question.options.map((option, idx) => (
               <Button
@@ -86,9 +118,11 @@ export function InteractiveQuestions({ questions, onAnswer, disabled }: Interact
                 disabled={disabled}
                 onClick={() => onAnswer(question.id, option)}
                 className={cn(
-                  "h-auto py-2 px-3 text-xs whitespace-normal text-left",
-                  "hover:bg-accent hover:text-accent-foreground",
-                  "border-accent/30 hover:border-accent"
+                  "h-auto py-2.5 px-4 text-sm whitespace-normal text-left",
+                  "bg-background hover:bg-accent hover:text-accent-foreground",
+                  "border-primary/20 hover:border-primary",
+                  "transition-all duration-200 hover:scale-[1.02]",
+                  "shadow-sm hover:shadow-md"
                 )}
               >
                 {option}
