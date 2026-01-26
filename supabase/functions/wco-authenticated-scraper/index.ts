@@ -15,14 +15,30 @@ interface WCODecision {
   url: string;
 }
 
+// Realistic browser headers to avoid bot detection
+const browserHeaders = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+  "Accept-Language": "en-US,en;q=0.9,fr;q=0.8",
+  "Accept-Encoding": "gzip, deflate, br",
+  "Cache-Control": "no-cache",
+  "Pragma": "no-cache",
+  "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+  "Sec-Ch-Ua-Mobile": "?0",
+  "Sec-Ch-Ua-Platform": '"Windows"',
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
+  "Upgrade-Insecure-Requests": "1",
+};
+
 // Parse WCO Trade Tools page to extract decisions
 function parseDecisions(html: string, baseUrl: string): WCODecision[] {
   const decisions: WCODecision[] = [];
   
   // Look for table rows or list items containing decision data
-  // WCO Trade Tools typically uses tables for decisions
   const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  const cellRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
   const linkRegex = /<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
   
   let rowMatch;
@@ -30,16 +46,16 @@ function parseDecisions(html: string, baseUrl: string): WCODecision[] {
     const rowContent = rowMatch[1];
     const cells: string[] = [];
     
-    let cellMatch;
     const cellRegexLocal = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    let cellMatch;
     while ((cellMatch = cellRegexLocal.exec(rowContent)) !== null) {
-      // Strip HTML tags and decode entities
       let cellText = cellMatch[1]
         .replace(/<[^>]*>/g, '')
         .replace(/&nbsp;/g, ' ')
         .replace(/&amp;/g, '&')
         .replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>')
+        .replace(/&#\d+;/g, '')
         .replace(/\s+/g, ' ')
         .trim();
       cells.push(cellText);
@@ -55,9 +71,7 @@ function parseDecisions(html: string, baseUrl: string): WCODecision[] {
       }
     }
     
-    // If we have enough cells that look like decision data
     if (cells.length >= 3) {
-      // Try to identify HS code pattern (4-10 digits with possible dots)
       const hsCodePattern = /\b(\d{4}(?:\.\d{2})?(?:\.\d{2})?)\b/;
       let hsCode = '';
       for (const cell of cells) {
@@ -68,7 +82,6 @@ function parseDecisions(html: string, baseUrl: string): WCODecision[] {
         }
       }
       
-      // Try to identify date pattern
       const datePattern = /(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})|(\d{4}[\/\-]\d{2}[\/\-]\d{2})/;
       let date = '';
       for (const cell of cells) {
@@ -95,6 +108,23 @@ function parseDecisions(html: string, baseUrl: string): WCODecision[] {
   return decisions;
 }
 
+// Extract cookies from Set-Cookie headers properly
+function extractCookies(setCookieHeader: string | null): string {
+  if (!setCookieHeader) return "";
+  
+  // Handle multiple Set-Cookie headers joined by comma or separate
+  const cookies = setCookieHeader
+    .split(/,(?=[^;]*=)/)
+    .map(cookie => {
+      const parts = cookie.split(";")[0].trim();
+      return parts;
+    })
+    .filter(Boolean)
+    .join("; ");
+  
+  return cookies;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -119,25 +149,62 @@ serve(async (req) => {
 
     console.log("Attempting to authenticate with WCO Trade Tools...");
 
-    // Step 1: Get login page to find CSRF token or session cookie
+    // Step 1: First visit the home page to get initial session
+    const homePageUrl = "https://www.wcotradetools.org/";
+    const homeResponse = await fetch(homePageUrl, {
+      method: "GET",
+      headers: browserHeaders,
+    });
+
+    if (!homeResponse.ok) {
+      console.log(`Home page returned ${homeResponse.status}, trying login page directly...`);
+    }
+
+    const homeCookies = extractCookies(homeResponse.headers.get("set-cookie"));
+    console.log("Got initial cookies from home page");
+
+    // Add small delay to appear more human-like
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Step 2: Get login page to find CSRF token
     const loginPageUrl = "https://www.wcotradetools.org/en/user/login";
     const loginPageResponse = await fetch(loginPageUrl, {
       method: "GET",
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        ...browserHeaders,
+        "Cookie": homeCookies,
+        "Referer": homePageUrl,
+        "Sec-Fetch-Site": "same-origin",
       },
     });
 
     if (!loginPageResponse.ok) {
-      throw new Error(`Failed to load login page: ${loginPageResponse.status}`);
+      // Try alternative login URL
+      console.log(`Login page returned ${loginPageResponse.status}, trying alternative...`);
+      
+      const altLoginUrl = "https://www.wcotradetools.org/user/login";
+      const altResponse = await fetch(altLoginUrl, {
+        method: "GET",
+        headers: {
+          ...browserHeaders,
+          "Cookie": homeCookies,
+          "Referer": homePageUrl,
+        },
+      });
+      
+      if (!altResponse.ok) {
+        throw new Error(`Cannot access login page: ${altResponse.status}. The site may be blocking automated requests.`);
+      }
     }
 
-    // Get cookies from login page
-    const cookies = loginPageResponse.headers.get("set-cookie") || "";
+    const loginCookiesRaw = loginPageResponse.headers.get("set-cookie");
+    const loginCookies = extractCookies(loginCookiesRaw);
+    const allCookies = [homeCookies, loginCookies].filter(Boolean).join("; ");
+    
     const loginPageHtml = await loginPageResponse.text();
+    console.log(`Login page loaded: ${loginPageHtml.length} chars`);
 
-    // Extract CSRF token (Drupal typically uses form_build_id and form_token)
+    // Extract CSRF tokens (Drupal form tokens)
     const formBuildIdMatch = loginPageHtml.match(/name="form_build_id"\s+value="([^"]+)"/);
     const formTokenMatch = loginPageHtml.match(/name="form_token"\s+value="([^"]+)"/);
     const formIdMatch = loginPageHtml.match(/name="form_id"\s+value="([^"]+)"/);
@@ -146,13 +213,21 @@ serve(async (req) => {
     const formToken = formTokenMatch?.[1] || "";
     const formId = formIdMatch?.[1] || "user_login_form";
 
+    if (!formBuildId) {
+      console.log("Warning: No form_build_id found, login may fail");
+      console.log("Page snippet:", loginPageHtml.substring(0, 1000));
+    }
+
     console.log("Found form tokens, attempting login...");
 
-    // Step 2: Submit login form
+    // Small delay before login
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // Step 3: Submit login form
     const loginFormData = new URLSearchParams();
     loginFormData.append("name", WCO_USERNAME);
     loginFormData.append("pass", WCO_PASSWORD);
-    loginFormData.append("form_build_id", formBuildId);
+    if (formBuildId) loginFormData.append("form_build_id", formBuildId);
     if (formToken) loginFormData.append("form_token", formToken);
     loginFormData.append("form_id", formId);
     loginFormData.append("op", "Log in");
@@ -160,30 +235,29 @@ serve(async (req) => {
     const loginResponse = await fetch(loginPageUrl, {
       method: "POST",
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        ...browserHeaders,
         "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Cookie": cookies,
+        "Cookie": allCookies,
         "Referer": loginPageUrl,
+        "Origin": "https://www.wcotradetools.org",
+        "Sec-Fetch-Site": "same-origin",
       },
       body: loginFormData.toString(),
       redirect: "manual",
     });
 
-    // Collect all cookies from login response
-    const loginCookies = loginResponse.headers.get("set-cookie") || "";
-    const allCookies = [cookies, loginCookies].filter(Boolean).join("; ");
+    const postLoginCookies = extractCookies(loginResponse.headers.get("set-cookie"));
+    const finalCookies = [allCookies, postLoginCookies].filter(Boolean).join("; ");
 
-    // Check if login was successful (usually redirects to user page or home)
-    const loginSuccess = loginResponse.status === 302 || loginResponse.status === 303;
+    const loginSuccess = loginResponse.status === 302 || loginResponse.status === 303 || loginResponse.status === 200;
     
-    if (!loginSuccess && loginResponse.status !== 200) {
+    if (!loginSuccess) {
       console.error("Login failed with status:", loginResponse.status);
       return new Response(
         JSON.stringify({ 
           error: "Login failed", 
           status: loginResponse.status,
-          message: "Check your WCO credentials"
+          message: "Check your WCO credentials or the site may be blocking automated access"
         }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -191,14 +265,17 @@ serve(async (req) => {
 
     console.log("Login successful, fetching decisions page...");
 
-    // Step 3: Fetch the target page with authenticated session
+    // Small delay after login
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Step 4: Fetch the target page with authenticated session
     const decisionsResponse = await fetch(url, {
       method: "GET",
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Cookie": allCookies,
+        ...browserHeaders,
+        "Cookie": finalCookies,
         "Referer": "https://www.wcotradetools.org/",
+        "Sec-Fetch-Site": "same-origin",
       },
     });
 
@@ -216,7 +293,6 @@ serve(async (req) => {
     // Store decisions in veille_documents
     let newDocuments = 0;
     for (const decision of decisions) {
-      // Check if already exists
       const { data: existing } = await supabase
         .from("veille_documents")
         .select("id")
