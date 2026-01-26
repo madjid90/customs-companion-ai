@@ -23,6 +23,21 @@ interface VeilleKeyword {
   country_code: string | null;
 }
 
+// Calculate similarity between two strings (Jaccard similarity on words)
+function calculateSimilarity(str1: string, str2: string): number {
+  if (!str1 || !str2) return 0;
+  
+  const words1 = new Set(str1.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+  const words2 = new Set(str2.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+  
+  if (words1.size === 0 || words2.size === 0) return 0;
+  
+  const intersection = new Set([...words1].filter(w => words2.has(w)));
+  const union = new Set([...words1, ...words2]);
+  
+  return intersection.size / union.size;
+}
+
 // Claude AI analysis function
 async function analyzeWithClaude(apiKey: string, prompt: string, maxTokens: number = 4096) {
   try {
@@ -227,36 +242,67 @@ serve(async (req) => {
           
           if (analysisResult && analysisResult.documents?.length > 0) {
             for (const doc of analysisResult.documents) {
-              // Check if document already exists
-              const { data: existing } = await supabase
+              // Enhanced duplicate detection - check by title, URL, and content similarity
+              const docUrl = doc.url || site.url;
+              const normalizedTitle = doc.title?.toLowerCase().trim().replace(/\s+/g, ' ') || '';
+              
+              // Check for existing document by URL first (most reliable)
+              const { data: existingByUrl } = await supabase
                 .from("veille_documents")
                 .select("id")
-                .eq("title", doc.title)
-                .eq("source_name", site.name)
+                .eq("source_url", docUrl)
                 .maybeSingle();
 
-              if (!existing) {
-                const { error: insertError } = await supabase
-                  .from("veille_documents")
-                  .insert({
-                    title: doc.title,
-                    source_name: site.name,
-                    source_url: doc.url || site.url,
-                    category: doc.category || site.categories?.[0],
-                    country_code: site.country_code,
-                    publication_date: doc.date || null,
-                    importance: doc.importance || "moyenne",
-                    summary: doc.summary,
-                    content: doc.content,
-                    mentioned_hs_codes: doc.hs_codes || [],
-                    detected_tariff_changes: doc.tariff_changes || [],
-                    confidence_score: doc.confidence || 0.8,
-                    collected_by: "automatic",
-                  });
+              if (existingByUrl) {
+                console.log(`Duplicate detected (URL): ${docUrl}`);
+                totalDocumentsFound++;
+                continue;
+              }
 
-                if (!insertError) {
-                  totalNewDocuments++;
-                }
+              // Check by normalized title and source
+              const { data: existingByTitle } = await supabase
+                .from("veille_documents")
+                .select("id, title")
+                .eq("source_name", site.name)
+                .ilike("title", `%${normalizedTitle.substring(0, 50)}%`)
+                .limit(5);
+
+              // Check for similar titles (fuzzy matching)
+              const isDuplicate = existingByTitle?.some(existing => {
+                const existingNormalized = existing.title?.toLowerCase().trim().replace(/\s+/g, ' ') || '';
+                // Calculate simple similarity score
+                const similarity = calculateSimilarity(normalizedTitle, existingNormalized);
+                return similarity > 0.85; // 85% similarity threshold
+              });
+
+              if (isDuplicate) {
+                console.log(`Duplicate detected (Title similarity): ${doc.title}`);
+                totalDocumentsFound++;
+                continue;
+              }
+
+              // Insert new document
+              const { error: insertError } = await supabase
+                .from("veille_documents")
+                .insert({
+                  title: doc.title,
+                  source_name: site.name,
+                  source_url: docUrl,
+                  category: doc.category || site.categories?.[0],
+                  country_code: site.country_code,
+                  publication_date: doc.date || null,
+                  importance: doc.importance || "moyenne",
+                  summary: doc.summary,
+                  content: doc.content,
+                  mentioned_hs_codes: doc.hs_codes || [],
+                  detected_tariff_changes: doc.tariff_changes || [],
+                  confidence_score: doc.confidence || 0.8,
+                  collected_by: "automatic",
+                });
+
+              if (!insertError) {
+                totalNewDocuments++;
+                console.log(`New document inserted: ${doc.title}`);
               }
               totalDocumentsFound++;
             }
@@ -325,15 +371,38 @@ serve(async (req) => {
           // Process search results
           for (const result of results) {
             const title = result.title || result.url;
+            const normalizedTitle = title.toLowerCase().trim().replace(/\s+/g, ' ');
             
-            // Check if already exists
-            const { data: existing } = await supabase
+            // Check if already exists by URL
+            const { data: existingByUrl } = await supabase
               .from("veille_documents")
               .select("id")
               .eq("source_url", result.url)
               .maybeSingle();
 
-            if (!existing && result.markdown) {
+            if (existingByUrl) {
+              console.log(`Duplicate detected (URL): ${result.url}`);
+              continue;
+            }
+
+            // Check by similar title
+            const { data: existingByTitle } = await supabase
+              .from("veille_documents")
+              .select("id, title")
+              .ilike("title", `%${normalizedTitle.substring(0, 50)}%`)
+              .limit(5);
+
+            const isDuplicate = existingByTitle?.some(existing => {
+              const existingNormalized = existing.title?.toLowerCase().trim().replace(/\s+/g, ' ') || '';
+              return calculateSimilarity(normalizedTitle, existingNormalized) > 0.85;
+            });
+
+            if (isDuplicate) {
+              console.log(`Duplicate detected (Title): ${title}`);
+              continue;
+            }
+
+            if (result.markdown) {
               // Analyze with Claude AI
               const docAnalysis = await analyzeDocument(ANTHROPIC_API_KEY, result.markdown, title);
 
@@ -357,6 +426,7 @@ serve(async (req) => {
 
               if (!insertError) {
                 totalNewDocuments++;
+                console.log(`New document inserted: ${title}`);
               }
               totalDocumentsFound++;
             }
