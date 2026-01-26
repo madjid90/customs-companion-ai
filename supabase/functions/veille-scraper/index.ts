@@ -817,119 +817,107 @@ async function searchKeyword(
 // ============= MAIN HANDLER =============
 
 serve(async (req) => {
+  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Parse request body early to fail fast
+  let params: { mode?: string; siteId?: string; keywordId?: string; async?: boolean } = {};
   try {
-    const { mode = "full", siteId, keywordId } = await req.json().catch(() => ({}));
+    params = await req.json().catch(() => ({}));
+  } catch {
+    params = {};
+  }
 
-    const FIRECRAWL_API_KEY = Deno.env.get("FIRECRAWL_API_KEY");
-    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const { mode = "full", siteId, keywordId } = params;
+  const isAsync = params.async !== false; // Default to async mode
 
-    if (!FIRECRAWL_API_KEY) throw new Error("FIRECRAWL_API_KEY not configured");
-    if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not configured");
+  // Check required env vars immediately
+  const FIRECRAWL_API_KEY = Deno.env.get("FIRECRAWL_API_KEY");
+  const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+  if (!FIRECRAWL_API_KEY) {
+    return new Response(
+      JSON.stringify({ error: "FIRECRAWL_API_KEY not configured" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+  if (!ANTHROPIC_API_KEY) {
+    return new Response(
+      JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
 
-    // Create log entry
-    const { data: logData } = await supabase
-      .from("veille_logs")
-      .insert({
-        cycle_started_at: new Date().toISOString(),
-        status: "running",
-        sites_scraped: 0,
-        keywords_searched: 0,
-        documents_found: 0,
-        documents_new: 0,
-        errors: [],
-      })
-      .select()
-      .single();
+  const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
-    const logId = logData?.id;
-    let totalFound = 0, totalNew = 0, siteCount = 0, keywordCount = 0;
-    const allErrors: string[] = [];
+  // Create log entry first
+  const { data: logData, error: logError } = await supabase
+    .from("veille_logs")
+    .insert({
+      cycle_started_at: new Date().toISOString(),
+      status: "running",
+      sites_scraped: 0,
+      keywords_searched: 0,
+      documents_found: 0,
+      documents_new: 0,
+      errors: [],
+    })
+    .select()
+    .single();
 
-    // Fetch sites
-    let sitesQuery = supabase.from("veille_sites").select("*").eq("is_active", true);
-    if (siteId) sitesQuery = sitesQuery.eq("id", siteId);
-    const { data: sites } = await sitesQuery;
+  if (logError) {
+    console.error("Failed to create log entry:", logError);
+  }
 
-    console.log(`\n====== VEILLE SCRAPER START ======`);
-    console.log(`Mode: ${mode}, Sites: ${sites?.length || 0}`);
+  const logId = logData?.id;
 
-    // Process sites in parallel batches
-    if (sites?.length) {
-      const siteResults = await processBatch(
-        sites as VeilleSite[],
-        async (site) => scrapeSite(FIRECRAWL_API_KEY, ANTHROPIC_API_KEY, supabase, site),
-        CONFIG.MAX_CONCURRENT_SITES
-      );
-      
-      for (const result of siteResults) {
-        totalFound += result.found;
-        totalNew += result.new;
-        allErrors.push(...result.errors);
-        siteCount++;
+  // For async mode, return immediately and process in background
+  if (isAsync) {
+    // Start background processing using queueMicrotask for Deno compatibility
+    const backgroundTask = (async () => {
+      try {
+        await runScrapingCycle(FIRECRAWL_API_KEY, ANTHROPIC_API_KEY, supabase, logId, mode, siteId, keywordId);
+      } catch (error) {
+        console.error("Background scraping error:", error);
+        if (logId) {
+          await supabase
+            .from("veille_logs")
+            .update({
+              status: "error",
+              cycle_ended_at: new Date().toISOString(),
+              errors: [error instanceof Error ? error.message : "Unknown error"],
+            })
+            .eq("id", logId);
+        }
       }
-    }
-
-    // Fetch and process keywords
-    let keywordsQuery = supabase.from("veille_keywords").select("*").eq("is_active", true);
-    if (keywordId) keywordsQuery = keywordsQuery.eq("id", keywordId);
-    const { data: keywords } = await keywordsQuery;
-
-    if (keywords?.length) {
-      for (const keyword of keywords as VeilleKeyword[]) {
-        const result = await searchKeyword(FIRECRAWL_API_KEY, ANTHROPIC_API_KEY, supabase, keyword);
-        totalFound += result.found;
-        totalNew += result.new;
-        keywordCount++;
-      }
-    }
-
-    // Finalize log
-    const endTime = new Date();
-    const startTime = new Date(logData?.cycle_started_at || endTime);
-    const duration = Math.round((endTime.getTime() - startTime.getTime()) / 1000);
-
-    if (logId) {
-      await supabase
-        .from("veille_logs")
-        .update({
-          status: allErrors.length > 0 ? "completed_with_errors" : "completed",
-          cycle_ended_at: endTime.toISOString(),
-          duration_seconds: duration,
-          sites_scraped: siteCount,
-          keywords_searched: keywordCount,
-          documents_found: totalFound,
-          documents_new: totalNew,
-          errors: allErrors.length > 0 ? allErrors : null,
-        })
-        .eq("id", logId);
-    }
-
-    await supabase.from("veille_config").update({ last_run_at: endTime.toISOString() }).limit(1);
-
-    console.log(`\n====== VEILLE COMPLETE ======`);
-    console.log(`Sites: ${siteCount}, Keywords: ${keywordCount}, New docs: ${totalNew}, Duration: ${duration}s`);
+    })();
+    
+    // Don't await - let it run in background
+    backgroundTask.catch(e => console.error("Background task failed:", e));
 
     return new Response(
       JSON.stringify({
         success: true,
-        sites_scraped: siteCount,
-        keywords_searched: keywordCount,
-        documents_found: totalFound,
-        documents_new: totalNew,
-        duration_seconds: duration,
-        errors: allErrors.length > 0 ? allErrors : undefined,
+        message: "Scraping démarré en arrière-plan",
+        log_id: logId,
+        mode,
+        async: true,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-    
+  }
+
+  // Synchronous mode (for testing or single items)
+  try {
+    const result = await runScrapingCycle(FIRECRAWL_API_KEY, ANTHROPIC_API_KEY, supabase, logId, mode, siteId, keywordId);
+    return new Response(
+      JSON.stringify({ success: true, ...result }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   } catch (error) {
     console.error("Veille scraper error:", error);
     return new Response(
@@ -938,3 +926,97 @@ serve(async (req) => {
     );
   }
 });
+
+// Extracted main logic for reuse
+async function runScrapingCycle(
+  firecrawlKey: string,
+  anthropicKey: string,
+  supabase: any,
+  logId: string | null,
+  mode: string,
+  siteId?: string,
+  keywordId?: string
+): Promise<{
+  sites_scraped: number;
+  keywords_searched: number;
+  documents_found: number;
+  documents_new: number;
+  duration_seconds: number;
+  errors?: string[];
+}> {
+  const startTime = new Date();
+  let totalFound = 0, totalNew = 0, siteCount = 0, keywordCount = 0;
+  const allErrors: string[] = [];
+
+  // Fetch sites
+  let sitesQuery = supabase.from("veille_sites").select("*").eq("is_active", true);
+  if (siteId) sitesQuery = sitesQuery.eq("id", siteId);
+  const { data: sites } = await sitesQuery;
+
+  console.log(`\n====== VEILLE SCRAPER START ======`);
+  console.log(`Mode: ${mode}, Sites: ${sites?.length || 0}`);
+
+  // Process sites in parallel batches
+  if (sites?.length) {
+    const siteResults = await processBatch(
+      sites as VeilleSite[],
+      async (site) => scrapeSite(firecrawlKey, anthropicKey, supabase, site),
+      CONFIG.MAX_CONCURRENT_SITES
+    );
+    
+    for (const result of siteResults) {
+      totalFound += result.found;
+      totalNew += result.new;
+      allErrors.push(...result.errors);
+      siteCount++;
+    }
+  }
+
+  // Fetch and process keywords
+  let keywordsQuery = supabase.from("veille_keywords").select("*").eq("is_active", true);
+  if (keywordId) keywordsQuery = keywordsQuery.eq("id", keywordId);
+  const { data: keywords } = await keywordsQuery;
+
+  if (keywords?.length) {
+    for (const keyword of keywords as VeilleKeyword[]) {
+      const result = await searchKeyword(firecrawlKey, anthropicKey, supabase, keyword);
+      totalFound += result.found;
+      totalNew += result.new;
+      keywordCount++;
+    }
+  }
+
+  // Finalize log
+  const endTime = new Date();
+  const duration = Math.round((endTime.getTime() - startTime.getTime()) / 1000);
+
+  if (logId) {
+    await supabase
+      .from("veille_logs")
+      .update({
+        status: allErrors.length > 0 ? "completed_with_errors" : "completed",
+        cycle_ended_at: endTime.toISOString(),
+        duration_seconds: duration,
+        sites_scraped: siteCount,
+        keywords_searched: keywordCount,
+        documents_found: totalFound,
+        documents_new: totalNew,
+        errors: allErrors.length > 0 ? allErrors : null,
+      })
+      .eq("id", logId);
+  }
+
+  await supabase.from("veille_config").update({ last_run_at: endTime.toISOString() }).limit(1);
+
+  console.log(`\n====== VEILLE COMPLETE ======`);
+  console.log(`Sites: ${siteCount}, Keywords: ${keywordCount}, New docs: ${totalNew}, Duration: ${duration}s`);
+
+  return {
+    sites_scraped: siteCount,
+    keywords_searched: keywordCount,
+    documents_found: totalFound,
+    documents_new: totalNew,
+    duration_seconds: duration,
+    errors: allErrors.length > 0 ? allErrors : undefined,
+  };
+}
