@@ -241,6 +241,30 @@ export default function AdminScraping() {
     },
   });
 
+  // WCO authenticated scraping
+  const scrapeWcoMutation = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('wco-authenticated-scraper', {
+        body: { url: "https://www.wcotradetools.org/en/valuation/decisions" },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Scraping WCO terminé",
+        description: `${data.decisions_found || 0} décisions trouvées, ${data.new_documents || 0} nouveaux documents.`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Erreur scraping WCO",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleOpenDialog = (site?: VeilleSite) => {
     if (site) {
       setEditingSite(site);
@@ -318,10 +342,19 @@ export default function AdminScraping() {
           <Button
             variant="outline"
             onClick={() => scrapeAllMutation.mutate()}
-            disabled={scrapeAllMutation.isPending || scrapeSiteMutation.isPending}
+            disabled={scrapeAllMutation.isPending || scrapeSiteMutation.isPending || scrapeWcoMutation.isPending}
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${scrapeAllMutation.isPending ? 'animate-spin' : ''}`} />
-            {scrapeAllMutation.isPending ? "Scraping en cours..." : "Lancer le scraping global"}
+            {scrapeAllMutation.isPending ? "Scraping..." : "Scraping global"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => scrapeWcoMutation.mutate()}
+            disabled={scrapeWcoMutation.isPending || scrapeAllMutation.isPending}
+            className="border-amber-500 text-amber-600 hover:bg-amber-50"
+          >
+            <Globe className={`w-4 h-4 mr-2 ${scrapeWcoMutation.isPending ? 'animate-spin' : ''}`} />
+            {scrapeWcoMutation.isPending ? "Connexion WCO..." : "WCO Trade Tools"}
           </Button>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
