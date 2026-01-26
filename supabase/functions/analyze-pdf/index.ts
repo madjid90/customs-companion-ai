@@ -57,51 +57,59 @@ serve(async (req) => {
       .single();
 
     // Call Lovable AI to analyze the PDF
-    const analysisPrompt = `Tu es un expert en douane et commerce international spécialisé dans les tarifs douaniers marocains.
+    const analysisPrompt = `Tu es un expert en tarifs douaniers marocains. Analyse ce document PDF.
 
-Analyse ce document PDF douanier :
-- Titre : ${pdfDoc?.title || "Document sans titre"}
-- Catégorie : ${pdfDoc?.category || "Non spécifié"}
-- Pays : ${pdfDoc?.country_code || "MA"}
+Document : ${pdfDoc?.title || "Tarif douanier"}
+Catégorie : ${pdfDoc?.category || "tarif"}
 
-STRUCTURE DU TARIF MAROCAIN - TRÈS IMPORTANT :
-Le tarif marocain a une structure hiérarchique où les CODES PARENTS NE SONT PAS RÉPÉTÉS sur chaque ligne.
+STRUCTURE HIÉRARCHIQUE DU TARIF MAROCAIN :
+Le tarif utilise un système de codes à 10 chiffres où les sous-positions HÉRITENT du code parent.
 
-Exemple de structure dans le document :
-| Codification | Désignation |
-| 03.01        | Poissons vivants. |
-|              | – Poissons d'ornement : |
-| 0301.11 00 00| – – D'eau douce |
-| 0301.19 00 00| – – Autres |
-|              | – Autres poissons vivants : |
-| 0301.91      | – – Truites (...) |
-| 10 00        | – – – destinées au repeuplement |
-| 90 00        | – – – autres |
+EXEMPLE CONCRET du document :
+┌─────────────────┬─────────────────────────────────────┬───────┐
+│ Codification    │ Désignation                         │ DDI % │
+├─────────────────┼─────────────────────────────────────┼───────┤
+│ 03.01           │ Poissons vivants                    │       │
+│ 0301.11 00 00   │ -- D'eau douce                      │ 10    │
+│ 0301.91         │ -- Truites                          │       │
+│      10 00      │ --- destinées au repeuplement       │ 10    │
+│      90 00      │ --- autres                          │ 10    │
+└─────────────────┴─────────────────────────────────────┴───────┘
 
-RÈGLES D'HÉRITAGE DES CODES :
-1. Code position 4 chiffres (ex: "03.01") = en-tête de position
-2. Code 6-10 chiffres complet (ex: "0301.11 00 00") = ligne tarifaire complète
-3. Code partiel 4-6 chiffres (ex: "0301.91") = sous-position parent pour les lignes suivantes
-4. Code 2-4 chiffres seul (ex: "10 00", "90 00") = HÉRITE du code parent précédent
-   → Si parent était "0301.91", alors "10 00" devient "0301.91 10 00" = "0301911000"
+RÈGLES DE RECONSTITUTION DES CODES :
+1. "03.01" = position (4 chiffres) → mémorise "0301" comme préfixe
+2. "0301.11 00 00" = code complet 10 chiffres → national_code = "0301110000"
+3. "0301.91" = sous-position 6 chiffres → mémorise "030191" comme préfixe courant
+4. "10 00" ou "90 00" = suffixe 4 chiffres → AJOUTE au préfixe courant
+   - Préfixe "030191" + "10 00" = "0301911000"
+   - Préfixe "030191" + "90 00" = "0301919000"
 
-EXTRACTION DEMANDÉE :
-Pour chaque ligne tarifaire avec un taux, reconstitue le code national COMPLET à 10 chiffres.
+IMPORTANT : Chaque code national doit avoir EXACTEMENT 10 chiffres !
 
-Génère une analyse structurée au format JSON avec :
-1. "summary" : Résumé incluant le numéro et titre du chapitre
-2. "key_points" : Notes légales importantes du chapitre (exclusions, définitions)
-3. "hs_codes" : Liste des positions 4 chiffres détectées (format: ["0301", "0302", "0303"])
-4. "tariff_lines" : Lignes tarifaires extraites (max 100), format:
-   [{"national_code": "0301110000", "hs_code_6": "030111", "description": "Poissons d'ornement d'eau douce", "duty_rate": 10, "unit": "kg", "hierarchy": 2, "parent_code": "0301.11"}]
-   - national_code : Code COMPLET à 10 chiffres sans espaces ni points
-   - hs_code_6 : Les 6 premiers chiffres
-   - duty_rate : Taux DDI en nombre (2.5 pour 2.5%)
-   - hierarchy : Niveau de profondeur (1, 2, 3, 4...)
-5. "chapter_info" : {"number": 3, "title": "Poissons et crustacés...", "edition": "2022"}
-6. "authorities" : Autorités mentionnées
+Génère ce JSON :
+{
+  "summary": "Résumé du chapitre avec son numéro et titre",
+  "key_points": ["Note légale 1", "Note légale 2"],
+  "hs_codes": ["0301", "0302"],  // Positions 4 chiffres UNIQUES trouvées
+  "tariff_lines": [
+    {
+      "national_code": "0301110000",  // TOUJOURS 10 chiffres, sans espaces/points
+      "hs_code_6": "030111",          // 6 premiers chiffres du national_code
+      "description": "Poissons d'ornement d'eau douce",
+      "duty_rate": 10,                // Taux DDI (nombre, pas texte)
+      "unit": "kg"
+    }
+  ],
+  "chapter_info": {"number": 3, "title": "Titre du chapitre"},
+  "authorities": []
+}
 
-Réponds UNIQUEMENT avec le JSON valide, sans markdown ni explication.`;
+VALIDATION : 
+- Vérifie que chaque national_code a 10 chiffres
+- hs_code_6 = les 6 premiers chiffres de national_code
+- N'inclus QUE les lignes avec un taux DDI
+
+Réponds UNIQUEMENT avec le JSON valide.`;
 
     // Use Lovable AI Gateway with PDF as inline data
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
