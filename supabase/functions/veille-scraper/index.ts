@@ -48,7 +48,10 @@ const CONFIG = {
     // NOTE: No longer excluding all #fragments - we now extract JSF URLs from them
     /mailto:/i, /tel:/i, /javascript:/i,
     /login|signin|signup|register|password|logout/i,
-    /facebook\.com|twitter\.com|linkedin\.com|youtube\.com|instagram\.com/i
+    // Block social media entirely - they require authentication and block bots
+    /facebook\.com|twitter\.com|linkedin\.com|youtube\.com|instagram\.com|x\.com/i,
+    // Block common non-content pages
+    /\/(share|like|follow|subscribe|comment)\/?$/i,
   ],
   // JSF and dynamic page patterns to extract from fragments
   JSF_PATTERNS: [
@@ -376,6 +379,48 @@ async function firecrawlSearch(
 
 // ============= CLAUDE AI ANALYSIS =============
 
+// Check if content looks like binary data (PDF, images, etc.)
+function isBinaryContent(content: string): boolean {
+  if (!content || content.length < 10) return false;
+  
+  // Check for PDF header
+  if (content.startsWith('%PDF')) return true;
+  
+  // Check for high ratio of non-printable characters
+  const nonPrintable = content.substring(0, 500).split('').filter(c => {
+    const code = c.charCodeAt(0);
+    return code < 32 && code !== 9 && code !== 10 && code !== 13;
+  }).length;
+  
+  if (nonPrintable > 50) return true;
+  
+  // Check for common binary signatures
+  const binaryPatterns = [
+    /^\x00\x00\x00/, // Null bytes
+    /^PK\x03\x04/, // ZIP/DOCX
+    /^\x1f\x8b/, // GZIP
+    /^Rar!/, // RAR
+    /^\x89PNG/, // PNG
+    /^\xff\xd8\xff/, // JPEG
+  ];
+  
+  return binaryPatterns.some(p => p.test(content));
+}
+
+// Clean content for AI analysis
+function cleanContentForAI(content: string): string {
+  if (!content) return '';
+  
+  // Remove null bytes and other control characters
+  let cleaned = content.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, ' ');
+  
+  // Collapse multiple whitespace
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  
+  // Truncate to safe length
+  return cleaned.substring(0, CONFIG.MAX_CONTENT_LENGTH);
+}
+
 async function analyzeWithClaude(
   apiKey: string, 
   prompt: string, 
@@ -403,6 +448,8 @@ async function analyzeWithClaude(
     }
     
     if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      console.error(`Claude API error ${response.status}: ${errorText.substring(0, 200)}`);
       throw new Error(`Claude API error: ${response.status}`);
     }
 
@@ -774,17 +821,55 @@ async function scrapeSingleUrl(
     
     if (!scrapeData) return { found: 0, new: 0 };
     
-    const content = scrapeData.markdown || "";
-    const contentLength = content.length;
+    const rawContent = scrapeData.markdown || "";
+    const contentLength = rawContent.length;
     
     // Skip only if really no content and not a download link
-    // Lower threshold to capture more page content
     if (contentLength < 50 && urlType !== 'download') {
       return { found: 0, new: 0 };
     }
     
+    // Check for binary content and skip AI analysis if detected
+    if (isBinaryContent(rawContent)) {
+      console.log(`[${site.name}] Binary content detected, creating entry from URL: ${url.substring(0, 60)}`);
+      
+      // For binary files (PDFs, etc.), create a simple document entry without AI analysis
+      const fileName = decodeURIComponent(url.split('/').pop()?.split('?')[0] || 'Document');
+      const isDownload = /\.(pdf|xlsx?|docx?|csv|zip)$/i.test(url);
+      
+      if (isDownload) {
+        const isDup = await checkDuplicate(supabase, url, fileName, site.name);
+        if (!isDup) {
+          const { error: insertError } = await supabase
+            .from("veille_documents")
+            .insert({
+              title: fileName,
+              source_name: site.name,
+              source_url: url,
+              category: site.categories?.[0] || 'document',
+              country_code: site.country_code,
+              importance: "moyenne",
+              summary: `Fichier téléchargeable: ${fileName}`,
+              content: `URL: ${url}`,
+              confidence_score: 0.6,
+              collected_by: "automatic",
+              tags: ['document', 'download'],
+            });
+          
+          if (!insertError) {
+            console.log(`[${site.name}] NEW [binary]: ${fileName.substring(0, 50)}`);
+            return { found: 1, new: 1 };
+          }
+        }
+      }
+      return { found: 0, new: 0 };
+    }
+    
+    // Clean content for AI analysis
+    const content = cleanContentForAI(rawContent);
+    
     // For pages with substantial text content, we want to capture it
-    const hasSubstantialContent = contentLength > 500;
+    const hasSubstantialContent = content.length > 500;
     
     // Analyze with Claude
     const analysisResult = await analyzeContent(claudeKey, content, site, url);
