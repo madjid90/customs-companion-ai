@@ -184,7 +184,25 @@ export default function AdminVeille() {
     },
   });
 
-  // Fetch documents
+  // Fetch total document counts (separate from paginated list)
+  const { data: documentCounts } = useQuery({
+    queryKey: ["veille-documents-counts"],
+    queryFn: async () => {
+      const [totalResult, pendingResult, verifiedResult] = await Promise.all([
+        supabase.from("veille_documents").select("*", { count: "exact", head: true }),
+        supabase.from("veille_documents").select("*", { count: "exact", head: true }).eq("is_verified", false),
+        supabase.from("veille_documents").select("*", { count: "exact", head: true }).eq("is_verified", true),
+      ]);
+      
+      return {
+        total: totalResult.count || 0,
+        pending: pendingResult.count || 0,
+        verified: verifiedResult.count || 0,
+      };
+    },
+  });
+
+  // Fetch documents (paginated for display)
   const { data: documents, isLoading: loadingDocuments } = useQuery({
     queryKey: ["veille-documents", searchTerm],
     queryFn: async () => {
@@ -583,8 +601,9 @@ export default function AdminVeille() {
     }
   };
 
-  const pendingCount = documents?.filter((d) => !d.is_verified).length || 0;
-  const verifiedCount = documents?.filter((d) => d.is_verified).length || 0;
+  const pendingCount = documentCounts?.pending || 0;
+  const verifiedCount = documentCounts?.verified || 0;
+  const totalCount = documentCounts?.total || 0;
   const lastLog = logs?.[0];
 
   // Filter documents based on selected filter
@@ -655,7 +674,7 @@ export default function AdminVeille() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{documents?.length || 0}</div>
+            <div className="text-2xl font-bold">{totalCount}</div>
           </CardContent>
         </Card>
         <Card>
@@ -695,7 +714,7 @@ export default function AdminVeille() {
         <TabsList>
           <TabsTrigger value="documents" className="flex items-center gap-2">
             <FileText className="w-4 h-4" />
-            Documents ({documents?.length || 0})
+            Documents ({totalCount})
           </TabsTrigger>
           <TabsTrigger value="sites" className="flex items-center gap-2">
             <Globe className="w-4 h-4" />
@@ -729,7 +748,7 @@ export default function AdminVeille() {
                 size="sm"
                 onClick={() => setDocumentFilter("all")}
               >
-                Tous ({documents?.length || 0})
+                Tous ({totalCount})
               </Button>
               <Button
                 variant={documentFilter === "pending" ? "default" : "outline"}
