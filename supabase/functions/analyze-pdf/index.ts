@@ -6,17 +6,35 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// =============================================================================
+// INTERFACES
+// =============================================================================
+
+interface RawTarifLine {
+  // Colonnes brutes extraites par Claude
+  col1: string;      // Position/Sous-position ou "1" pour héritage
+  col2: string;      // Extension 2 chiffres
+  col3: string;      // Extension 2 chiffres  
+  col4: string;      // Extension 2 chiffres
+  col5: string;      // Extension 2 chiffres
+  description: string;
+  duty_rate: string | number | null;
+  unit: string | null;
+}
+
 interface TariffLine {
-  national_code: string;
-  hs_code_6: string;
+  national_code: string;   // 10 chiffres
+  hs_code_6: string;       // 6 premiers chiffres
   description: string;
   duty_rate: number;
-  unit?: string;
+  duty_note: string | null;
+  unit: string | null;
+  is_inherited: boolean;
 }
 
 interface HSCodeEntry {
-  code: string;
-  code_clean: string;
+  code: string;           // Format "XXXX.XX"
+  code_clean: string;     // 6 chiffres sans points
   description: string;
   level: string;
 }
@@ -44,15 +62,348 @@ interface AnalysisResult {
   hs_codes: HSCodeEntry[];
   tariff_lines: TariffLine[];
   chapter_info?: { number: number; title: string };
+  notes?: {
+    legal: string[];
+    subposition: string[];
+    complementary: string[];
+  };
+  footnotes?: Record<string, string>;
   authorities?: string[];
   trade_agreements?: TradeAgreementMention[];
   preferential_rates?: PreferentialRate[];
+  raw_lines?: RawTarifLine[];  // Pour debug
 }
 
-// Helper function to delay execution
+// =============================================================================
+// PROMPT CLAUDE OPTIMISÉ V2
+// =============================================================================
+
+const getAnalysisPrompt = (title: string, category: string, maxLines: number) => `Tu es un expert en tarifs douaniers marocains. Analyse ce document PDF avec EXTRÊME PRÉCISION.
+
+Document : ${title}
+Catégorie : ${category}
+
+=== STRUCTURE EXACTE DU TABLEAU TARIFAIRE MAROCAIN ===
+
+Le tableau possède 5 colonnes de CODIFICATION qui doivent être lues SÉPARÉMENT :
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│        CODIFICATION (5 colonnes)       │ Désignation  │ Droit │ Unité QN │ UC     │
+├──────────┬──────┬──────┬──────┬────────┼──────────────┼───────┼──────────┼────────┤
+│  Col1    │ Col2 │ Col3 │ Col4 │ Col5   │              │       │          │        │
+├──────────┼──────┼──────┼──────┼────────┼──────────────┼───────┼──────────┼────────┤
+│ 10.01    │      │      │      │        │ Froment...   │       │          │        │
+│ 1001.11  │ 00   │      │      │        │ – – De sem   │       │ kg       │ –      │
+│ 1        │ 10   │      │      │        │ – – – préb   │ 2,5   │ kg       │ –      │
+│ 1        │ 90   │      │      │        │ – – – autr   │ 2,5   │ kg       │ –      │
+│ 1001.19  │ 00   │      │      │        │ – – Autres   │       │          │        │
+│ 1        │ 10   │      │      │        │ – – – du 1   │170(b) │ kg       │ –      │
+│ 1        │ 90   │      │      │        │ – – – du 1   │ 2,5   │ kg       │ –      │
+└──────────┴──────┴──────┴──────┴────────┴──────────────┴───────┴──────────┴────────┘
+
+=== RÈGLE CRITIQUE : LE CHIFFRE "1" EN COL1 ===
+
+Quand Col1 contient UNIQUEMENT le chiffre "1" :
+→ C'est un MARQUEUR D'HÉRITAGE (pas un code!)
+→ Les 6 premiers chiffres viennent de la DERNIÈRE ligne avec un code complet en Col1
+→ Col2, Col3, Col4, Col5 complètent pour former le code à 10 chiffres
+
+EXEMPLE DE RECONSTRUCTION :
+Ligne: "1001.11 | 00 |  |  |" → Code de base: 100111
+Ligne: "1 | 10 |  |  |" → HÉRITAGE 100111 + "10" + "00" = 1001110010
+Ligne: "1 | 90 |  |  |" → HÉRITAGE 100111 + "90" + "00" = 1001119000
+
+=== EXTRACTION DEMANDÉE ===
+
+1. NOTES DU CHAPITRE - Extraire intégralement :
+   - Notes légales (après "Notes.")
+   - Notes de sous-position  
+   - Notes complémentaires
+   - Notes de bas de page : (a), (b), (c), (f) avec leur texte
+
+2. LIGNES BRUTES - Pour CHAQUE ligne du tableau, extraire :
+   - col1: valeur exacte de la colonne 1 (position ou "1")
+   - col2: valeur colonne 2 (ou "" si vide)
+   - col3: valeur colonne 3 (ou "" si vide)
+   - col4: valeur colonne 4 (ou "" si vide)
+   - col5: valeur colonne 5 (ou "" si vide)
+   - description: texte complet avec les tirets
+   - duty_rate: taux ou null (garder les notes comme "170(b)")
+   - unit: unité (kg, L, U, etc.)
+
+3. HS_CODES (6 chiffres) :
+   - Extraire chaque sous-position unique
+   - Format "XXXX.XX" et code_clean "XXXXXX"
+
+4. ACCORDS COMMERCIAUX ET TAUX PRÉFÉRENTIELS
+
+=== FORMAT JSON DE SORTIE ===
+
+{
+  "summary": "Résumé du chapitre",
+  "key_points": ["Note importante 1", "Note 2"],
+  "chapter_info": {"number": 10, "title": "CEREALES"},
+  "notes": {
+    "legal": ["1. A) Les produits...", "1. B) Le présent..."],
+    "subposition": ["1. On considère comme..."],
+    "complementary": ["1) comme riz en paille..."]
+  },
+  "footnotes": {
+    "a": "Aux conditions fixées par la réglementation en vigueur.",
+    "b": "Ce taux est appliqué à la tranche ≤ 1000 DH/tonne, au-delà = 2,5%",
+    "f": "Ce taux est appliqué à la tranche ≤ 1000 DH/tonne, au-delà = 2,5%"
+  },
+  "raw_lines": [
+    {"col1": "10.01", "col2": "", "col3": "", "col4": "", "col5": "", "description": "Froment (blé) et méteil.", "duty_rate": null, "unit": null},
+    {"col1": "1001.11", "col2": "00", "col3": "", "col4": "", "col5": "", "description": "– – De semence", "duty_rate": null, "unit": "kg"},
+    {"col1": "1", "col2": "10", "col3": "", "col4": "", "col5": "", "description": "– – – prébase et base (a)", "duty_rate": "2,5", "unit": "kg"},
+    {"col1": "1", "col2": "90", "col3": "", "col4": "", "col5": "", "description": "– – – autres (a)", "duty_rate": "2,5", "unit": "kg"},
+    {"col1": "1001.19", "col2": "00", "col3": "", "col4": "", "col5": "", "description": "– – Autres", "duty_rate": null, "unit": null},
+    {"col1": "1", "col2": "10", "col3": "", "col4": "", "col5": "", "description": "– – – du 1er Juin au 31 Juillet", "duty_rate": "170(b)", "unit": "kg"}
+  ],
+  "hs_codes": [
+    {"code": "1001.11", "code_clean": "100111", "description": "De semence", "level": "subheading"},
+    {"code": "1001.19", "code_clean": "100119", "description": "Autres", "level": "subheading"}
+  ],
+  "trade_agreements": [],
+  "preferential_rates": []
+}
+
+=== RÈGLES STRICTES ===
+✓ Extraire TOUTES les lignes, même celles sans taux
+✓ Le "1" en col1 est un MARQUEUR, pas un chiffre du code
+✓ Préserver les notes (a), (b) etc. dans duty_rate
+✓ Maximum ${maxLines} raw_lines avec taux
+✓ Les tirets "–" dans description indiquent le niveau hiérarchique
+
+RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
+
+// =============================================================================
+// FONCTIONS DE TRAITEMENT
+// =============================================================================
+
+/**
+ * Nettoie un code SH (supprime points, espaces, tirets)
+ */
+function cleanCode(code: string): string {
+  return (code || "").replace(/[.\-\s]/g, "").replace(/^0+(?=\d)/, "");
+}
+
+/**
+ * Parse le taux de droit et extrait la note
+ */
+function parseDutyRate(dutyStr: string | number | null): { rate: number | null; note: string | null } {
+  if (dutyStr === null || dutyStr === undefined) {
+    return { rate: null, note: null };
+  }
+  
+  if (typeof dutyStr === "number") {
+    return { rate: dutyStr, note: null };
+  }
+  
+  const str = String(dutyStr).trim();
+  if (str === "" || str === "–" || str === "-") {
+    return { rate: null, note: null };
+  }
+  
+  // Extraire note entre parenthèses
+  const noteMatch = str.match(/\(([a-z])\)/i);
+  const note = noteMatch ? noteMatch[1].toLowerCase() : null;
+  
+  // Extraire le nombre
+  const numStr = str.replace(/\([a-z]\)/gi, "").replace(",", ".").trim();
+  const rate = parseFloat(numStr);
+  
+  return {
+    rate: isNaN(rate) ? null : rate,
+    note,
+  };
+}
+
+/**
+ * Reconstruit les codes SH à partir des lignes brutes avec gestion de l'héritage
+ */
+function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
+  const results: TariffLine[] = [];
+  
+  // État de l'héritage - mémorise le dernier code complet
+  let lastBaseCode: string = "";  // 6 chiffres de base
+  let lastCol2: string = "00";
+  let lastCol3: string = "00";
+  let lastCol4: string = "00";
+  let lastCol5: string = "00";
+  
+  for (const line of rawLines) {
+    const col1 = (line.col1 || "").trim();
+    const col2 = (line.col2 || "").trim();
+    const col3 = (line.col3 || "").trim();
+    const col4 = (line.col4 || "").trim();
+    const col5 = (line.col5 || "").trim();
+    
+    let nationalCode: string;
+    let isInherited = false;
+    
+    // CAS 1: Col1 = "1" → HÉRITAGE
+    if (col1 === "1") {
+      isInherited = true;
+      
+      // Utiliser le code de base hérité (6 chiffres)
+      let code = lastBaseCode;
+      
+      // Ajouter col2 si présent, sinon hériter lastCol2
+      if (col2 && /^\d+$/.test(col2)) {
+        lastCol2 = col2.padStart(2, "0");
+      }
+      code += lastCol2;
+      
+      // Ajouter col3 si présent
+      if (col3 && /^\d+$/.test(col3)) {
+        lastCol3 = col3.padStart(2, "0");
+      }
+      code += lastCol3;
+      
+      // Ajouter col4 si présent
+      if (col4 && /^\d+$/.test(col4)) {
+        lastCol4 = col4.padStart(2, "0");
+      }
+      
+      // Ajouter col5 si présent
+      if (col5 && /^\d+$/.test(col5)) {
+        lastCol5 = col5.padStart(2, "0");
+      }
+      
+      // Si on n'a que col2, ajouter des zéros
+      nationalCode = code.padEnd(10, "0");
+      
+    // CAS 2: Col1 contient un code avec point (ex: "1001.11" ou "10.01")
+    } else if (col1.includes(".")) {
+      const cleanCol1 = cleanCode(col1);
+      
+      // Si c'est un code à 4 chiffres (heading), c'est juste une position
+      if (cleanCol1.length === 4) {
+        lastBaseCode = cleanCol1.padEnd(6, "0");
+        lastCol2 = "00";
+        lastCol3 = "00";
+        lastCol4 = "00";
+        lastCol5 = "00";
+        
+        // Ne pas créer de ligne tarifaire pour les headings sans taux
+        if (!line.duty_rate) continue;
+        
+        nationalCode = lastBaseCode.padEnd(10, "0");
+      } else {
+        // Code à 6+ chiffres (subheading)
+        lastBaseCode = cleanCol1.slice(0, 6).padEnd(6, "0");
+        
+        // Traiter col2
+        if (col2 && /^\d+$/.test(col2)) {
+          lastCol2 = col2.padStart(2, "0");
+        } else {
+          lastCol2 = "00";
+        }
+        
+        // Traiter col3, col4, col5
+        lastCol3 = (col3 && /^\d+$/.test(col3)) ? col3.padStart(2, "0") : "00";
+        lastCol4 = (col4 && /^\d+$/.test(col4)) ? col4.padStart(2, "0") : "00";
+        lastCol5 = (col5 && /^\d+$/.test(col5)) ? col5.padStart(2, "0") : "00";
+        
+        nationalCode = (lastBaseCode + lastCol2 + lastCol3).slice(0, 10).padEnd(10, "0");
+      }
+    
+    // CAS 3: Fallback - essayer de parser comme un nombre
+    } else {
+      // Ignorer les lignes sans code valide
+      continue;
+    }
+    
+    // Parser le taux
+    const { rate, note } = parseDutyRate(line.duty_rate);
+    
+    // Ne garder que les lignes avec un taux valide
+    if (rate === null) continue;
+    
+    // Validation: le code doit avoir exactement 10 chiffres
+    const cleanNationalCode = cleanCode(nationalCode);
+    if (cleanNationalCode.length !== 10 || !/^\d{10}$/.test(cleanNationalCode)) {
+      console.warn(`Invalid national code: ${nationalCode} (cleaned: ${cleanNationalCode})`);
+      continue;
+    }
+    
+    results.push({
+      national_code: cleanNationalCode,
+      hs_code_6: cleanNationalCode.slice(0, 6),
+      description: (line.description || "").replace(/^[–\-\s]+/, "").trim(),
+      duty_rate: rate,
+      duty_note: note,
+      unit: line.unit || null,
+      is_inherited: isInherited,
+    });
+  }
+  
+  return results;
+}
+
+/**
+ * Extrait les codes HS à 6 chiffres uniques
+ */
+function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[]): HSCodeEntry[] {
+  const seen = new Set<string>();
+  const results: HSCodeEntry[] = [];
+  
+  // D'abord depuis les lignes tarifaires
+  for (const line of tariffLines) {
+    const code6 = line.hs_code_6;
+    if (code6 && code6.length === 6 && !seen.has(code6)) {
+      seen.add(code6);
+      results.push({
+        code: `${code6.slice(0, 4)}.${code6.slice(4, 6)}`,
+        code_clean: code6,
+        description: line.description,
+        level: "subheading",
+      });
+    }
+  }
+  
+  // Ensuite depuis les lignes brutes (pour capter les codes sans taux)
+  let lastCode6 = "";
+  for (const line of rawLines) {
+    const col1 = (line.col1 || "").trim();
+    
+    if (col1.includes(".") && col1 !== "1") {
+      const clean = cleanCode(col1);
+      if (clean.length >= 6) {
+        const code6 = clean.slice(0, 6);
+        if (!seen.has(code6)) {
+          seen.add(code6);
+          results.push({
+            code: `${code6.slice(0, 4)}.${code6.slice(4, 6)}`,
+            code_clean: code6,
+            description: (line.description || "").replace(/^[–\-\s]+/, "").trim(),
+            level: "subheading",
+          });
+        }
+        lastCode6 = code6;
+      } else if (clean.length === 4) {
+        // C'est un heading (position à 4 chiffres)
+        lastCode6 = clean.padEnd(6, "0");
+      }
+    }
+  }
+  
+  return results;
+}
+
+// =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+// =============================================================================
+// APPEL CLAUDE API
+// =============================================================================
 
 async function analyzeWithClaude(
   base64Pdf: string,
@@ -64,114 +415,10 @@ async function analyzeWithClaude(
 ): Promise<{ result: AnalysisResult | null; truncated: boolean; rateLimited: boolean }> {
   
   const MAX_RETRIES = 5;
-  const BASE_DELAY = 10000; // 10 seconds base delay for more patience
+  const BASE_DELAY = 10000;
   
-  const analysisPrompt = `Tu es un expert en tarifs douaniers marocains. Analyse ce document PDF avec PRÉCISION.
+  const prompt = getAnalysisPrompt(title, category, maxLines);
 
-Document : ${title}
-Catégorie : ${category}
-
-=== STRUCTURE EXACTE DU TABLEAU MAROCAIN ===
-
-La colonne CODIFICATION contient jusqu'à 5 sous-colonnes de chiffres :
-- Colonnes 1-2 : Position SH (format "XX.XX", ex: "04.01")
-- Colonne 3 : Sous-position (2 chiffres, ex: "10")  
-- Colonnes 4-5 : Code national (4 chiffres, souvent "XX 00" ou "XX XX")
-
-Autres colonnes :
-- DÉSIGNATION DES PRODUITS : Description du produit
-- DROIT D'IMPORTATION : Taux DDI en % 
-- UNITÉ DE QUANTITÉ NORMALISÉE : Unité (KG, L, U, etc.)
-
-=== RÈGLE CRITIQUE : HÉRITAGE COLONNE PAR COLONNE ===
-
-CHAQUE LIGNE hérite les chiffres des colonnes VIDES de la ligne précédente.
-Tu dois MÉMORISER l'état de chaque colonne et le PROPAGER.
-
-EXEMPLE RÉEL DU TARIF :
-| Col1-2  | Col3 | Col4 | Col5 | Description                           | DDI | Unité |
-|---------|------|------|------|---------------------------------------|-----|-------|
-| 04.01   |      |      |      | Lait et crème de lait...              |     |       |
-|         | 10   | 00   |      | - Teneur matières grasses ≤1%         |     |       |
-|         |      | 11   | 00   | --- lait écrémé                       | 100 | KG    |
-|         |      | 19   | 00   | --- autres                            | 100 | KG    |
-|         |      | 20   | 00   | --- conservés en boîtes...            | 100 | KG    |
-|         | 20   | 00   |      | - Teneur matières grasses 1%-6%       |     |       |
-|         |      | 11   | 00   | --- lait complet                      | 100 | KG    |
-
-RECONSTRUCTION ÉTAPE PAR ÉTAPE :
-1. "04.01" → Mémorise: Col1-2="0401"
-2. "10 00" → Mémorise: Col3="10", Col4="00" → Préfixe="040110"  
-3. "11 00" sous description → Col4="11", Col5="00" → Code="0401101100"
-4. "19 00" sous description → Col4="19", Col5="00" → Code="0401101900"
-5. "20 00" sous parent → Col3="20", Col4="00" → Nouveau préfixe="040120"
-6. "11 00" sous ce parent → Col4="11", Col5="00" → Code="0401201100"
-
-=== EXTRACTION HS_CODES (6 chiffres) ===
-Chaque sous-position visible (quand Col3 change) :
-- code: format "XXXX.XX" (ex: "0401.10")
-- code_clean: 6 chiffres SANS points (ex: "040110")
-- description: texte SANS tirets de début
-- level: "subheading"
-
-=== EXTRACTION TARIFF_LINES (10 chiffres) ===
-Chaque ligne AVEC taux DDI :
-- national_code: 10 chiffres par héritage (Col1-2 + Col3 + Col4 + Col5)
-- hs_code_6: 6 premiers chiffres du national_code
-- description: texte de Désignation des Produits
-- duty_rate: nombre (ex: 100, 50, 2.5)
-- unit: unité normalisée (ex: "KG")
-
-=== EXTRACTION ACCORDS COMMERCIAUX ===
-Identifier TOUS les accords commerciaux mentionnés :
-- Accord Maroc-UE (ALE), AELE, AGADIR, USA-Maroc, Turquie, etc.
-- Zones de libre-échange (ZLECA, CEDEAO, etc.)
-- Accords bilatéraux ou multilatéraux
-
-Pour chaque accord trouvé, extraire :
-- code: code court (ex: "MA-EU", "AGADIR", "MA-US")
-- name: nom complet de l'accord
-- type: "bilateral" | "multilateral" | "regional"  
-- countries: liste des pays concernés
-- mentioned_benefits: avantages mentionnés (ex: "exonération totale", "réduction 50%")
-
-=== EXTRACTION TAUX PRÉFÉRENTIELS ===
-Si le document mentionne des taux préférentiels (différents du DDI normal) :
-- agreement_code: code de l'accord (ex: "MA-EU")
-- agreement_name: nom de l'accord
-- hs_code: code SH concerné (6 ou 10 chiffres)
-- preferential_rate: taux préférentiel en %
-- conditions: conditions d'application (règles d'origine, contingent, etc.)
-- origin_countries: pays d'origine éligibles
-
-=== VALIDATION STRICTE ===
-✓ national_code = EXACTEMENT 10 chiffres numériques
-✓ hs_code_6 = 6 premiers chiffres du national_code  
-✓ Ignorer lignes SANS taux DDI
-✓ Maximum ${maxLines} tariff_lines
-✓ Extraire TOUTES les hs_codes à 6 chiffres
-✓ Extraire TOUS les accords commerciaux mentionnés
-
-Réponds UNIQUEMENT avec ce JSON valide :
-{
-  "summary": "Résumé du chapitre",
-  "key_points": ["Note 1", "Note 2"],
-  "hs_codes": [
-    {"code": "0401.10", "code_clean": "040110", "description": "Teneur matières grasses ≤1%", "level": "subheading"}
-  ],
-  "tariff_lines": [
-    {"national_code": "0401101100", "hs_code_6": "040110", "description": "lait écrémé", "duty_rate": 100, "unit": "KG"}
-  ],
-  "chapter_info": {"number": 4, "title": "Lait et produits de la laiterie..."},
-  "trade_agreements": [
-    {"code": "MA-EU", "name": "Accord d'association Maroc-UE", "type": "bilateral", "countries": ["Maroc", "Union Européenne"], "mentioned_benefits": ["exonération droits de douane"]}
-  ],
-  "preferential_rates": [
-    {"agreement_code": "MA-EU", "agreement_name": "Accord Maroc-UE", "hs_code": "040110", "preferential_rate": 0, "conditions": "Origine UE avec EUR.1", "origin_countries": ["France", "Allemagne", "Espagne"]}
-  ]
-}`;
-
-  // Call Claude API (Anthropic)
   const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -181,12 +428,12 @@ Réponds UNIQUEMENT avec ce JSON valide :
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 16000,
+      max_tokens: 32000,  // Augmenté pour avoir plus de marge
       messages: [
         {
           role: "user",
           content: [
-            { type: "text", text: analysisPrompt },
+            { type: "text", text: prompt },
             {
               type: "document",
               source: {
@@ -201,10 +448,10 @@ Réponds UNIQUEMENT avec ce JSON valide :
     }),
   });
 
-  // Handle rate limiting with retry
+  // Handle rate limiting
   if (aiResponse.status === 429) {
     if (retryCount < MAX_RETRIES) {
-      const delayMs = BASE_DELAY * Math.pow(2, retryCount); // Exponential backoff
+      const delayMs = BASE_DELAY * Math.pow(2, retryCount);
       console.log(`Rate limited (429). Retry ${retryCount + 1}/${MAX_RETRIES} after ${delayMs}ms...`);
       await delay(delayMs);
       return analyzeWithClaude(base64Pdf, title, category, apiKey, maxLines, retryCount + 1);
@@ -228,7 +475,7 @@ Réponds UNIQUEMENT avec ce JSON valide :
   
   const responseText = aiData.content?.[0]?.text || "{}";
   
-  // Parse AI response - extract JSON from anywhere in the response
+  // Parse JSON
   let cleanedResponse = responseText.trim();
   
   // Remove markdown code blocks
@@ -246,71 +493,45 @@ Réponds UNIQUEMENT avec ce JSON valide :
     }
   }
   
-  // If still not valid JSON, try to extract JSON object from the text
+  // Extract JSON object
   if (!cleanedResponse.startsWith("{")) {
-    const jsonMatch = responseText.match(/\{[\s\S]*"summary"[\s\S]*\}/);
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       cleanedResponse = jsonMatch[0];
     }
   }
   
-  // Try to parse, with fallback repair for truncated JSON
-  const parseJsonWithRepair = (text: string): AnalysisResult | null => {
+  // Parse with repair for truncated JSON
+  const parseJsonWithRepair = (text: string): any | null => {
     try {
-      return JSON.parse(text) as AnalysisResult;
+      return JSON.parse(text);
     } catch (e) {
-      // Try to repair truncated JSON by closing brackets
       let repaired = text;
       const openBraces = (text.match(/\{/g) || []).length;
       const closeBraces = (text.match(/\}/g) || []).length;
       const openBrackets = (text.match(/\[/g) || []).length;
       const closeBrackets = (text.match(/\]/g) || []).length;
       
-      // Close unclosed brackets and braces
       for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += "]";
       for (let i = 0; i < openBraces - closeBraces; i++) repaired += "}";
       
       try {
-        return JSON.parse(repaired) as AnalysisResult;
+        return JSON.parse(repaired);
       } catch {
         return null;
       }
     }
   };
   
-  const result = parseJsonWithRepair(cleanedResponse);
+  const parsed = parseJsonWithRepair(cleanedResponse);
   
-  if (result) {
-    // Validate and fix national codes
-    if (result.tariff_lines) {
-      result.tariff_lines = result.tariff_lines
-        .map(line => {
-          // Remove all non-digit characters
-          let code = (line.national_code || "").replace(/\D/g, "");
-          // Pad to 10 digits if needed
-          if (code.length > 0 && code.length < 10) {
-            code = code.padEnd(10, "0");
-          }
-          return {
-            ...line,
-            national_code: code,
-            hs_code_6: code.substring(0, 6),
-          };
-        })
-        .filter(line => line.national_code.length === 10 && line.duty_rate !== undefined);
-    }
-    
-    console.log("Parsed result:", result.tariff_lines?.length || 0, "tariff lines");
-    return { result, truncated, rateLimited: false };
-  } else {
+  if (!parsed) {
     console.error("Failed to parse Claude response");
-    console.error("Raw response (first 500):", responseText.substring(0, 500));
-    
-    // Return a minimal valid result instead of null
+    console.error("Raw response (first 1000):", responseText.substring(0, 1000));
     return { 
       result: {
-        summary: "Analyse partielle - Le document ne contient pas de données tarifaires structurées",
-        key_points: ["Document analysé mais format non-tarifaire détecté"],
+        summary: "Analyse échouée - Impossible de parser la réponse",
+        key_points: [],
         hs_codes: [],
         tariff_lines: [],
       }, 
@@ -318,7 +539,68 @@ Réponds UNIQUEMENT avec ce JSON valide :
       rateLimited: false 
     };
   }
+  
+  // POST-TRAITEMENT: Reconstruire les codes à partir des raw_lines
+  let tariffLines: TariffLine[] = [];
+  let hsCodeEntries: HSCodeEntry[] = [];
+  
+  if (parsed.raw_lines && Array.isArray(parsed.raw_lines)) {
+    console.log(`Processing ${parsed.raw_lines.length} raw lines with inheritance...`);
+    
+    // Reconstruire avec l'héritage
+    tariffLines = processRawLines(parsed.raw_lines);
+    hsCodeEntries = extractHSCodes(tariffLines, parsed.raw_lines);
+    
+    console.log(`Reconstructed ${tariffLines.length} tariff lines and ${hsCodeEntries.length} HS codes`);
+  } else if (parsed.tariff_lines) {
+    // Fallback: utiliser tariff_lines si raw_lines n'est pas présent
+    tariffLines = (parsed.tariff_lines as any[])
+      .map(line => {
+        const { rate, note } = parseDutyRate(line.duty_rate);
+        let code = cleanCode(line.national_code || "");
+        if (code.length > 0 && code.length < 10) {
+          code = code.padEnd(10, "0");
+        }
+        return {
+          national_code: code,
+          hs_code_6: code.slice(0, 6),
+          description: line.description || "",
+          duty_rate: rate || 0,
+          duty_note: note,
+          unit: line.unit || null,
+          is_inherited: false,
+        };
+      })
+      .filter(line => line.national_code.length === 10 && line.duty_rate > 0);
+    
+    hsCodeEntries = parsed.hs_codes || [];
+  }
+  
+  const result: AnalysisResult = {
+    summary: parsed.summary || "",
+    key_points: parsed.key_points || [],
+    chapter_info: parsed.chapter_info,
+    notes: parsed.notes,
+    footnotes: parsed.footnotes,
+    hs_codes: hsCodeEntries,
+    tariff_lines: tariffLines,
+    trade_agreements: parsed.trade_agreements || [],
+    preferential_rates: parsed.preferential_rates || [],
+    raw_lines: parsed.raw_lines,  // Garder pour debug
+  };
+  
+  console.log("Final result:", 
+    "tariff_lines:", result.tariff_lines.length,
+    "hs_codes:", result.hs_codes.length,
+    "inherited:", result.tariff_lines.filter(l => l.is_inherited).length
+  );
+  
+  return { result, truncated, rateLimited: false };
 }
+
+// =============================================================================
+// HANDLER PRINCIPAL
+// =============================================================================
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -345,8 +627,8 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
-    // Check file size first to prevent memory issues
-    const { data: fileList, error: listError } = await supabase.storage
+    // Check file size
+    const { data: fileList } = await supabase.storage
       .from("pdf-documents")
       .list(filePath.split('/').slice(0, -1).join('/') || '', {
         search: filePath.split('/').pop()
@@ -355,51 +637,32 @@ serve(async (req) => {
     const fileInfo = fileList?.find(f => filePath.endsWith(f.name));
     const fileSizeMB = fileInfo?.metadata?.size ? fileInfo.metadata.size / (1024 * 1024) : 0;
     
-    // Limit to 25MB - using chunked base64 conversion to manage memory
     const MAX_FILE_SIZE_MB = 25;
     if (fileSizeMB > MAX_FILE_SIZE_MB) {
-      console.error(`PDF too large: ${fileSizeMB.toFixed(2)}MB (max: ${MAX_FILE_SIZE_MB}MB)`);
       return new Response(
         JSON.stringify({ 
-          error: `Le PDF est trop volumineux (${fileSizeMB.toFixed(1)}MB). Limite: ${MAX_FILE_SIZE_MB}MB. Divisez le PDF en sections plus petites.`,
+          error: `Le PDF est trop volumineux (${fileSizeMB.toFixed(1)}MB). Limite: ${MAX_FILE_SIZE_MB}MB.`,
           fileSizeMB: fileSizeMB.toFixed(2)
         }),
         { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Download the PDF file
+    // Download PDF
     const { data: pdfData, error: downloadError } = await supabase.storage
       .from("pdf-documents")
       .download(filePath);
 
     if (downloadError) {
-      console.error("Download error:", downloadError);
       throw new Error(`Failed to download PDF: ${downloadError.message}`);
     }
 
-    // Convert PDF to base64 using streaming to reduce memory pressure
+    // Convert to base64
     const arrayBuffer = await pdfData.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
     
-    // Check actual byte size
-    const actualSizeMB = bytes.length / (1024 * 1024);
-    console.log(`PDF actual size: ${actualSizeMB.toFixed(2)}MB`);
-    
-    if (actualSizeMB > MAX_FILE_SIZE_MB) {
-      return new Response(
-        JSON.stringify({ 
-          error: `Le PDF est trop volumineux (${actualSizeMB.toFixed(1)}MB). Limite: ${MAX_FILE_SIZE_MB}MB.`,
-          fileSizeMB: actualSizeMB.toFixed(2)
-        }),
-        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    
-    // Convert to base64 - build binary string first, then encode
-    // (Chunking base64 directly creates invalid data due to 3-byte boundary issues)
     let binaryString = '';
-    const CHUNK_SIZE = 8192; // 8KB chunks for string building
+    const CHUNK_SIZE = 8192;
     for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
       const chunk = bytes.slice(i, Math.min(i + CHUNK_SIZE, bytes.length));
       binaryString += String.fromCharCode(...chunk);
@@ -408,7 +671,7 @@ serve(async (req) => {
 
     console.log("PDF converted to base64, size:", base64Pdf.length, "chars");
 
-    // Get PDF document metadata
+    // Get PDF metadata
     const { data: pdfDoc } = await supabase
       .from("pdf_documents")
       .select("title, category, country_code")
@@ -419,39 +682,28 @@ serve(async (req) => {
     const category = pdfDoc?.category || "tarif";
     const countryCode = pdfDoc?.country_code || "MA";
 
-    // Try with progressively fewer lines if truncated
-    const maxLinesToTry = [50, 30, 15];
+    // Analyze with Claude
+    const maxLinesToTry = [100, 50, 30];
     let analysisResult: AnalysisResult | null = null;
     
     for (const maxLines of maxLinesToTry) {
-      console.log(`Attempting analysis with max ${maxLines} tariff lines...`);
+      console.log(`Attempting analysis with max ${maxLines} lines...`);
       
       const { result, truncated, rateLimited } = await analyzeWithClaude(
-        base64Pdf,
-        title,
-        category,
-        ANTHROPIC_API_KEY,
-        maxLines
+        base64Pdf, title, category, ANTHROPIC_API_KEY, maxLines
       );
       
-      // If rate limited after all retries, return error to client
       if (rateLimited) {
         return new Response(
-          JSON.stringify({ 
-            error: "Rate limited by AI service. Please wait a few minutes before retrying.",
-            rateLimited: true 
-          }),
+          JSON.stringify({ error: "Rate limited. Please wait before retrying.", rateLimited: true }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       
       if (result && !truncated) {
         analysisResult = result;
-        console.log("Analysis successful with", maxLines, "max lines");
         break;
-      } else if (result && truncated) {
-        console.log("Response truncated, retrying with fewer lines...");
-        // Keep the result in case all attempts fail
+      } else if (result) {
         analysisResult = result;
       }
     }
@@ -462,21 +714,16 @@ serve(async (req) => {
         key_points: [],
         hs_codes: [],
         tariff_lines: [],
-        authorities: [],
-        trade_agreements: [],
-        preferential_rates: [],
       };
     }
 
-    console.log("Analysis complete for PDF:", pdfId, 
+    console.log("Analysis complete:", 
       "HS codes:", analysisResult.hs_codes?.length || 0,
       "Tariff lines:", analysisResult.tariff_lines?.length || 0,
-      "Trade agreements:", analysisResult.trade_agreements?.length || 0,
-      "Preferential rates:", analysisResult.preferential_rates?.length || 0,
       "Preview only:", previewOnly
     );
 
-    // In preview mode, just return the data without inserting
+    // Preview mode
     if (previewOnly) {
       return new Response(
         JSON.stringify({
@@ -484,36 +731,39 @@ serve(async (req) => {
           pdfId,
           pdfTitle: title,
           countryCode,
-          previewOnly: true
+          previewOnly: true,
+          statistics: {
+            total_lines: analysisResult.tariff_lines?.length || 0,
+            inherited_lines: analysisResult.tariff_lines?.filter(l => l.is_inherited).length || 0,
+            hs_codes_count: analysisResult.hs_codes?.length || 0,
+            has_footnotes: Object.keys(analysisResult.footnotes || {}).length > 0,
+          }
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // LEGACY: Direct insertion mode (when previewOnly is false)
-    // Save extraction to database
-    const { error: insertError } = await supabase
-      .from("pdf_extractions")
-      .insert({
-        pdf_id: pdfId,
-        summary: analysisResult.summary,
-        key_points: analysisResult.key_points || [],
-        mentioned_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
-        detected_tariff_changes: analysisResult.tariff_lines || [],
-        extracted_data: {
-          chapter_info: analysisResult.chapter_info || null,
-          authorities: analysisResult.authorities || [],
-          tariff_lines_count: analysisResult.tariff_lines?.length || 0,
-        },
-        extraction_model: "claude-sonnet-4-20250514",
-        extraction_confidence: 0.90,
-      });
+    // === INSERTION EN BASE ===
+    
+    // 1. Save extraction
+    await supabase.from("pdf_extractions").insert({
+      pdf_id: pdfId,
+      summary: analysisResult.summary,
+      key_points: analysisResult.key_points || [],
+      mentioned_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
+      detected_tariff_changes: analysisResult.tariff_lines || [],
+      extracted_data: {
+        chapter_info: analysisResult.chapter_info || null,
+        notes: analysisResult.notes || null,
+        footnotes: analysisResult.footnotes || null,
+        tariff_lines_count: analysisResult.tariff_lines?.length || 0,
+        inherited_lines_count: analysisResult.tariff_lines?.filter(l => l.is_inherited).length || 0,
+      },
+      extraction_model: "claude-sonnet-4-20250514",
+      extraction_confidence: 0.92,
+    });
 
-    if (insertError) {
-      console.error("Insert extraction error:", insertError);
-    }
-
-    // INSERT TARIFF LINES INTO country_tariffs TABLE
+    // 2. Insert tariff lines
     if (analysisResult.tariff_lines && analysisResult.tariff_lines.length > 0) {
       const tariffRows = analysisResult.tariff_lines.map(line => ({
         country_code: countryCode,
@@ -521,77 +771,62 @@ serve(async (req) => {
         national_code: line.national_code,
         description_local: line.description,
         duty_rate: line.duty_rate,
-        vat_rate: 20, // Default Morocco VAT
+        duty_note: line.duty_note,
+        vat_rate: 20,
         unit_code: line.unit || null,
         is_active: true,
+        is_inherited: line.is_inherited,
         source: `PDF: ${title}`,
       }));
 
-      // Upsert to avoid duplicates (update if exists)
       const { error: tariffError } = await supabase
         .from("country_tariffs")
-        .upsert(tariffRows, { 
-          onConflict: "country_code,national_code",
-          ignoreDuplicates: false 
-        });
+        .upsert(tariffRows, { onConflict: "country_code,national_code" });
 
       if (tariffError) {
         console.error("Tariff insert error:", tariffError);
       } else {
-        console.log(`Inserted/updated ${tariffRows.length} tariff lines into country_tariffs`);
+        console.log(`Inserted ${tariffRows.length} tariff lines`);
       }
     }
 
-    // INSERT HS CODES INTO hs_codes TABLE with proper descriptions
+    // 3. Insert HS codes
     if (analysisResult.hs_codes && analysisResult.hs_codes.length > 0) {
-      const chapterNumber = analysisResult.chapter_info?.number || null;
-      const chapterTitle = analysisResult.chapter_info?.title || null;
-      
       const hsRows = analysisResult.hs_codes.map(hsCode => ({
         code: hsCode.code,
         code_clean: hsCode.code_clean,
         description_fr: hsCode.description,
-        chapter_number: chapterNumber || (hsCode.code_clean ? parseInt(hsCode.code_clean.slice(0, 2)) : null),
-        chapter_title_fr: chapterTitle,
+        chapter_number: analysisResult.chapter_info?.number || parseInt(hsCode.code_clean?.slice(0, 2) || "0"),
+        chapter_title_fr: analysisResult.chapter_info?.title,
         is_active: true,
-        level: hsCode.level || (hsCode.code_clean?.length === 6 ? "subheading" : "heading"),
-        parent_code: hsCode.code_clean?.length === 6 ? hsCode.code_clean.slice(0, 4) : null,
+        level: hsCode.level || "subheading",
+        parent_code: hsCode.code_clean?.slice(0, 4),
       }));
 
       const { error: hsError } = await supabase
         .from("hs_codes")
-        .upsert(hsRows, { 
-          onConflict: "code",
-          ignoreDuplicates: false // Update existing records with new descriptions
-        });
+        .upsert(hsRows, { onConflict: "code" });
 
       if (hsError) {
         console.error("HS codes insert error:", hsError);
       } else {
-        console.log(`Inserted/updated ${hsRows.length} HS codes with descriptions into hs_codes table`);
+        console.log(`Inserted ${hsRows.length} HS codes`);
       }
     }
 
-    // Update PDF document with chapter info
-    const updateData: Record<string, unknown> = {
+    // 4. Update PDF document
+    await supabase.from("pdf_documents").update({
       is_verified: true,
       verified_at: new Date().toISOString(),
       related_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
-    };
-    
-    if (analysisResult.chapter_info?.number) {
-      updateData.keywords = `Chapitre ${analysisResult.chapter_info.number}`;
-    }
-
-    await supabase
-      .from("pdf_documents")
-      .update(updateData)
-      .eq("id", pdfId);
+      keywords: analysisResult.chapter_info?.number ? `Chapitre ${analysisResult.chapter_info.number}` : null,
+    }).eq("id", pdfId);
 
     return new Response(
       JSON.stringify(analysisResult),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
+
   } catch (error) {
     console.error("Analyze PDF error:", error);
     return new Response(
