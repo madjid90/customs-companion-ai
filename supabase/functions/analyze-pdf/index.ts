@@ -175,6 +175,8 @@ Ligne: "1 | 90 |  |  |" → HÉRITAGE 100111 + "90" + "00" = 1001119000
 ✓ Préserver les notes (a), (b) etc. dans duty_rate
 ✓ Maximum ${maxLines} raw_lines avec taux
 ✓ Les tirets "–" dans description indiquent le niveau hiérarchique
+✓ IGNORER les codes entre crochets [XX.XX] ou [XXXX.XX] - ce sont des positions RÉSERVÉES/VIDES
+✓ Les positions simples XX.XX (ex: 14.01, 14.04) sont des headings valides à extraire
 
 RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
 
@@ -246,6 +248,12 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
     
     // Nettoyer col1 des points et espaces
     const col1Clean = cleanCode(col1Raw);
+    
+    // IGNORER les codes réservés entre crochets [XX.XX] ou [XXXX.XX]
+    if (col1Raw.startsWith("[") || col1Raw.endsWith("]")) {
+      console.log(`Skipping reserved code in processRawLines: "${col1Raw}"`);
+      continue;
+    }
     
     // CAS 1: Col1 contient un point → c'est un code SH complet ou partiel
     if (col1Raw.includes(".")) {
@@ -368,6 +376,13 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
 }
 
 /**
+ * Vérifie si un code est entre crochets (position réservée/vide)
+ */
+function isReservedCode(code: string): boolean {
+  return code.startsWith("[") || code.endsWith("]");
+}
+
+/**
  * Extrait les codes HS à 6 chiffres uniques
  */
 function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[]): HSCodeEntry[] {
@@ -389,13 +404,20 @@ function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[]): HS
   }
   
   // Ensuite depuis les lignes brutes (pour capter les codes sans taux)
-  let lastCode6 = "";
   for (const line of rawLines) {
     const col1 = (line.col1 || "").trim();
     
+    // IGNORER les codes réservés entre crochets [XX.XX]
+    if (isReservedCode(col1)) {
+      console.log(`Ignoring reserved/empty code: "${col1}"`);
+      continue;
+    }
+    
     if (col1.includes(".") && col1 !== "1") {
       const clean = cleanCode(col1);
+      
       if (clean.length >= 6) {
+        // Sous-position à 6 chiffres (XXXX.XX)
         const code6 = clean.slice(0, 6);
         if (!seen.has(code6)) {
           seen.add(code6);
@@ -406,10 +428,18 @@ function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[]): HS
             level: "subheading",
           });
         }
-        lastCode6 = code6;
       } else if (clean.length === 4) {
-        // C'est un heading (position à 4 chiffres)
-        lastCode6 = clean.padEnd(6, "0");
+        // Position à 4 chiffres (XX.XX) → convertir en 6 chiffres
+        const code6 = clean.padEnd(6, "0");
+        if (!seen.has(code6)) {
+          seen.add(code6);
+          results.push({
+            code: `${clean.slice(0, 2)}.${clean.slice(2, 4)}`,
+            code_clean: code6,
+            description: (line.description || "").replace(/^[–\-\s]+/, "").trim(),
+            level: "heading",
+          });
+        }
       }
     }
   }
