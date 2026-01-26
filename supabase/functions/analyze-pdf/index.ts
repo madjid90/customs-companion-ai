@@ -64,25 +64,42 @@ Analyse ce document PDF douanier :
 - Catégorie : ${pdfDoc?.category || "Non spécifié"}
 - Pays : ${pdfDoc?.country_code || "MA"}
 
-Ce document est un tarif douanier marocain avec des tableaux structurés contenant :
-- Colonne "Codification" : codes tarifaires (format XXXX.XX XX XX pour 10 chiffres)
-- Colonne "Désignation des Produits" : descriptions avec hiérarchie (– pour niveau 1, – – pour niveau 2, etc.)
-- Colonne "Droit d'Importation" : taux DDI en pourcentage
-- Colonne "Unité" : unité de mesure (kg, u, l, etc.)
+STRUCTURE DU TARIF MAROCAIN - TRÈS IMPORTANT :
+Le tarif marocain a une structure hiérarchique où les CODES PARENTS NE SONT PAS RÉPÉTÉS sur chaque ligne.
 
-IMPORTANT - Structure hiérarchique :
-- Les codes partiels (ex: "10 00") héritent du code parent (ex: "9601.10")
-- Les lignes avec ":" à la fin sont des en-têtes sans taux
-- La hiérarchie est indiquée par les tirets : – (niveau 1), – – (niveau 2), – – – (niveau 3)
+Exemple de structure dans le document :
+| Codification | Désignation |
+| 03.01        | Poissons vivants. |
+|              | – Poissons d'ornement : |
+| 0301.11 00 00| – – D'eau douce |
+| 0301.19 00 00| – – Autres |
+|              | – Autres poissons vivants : |
+| 0301.91      | – – Truites (...) |
+| 10 00        | – – – destinées au repeuplement |
+| 90 00        | – – – autres |
+
+RÈGLES D'HÉRITAGE DES CODES :
+1. Code position 4 chiffres (ex: "03.01") = en-tête de position
+2. Code 6-10 chiffres complet (ex: "0301.11 00 00") = ligne tarifaire complète
+3. Code partiel 4-6 chiffres (ex: "0301.91") = sous-position parent pour les lignes suivantes
+4. Code 2-4 chiffres seul (ex: "10 00", "90 00") = HÉRITE du code parent précédent
+   → Si parent était "0301.91", alors "10 00" devient "0301.91 10 00" = "0301911000"
+
+EXTRACTION DEMANDÉE :
+Pour chaque ligne tarifaire avec un taux, reconstitue le code national COMPLET à 10 chiffres.
 
 Génère une analyse structurée au format JSON avec :
 1. "summary" : Résumé incluant le numéro et titre du chapitre
-2. "key_points" : Notes légales importantes du chapitre (les exclusions, définitions)
-3. "hs_codes" : Liste des positions 4 chiffres détectées (format: ["9601", "9602", "9603"])
-4. "tariff_lines" : Lignes tarifaires extraites (max 50), format:
-   [{"national_code": "9601100000", "hs_code_6": "960110", "description": "Ivoire travaillé", "duty_rate": 2.5, "unit": "kg", "hierarchy": 1}]
-5. "chapter_info" : {"number": 96, "title": "Ouvrages divers", "edition": "2022"}
-6. "authorities" : Autorités mentionnées (ADII, Douanes, etc.)
+2. "key_points" : Notes légales importantes du chapitre (exclusions, définitions)
+3. "hs_codes" : Liste des positions 4 chiffres détectées (format: ["0301", "0302", "0303"])
+4. "tariff_lines" : Lignes tarifaires extraites (max 100), format:
+   [{"national_code": "0301110000", "hs_code_6": "030111", "description": "Poissons d'ornement d'eau douce", "duty_rate": 10, "unit": "kg", "hierarchy": 2, "parent_code": "0301.11"}]
+   - national_code : Code COMPLET à 10 chiffres sans espaces ni points
+   - hs_code_6 : Les 6 premiers chiffres
+   - duty_rate : Taux DDI en nombre (2.5 pour 2.5%)
+   - hierarchy : Niveau de profondeur (1, 2, 3, 4...)
+5. "chapter_info" : {"number": 3, "title": "Poissons et crustacés...", "edition": "2022"}
+6. "authorities" : Autorités mentionnées
 
 Réponds UNIQUEMENT avec le JSON valide, sans markdown ni explication.`;
 
