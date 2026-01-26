@@ -350,12 +350,14 @@ export type Database = {
           country_code: string
           created_at: string
           description_local: string | null
+          duty_note: string | null
           duty_rate: number | null
           effective_date: string | null
           expiry_date: string | null
           hs_code_6: string
           id: string
           is_active: boolean | null
+          is_inherited: boolean | null
           is_prohibited: boolean | null
           is_restricted: boolean | null
           national_code: string
@@ -373,12 +375,14 @@ export type Database = {
           country_code: string
           created_at?: string
           description_local?: string | null
+          duty_note?: string | null
           duty_rate?: number | null
           effective_date?: string | null
           expiry_date?: string | null
           hs_code_6: string
           id?: string
           is_active?: boolean | null
+          is_inherited?: boolean | null
           is_prohibited?: boolean | null
           is_restricted?: boolean | null
           national_code: string
@@ -396,12 +400,14 @@ export type Database = {
           country_code?: string
           created_at?: string
           description_local?: string | null
+          duty_note?: string | null
           duty_rate?: number | null
           effective_date?: string | null
           expiry_date?: string | null
           hs_code_6?: string
           id?: string
           is_active?: boolean | null
+          is_inherited?: boolean | null
           is_prohibited?: boolean | null
           is_restricted?: boolean | null
           national_code?: string
