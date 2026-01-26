@@ -106,11 +106,18 @@ export default function Chat() {
     setIsLoading(true);
 
     try {
+      // Build conversation history for context
+      const conversationHistory = messages.map(msg => ({
+        role: msg.role,
+        content: msg.content,
+      }));
+
       const { data, error } = await supabase.functions.invoke('chat', {
         body: { 
           question: messageText || "Identifie ce produit et donne-moi le code SH approprié", 
           sessionId,
           images: imagesToSend.length > 0 ? imagesToSend : undefined,
+          conversationHistory, // Send previous messages for context
         },
       });
 
