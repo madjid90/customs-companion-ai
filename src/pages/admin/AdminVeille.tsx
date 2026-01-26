@@ -401,10 +401,41 @@ export default function AdminVeille() {
         .update({ is_verified: true, verified_at: new Date().toISOString() })
         .eq("id", id);
       if (error) throw error;
+      return id;
     },
-    onSuccess: () => {
+    onSuccess: (validatedId) => {
       queryClient.invalidateQueries({ queryKey: ["veille-documents"] });
       toast({ title: "Document vérifié" });
+      
+      // Automatically move to next pending document
+      if (documents) {
+        const currentIndex = documents.findIndex((d) => d.id === validatedId);
+        const nextPending = documents.find((d, index) => index > currentIndex && !d.is_verified);
+        
+        if (nextPending) {
+          setSelectedDocument(nextPending);
+          toast({ 
+            title: "Document suivant", 
+            description: `Passage au document: ${nextPending.title.substring(0, 50)}...` 
+          });
+        } else {
+          // Check if there are any pending documents before the current one
+          const anyPending = documents.find((d) => d.id !== validatedId && !d.is_verified);
+          if (anyPending) {
+            setSelectedDocument(anyPending);
+            toast({ 
+              title: "Document suivant", 
+              description: `Passage au document: ${anyPending.title.substring(0, 50)}...` 
+            });
+          } else {
+            setSelectedDocument(null);
+            toast({ 
+              title: "Validation terminée", 
+              description: "Tous les documents ont été validés !" 
+            });
+          }
+        }
+      }
     },
   });
 
