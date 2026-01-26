@@ -2,17 +2,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 
 // Public pages
-import Home from "@/pages/Home";
 import Chat from "@/pages/Chat";
-import Search from "@/pages/Search";
-import Calculate from "@/pages/Calculate";
 
 // Admin pages
 import AdminLogin from "@/pages/admin/AdminLogin";
@@ -34,12 +31,12 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
-            {/* Public routes */}
+            {/* Public routes - Chat only */}
             <Route element={<PublicLayout />}>
-              <Route path="/" element={<Home />} />
+              <Route path="/" element={<Navigate to="/chat" replace />} />
               <Route path="/chat" element={<Chat />} />
-              <Route path="/search" element={<Search />} />
-              <Route path="/calculate" element={<Calculate />} />
+              <Route path="/search" element={<Navigate to="/chat" replace />} />
+              <Route path="/calculate" element={<Navigate to="/chat" replace />} />
             </Route>
 
             {/* Admin routes */}
