@@ -226,15 +226,16 @@ function parseDutyRate(dutyStr: string | number | null): { rate: number | null; 
 function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
   const results: TariffLine[] = [];
   
-  // État de l'héritage - mémorise le dernier code complet
-  let lastBaseCode: string = "";  // 6 chiffres de base
-  let lastCol2: string = "00";
-  let lastCol3: string = "00";
-  let lastCol4: string = "00";
-  let lastCol5: string = "00";
+  // État de l'héritage - mémorise le dernier code complet à chaque niveau
+  let lastPosition: string = "";     // 4 chiffres (position SH, ex: "1001")
+  let lastSubheading: string = "";   // 2 chiffres supplémentaires (sous-position, ex: "11" → total "100111")
+  let lastCol2: string = "";         // Extension colonne 2
+  let lastCol3: string = "";         // Extension colonne 3
+  let lastCol4: string = "";         // Extension colonne 4
+  let lastCol5: string = "";         // Extension colonne 5
   
   for (const line of rawLines) {
-    const col1 = (line.col1 || "").trim();
+    const col1Raw = (line.col1 || "").trim();
     const col2 = (line.col2 || "").trim();
     const col3 = (line.col3 || "").trim();
     const col4 = (line.col4 || "").trim();
@@ -243,76 +244,99 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
     let nationalCode: string;
     let isInherited = false;
     
-    // CAS 1: Col1 = "1" → HÉRITAGE
-    if (col1 === "1") {
+    // Nettoyer col1 des points et espaces
+    const col1Clean = cleanCode(col1Raw);
+    
+    // CAS 1: Col1 contient un point → c'est un code SH complet ou partiel
+    if (col1Raw.includes(".")) {
+      const parts = col1Raw.split(".");
+      
+      if (parts[0].length === 2 && parts[1]?.length === 2) {
+        // Format "XX.XX" → Position à 4 chiffres (chapitre.position)
+        lastPosition = cleanCode(col1Raw);
+        lastSubheading = "";
+        lastCol2 = "";
+        lastCol3 = "";
+        lastCol4 = "";
+        lastCol5 = "";
+        
+        // Pas de ligne tarifaire pour les positions sans taux
+        if (!line.duty_rate) continue;
+        
+        nationalCode = lastPosition.padEnd(10, "0");
+        
+      } else if (col1Clean.length >= 6) {
+        // Format "XXXX.XX" ou plus → Sous-position à 6+ chiffres
+        lastPosition = col1Clean.slice(0, 4);
+        lastSubheading = col1Clean.slice(4, 6).padEnd(2, "0");
+        
+        // Mettre à jour les colonnes d'extension
+        lastCol2 = (col2 && /^\d+$/.test(col2)) ? col2.padStart(2, "0") : "";
+        lastCol3 = (col3 && /^\d+$/.test(col3)) ? col3.padStart(2, "0") : "";
+        lastCol4 = (col4 && /^\d+$/.test(col4)) ? col4.padStart(2, "0") : "";
+        lastCol5 = (col5 && /^\d+$/.test(col5)) ? col5.padStart(2, "0") : "";
+        
+        // Construire le code national
+        let code = lastPosition + lastSubheading;
+        code += lastCol2 || "00";
+        code += lastCol3 || "00";
+        nationalCode = code.slice(0, 10);
+        
+      } else {
+        // Autre format avec point - traiter comme position
+        lastPosition = col1Clean.padEnd(4, "0").slice(0, 4);
+        lastSubheading = "";
+        if (!line.duty_rate) continue;
+        nationalCode = lastPosition.padEnd(10, "0");
+      }
+      
+    // CAS 2: Col1 = "1" ou col1 est vide/tiret → HÉRITAGE du niveau précédent
+    } else if (col1Clean === "1" || col1Clean === "" || col1Raw === "–" || col1Raw === "-") {
       isInherited = true;
       
-      // Utiliser le code de base hérité (6 chiffres)
-      let code = lastBaseCode;
+      // La base est toujours position + sous-position (6 chiffres)
+      let baseCode = lastPosition + (lastSubheading || "00");
       
-      // Ajouter col2 si présent, sinon hériter lastCol2
+      // Appliquer les colonnes de la ligne courante, sinon hériter
+      // IMPORTANT: col2 de cette ligne REMPLACE lastCol2 si présent
       if (col2 && /^\d+$/.test(col2)) {
         lastCol2 = col2.padStart(2, "0");
       }
-      code += lastCol2;
-      
-      // Ajouter col3 si présent
       if (col3 && /^\d+$/.test(col3)) {
         lastCol3 = col3.padStart(2, "0");
       }
-      code += lastCol3;
-      
-      // Ajouter col4 si présent
       if (col4 && /^\d+$/.test(col4)) {
         lastCol4 = col4.padStart(2, "0");
       }
-      
-      // Ajouter col5 si présent
       if (col5 && /^\d+$/.test(col5)) {
         lastCol5 = col5.padStart(2, "0");
       }
       
-      // Si on n'a que col2, ajouter des zéros
-      nationalCode = code.padEnd(10, "0");
+      // Construire le code: base + col2 + col3 (10 chiffres au total)
+      let code = baseCode;
+      code += lastCol2 || "00";
+      code += lastCol3 || "00";
+      nationalCode = code.slice(0, 10);
       
-    // CAS 2: Col1 contient un code avec point (ex: "1001.11" ou "10.01")
-    } else if (col1.includes(".")) {
-      const cleanCol1 = cleanCode(col1);
+    // CAS 3: Col1 contient uniquement des chiffres (6 ou plus) → Code complet sans point
+    } else if (/^\d{4,}$/.test(col1Clean)) {
+      // Ex: "100111" au lieu de "1001.11"
+      lastPosition = col1Clean.slice(0, 4);
+      lastSubheading = col1Clean.length >= 6 ? col1Clean.slice(4, 6) : "";
       
-      // Si c'est un code à 4 chiffres (heading), c'est juste une position
-      if (cleanCol1.length === 4) {
-        lastBaseCode = cleanCol1.padEnd(6, "0");
-        lastCol2 = "00";
-        lastCol3 = "00";
-        lastCol4 = "00";
-        lastCol5 = "00";
-        
-        // Ne pas créer de ligne tarifaire pour les headings sans taux
-        if (!line.duty_rate) continue;
-        
-        nationalCode = lastBaseCode.padEnd(10, "0");
-      } else {
-        // Code à 6+ chiffres (subheading)
-        lastBaseCode = cleanCol1.slice(0, 6).padEnd(6, "0");
-        
-        // Traiter col2
-        if (col2 && /^\d+$/.test(col2)) {
-          lastCol2 = col2.padStart(2, "0");
-        } else {
-          lastCol2 = "00";
-        }
-        
-        // Traiter col3, col4, col5
-        lastCol3 = (col3 && /^\d+$/.test(col3)) ? col3.padStart(2, "0") : "00";
-        lastCol4 = (col4 && /^\d+$/.test(col4)) ? col4.padStart(2, "0") : "00";
-        lastCol5 = (col5 && /^\d+$/.test(col5)) ? col5.padStart(2, "0") : "00";
-        
-        nationalCode = (lastBaseCode + lastCol2 + lastCol3).slice(0, 10).padEnd(10, "0");
-      }
-    
-    // CAS 3: Fallback - essayer de parser comme un nombre
+      lastCol2 = (col2 && /^\d+$/.test(col2)) ? col2.padStart(2, "0") : "";
+      lastCol3 = (col3 && /^\d+$/.test(col3)) ? col3.padStart(2, "0") : "";
+      lastCol4 = (col4 && /^\d+$/.test(col4)) ? col4.padStart(2, "0") : "";
+      lastCol5 = (col5 && /^\d+$/.test(col5)) ? col5.padStart(2, "0") : "";
+      
+      let code = lastPosition + (lastSubheading || "00");
+      code += lastCol2 || "00";
+      code += lastCol3 || "00";
+      nationalCode = code.slice(0, 10);
+      
+    // CAS 4: Autre valeur non reconnue → ignorer
     } else {
-      // Ignorer les lignes sans code valide
+      console.log(`Ignoring unrecognized col1 format: "${col1Raw}"`);
       continue;
     }
     
@@ -323,9 +347,9 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
     if (rate === null) continue;
     
     // Validation: le code doit avoir exactement 10 chiffres
-    const cleanNationalCode = cleanCode(nationalCode);
+    const cleanNationalCode = cleanCode(nationalCode).padEnd(10, "0");
     if (cleanNationalCode.length !== 10 || !/^\d{10}$/.test(cleanNationalCode)) {
-      console.warn(`Invalid national code: ${nationalCode} (cleaned: ${cleanNationalCode})`);
+      console.warn(`Invalid national code: ${nationalCode} (cleaned: ${cleanNationalCode}) from col1="${col1Raw}"`);
       continue;
     }
     
