@@ -78,7 +78,7 @@ Génère une analyse structurée au format JSON avec :
 Réponds UNIQUEMENT avec le JSON valide, sans markdown ni explication.`;
 
     // Use Lovable AI Gateway (OpenAI-compatible format)
-    const aiResponse = await fetch("https://api.lovable.dev/v1/chat/completions", {
+    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${LOVABLE_API_KEY}`,
