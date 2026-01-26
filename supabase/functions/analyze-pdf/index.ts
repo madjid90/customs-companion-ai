@@ -95,7 +95,7 @@ Réponds UNIQUEMENT avec le JSON valide, sans markdown ni explication.`;
       },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
-        max_tokens: 4096,
+        max_tokens: 16384,
         messages: [
           {
             role: "user",
