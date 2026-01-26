@@ -26,7 +26,7 @@ interface UploadedFile {
   analysis?: {
     summary: string;
     key_points: string[];
-    hs_codes: string[];
+    hs_codes: Array<string | { code: string; code_clean: string; description: string; level: string }>;
     tariff_lines?: any[];
   };
 }
@@ -408,9 +408,9 @@ export default function AdminUpload() {
                                 Codes SH extraits:
                               </p>
                               <div className="flex flex-wrap gap-1">
-                                {file.analysis.hs_codes.slice(0, 8).map((code, i) => (
+                                {file.analysis.hs_codes.slice(0, 8).map((hsCode, i) => (
                                   <Badge key={i} variant="outline" className="text-xs font-mono">
-                                    {code}
+                                    {typeof hsCode === 'string' ? hsCode : hsCode.code || hsCode.code_clean}
                                   </Badge>
                                 ))}
                                 {file.analysis.hs_codes.length > 8 && (
