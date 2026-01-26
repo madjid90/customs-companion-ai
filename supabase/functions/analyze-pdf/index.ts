@@ -21,6 +21,23 @@ interface HSCodeEntry {
   level: string;
 }
 
+interface PreferentialRate {
+  agreement_code: string;
+  agreement_name: string;
+  hs_code: string;
+  preferential_rate: number;
+  conditions?: string;
+  origin_countries?: string[];
+}
+
+interface TradeAgreementMention {
+  code: string;
+  name: string;
+  type: string;
+  countries: string[];
+  mentioned_benefits?: string[];
+}
+
 interface AnalysisResult {
   summary: string;
   key_points: string[];
@@ -28,6 +45,8 @@ interface AnalysisResult {
   tariff_lines: TariffLine[];
   chapter_info?: { number: number; title: string };
   authorities?: string[];
+  trade_agreements?: TradeAgreementMention[];
+  preferential_rates?: PreferentialRate[];
 }
 
 // Helper function to delay execution
@@ -103,12 +122,35 @@ Chaque ligne AVEC taux DDI :
 - duty_rate: nombre (ex: 100, 50, 2.5)
 - unit: unité normalisée (ex: "KG")
 
+=== EXTRACTION ACCORDS COMMERCIAUX ===
+Identifier TOUS les accords commerciaux mentionnés :
+- Accord Maroc-UE (ALE), AELE, AGADIR, USA-Maroc, Turquie, etc.
+- Zones de libre-échange (ZLECA, CEDEAO, etc.)
+- Accords bilatéraux ou multilatéraux
+
+Pour chaque accord trouvé, extraire :
+- code: code court (ex: "MA-EU", "AGADIR", "MA-US")
+- name: nom complet de l'accord
+- type: "bilateral" | "multilateral" | "regional"  
+- countries: liste des pays concernés
+- mentioned_benefits: avantages mentionnés (ex: "exonération totale", "réduction 50%")
+
+=== EXTRACTION TAUX PRÉFÉRENTIELS ===
+Si le document mentionne des taux préférentiels (différents du DDI normal) :
+- agreement_code: code de l'accord (ex: "MA-EU")
+- agreement_name: nom de l'accord
+- hs_code: code SH concerné (6 ou 10 chiffres)
+- preferential_rate: taux préférentiel en %
+- conditions: conditions d'application (règles d'origine, contingent, etc.)
+- origin_countries: pays d'origine éligibles
+
 === VALIDATION STRICTE ===
 ✓ national_code = EXACTEMENT 10 chiffres numériques
 ✓ hs_code_6 = 6 premiers chiffres du national_code  
 ✓ Ignorer lignes SANS taux DDI
 ✓ Maximum ${maxLines} tariff_lines
 ✓ Extraire TOUTES les hs_codes à 6 chiffres
+✓ Extraire TOUS les accords commerciaux mentionnés
 
 Réponds UNIQUEMENT avec ce JSON valide :
 {
@@ -120,7 +162,13 @@ Réponds UNIQUEMENT avec ce JSON valide :
   "tariff_lines": [
     {"national_code": "0401101100", "hs_code_6": "040110", "description": "lait écrémé", "duty_rate": 100, "unit": "KG"}
   ],
-  "chapter_info": {"number": 4, "title": "Lait et produits de la laiterie..."}
+  "chapter_info": {"number": 4, "title": "Lait et produits de la laiterie..."},
+  "trade_agreements": [
+    {"code": "MA-EU", "name": "Accord d'association Maroc-UE", "type": "bilateral", "countries": ["Maroc", "Union Européenne"], "mentioned_benefits": ["exonération droits de douane"]}
+  ],
+  "preferential_rates": [
+    {"agreement_code": "MA-EU", "agreement_name": "Accord Maroc-UE", "hs_code": "040110", "preferential_rate": 0, "conditions": "Origine UE avec EUR.1", "origin_countries": ["France", "Allemagne", "Espagne"]}
+  ]
 }`;
 
   // Call Claude API (Anthropic)
@@ -415,12 +463,16 @@ serve(async (req) => {
         hs_codes: [],
         tariff_lines: [],
         authorities: [],
+        trade_agreements: [],
+        preferential_rates: [],
       };
     }
 
     console.log("Analysis complete for PDF:", pdfId, 
       "HS codes:", analysisResult.hs_codes?.length || 0,
       "Tariff lines:", analysisResult.tariff_lines?.length || 0,
+      "Trade agreements:", analysisResult.trade_agreements?.length || 0,
+      "Preferential rates:", analysisResult.preferential_rates?.length || 0,
       "Preview only:", previewOnly
     );
 
