@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useUploadState, UploadedFile, ExtractionData } from "@/hooks/useUploadState";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -18,57 +19,12 @@ import {
 } from "lucide-react";
 import ExtractionPreviewDialog from "@/components/admin/ExtractionPreviewDialog";
 
-interface HSCodeEntry {
-  code: string;
-  code_clean: string;
-  description: string;
-  level: string;
-}
-
-interface TariffLine {
-  national_code: string;
-  hs_code_6: string;
-  description: string;
-  duty_rate: number;
-  unit?: string;
-}
-
-interface ExtractionData {
-  summary: string;
-  key_points: string[];
-  hs_codes: HSCodeEntry[];
-  tariff_lines: TariffLine[];
-  chapter_info?: { number: number; title: string };
-  pdfId?: string;
-  pdfTitle?: string;
-  countryCode?: string;
-}
-
-interface UploadedFile {
-  id: string;
-  name: string;
-  size: number;
-  status: "uploading" | "analyzing" | "preview" | "success" | "error";
-  progress: number;
-  error?: string;
-  pdfId?: string;
-  filePath?: string;
-  countryCode?: string;
-  analysis?: ExtractionData;
-}
-
 export default function AdminUpload() {
-  const [files, setFiles] = useState<UploadedFile[]>([]);
+  const { files, updateFileStatus, addFile } = useUploadState();
   const [isDragging, setIsDragging] = useState(false);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null);
   const { toast } = useToast();
-
-  const updateFileStatus = (id: string, updates: Partial<UploadedFile>) => {
-    setFiles((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, ...updates } : f))
-    );
-  };
 
   const detectDocumentType = (fileName: string): { category: string; label: string } => {
     const name = fileName.toLowerCase();
@@ -108,7 +64,7 @@ export default function AdminUpload() {
       countryCode: "MA",
     };
 
-    setFiles((prev) => [uploadedFile, ...prev]);
+    addFile(uploadedFile);
 
     try {
       // 1. Upload to Supabase Storage
