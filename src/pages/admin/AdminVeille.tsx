@@ -204,17 +204,39 @@ export default function AdminVeille() {
     },
   });
 
-  // Fetch sites
+  // Fetch sites with document counts
   const { data: sites, isLoading: loadingSites } = useQuery({
     queryKey: ["veille-sites"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Get sites
+      const { data: sitesData, error: sitesError } = await supabase
         .from("veille_sites")
         .select("*")
         .order("name");
 
-      if (error) throw error;
-      return data as VeilleSite[];
+      if (sitesError) throw sitesError;
+      
+      // Get document counts by source_name
+      const { data: docCounts, error: countError } = await supabase
+        .from("veille_documents")
+        .select("source_name");
+      
+      if (countError) throw countError;
+      
+      // Count documents per source
+      const countMap: Record<string, number> = {};
+      docCounts?.forEach((doc) => {
+        const name = doc.source_name || "";
+        countMap[name] = (countMap[name] || 0) + 1;
+      });
+      
+      // Merge counts into sites
+      const sitesWithCounts = sitesData?.map((site) => ({
+        ...site,
+        total_documents_found: countMap[site.name] || 0,
+      }));
+      
+      return sitesWithCounts as VeilleSite[];
     },
   });
 
@@ -1094,7 +1116,18 @@ export default function AdminVeille() {
                             <Badge variant="secondary">Inactif</Badge>
                           )}
                         </TableCell>
-                        <TableCell>{site.total_documents_found || 0}</TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={site.total_documents_found > 0 ? "default" : "secondary"}
+                            className="cursor-pointer"
+                            onClick={() => {
+                              setActiveTab("documents");
+                              setSearchTerm(site.name);
+                            }}
+                          >
+                            {site.total_documents_found || 0} docs
+                          </Badge>
+                        </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
                             <Button
