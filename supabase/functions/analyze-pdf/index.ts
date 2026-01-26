@@ -44,8 +44,8 @@ async function analyzeWithClaude(
   retryCount = 0
 ): Promise<{ result: AnalysisResult | null; truncated: boolean; rateLimited: boolean }> {
   
-  const MAX_RETRIES = 3;
-  const BASE_DELAY = 5000; // 5 seconds base delay
+  const MAX_RETRIES = 5;
+  const BASE_DELAY = 10000; // 10 seconds base delay for more patience
   
   const analysisPrompt = `Tu es un expert en tarifs douaniers marocains. Analyse ce document PDF avec PRÉCISION.
 
