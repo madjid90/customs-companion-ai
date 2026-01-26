@@ -204,11 +204,20 @@ export default function AdminScraping() {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["veille-sites"] });
-      toast({
-        title: "Scraping terminé",
-        description: `${data.documents_new || 0} nouveaux documents trouvés.`,
-      });
+      if (data.async) {
+        toast({
+          title: "Scraping lance",
+          description: "Le scraping est en cours en arriere-plan.",
+        });
+      } else {
+        toast({
+          title: "Scraping termine",
+          description: `${data.documents_new || 0} nouveaux documents trouves.`,
+        });
+      }
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["veille-sites"] });
+      }, 5000);
     },
     onError: (error) => {
       toast({
@@ -229,11 +238,22 @@ export default function AdminScraping() {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["veille-sites"] });
-      toast({
-        title: "Scraping global terminé",
-        description: `${data.sites_scraped || 0} sites scrapés, ${data.documents_new || 0} nouveaux documents.`,
-      });
+      // Le scraping est async - afficher un message approprié
+      if (data.async) {
+        toast({
+          title: "Scraping lance en arriere-plan",
+          description: "Le scraping est en cours. Consultez l'onglet Historique dans Veille pour voir les resultats.",
+        });
+      } else {
+        toast({
+          title: "Scraping global termine",
+          description: `${data.sites_scraped || 0} sites scrapes, ${data.documents_new || 0} nouveaux documents.`,
+        });
+      }
+      // Rafraichir les données après un délai pour laisser le temps au scraping
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["veille-sites"] });
+      }, 5000);
     },
     onError: (error) => {
       toast({
