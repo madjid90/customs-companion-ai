@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useRef, ReactNode } from "react";
 
 export interface HSCodeEntry {
   code: string;
@@ -30,13 +30,18 @@ export interface UploadedFile {
   id: string;
   name: string;
   size: number;
-  status: "uploading" | "analyzing" | "preview" | "success" | "error";
+  status: "queued" | "uploading" | "analyzing" | "preview" | "success" | "error";
   progress: number;
   error?: string;
   pdfId?: string;
   filePath?: string;
   countryCode?: string;
   analysis?: ExtractionData;
+}
+
+interface QueuedFile {
+  file: File;
+  fileId: string;
 }
 
 interface UploadStateContextType {
@@ -46,12 +51,18 @@ interface UploadStateContextType {
   addFile: (file: UploadedFile) => void;
   clearCompleted: () => void;
   pendingCount: number;
+  queueFile: (file: File, uploadedFile: UploadedFile) => void;
+  processNext: () => QueuedFile | null;
+  isProcessing: boolean;
+  setIsProcessing: (value: boolean) => void;
 }
 
 const UploadStateContext = createContext<UploadStateContextType | undefined>(undefined);
 
 export function UploadStateProvider({ children }: { children: ReactNode }) {
   const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const queueRef = useRef<QueuedFile[]>([]);
 
   const updateFileStatus = useCallback((id: string, updates: Partial<UploadedFile>) => {
     setFiles((prev) =>
@@ -67,8 +78,20 @@ export function UploadStateProvider({ children }: { children: ReactNode }) {
     setFiles((prev) => prev.filter((f) => f.status !== "success"));
   }, []);
 
+  const queueFile = useCallback((file: File, uploadedFile: UploadedFile) => {
+    queueRef.current.push({ file, fileId: uploadedFile.id });
+    addFile(uploadedFile);
+  }, [addFile]);
+
+  const processNext = useCallback((): QueuedFile | null => {
+    if (queueRef.current.length === 0) {
+      return null;
+    }
+    return queueRef.current.shift() || null;
+  }, []);
+
   const pendingCount = files.filter(
-    (f) => f.status === "preview" || f.status === "analyzing" || f.status === "uploading"
+    (f) => f.status === "preview" || f.status === "analyzing" || f.status === "uploading" || f.status === "queued"
   ).length;
 
   return (
@@ -80,6 +103,10 @@ export function UploadStateProvider({ children }: { children: ReactNode }) {
         addFile,
         clearCompleted,
         pendingCount,
+        queueFile,
+        processNext,
+        isProcessing,
+        setIsProcessing,
       }}
     >
       {children}
