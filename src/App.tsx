@@ -22,7 +22,6 @@ import AdminUpload from "@/pages/admin/AdminUpload";
 import AdminScraping from "@/pages/admin/AdminScraping";
 import AdminVeille from "@/pages/admin/AdminVeille";
 import AdminDocuments from "@/pages/admin/AdminDocuments";
-import AdminPlaceholder from "@/pages/admin/AdminPlaceholder";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -55,15 +54,10 @@ const App = () => (
             >
               <Route index element={<AdminDashboard />} />
               <Route path="upload" element={<AdminUpload />} />
-              <Route path="library" element={<AdminPlaceholder />} />
               <Route path="scraping" element={<AdminScraping />} />
               <Route path="veille" element={<AdminVeille />} />
               <Route path="hs-codes" element={<AdminHSCodes />} />
-              <Route path="tariffs" element={<AdminPlaceholder />} />
-              <Route path="controlled" element={<AdminPlaceholder />} />
               <Route path="documents" element={<AdminDocuments />} />
-              <Route path="conversations" element={<AdminPlaceholder />} />
-              <Route path="settings" element={<AdminPlaceholder />} />
             </Route>
 
             {/* 404 */}

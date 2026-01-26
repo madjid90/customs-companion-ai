@@ -7,15 +7,10 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard,
   Upload,
-  Library,
   Globe,
   Search,
   Package,
-  DollarSign,
-  AlertTriangle,
   FileText,
-  MessageSquare,
-  Settings,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -30,23 +25,17 @@ type MenuItem =
 const menuItems: MenuItem[] = [
   { type: "link", icon: LayoutDashboard, label: "Dashboard", href: "/admin" },
   { type: "link", icon: Upload, label: "Upload fichiers", href: "/admin/upload" },
-  { type: "link", icon: Library, label: "Bibliothèque PDFs", href: "/admin/library" },
   { type: "link", icon: Globe, label: "Scraping WCO", href: "/admin/scraping" },
   { type: "link", icon: Search, label: "Veille web", href: "/admin/veille" },
   { type: "separator" },
   { type: "link", icon: Package, label: "Codes SH", href: "/admin/hs-codes" },
-  { type: "link", icon: DollarSign, label: "Tarifs", href: "/admin/tariffs" },
-  { type: "link", icon: AlertTriangle, label: "Produits contrôlés", href: "/admin/controlled" },
   { type: "link", icon: FileText, label: "Documents", href: "/admin/documents" },
-  { type: "link", icon: MessageSquare, label: "Conversations", href: "/admin/conversations" },
-  { type: "separator" },
-  { type: "link", icon: Settings, label: "Configuration", href: "/admin/settings" },
 ];
 
 export function AdminSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut, profile } = useAuth();
+  const { signOut } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
 
   const handleLogout = async () => {
