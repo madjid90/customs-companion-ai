@@ -296,8 +296,8 @@ async function firecrawlMap(apiKey: string, url: string, limit: number = 500): P
 async function firecrawlScrape(
   apiKey: string, 
   url: string, 
-  options: { formats?: string[], onlyMainContent?: boolean } = {}
-): Promise<{ markdown?: string, links?: string[], metadata?: any } | null> {
+  options: { formats?: string[], onlyMainContent?: boolean, waitFor?: number, actions?: any[] } = {}
+): Promise<{ markdown?: string, links?: string[], metadata?: any, html?: string } | null> {
   await firecrawlLimiter.wait();
   
   return withRetry(async () => {
@@ -305,17 +305,29 @@ async function firecrawlScrape(
     const timeout = setTimeout(() => controller.abort(), CONFIG.SCRAPE_TIMEOUT_MS);
     
     try {
+      const body: any = {
+        url,
+        formats: options.formats || ["markdown", "links"],
+        onlyMainContent: options.onlyMainContent ?? true,
+      };
+      
+      // Add waitFor for dynamic pages
+      if (options.waitFor) {
+        body.waitFor = options.waitFor;
+      }
+      
+      // Add actions for form submission (click, type, etc.)
+      if (options.actions && options.actions.length > 0) {
+        body.actions = options.actions;
+      }
+      
       const response = await fetch("https://api.firecrawl.dev/v1/scrape", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          url,
-          formats: options.formats || ["markdown", "links"],
-          onlyMainContent: options.onlyMainContent ?? true,
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
       
@@ -536,6 +548,61 @@ JSON uniquement:
 
 // ============= MAIN SCRAPING LOGIC =============
 
+// Scrape JSF search form pages by clicking search button
+async function scrapeJsfSearchPage(
+  firecrawlKey: string,
+  url: string,
+  siteName: string
+): Promise<{ markdown?: string; links?: string[] } | null> {
+  console.log(`[${siteName}] Attempting JSF search form scrape: ${url}`);
+  
+  // Try multiple selectors for common search buttons
+  const searchButtonSelectors = [
+    'input[type="submit"][value*="Trouver"]',
+    'input[type="submit"][value*="Rechercher"]',
+    'button[type="submit"]',
+    'input.btn[type="submit"]',
+    'input[value*="Search"]',
+    'input[value*="Find"]',
+    '.search-btn',
+    '#searchBtn',
+    // Specific to douane.gov.ma
+    'input[type="submit"][value="Trouver"]',
+    'input.btn-primary',
+  ];
+  
+  // Try with click action on search button
+  for (const selector of searchButtonSelectors) {
+    try {
+      const result = await firecrawlScrape(firecrawlKey, url, {
+        formats: ["markdown", "links", "html"],
+        onlyMainContent: false,
+        waitFor: 3000, // Wait for JS to load
+        actions: [
+          { type: "wait", milliseconds: 1000 },
+          { type: "click", selector: selector },
+          { type: "wait", milliseconds: 2000 }, // Wait for results to load
+        ]
+      });
+      
+      if (result && (result.links?.length || 0) > 10) {
+        console.log(`[${siteName}] JSF search successful with selector: ${selector}, found ${result.links?.length} links`);
+        return result;
+      }
+    } catch (e) {
+      // Continue trying other selectors
+    }
+  }
+  
+  // Fallback: scrape without clicking (static content)
+  console.log(`[${siteName}] JSF search fallback - scraping without form submit`);
+  return firecrawlScrape(firecrawlKey, url, {
+    formats: ["markdown", "links", "html"],
+    onlyMainContent: false,
+    waitFor: 2000
+  });
+}
+
 async function discoverSiteUrls(firecrawlKey: string, site: VeilleSite): Promise<string[]> {
   console.log(`[${site.name}] Discovering URLs...`);
   
@@ -565,21 +632,44 @@ async function discoverSiteUrls(firecrawlKey: string, site: VeilleSite): Promise
   const directLinks = mainPage?.links || [];
   console.log(`[${site.name}] Main page has ${directLinks.length} links`);
   
-  // Step 3: For each JSF URL discovered, also try to MAP it
+  // Step 3: For each JSF URL discovered, try special JSF handling
   for (const jsfUrl of jsfFromMain) {
     if (jsfUrl !== cleanMainUrl) {
+      // Try MAP first
       const jsfMapped = await firecrawlMap(firecrawlKey, jsfUrl, 100);
       console.log(`[${site.name}] JSF MAP (${jsfUrl}) discovered ${jsfMapped.length} URLs`);
       jsfMapped.forEach(u => typeof u === 'string' && urls.add(u));
       
-      // Also scrape the JSF page directly for links
-      const jsfPage = await firecrawlScrape(firecrawlKey, jsfUrl, {
-        formats: ["links", "markdown"],
-        onlyMainContent: false
-      });
-      const jsfLinks = jsfPage?.links || [];
-      console.log(`[${site.name}] JSF page has ${jsfLinks.length} links`);
-      jsfLinks.forEach((u: any) => typeof u === 'string' && urls.add(u));
+      // Try JSF search form scraping (click search button)
+      if (jsfUrl.includes('recherche') || jsfUrl.includes('accords') || jsfUrl.includes('Accords')) {
+        const jsfSearchResult = await scrapeJsfSearchPage(firecrawlKey, jsfUrl, site.name);
+        if (jsfSearchResult) {
+          const jsfLinks = jsfSearchResult.links || [];
+          console.log(`[${site.name}] JSF search page found ${jsfLinks.length} links`);
+          jsfLinks.forEach((u: any) => typeof u === 'string' && urls.add(u));
+        }
+      } else {
+        // Regular JSF page scrape
+        const jsfPage = await firecrawlScrape(firecrawlKey, jsfUrl, {
+          formats: ["links", "markdown"],
+          onlyMainContent: false
+        });
+        const jsfLinks = jsfPage?.links || [];
+        console.log(`[${site.name}] JSF page has ${jsfLinks.length} links`);
+        jsfLinks.forEach((u: any) => typeof u === 'string' && urls.add(u));
+      }
+    }
+  }
+  
+  // Step 4: Also check if main URL is a search page (contains rechercheAccords, etc.)
+  if (cleanMainUrl.includes('recherche') || cleanMainUrl.includes('Recherche') || 
+      site.url.includes('recherche') || site.url.includes('accords')) {
+    console.log(`[${site.name}] Main URL looks like a search page, trying form submit...`);
+    const searchResult = await scrapeJsfSearchPage(firecrawlKey, cleanMainUrl, site.name);
+    if (searchResult) {
+      const searchLinks = searchResult.links || [];
+      console.log(`[${site.name}] Search page after submit found ${searchLinks.length} links`);
+      searchLinks.forEach((u: any) => typeof u === 'string' && urls.add(u));
     }
   }
   
