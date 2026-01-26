@@ -793,12 +793,22 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => `- **${p.tit
     const hasDirectRate = context.tariffs_with_inheritance.some(t => t.rate_source === "direct");
     const hasInheritedRate = context.tariffs_with_inheritance.some(t => t.rate_source === "inherited");
     const hasRangeRate = context.tariffs_with_inheritance.some(t => t.rate_source === "range");
+    const responseTextLower = responseText.toLowerCase();
     
-    if (responseText.includes("🟢") || responseText.includes("CONFIANCE HAUTE")) confidence = "high";
-    else if (responseText.includes("🔴") || responseText.includes("CONFIANCE FAIBLE")) confidence = "low";
-    else if (hasDirectRate || hasInheritedRate) confidence = "high";
-    else if (hasRangeRate) confidence = "medium";
-    else if (context.tariffs_with_inheritance.length === 0 && context.hs_codes.length === 0) confidence = "low";
+    // Check for confidence indicators in the response (case-insensitive)
+    if (responseText.includes("🟢") || responseTextLower.includes("confiance haute") || responseTextLower.includes("confiance élevée") || responseTextLower.includes("confiance elevee")) {
+      confidence = "high";
+    } else if (responseText.includes("🔴") || responseTextLower.includes("confiance faible") || responseTextLower.includes("confiance basse")) {
+      confidence = "low";
+    } else if (responseText.includes("🟡") || responseTextLower.includes("confiance moyenne") || responseTextLower.includes("confiance modérée")) {
+      confidence = "medium";
+    } else if (hasDirectRate || hasInheritedRate) {
+      confidence = "high";
+    } else if (hasRangeRate) {
+      confidence = "medium";
+    } else if (context.tariffs_with_inheritance.length === 0 && context.hs_codes.length === 0) {
+      confidence = "low";
+    }
 
     // Save conversation to database
     const { data: conversation } = await supabase
