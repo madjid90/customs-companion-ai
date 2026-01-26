@@ -31,13 +31,23 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
-    // Get public URL of the PDF
-    const { data: publicUrlData } = supabase.storage
+    // Download the PDF file
+    const { data: pdfData, error: downloadError } = await supabase.storage
       .from("pdf-documents")
-      .getPublicUrl(filePath);
+      .download(filePath);
 
-    const pdfUrl = publicUrlData?.publicUrl;
-    console.log("PDF URL:", pdfUrl);
+    if (downloadError) {
+      console.error("Download error:", downloadError);
+      throw new Error(`Failed to download PDF: ${downloadError.message}`);
+    }
+
+    // Convert PDF to base64
+    const arrayBuffer = await pdfData.arrayBuffer();
+    const base64Pdf = btoa(
+      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+    );
+
+    console.log("PDF downloaded and converted to base64, size:", base64Pdf.length);
 
     // Get PDF document metadata
     const { data: pdfDoc } = await supabase
@@ -46,14 +56,13 @@ serve(async (req) => {
       .eq("id", pdfId)
       .single();
 
-    // Call Lovable AI to analyze based on document metadata
+    // Call Lovable AI to analyze the PDF
     const analysisPrompt = `Tu es un expert en douane et commerce international spécialisé dans les tarifs douaniers marocains.
 
 Analyse ce document PDF douanier :
 - Titre : ${pdfDoc?.title || "Document sans titre"}
 - Catégorie : ${pdfDoc?.category || "Non spécifié"}
 - Pays : ${pdfDoc?.country_code || "MA"}
-- URL : ${pdfUrl}
 
 Ce document est un tarif douanier marocain avec des tableaux structurés contenant :
 - Colonne "Codification" : codes tarifaires (format XXXX.XX XX XX pour 10 chiffres)
@@ -77,7 +86,7 @@ Génère une analyse structurée au format JSON avec :
 
 Réponds UNIQUEMENT avec le JSON valide, sans markdown ni explication.`;
 
-    // Use Lovable AI Gateway (OpenAI-compatible format)
+    // Use Lovable AI Gateway with PDF as inline data
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -86,9 +95,23 @@ Réponds UNIQUEMENT avec le JSON valide, sans markdown ni explication.`;
       },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
-        max_tokens: 2048,
+        max_tokens: 4096,
         messages: [
-          { role: "user", content: analysisPrompt }
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: analysisPrompt
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:application/pdf;base64,${base64Pdf}`
+                }
+              }
+            ]
+          }
         ],
       }),
     });
@@ -96,10 +119,12 @@ Réponds UNIQUEMENT avec le JSON valide, sans markdown ni explication.`;
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
       console.error("Lovable AI error:", aiResponse.status, errorText);
-      throw new Error(`Lovable AI error: ${aiResponse.status}`);
+      throw new Error(`Lovable AI error: ${aiResponse.status} - ${errorText}`);
     }
 
     const aiData = await aiResponse.json();
+    console.log("AI response received:", JSON.stringify(aiData).substring(0, 500));
+    
     const responseText = aiData.choices?.[0]?.message?.content || "{}";
     
     // Parse AI response - clean markdown if present
@@ -116,14 +141,18 @@ Réponds UNIQUEMENT avec le JSON valide, sans markdown ni explication.`;
       if (cleanedResponse.endsWith("```")) {
         cleanedResponse = cleanedResponse.slice(0, -3);
       }
-      analysisResult = JSON.parse(cleanedResponse.trim());
-    } catch {
-      console.warn("Failed to parse AI response, using defaults");
+      cleanedResponse = cleanedResponse.trim();
+      
+      analysisResult = JSON.parse(cleanedResponse);
+      console.log("Parsed analysis result:", JSON.stringify(analysisResult).substring(0, 300));
+    } catch (parseError) {
+      console.error("Failed to parse AI response:", parseError);
+      console.error("Raw response:", responseText.substring(0, 500));
       analysisResult = {
         summary: "Analyse en attente de traitement manuel",
         key_points: [],
         hs_codes: [],
-        tariff_changes: [],
+        tariff_lines: [],
         authorities: [],
       };
     }
@@ -167,7 +196,7 @@ Réponds UNIQUEMENT avec le JSON valide, sans markdown ni explication.`;
       .update(updateData)
       .eq("id", pdfId);
 
-    console.log("Analysis complete for PDF:", pdfId);
+    console.log("Analysis complete for PDF:", pdfId, "HS codes found:", analysisResult.hs_codes?.length || 0);
 
     return new Response(
       JSON.stringify(analysisResult),
