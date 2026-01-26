@@ -45,10 +45,15 @@ const CONFIG = {
   EXCLUDE_PATTERNS: [
     /\.(jpg|jpeg|png|gif|svg|ico|webp|mp4|mp3|wav|avi)$/i,
     /\.(css|js|woff|woff2|ttf|eot)$/i,
-    /#.*/i, // Anchor links
+    // NOTE: No longer excluding all #fragments - we now extract JSF URLs from them
     /mailto:/i, /tel:/i, /javascript:/i,
     /login|signin|signup|register|password|logout/i,
     /facebook\.com|twitter\.com|linkedin\.com|youtube\.com|instagram\.com/i
+  ],
+  // JSF and dynamic page patterns to extract from fragments
+  JSF_PATTERNS: [
+    /\.jsf/i, /\.xhtml/i, /\.faces/i,
+    /accords/i, /conventions/i, /recherche/i
   ]
 };
 
@@ -181,11 +186,61 @@ function normalizeUrl(url: string): string {
 
 // Check if URL should be excluded
 function shouldExcludeUrl(url: string): boolean {
+  // Never exclude JSF URLs - they often contain important content
+  if (CONFIG.JSF_PATTERNS.some(pattern => pattern.test(url))) {
+    return false;
+  }
+  // Exclude simple anchor fragments (like #section) but not URL fragments (like #https://...)
+  if (url.includes('#') && !url.includes('#http') && !url.includes('#/')) {
+    const fragment = url.split('#')[1];
+    // If fragment looks like a simple anchor, exclude
+    if (fragment && !fragment.includes('/') && !fragment.includes('.')) {
+      return true;
+    }
+  }
   return CONFIG.EXCLUDE_PATTERNS.some(pattern => pattern.test(url));
+}
+
+// Extract JSF/embedded URLs from fragments
+function extractJsfUrls(url: string): string[] {
+  const extracted: string[] = [];
+  
+  // Handle fragment URLs like "page#https://domain.com/path.jsf"
+  if (url.includes('#http')) {
+    const fragment = url.split('#')[1];
+    if (fragment && fragment.startsWith('http')) {
+      extracted.push(fragment);
+    }
+  }
+  
+  // Handle double-slash patterns like "accords//acceuilAccords.jsf"
+  const doubleSlashMatch = url.match(/\/\/([^\/]+\.jsf)/i);
+  if (doubleSlashMatch) {
+    try {
+      const baseUrl = new URL(url);
+      const jsfPath = doubleSlashMatch[1];
+      extracted.push(`${baseUrl.protocol}//${baseUrl.hostname}/${jsfPath}`);
+      // Also try with /accords/ prefix
+      extracted.push(`${baseUrl.protocol}//${baseUrl.hostname}/accords/${jsfPath}`);
+    } catch {}
+  }
+  
+  // Extract JSF patterns from the URL
+  const jsfMatch = url.match(/\/([^\/]+\.jsf[^#]*)/i);
+  if (jsfMatch) {
+    try {
+      const baseUrl = new URL(url);
+      extracted.push(`${baseUrl.protocol}//${baseUrl.hostname}${jsfMatch[0]}`);
+    } catch {}
+  }
+  
+  return extracted.filter(u => u && u.startsWith('http'));
 }
 
 // Classify URL type
 function classifyUrl(url: string): 'download' | 'archive' | 'content' | 'other' {
+  // JSF pages are high-priority content
+  if (CONFIG.JSF_PATTERNS.some(p => p.test(url))) return 'content';
   if (CONFIG.DOWNLOAD_PATTERNS.some(p => p.test(url))) return 'download';
   if (CONFIG.ARCHIVE_PATTERNS.some(p => p.test(url))) return 'archive';
   if (CONFIG.CONTENT_PATTERNS.some(p => p.test(url))) return 'content';
@@ -484,14 +539,25 @@ JSON uniquement:
 async function discoverSiteUrls(firecrawlKey: string, site: VeilleSite): Promise<string[]> {
   console.log(`[${site.name}] Discovering URLs...`);
   
-  const urls = new Set<string>([site.url]);
+  const urls = new Set<string>();
   
-  // Step 1: MAP API discovery
-  const mappedUrls = await firecrawlMap(firecrawlKey, site.url, CONFIG.MAX_URLS_PER_SITE);
+  // Step 0: Extract JSF/embedded URLs from the site URL itself (handle fragment URLs)
+  const jsfFromMain = extractJsfUrls(site.url);
+  if (jsfFromMain.length > 0) {
+    console.log(`[${site.name}] Extracted ${jsfFromMain.length} JSF URLs from main URL`);
+    jsfFromMain.forEach(u => urls.add(u));
+  }
+  
+  // Also add the main URL (without fragment)
+  const cleanMainUrl = site.url.split('#')[0];
+  urls.add(cleanMainUrl);
+  
+  // Step 1: MAP API discovery on the clean URL
+  const mappedUrls = await firecrawlMap(firecrawlKey, cleanMainUrl, CONFIG.MAX_URLS_PER_SITE);
   console.log(`[${site.name}] MAP discovered ${mappedUrls.length} URLs`);
   
   // Step 2: Scrape main page for additional links
-  const mainPage = await firecrawlScrape(firecrawlKey, site.url, { 
+  const mainPage = await firecrawlScrape(firecrawlKey, cleanMainUrl, { 
     formats: ["links", "markdown"],
     onlyMainContent: false 
   });
@@ -499,11 +565,34 @@ async function discoverSiteUrls(firecrawlKey: string, site: VeilleSite): Promise
   const directLinks = mainPage?.links || [];
   console.log(`[${site.name}] Main page has ${directLinks.length} links`);
   
+  // Step 3: For each JSF URL discovered, also try to MAP it
+  for (const jsfUrl of jsfFromMain) {
+    if (jsfUrl !== cleanMainUrl) {
+      const jsfMapped = await firecrawlMap(firecrawlKey, jsfUrl, 100);
+      console.log(`[${site.name}] JSF MAP (${jsfUrl}) discovered ${jsfMapped.length} URLs`);
+      jsfMapped.forEach(u => typeof u === 'string' && urls.add(u));
+      
+      // Also scrape the JSF page directly for links
+      const jsfPage = await firecrawlScrape(firecrawlKey, jsfUrl, {
+        formats: ["links", "markdown"],
+        onlyMainContent: false
+      });
+      const jsfLinks = jsfPage?.links || [];
+      console.log(`[${site.name}] JSF page has ${jsfLinks.length} links`);
+      jsfLinks.forEach((u: any) => typeof u === 'string' && urls.add(u));
+    }
+  }
+  
   // Combine and filter URLs
   const allDiscovered = [...mappedUrls, ...directLinks];
   
   for (const url of allDiscovered) {
     if (typeof url !== 'string') continue;
+    
+    // Extract JSF URLs from fragments in discovered links
+    const jsfExtracted = extractJsfUrls(url);
+    jsfExtracted.forEach(u => urls.add(u));
+    
     if (shouldExcludeUrl(url)) continue;
     
     const urlType = classifyUrl(url);
@@ -523,7 +612,7 @@ async function discoverSiteUrls(firecrawlKey: string, site: VeilleSite): Promise
   });
   
   const finalUrls = sortedUrls.slice(0, CONFIG.MAX_URLS_PER_SITE);
-  console.log(`[${site.name}] Will scrape ${finalUrls.length} URLs`);
+  console.log(`[${site.name}] Will scrape ${finalUrls.length} URLs (including JSF)`);
   
   return finalUrls;
 }
