@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Send, Bot, User, ThumbsUp, ThumbsDown, Loader2, Sparkles, Database, FileText, AlertTriangle } from "lucide-react";
+import { Send, Bot, User, ThumbsUp, ThumbsDown, Loader2, Sparkles, Database, FileText, AlertTriangle, ImagePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
+import { ImageUploadButton, type UploadedFile } from "@/components/chat/ImageUploadButton";
 
 interface Message {
   id: string;
@@ -31,6 +32,21 @@ const confidenceConfig = {
   low: { icon: "🔴", label: "Confiance faible", className: "text-destructive" },
 };
 
+// Convert file to base64
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Remove data URL prefix (e.g., "data:image/png;base64,")
+      const base64 = result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
 export default function Chat() {
   const [searchParams] = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
@@ -38,6 +54,8 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState(initialQuery);
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [sessionId] = useState(() => crypto.randomUUID());
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -57,21 +75,42 @@ export default function Chat() {
 
   const handleSend = async (text?: string) => {
     const messageText = text || input.trim();
-    if (!messageText || isLoading) return;
+    if ((!messageText && uploadedFiles.length === 0) || isLoading) return;
+
+    // Convert uploaded files to base64 for sending
+    const imagesToSend: { type: "image"; base64: string; mediaType: string }[] = [];
+    if (uploadedFiles.length > 0) {
+      setIsUploading(true);
+      for (const upload of uploadedFiles) {
+        try {
+          const base64 = await fileToBase64(upload.file);
+          const mediaType = upload.file.type || "image/jpeg";
+          imagesToSend.push({ type: "image", base64, mediaType });
+        } catch (err) {
+          console.error("Failed to convert file:", err);
+        }
+      }
+      setIsUploading(false);
+    }
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: messageText,
+      content: messageText || (uploadedFiles.length > 0 ? `📎 ${uploadedFiles.length} fichier(s) uploadé(s)` : ""),
     };
 
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
+    setUploadedFiles([]);
     setIsLoading(true);
 
     try {
       const { data, error } = await supabase.functions.invoke('chat', {
-        body: { question: messageText, sessionId },
+        body: { 
+          question: messageText || "Identifie ce produit et donne-moi le code SH approprié", 
+          sessionId,
+          images: imagesToSend.length > 0 ? imagesToSend : undefined,
+        },
       });
 
       if (error) throw error;
@@ -139,6 +178,14 @@ export default function Chat() {
     } catch (error) {
       console.error("Feedback error:", error);
     }
+  };
+
+  const handleFilesSelected = (files: UploadedFile[]) => {
+    setUploadedFiles((prev) => [...prev, ...files]);
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const suggestedQuestions = [
@@ -329,26 +376,78 @@ export default function Chat() {
       {/* Input area */}
       <div className="border-t bg-card p-4">
         <div className="max-w-3xl mx-auto">
-          <div className="relative">
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Posez votre question sur la douane..."
-              className="min-h-[56px] max-h-32 pr-14 resize-none"
-              rows={1}
+          {/* Uploaded files preview */}
+          {uploadedFiles.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3 p-2 bg-muted/50 rounded-lg">
+              {uploadedFiles.map((upload, index) => (
+                <div
+                  key={index}
+                  className="relative group flex items-center gap-2 bg-background rounded-md p-2 pr-8 border"
+                >
+                  {upload.type === "image" ? (
+                    <img
+                      src={upload.preview}
+                      alt="Preview"
+                      className="w-12 h-12 object-cover rounded"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 flex items-center justify-center bg-muted rounded">
+                      <FileText className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                  )}
+                  <span className="text-xs text-muted-foreground max-w-[100px] truncate">
+                    {upload.file.name}
+                  </span>
+                  <button
+                    onClick={() => handleRemoveFile(index)}
+                    className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    disabled={isLoading || isUploading}
+                  >
+                    <span className="sr-only">Remove</span>
+                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          <div className="flex items-end gap-2">
+            <ImageUploadButton
+              onFilesSelected={handleFilesSelected}
+              uploadedFiles={[]}
+              onRemoveFile={handleRemoveFile}
+              disabled={isLoading}
+              isUploading={isUploading}
             />
-            <Button
-              onClick={() => handleSend()}
-              disabled={!input.trim() || isLoading}
-              size="icon"
-              className="absolute right-2 bottom-2 h-10 w-10 bg-accent hover:bg-accent/90"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+            <div className="relative flex-1">
+              <Textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={uploadedFiles.length > 0 
+                  ? "Décrivez votre produit ou posez une question..." 
+                  : "Posez votre question sur la douane..."}
+                className="min-h-[56px] max-h-32 pr-14 resize-none"
+                rows={1}
+              />
+              <Button
+                onClick={() => handleSend()}
+                disabled={(!input.trim() && uploadedFiles.length === 0) || isLoading || isUploading}
+                size="icon"
+                className="absolute right-2 bottom-2 h-10 w-10 bg-accent hover:bg-accent/90"
+              >
+                {isUploading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
           </div>
           <p className="text-xs text-muted-foreground text-center mt-2">
-            DouaneAI recherche dans la base officielle. Vérifiez toujours les informations importantes auprès des autorités.
+            📷 Uploadez une photo de produit, facture ou fiche technique pour une classification automatique.
           </p>
         </div>
       </div>
