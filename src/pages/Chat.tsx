@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
 import { ImageUploadButton, type UploadedFile } from "@/components/chat/ImageUploadButton";
 import { InteractiveQuestions, parseQuestionsFromResponse } from "@/components/chat/InteractiveQuestions";
+import { ConversationSummary } from "@/components/chat/ConversationSummary";
 
 interface Message {
   id: string;
@@ -205,6 +206,13 @@ export default function Chat() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
+      {/* Conversation summary */}
+      {messages.length >= 2 && (
+        <div className="p-4 pb-0">
+          <ConversationSummary messages={messages} />
+        </div>
+      )}
+      
       {/* Chat messages area */}
       <ScrollArea ref={scrollRef} className="flex-1 p-4">
         <div className="max-w-3xl mx-auto space-y-6">
