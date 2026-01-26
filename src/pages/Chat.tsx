@@ -198,10 +198,10 @@ export default function Chat() {
   };
 
   const suggestedQuestions = [
-    "Comment classifier un smartphone ?",
-    "Quels sont les droits de douane sur les voitures au Maroc ?",
-    "Le code 8517.12 est-il contrôlé ?",
-    "Calculer les droits pour 10000 USD de textiles",
+    "Quel est le taux de droit de douane pour le code 8517.12 au Maroc ?",
+    "Quelle est la TVA à l'import au Maroc ?",
+    "Le Maroc a-t-il un accord commercial avec l'UE ?",
+    "Ce produit est-il soumis à un contrôle sanitaire ?",
   ];
 
   return (
