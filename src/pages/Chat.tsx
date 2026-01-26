@@ -198,10 +198,10 @@ export default function Chat() {
   };
 
   const suggestedQuestions = [
-    "Quel est le taux de droit de douane pour le code 8517.12 au Maroc ?",
-    "Quelle est la TVA à l'import au Maroc ?",
-    "Le Maroc a-t-il un accord commercial avec l'UE ?",
-    "Ce produit est-il soumis à un contrôle sanitaire ?",
+    "Quels documents sont requis pour importer des produits alimentaires ?",
+    "Quelle est la procédure de dédouanement au Maroc ?",
+    "Quelles sont les règles d'origine pour bénéficier de l'accord UE-Maroc ?",
+    "Mon produit nécessite-t-il une licence d'importation ?",
   ];
 
   return (
