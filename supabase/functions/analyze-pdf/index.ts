@@ -47,71 +47,80 @@ async function analyzeWithClaude(
   const MAX_RETRIES = 3;
   const BASE_DELAY = 5000; // 5 seconds base delay
   
-  const analysisPrompt = `Tu es un expert en tarifs douaniers marocains. Analyse ce document PDF.
+  const analysisPrompt = `Tu es un expert en tarifs douaniers marocains. Analyse ce document PDF avec PRÉCISION.
 
 Document : ${title}
 Catégorie : ${category}
 
-STRUCTURE DU TABLEAU - 5 COLONNES DE CODIFICATION :
-Le tarif marocain utilise un tableau avec ces colonnes :
-1. CODIFICATION : 5 sous-colonnes qui forment le code national à 10 chiffres
-   - Col 1-2 : Position SH (4 chiffres, format XX.XX)
-   - Col 3 : Sous-position (2 chiffres après les 4 premiers)
-   - Col 4-5 : Lignes nationales (4 derniers chiffres, souvent "XX 00")
-2. DÉSIGNATION DES PRODUITS : Description du produit (peut contenir des tirets "-" pour la hiérarchie)
-3. DROIT D'IMPORTATION : Taux DDI en pourcentage
-4. UNITÉ DE QUANTITÉ NORMALISÉE : Unité de mesure (kg, L, U, etc.)
+=== STRUCTURE EXACTE DU TABLEAU MAROCAIN ===
 
-RÈGLE CRITIQUE - HÉRITAGE DES CODES :
-Les codes sont HÉRITÉS d'une ligne à l'autre ! 
-- Si une ligne n'a que les colonnes 4-5 remplies (ex: "10 00"), elle HÉRITE du préfixe des lignes précédentes
-- Tu dois MÉMORISER le préfixe courant et le COMBINER avec les suffixes
+La colonne CODIFICATION contient jusqu'à 5 sous-colonnes de chiffres :
+- Colonnes 1-2 : Position SH (format "XX.XX", ex: "04.01")
+- Colonne 3 : Sous-position (2 chiffres, ex: "10")  
+- Colonnes 4-5 : Code national (4 chiffres, souvent "XX 00" ou "XX XX")
 
-EXEMPLE CONCRET D'HÉRITAGE :
-| Col1-2 | Col3 | Col4-5 | Désignation                   | DDI  | Unité | → Code reconstitué |
-|--------|------|--------|-------------------------------|------|-------|-------------------|
-| 07.01  |      |        | Pommes de terre               | -    | -     | Préfixe = "0701"  |
-|        | 10   |        | - Plants                      | -    | -     | Préfixe = "070110"|
-|        |      | 00 00  | -- Plants                     | 25%  | kg    | 0701100000        |
-|        | 90   |        | - Autres                      | -    | -     | Préfixe = "070190"|
-|        |      | 11 00  | -- Fraîches, conditionnées    | 40%  | kg    | 0701901100        |
-|        |      | 19 00  | -- Autres fraîches            | 40%  | kg    | 0701901900        |
+Autres colonnes :
+- DÉSIGNATION DES PRODUITS : Description du produit
+- DROIT D'IMPORTATION : Taux DDI en % 
+- UNITÉ DE QUANTITÉ NORMALISÉE : Unité (KG, L, U, etc.)
 
-EXTRACTION - HS_CODES (codes à 6 chiffres) :
-Pour chaque SOUS-POSITION (6 chiffres), extrais :
-- code: format "XXXX.XX" (ex: "0701.10")
-- code_clean: 6 chiffres (ex: "070110")
-- description: texte de "Désignation des Produits" SANS les tirets de début
+=== RÈGLE CRITIQUE : HÉRITAGE COLONNE PAR COLONNE ===
+
+CHAQUE LIGNE hérite les chiffres des colonnes VIDES de la ligne précédente.
+Tu dois MÉMORISER l'état de chaque colonne et le PROPAGER.
+
+EXEMPLE RÉEL DU TARIF :
+| Col1-2  | Col3 | Col4 | Col5 | Description                           | DDI | Unité |
+|---------|------|------|------|---------------------------------------|-----|-------|
+| 04.01   |      |      |      | Lait et crème de lait...              |     |       |
+|         | 10   | 00   |      | - Teneur matières grasses ≤1%         |     |       |
+|         |      | 11   | 00   | --- lait écrémé                       | 100 | KG    |
+|         |      | 19   | 00   | --- autres                            | 100 | KG    |
+|         |      | 20   | 00   | --- conservés en boîtes...            | 100 | KG    |
+|         | 20   | 00   |      | - Teneur matières grasses 1%-6%       |     |       |
+|         |      | 11   | 00   | --- lait complet                      | 100 | KG    |
+
+RECONSTRUCTION ÉTAPE PAR ÉTAPE :
+1. "04.01" → Mémorise: Col1-2="0401"
+2. "10 00" → Mémorise: Col3="10", Col4="00" → Préfixe="040110"  
+3. "11 00" sous description → Col4="11", Col5="00" → Code="0401101100"
+4. "19 00" sous description → Col4="19", Col5="00" → Code="0401101900"
+5. "20 00" sous parent → Col3="20", Col4="00" → Nouveau préfixe="040120"
+6. "11 00" sous ce parent → Col4="11", Col5="00" → Code="0401201100"
+
+=== EXTRACTION HS_CODES (6 chiffres) ===
+Chaque sous-position visible (quand Col3 change) :
+- code: format "XXXX.XX" (ex: "0401.10")
+- code_clean: 6 chiffres SANS points (ex: "040110")
+- description: texte SANS tirets de début
 - level: "subheading"
 
-EXTRACTION - TARIFF_LINES (codes à 10 chiffres avec DDI) :
-Pour chaque ligne AVEC un taux de droit d'importation, extrais :
-- national_code: 10 chiffres reconstitués par héritage (ex: "0701901100")
-- hs_code_6: les 6 premiers chiffres (ex: "070190")
-- description: texte complet de "Désignation des Produits"
-- duty_rate: le taux DDI en nombre (ex: 40 pour 40%)
-- unit: l'unité de quantité normalisée (ex: "kg")
+=== EXTRACTION TARIFF_LINES (10 chiffres) ===
+Chaque ligne AVEC taux DDI :
+- national_code: 10 chiffres par héritage (Col1-2 + Col3 + Col4 + Col5)
+- hs_code_6: 6 premiers chiffres du national_code
+- description: texte de Désignation des Produits
+- duty_rate: nombre (ex: 100, 50, 2.5)
+- unit: unité normalisée (ex: "KG")
 
-VALIDATION OBLIGATOIRE :
-- national_code = EXACTEMENT 10 chiffres numériques
-- hs_code_6 = les 6 premiers chiffres du national_code
-- Ne PAS extraire les lignes sans taux DDI (positions parentes)
-- Extrais MAXIMUM ${maxLines} lignes tarifaires
-- Extrais TOUTES les sous-positions à 6 chiffres visibles
+=== VALIDATION STRICTE ===
+✓ national_code = EXACTEMENT 10 chiffres numériques
+✓ hs_code_6 = 6 premiers chiffres du national_code  
+✓ Ignorer lignes SANS taux DDI
+✓ Maximum ${maxLines} tariff_lines
+✓ Extraire TOUTES les hs_codes à 6 chiffres
 
-Réponds UNIQUEMENT avec ce JSON :
+Réponds UNIQUEMENT avec ce JSON valide :
 {
-  "summary": "Résumé court du chapitre",
-  "key_points": ["Note légale 1", "Note légale 2"],
+  "summary": "Résumé du chapitre",
+  "key_points": ["Note 1", "Note 2"],
   "hs_codes": [
-    {"code": "0701.10", "code_clean": "070110", "description": "Plants", "level": "subheading"},
-    {"code": "0701.90", "code_clean": "070190", "description": "Autres", "level": "subheading"}
+    {"code": "0401.10", "code_clean": "040110", "description": "Teneur matières grasses ≤1%", "level": "subheading"}
   ],
   "tariff_lines": [
-    {"national_code": "0701100000", "hs_code_6": "070110", "description": "Plants de pommes de terre", "duty_rate": 25, "unit": "kg"},
-    {"national_code": "0701901100", "hs_code_6": "070190", "description": "Pommes de terre fraîches conditionnées", "duty_rate": 40, "unit": "kg"}
+    {"national_code": "0401101100", "hs_code_6": "040110", "description": "lait écrémé", "duty_rate": 100, "unit": "KG"}
   ],
-  "chapter_info": {"number": 7, "title": "Légumes, plantes, racines et tubercules alimentaires"}
+  "chapter_info": {"number": 4, "title": "Lait et produits de la laiterie..."}
 }`;
 
   // Call Claude API (Anthropic)
