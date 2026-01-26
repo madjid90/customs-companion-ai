@@ -173,12 +173,25 @@ export default function ExtractionPreviewDialog({
       const validHsCodes = hsCodes.filter(hs => validateHsCode(hs.code_clean).valid);
       const validTariffLines = tariffLines.filter(t => validateNationalCode(t.national_code).valid);
 
+      // DEDUPLICATE HS codes by code (keep last occurrence)
+      const uniqueHsMap = new Map<string, typeof validHsCodes[0]>();
+      validHsCodes.forEach(hs => uniqueHsMap.set(hs.code, hs));
+      const uniqueHsCodes = Array.from(uniqueHsMap.values());
+
+      // DEDUPLICATE tariff lines by country_code + national_code (keep last occurrence)
+      const uniqueTariffMap = new Map<string, typeof validTariffLines[0]>();
+      validTariffLines.forEach(line => {
+        const key = `${countryCode}:${line.national_code}`;
+        uniqueTariffMap.set(key, line);
+      });
+      const uniqueTariffLines = Array.from(uniqueTariffMap.values());
+
       // Insert HS codes
-      if (validHsCodes.length > 0) {
+      if (uniqueHsCodes.length > 0) {
         const chapterNumber = extractionData?.chapter_info?.number || null;
         const chapterTitle = extractionData?.chapter_info?.title || null;
 
-        const hsRows = validHsCodes.map(hsCode => ({
+        const hsRows = uniqueHsCodes.map(hsCode => ({
           code: hsCode.code,
           code_clean: hsCode.code_clean,
           description_fr: hsCode.description,
@@ -203,8 +216,8 @@ export default function ExtractionPreviewDialog({
       }
 
       // Insert tariff lines
-      if (validTariffLines.length > 0) {
-        const tariffRows = validTariffLines.map(line => ({
+      if (uniqueTariffLines.length > 0) {
+        const tariffRows = uniqueTariffLines.map(line => ({
           country_code: countryCode,
           hs_code_6: line.hs_code_6,
           national_code: line.national_code,
@@ -236,12 +249,12 @@ export default function ExtractionPreviewDialog({
           pdf_id: pdfId,
           summary: extractionData?.summary || "",
           key_points: extractionData?.key_points || [],
-          mentioned_hs_codes: validHsCodes.map(h => h.code_clean),
-          detected_tariff_changes: JSON.parse(JSON.stringify(validTariffLines)),
+          mentioned_hs_codes: uniqueHsCodes.map(h => h.code_clean),
+          detected_tariff_changes: JSON.parse(JSON.stringify(uniqueTariffLines)),
           extracted_data: JSON.parse(JSON.stringify({
             chapter_info: extractionData?.chapter_info || null,
-            tariff_lines_count: validTariffLines.length,
-            hs_codes_count: validHsCodes.length,
+            tariff_lines_count: uniqueTariffLines.length,
+            hs_codes_count: uniqueHsCodes.length,
           })),
           extraction_model: "claude-sonnet-4-20250514",
           extraction_confidence: 0.90,
@@ -257,13 +270,13 @@ export default function ExtractionPreviewDialog({
         .update({
           is_verified: true,
           verified_at: new Date().toISOString(),
-          related_hs_codes: validHsCodes.map(h => h.code_clean),
+          related_hs_codes: uniqueHsCodes.map(h => h.code_clean),
         })
         .eq("id", pdfId);
 
       toast({
         title: "✅ Données insérées avec succès",
-        description: `${validHsCodes.length} codes SH et ${validTariffLines.length} lignes tarifaires`,
+        description: `${uniqueHsCodes.length} codes SH et ${uniqueTariffLines.length} lignes tarifaires`,
       });
 
       onInsertComplete();
