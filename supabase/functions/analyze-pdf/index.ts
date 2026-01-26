@@ -253,8 +253,8 @@ serve(async (req) => {
     const fileInfo = fileList?.find(f => filePath.endsWith(f.name));
     const fileSizeMB = fileInfo?.metadata?.size ? fileInfo.metadata.size / (1024 * 1024) : 0;
     
-    // Limit to 10MB to stay within Edge Function memory limits
-    const MAX_FILE_SIZE_MB = 10;
+    // Limit to 25MB - using chunked base64 conversion to manage memory
+    const MAX_FILE_SIZE_MB = 25;
     if (fileSizeMB > MAX_FILE_SIZE_MB) {
       console.error(`PDF too large: ${fileSizeMB.toFixed(2)}MB (max: ${MAX_FILE_SIZE_MB}MB)`);
       return new Response(
