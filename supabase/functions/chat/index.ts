@@ -405,7 +405,7 @@ serve(async (req) => {
   }
 
   try {
-    const { question, sessionId, images } = await req.json();
+    const { question, sessionId, images, conversationHistory } = await req.json();
 
     if (!question && (!images || images.length === 0)) {
       return new Response(
@@ -724,6 +724,29 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => `- **${p.tit
 ---
 ⚠️ RAPPEL CRITIQUE: POSE **UNE SEULE QUESTION** par message. Utilise le format avec tirets pour les options (elles seront transformées en boutons cliquables).`;
 
+    // Build messages array with conversation history
+    const claudeMessages: { role: "user" | "assistant"; content: string }[] = [];
+    
+    // Add previous conversation history if available
+    if (conversationHistory && Array.isArray(conversationHistory) && conversationHistory.length > 0) {
+      // Limit history to last 10 messages to avoid token limits
+      const recentHistory = conversationHistory.slice(-10);
+      for (const msg of recentHistory) {
+        if (msg.role === "user" || msg.role === "assistant") {
+          claudeMessages.push({
+            role: msg.role,
+            content: msg.content,
+          });
+        }
+      }
+    }
+    
+    // Add current question
+    claudeMessages.push({
+      role: "user",
+      content: enrichedQuestion || question || "Identifie ce produit",
+    });
+
     // Call Claude AI (Anthropic API)
     const startTime = Date.now();
     const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
@@ -737,9 +760,7 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => `- **${p.tit
         model: "claude-sonnet-4-20250514",
         max_tokens: 4096,
         system: systemPrompt,
-        messages: [
-          { role: "user", content: enrichedQuestion || question || "Identifie ce produit" }
-        ],
+        messages: claudeMessages,
       }),
     });
 
