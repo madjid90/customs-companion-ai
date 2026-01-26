@@ -175,8 +175,9 @@ Ligne: "1 | 90 |  |  |" → HÉRITAGE 100111 + "90" + "00" = 1001119000
 ✓ Préserver les notes (a), (b) etc. dans duty_rate
 ✓ Maximum ${maxLines} raw_lines avec taux
 ✓ Les tirets "–" dans description indiquent le niveau hiérarchique
-✓ IGNORER les codes entre crochets [XX.XX] ou [XXXX.XX] - ce sont des positions RÉSERVÉES/VIDES
+✓ IGNORER COMPLÈTEMENT les codes entre crochets [XX.XX] ou [XXXX.XX] - ce sont des positions RÉSERVÉES/VIDES - NE PAS les inclure dans raw_lines ni dans hs_codes
 ✓ Les positions simples XX.XX (ex: 14.01, 14.04) sont des headings valides à extraire
+✓ TOUS les codes dans hs_codes doivent avoir un code_clean de EXACTEMENT 6 CHIFFRES (ex: "140100", "100111")
 
 RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
 
@@ -246,12 +247,18 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
     let nationalCode: string;
     let isInherited = false;
     
-    // Nettoyer col1 des points et espaces
+    // IGNORER les codes réservés entre crochets [XX.XX] ou [XXXX.XX]
+    if (isReservedCode(col1Raw)) {
+      console.log(`Skipping reserved code in processRawLines: "${col1Raw}"`);
+      continue;
+    }
+    
+    // Nettoyer col1 des points et espaces APRÈS vérification des crochets
     const col1Clean = cleanCode(col1Raw);
     
-    // IGNORER les codes réservés entre crochets [XX.XX] ou [XXXX.XX]
-    if (col1Raw.startsWith("[") || col1Raw.endsWith("]")) {
-      console.log(`Skipping reserved code in processRawLines: "${col1Raw}"`);
+    // Vérification supplémentaire après nettoyage - le code doit être numérique
+    if (col1Raw.includes(".") && col1Clean.length >= 4 && !/^\d+$/.test(col1Clean)) {
+      console.log(`Skipping non-numeric code: "${col1Raw}" -> "${col1Clean}"`);
       continue;
     }
     
@@ -377,9 +384,25 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
 
 /**
  * Vérifie si un code est entre crochets (position réservée/vide)
+ * Détecte aussi les codes nettoyés qui contenaient des crochets
  */
 function isReservedCode(code: string): boolean {
-  return code.startsWith("[") || code.endsWith("]");
+  if (!code) return true;
+  const raw = code.trim();
+  // Crochets présents
+  if (raw.startsWith("[") || raw.endsWith("]") || raw.includes("[") || raw.includes("]")) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Vérifie si un code clean est valide (6 chiffres uniquement)
+ */
+function isValidCleanCode(codeClean: string): boolean {
+  if (!codeClean) return false;
+  // Doit être exactement 6 chiffres
+  return /^\d{6}$/.test(codeClean);
 }
 
 /**
@@ -392,7 +415,8 @@ function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[]): HS
   // D'abord depuis les lignes tarifaires
   for (const line of tariffLines) {
     const code6 = line.hs_code_6;
-    if (code6 && code6.length === 6 && !seen.has(code6)) {
+    // Validation stricte : 6 chiffres uniquement
+    if (code6 && isValidCleanCode(code6) && !seen.has(code6)) {
       seen.add(code6);
       results.push({
         code: `${code6.slice(0, 4)}.${code6.slice(4, 6)}`,
@@ -409,14 +433,20 @@ function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[]): HS
     
     // IGNORER les codes réservés entre crochets [XX.XX]
     if (isReservedCode(col1)) {
-      console.log(`Ignoring reserved/empty code: "${col1}"`);
+      console.log(`Ignoring reserved/empty code in extractHSCodes: "${col1}"`);
       continue;
     }
     
     if (col1.includes(".") && col1 !== "1") {
       const clean = cleanCode(col1);
       
-      if (clean.length >= 6) {
+      // Validation stricte après nettoyage
+      if (!isValidCleanCode(clean.slice(0, 6)) && clean.length >= 6) {
+        console.log(`Skipping invalid code after cleaning: "${col1}" -> "${clean}"`);
+        continue;
+      }
+      
+      if (clean.length >= 6 && isValidCleanCode(clean.slice(0, 6))) {
         // Sous-position à 6 chiffres (XXXX.XX)
         const code6 = clean.slice(0, 6);
         if (!seen.has(code6)) {
@@ -428,7 +458,7 @@ function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[]): HS
             level: "subheading",
           });
         }
-      } else if (clean.length === 4) {
+      } else if (clean.length === 4 && /^\d{4}$/.test(clean)) {
         // Position à 4 chiffres (XX.XX) → convertir en 6 chiffres
         const code6 = clean.padEnd(6, "0");
         if (!seen.has(code6)) {
@@ -444,7 +474,8 @@ function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[]): HS
     }
   }
   
-  return results;
+  // Filtrage final : ne garder que les codes valides
+  return results.filter(hs => isValidCleanCode(hs.code_clean));
 }
 
 // =============================================================================
