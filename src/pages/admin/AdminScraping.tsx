@@ -191,6 +191,56 @@ export default function AdminScraping() {
     },
   });
 
+  // Scrape mutation - single site
+  const scrapeSiteMutation = useMutation({
+    mutationFn: async (siteId: string) => {
+      const { data, error } = await supabase.functions.invoke('veille-scraper', {
+        body: { mode: 'site', siteId },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["veille-sites"] });
+      toast({
+        title: "Scraping terminé",
+        description: `${data.documents_new || 0} nouveaux documents trouvés.`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Erreur de scraping",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Scrape all sites mutation
+  const scrapeAllMutation = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('veille-scraper', {
+        body: { mode: 'full' },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["veille-sites"] });
+      toast({
+        title: "Scraping global terminé",
+        description: `${data.sites_scraped || 0} sites scrapés, ${data.documents_new || 0} nouveaux documents.`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Erreur de scraping",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleOpenDialog = (site?: VeilleSite) => {
     if (site) {
       setEditingSite(site);
@@ -264,13 +314,22 @@ export default function AdminScraping() {
             Gérez les sites à scraper pour la veille douanière
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => handleOpenDialog()}>
-              <Plus className="w-4 h-4 mr-2" />
-              Ajouter un site
-            </Button>
-          </DialogTrigger>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => scrapeAllMutation.mutate()}
+            disabled={scrapeAllMutation.isPending || scrapeSiteMutation.isPending}
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${scrapeAllMutation.isPending ? 'animate-spin' : ''}`} />
+            {scrapeAllMutation.isPending ? "Scraping en cours..." : "Lancer le scraping global"}
+          </Button>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={() => handleOpenDialog()}>
+                <Plus className="w-4 h-4 mr-2" />
+                Ajouter un site
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>
@@ -437,7 +496,8 @@ export default function AdminScraping() {
               </div>
             </form>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -560,6 +620,15 @@ export default function AdminScraping() {
                     <TableCell>{site.total_documents_found || 0}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => scrapeSiteMutation.mutate(site.id)}
+                          disabled={scrapeSiteMutation.isPending || scrapeAllMutation.isPending}
+                          title="Lancer le scraping"
+                        >
+                          <RefreshCw className={`w-4 h-4 ${scrapeSiteMutation.isPending ? 'animate-spin' : ''}`} />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"
