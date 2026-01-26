@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Send, Bot, User, ThumbsUp, ThumbsDown, Loader2, Sparkles, Database, FileText, AlertTriangle, ImagePlus } from "lucide-react";
+import { Send, Bot, User, ThumbsUp, ThumbsDown, Loader2, Sparkles, Database, FileText, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
 import { ImageUploadButton, type UploadedFile } from "@/components/chat/ImageUploadButton";
+import { InteractiveQuestions, parseQuestionsFromResponse } from "@/components/chat/InteractiveQuestions";
 
 interface Message {
   id: string;
@@ -275,6 +276,17 @@ export default function Chat() {
                     >
                       {message.content}
                     </ReactMarkdown>
+                    
+                    {/* Interactive questions - only show for the last assistant message */}
+                    {messages[messages.length - 1]?.id === message.id && (
+                      <InteractiveQuestions
+                        questions={parseQuestionsFromResponse(message.content)}
+                        onAnswer={(questionId, answer) => {
+                          handleSend(answer);
+                        }}
+                        disabled={isLoading}
+                      />
+                    )}
                   </div>
                 ) : (
                   <p className="whitespace-pre-wrap text-sm leading-relaxed">
