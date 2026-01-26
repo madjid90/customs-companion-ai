@@ -47,7 +47,7 @@ serve(async (req) => {
       .single();
 
     // Call Lovable AI to analyze based on document metadata
-    const analysisPrompt = `Tu es un expert en douane et commerce international.
+    const analysisPrompt = `Tu es un expert en douane et commerce international spécialisé dans les tarifs douaniers.
 
 Analyse ce document PDF douanier :
 - Titre : ${pdfDoc?.title || "Document sans titre"}
@@ -55,12 +55,19 @@ Analyse ce document PDF douanier :
 - Pays : ${pdfDoc?.country_code || "Non spécifié"}
 - URL : ${pdfUrl}
 
+Ce document peut être un tarif douanier avec des tableaux contenant :
+- Codes SH (codification tarifaire, format XX.XX, XXXX.XX.XX.XX)
+- Droits d'importation (pourcentages)
+- Désignations de produits
+- Notes légales de chapitre
+
 Génère une analyse structurée au format JSON avec :
-1. "summary" : Un résumé concis du document (2-3 phrases)
-2. "key_points" : Les points clés du document (liste de 3-5 éléments)
-3. "hs_codes" : Liste des codes SH probablement concernés (format: ["8471.30", "8517.12"])
-4. "tariff_changes" : Changements tarifaires détectés (liste vide si aucun)
-5. "authorities" : Autorités de contrôle mentionnées (MCINET, ONSSA, etc.)
+1. "summary" : Un résumé concis du document (2-3 phrases) incluant le chapitre/section concerné
+2. "key_points" : Les points clés du document (liste de 3-5 éléments, inclure les notes légales importantes)
+3. "hs_codes" : Liste des codes SH 4 ou 6 chiffres détectés (format: ["9601", "9602.00", "9603.10"])
+4. "tariff_changes" : Taux de droits détectés (format: [{"code": "9601.10", "rate": 2.5, "unit": "kg"}])
+5. "authorities" : Autorités mentionnées (ADII, Douanes, MCINET, ONSSA, etc.)
+6. "chapter_info" : Informations sur le chapitre (numéro et titre si détectable)
 
 Réponds UNIQUEMENT avec le JSON, sans markdown ni explication.`;
 
