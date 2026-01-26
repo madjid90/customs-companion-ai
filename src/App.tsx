@@ -35,8 +35,6 @@ const App = () => (
             <Route element={<PublicLayout />}>
               <Route path="/" element={<Navigate to="/chat" replace />} />
               <Route path="/chat" element={<Chat />} />
-              <Route path="/search" element={<Navigate to="/chat" replace />} />
-              <Route path="/calculate" element={<Navigate to="/chat" replace />} />
             </Route>
 
             {/* Admin routes */}
