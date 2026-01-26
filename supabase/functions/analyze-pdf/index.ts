@@ -180,16 +180,59 @@ Réponds UNIQUEMENT avec ce JSON valide :
   
   const responseText = aiData.content?.[0]?.text || "{}";
   
-  // Parse AI response
+  // Parse AI response - extract JSON from anywhere in the response
   let cleanedResponse = responseText.trim();
-  if (cleanedResponse.startsWith("```json")) cleanedResponse = cleanedResponse.slice(7);
-  if (cleanedResponse.startsWith("```")) cleanedResponse = cleanedResponse.slice(3);
-  if (cleanedResponse.endsWith("```")) cleanedResponse = cleanedResponse.slice(0, -3);
-  cleanedResponse = cleanedResponse.trim();
   
-  try {
-    const result = JSON.parse(cleanedResponse) as AnalysisResult;
-    
+  // Remove markdown code blocks
+  if (cleanedResponse.includes("```json")) {
+    const jsonStart = cleanedResponse.indexOf("```json") + 7;
+    const jsonEnd = cleanedResponse.indexOf("```", jsonStart);
+    if (jsonEnd > jsonStart) {
+      cleanedResponse = cleanedResponse.slice(jsonStart, jsonEnd).trim();
+    }
+  } else if (cleanedResponse.includes("```")) {
+    const jsonStart = cleanedResponse.indexOf("```") + 3;
+    const jsonEnd = cleanedResponse.indexOf("```", jsonStart);
+    if (jsonEnd > jsonStart) {
+      cleanedResponse = cleanedResponse.slice(jsonStart, jsonEnd).trim();
+    }
+  }
+  
+  // If still not valid JSON, try to extract JSON object from the text
+  if (!cleanedResponse.startsWith("{")) {
+    const jsonMatch = responseText.match(/\{[\s\S]*"summary"[\s\S]*\}/);
+    if (jsonMatch) {
+      cleanedResponse = jsonMatch[0];
+    }
+  }
+  
+  // Try to parse, with fallback repair for truncated JSON
+  const parseJsonWithRepair = (text: string): AnalysisResult | null => {
+    try {
+      return JSON.parse(text) as AnalysisResult;
+    } catch (e) {
+      // Try to repair truncated JSON by closing brackets
+      let repaired = text;
+      const openBraces = (text.match(/\{/g) || []).length;
+      const closeBraces = (text.match(/\}/g) || []).length;
+      const openBrackets = (text.match(/\[/g) || []).length;
+      const closeBrackets = (text.match(/\]/g) || []).length;
+      
+      // Close unclosed brackets and braces
+      for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += "]";
+      for (let i = 0; i < openBraces - closeBraces; i++) repaired += "}";
+      
+      try {
+        return JSON.parse(repaired) as AnalysisResult;
+      } catch {
+        return null;
+      }
+    }
+  };
+  
+  const result = parseJsonWithRepair(cleanedResponse);
+  
+  if (result) {
     // Validate and fix national codes
     if (result.tariff_lines) {
       result.tariff_lines = result.tariff_lines
@@ -211,10 +254,21 @@ Réponds UNIQUEMENT avec ce JSON valide :
     
     console.log("Parsed result:", result.tariff_lines?.length || 0, "tariff lines");
     return { result, truncated, rateLimited: false };
-  } catch (parseError) {
-    console.error("Failed to parse Claude response:", parseError);
-    console.error("Raw response (first 1000):", responseText.substring(0, 1000));
-    return { result: null, truncated, rateLimited: false };
+  } else {
+    console.error("Failed to parse Claude response");
+    console.error("Raw response (first 500):", responseText.substring(0, 500));
+    
+    // Return a minimal valid result instead of null
+    return { 
+      result: {
+        summary: "Analyse partielle - Le document ne contient pas de données tarifaires structurées",
+        key_points: ["Document analysé mais format non-tarifaire détecté"],
+        hs_codes: [],
+        tariff_lines: [],
+      }, 
+      truncated, 
+      rateLimited: false 
+    };
   }
 }
 
