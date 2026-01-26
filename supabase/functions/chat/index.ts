@@ -309,17 +309,107 @@ function analyzeQuestion(question: string) {
   return { detectedCodes, intent, keywords, country };
 }
 
+// ============================================================================
+// ANALYSE D'IMAGE AVEC CLAUDE VISION
+// ============================================================================
+
+interface ImageInput {
+  type: "image";
+  base64: string;
+  mediaType: string;
+}
+
+async function analyzeImageWithClaude(
+  images: ImageInput[],
+  question: string,
+  apiKey: string
+): Promise<{ productDescription: string; suggestedCodes: string[]; questions: string[] }> {
+  
+  const imageContent = images.map(img => ({
+    type: "image" as const,
+    source: {
+      type: "base64" as const,
+      media_type: img.mediaType,
+      data: img.base64,
+    },
+  }));
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 2048,
+      messages: [
+        {
+          role: "user",
+          content: [
+            ...imageContent,
+            {
+              type: "text",
+              text: `Tu es un expert en classification douanière. Analyse cette/ces image(s) pour identifier le produit.
+
+Question de l'utilisateur: "${question}"
+
+Réponds en JSON avec ce format:
+{
+  "productDescription": "Description détaillée du produit visible (matériaux, fonction, caractéristiques)",
+  "suggestedCodes": ["8517.12", "8517.13"], // Codes SH probables (4-6 chiffres)
+  "questions": ["Question pour clarifier si nécessaire"] // Max 2 questions
+}
+
+IMPORTANT:
+- Si c'est une facture/fiche technique, extrais les informations produit
+- Suggère des codes SH basés sur ce que tu vois
+- Pose des questions uniquement si crucial pour la classification`,
+            },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Vision API error:", response.status, errorText);
+    throw new Error(`Vision API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const text = data.content?.[0]?.text || "{}";
+  
+  try {
+    // Extract JSON from response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+  } catch (e) {
+    console.error("Failed to parse vision response:", e);
+  }
+
+  return {
+    productDescription: text,
+    suggestedCodes: [],
+    questions: [],
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { question, sessionId } = await req.json();
+    const { question, sessionId, images } = await req.json();
 
-    if (!question) {
+    if (!question && (!images || images.length === 0)) {
       return new Response(
-        JSON.stringify({ error: "Question is required" }),
+        JSON.stringify({ error: "Question or images required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -334,8 +424,37 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
-    // Analyze the question
-    const analysis = analyzeQuestion(question);
+    // If images are provided, analyze them first with Claude Vision
+    let imageAnalysis: { productDescription: string; suggestedCodes: string[]; questions: string[] } | null = null;
+    let enrichedQuestion = question || "";
+    
+    if (images && images.length > 0) {
+      console.log("Analyzing", images.length, "image(s) with Claude Vision...");
+      try {
+        imageAnalysis = await analyzeImageWithClaude(images, question || "Identifie ce produit", ANTHROPIC_API_KEY);
+        console.log("Image analysis result:", JSON.stringify(imageAnalysis));
+        
+        // Enrich the question with image analysis
+        enrichedQuestion = `${question || "Identifie ce produit et donne-moi le code SH"}
+
+[ANALYSE D'IMAGE]
+Description du produit identifié: ${imageAnalysis.productDescription}
+Codes SH suggérés par l'analyse visuelle: ${imageAnalysis.suggestedCodes.join(", ") || "Aucun"}
+${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnalysis.questions.join("; ")}` : ""}`;
+      } catch (visionError) {
+        console.error("Vision analysis failed:", visionError);
+        // Continue without image analysis
+      }
+    }
+
+    // Analyze the question (enriched with image analysis if available)
+    const analysis = analyzeQuestion(enrichedQuestion);
+    
+    // Add suggested codes from image analysis
+    if (imageAnalysis?.suggestedCodes.length) {
+      const cleanedSuggested = imageAnalysis.suggestedCodes.map(c => cleanHSCode(c));
+      analysis.detectedCodes = [...new Set([...analysis.detectedCodes, ...cleanedSuggested])];
+    }
     console.log("Question analysis:", JSON.stringify(analysis));
 
     // Collect context from database
@@ -485,6 +604,17 @@ serve(async (req) => {
       tariffsContext = "Aucun tarif trouvé";
     }
 
+    // Build image analysis context
+    let imageAnalysisContext = "";
+    if (imageAnalysis) {
+      imageAnalysisContext = `
+### Analyse d'image/document uploadé
+**Description du produit identifié:** ${imageAnalysis.productDescription}
+**Codes SH suggérés par l'analyse visuelle:** ${imageAnalysis.suggestedCodes.join(", ") || "Non déterminés"}
+${imageAnalysis.questions.length > 0 ? `**Questions de clarification suggérées:** ${imageAnalysis.questions.join("; ")}` : ""}
+`;
+    }
+
     // Build system prompt
     const systemPrompt = `Tu es **DouaneAI**, un assistant expert en douane et commerce international, spécialisé dans la réglementation ${analysis.country === 'MA' ? 'marocaine' : 'africaine'}.
 
@@ -506,13 +636,17 @@ serve(async (req) => {
    - Si le taux est "hérité", mentionne-le clairement
 7. **Alerte sur les produits contrôlés** avec l'autorité compétente (MCINET, ONSSA, ANRT, etc.)
 8. **Alerte sur les produits interdits** ou restreints
-9. Termine par un indicateur de confiance :
+9. **Si une image/document a été analysé:**
+   - Utilise la description du produit pour identifier le code SH approprié
+   - Si des codes sont suggérés, vérifie-les dans la base de données
+   - Pose des questions de clarification si nécessaire pour affiner la classification
+10. Termine par un indicateur de confiance :
    - 🟢 **CONFIANCE HAUTE** : données vérifiées avec taux direct ou héritage uniforme
    - 🟡 **CONFIANCE MOYENNE** : fourchette de taux ou information partielle
    - 🔴 **CONFIANCE FAIBLE** : pas de source directe, conseil général
 
 ## CONTEXTE BASE DE DONNÉES
-
+${imageAnalysisContext}
 ### Tarifs avec héritage hiérarchique
 ${tariffsContext}
 
@@ -545,7 +679,7 @@ Réponds maintenant à la question de l'utilisateur en français, de manière cl
         max_tokens: 4096,
         system: systemPrompt,
         messages: [
-          { role: "user", content: question }
+          { role: "user", content: enrichedQuestion || question || "Identifie ce produit" }
         ],
       }),
     });
