@@ -66,16 +66,63 @@ async function analyzeWithClaude(apiKey: string, prompt: string, maxTokens: numb
     const data = await response.json();
     const text = data.content?.[0]?.text || "{}";
     
-    // Parse JSON from response
-    let cleaned = text.trim();
-    if (cleaned.startsWith("```json")) cleaned = cleaned.slice(7);
-    if (cleaned.startsWith("```")) cleaned = cleaned.slice(3);
-    if (cleaned.endsWith("```")) cleaned = cleaned.slice(0, -3);
+    // Robust JSON extraction - find JSON object or array in response
+    let jsonStr = text.trim();
     
-    return JSON.parse(cleaned.trim());
+    // Remove markdown code blocks
+    jsonStr = jsonStr.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '');
+    
+    // Try to find JSON object pattern { ... }
+    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      jsonStr = jsonMatch[0];
+    }
+    
+    // Try parsing directly
+    try {
+      return JSON.parse(jsonStr);
+    } catch {
+      // If parsing fails, try to fix common issues
+      // Fix truncated strings by closing them
+      let fixed = jsonStr;
+      
+      // Count unclosed brackets and quotes
+      const openBraces = (fixed.match(/\{/g) || []).length;
+      const closeBraces = (fixed.match(/\}/g) || []).length;
+      const openBrackets = (fixed.match(/\[/g) || []).length;
+      const closeBrackets = (fixed.match(/\]/g) || []).length;
+      
+      // Close unclosed arrays and objects
+      for (let i = 0; i < openBrackets - closeBrackets; i++) {
+        fixed += ']';
+      }
+      for (let i = 0; i < openBraces - closeBraces; i++) {
+        fixed += '}';
+      }
+      
+      // Try to fix truncated string by finding last unclosed quote
+      if (fixed.split('"').length % 2 === 0) {
+        // Odd number of quotes, find the last incomplete string
+        const lastQuoteIdx = fixed.lastIndexOf('"');
+        if (lastQuoteIdx > 0) {
+          // Check if we need to close the string
+          const afterQuote = fixed.substring(lastQuoteIdx + 1);
+          if (!afterQuote.includes('"') && !afterQuote.match(/^\s*[,}\]]/)) {
+            fixed = fixed.substring(0, lastQuoteIdx + 1) + '"' + afterQuote;
+          }
+        }
+      }
+      
+      try {
+        return JSON.parse(fixed);
+      } catch {
+        console.error("Could not parse Claude response, returning empty documents");
+        return { documents: [] };
+      }
+    }
   } catch (e) {
     console.error("Claude analysis failed:", e);
-    return null;
+    return { documents: [] };
   }
 }
 
