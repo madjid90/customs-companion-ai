@@ -5,35 +5,63 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
 import { 
   Upload, 
   FileText, 
   Loader2, 
   CheckCircle2, 
   XCircle, 
-  Sparkles,
+  Brain,
   Database,
-  Brain
+  Eye
 } from "lucide-react";
+import ExtractionPreviewDialog from "@/components/admin/ExtractionPreviewDialog";
+
+interface HSCodeEntry {
+  code: string;
+  code_clean: string;
+  description: string;
+  level: string;
+}
+
+interface TariffLine {
+  national_code: string;
+  hs_code_6: string;
+  description: string;
+  duty_rate: number;
+  unit?: string;
+}
+
+interface ExtractionData {
+  summary: string;
+  key_points: string[];
+  hs_codes: HSCodeEntry[];
+  tariff_lines: TariffLine[];
+  chapter_info?: { number: number; title: string };
+  pdfId?: string;
+  pdfTitle?: string;
+  countryCode?: string;
+}
 
 interface UploadedFile {
   id: string;
   name: string;
   size: number;
-  status: "uploading" | "analyzing" | "success" | "error";
+  status: "uploading" | "analyzing" | "preview" | "success" | "error";
   progress: number;
   error?: string;
-  analysis?: {
-    summary: string;
-    key_points: string[];
-    hs_codes: Array<string | { code: string; code_clean: string; description: string; level: string }>;
-    tariff_lines?: any[];
-  };
+  pdfId?: string;
+  filePath?: string;
+  countryCode?: string;
+  analysis?: ExtractionData;
 }
 
 export default function AdminUpload() {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null);
   const { toast } = useToast();
 
   const updateFileStatus = (id: string, updates: Partial<UploadedFile>) => {
@@ -77,6 +105,7 @@ export default function AdminUpload() {
       size: file.size,
       status: "uploading",
       progress: 0,
+      countryCode: "MA",
     };
 
     setFiles((prev) => [uploadedFile, ...prev]);
@@ -97,10 +126,11 @@ export default function AdminUpload() {
       updateFileStatus(fileId, { progress: 40 });
 
       // 2. Create PDF document record with auto-detected category
+      const pdfTitle = file.name.replace(".pdf", "").replace(/_/g, " ");
       const { data: pdfDoc, error: insertError } = await supabase
         .from("pdf_documents")
         .insert({
-          title: file.name.replace(".pdf", "").replace(/_/g, " "),
+          title: pdfTitle,
           file_name: file.name,
           file_path: filePath,
           file_size_bytes: file.size,
@@ -114,15 +144,21 @@ export default function AdminUpload() {
         .single();
 
       if (insertError) throw insertError;
-      updateFileStatus(fileId, { progress: 60, status: "analyzing" });
+      updateFileStatus(fileId, { 
+        progress: 60, 
+        status: "analyzing",
+        pdfId: pdfDoc.id,
+        filePath: filePath,
+      });
 
-      // 3. Call AI analysis edge function
+      // 3. Call AI analysis edge function (preview mode by default)
       const { data: analysisData, error: analysisError } = await supabase.functions.invoke(
         "analyze-pdf",
         {
           body: { 
             pdfId: pdfDoc.id,
-            filePath: filePath 
+            filePath: filePath,
+            previewOnly: true  // New: preview mode
           },
         }
       );
@@ -130,32 +166,41 @@ export default function AdminUpload() {
       if (analysisError) {
         console.warn("Analysis error (non-blocking):", analysisError);
         updateFileStatus(fileId, {
-          status: "success",
+          status: "error",
           progress: 100,
-          analysis: undefined,
+          error: "Erreur d'analyse IA",
         });
         toast({
-          title: "Document uploadé",
-          description: `${file.name} stocké (analyse IA en attente)`,
+          title: "Erreur d'analyse",
+          description: "Le document a été uploadé mais l'analyse a échoué",
+          variant: "destructive",
         });
       } else {
-        // Store extracted tariff lines if available
-        if (analysisData?.tariff_lines?.length > 0) {
-          console.log(`Extracted ${analysisData.tariff_lines.length} tariff lines`);
-        }
+        // Show preview instead of auto-inserting
+        const extractionData: ExtractionData = {
+          summary: analysisData?.summary || "",
+          key_points: analysisData?.key_points || [],
+          hs_codes: analysisData?.hs_codes || [],
+          tariff_lines: analysisData?.tariff_lines || [],
+          chapter_info: analysisData?.chapter_info,
+          pdfId: pdfDoc.id,
+          pdfTitle: pdfTitle,
+          countryCode: "MA",
+        };
 
         updateFileStatus(fileId, {
-          status: "success",
+          status: "preview",
           progress: 100,
-          analysis: analysisData,
+          pdfId: pdfDoc.id,
+          analysis: extractionData,
         });
         
-        const hsCount = analysisData?.hs_codes?.length || 0;
-        const tariffCount = analysisData?.tariff_lines?.length || 0;
+        const hsCount = extractionData.hs_codes?.length || 0;
+        const tariffCount = extractionData.tariff_lines?.length || 0;
         
         toast({
-          title: "✅ Document analysé avec succès",
-          description: `${hsCount} codes SH et ${tariffCount} lignes tarifaires extraits`,
+          title: "📋 Analyse terminée - Prévisualisation",
+          description: `${hsCount} codes SH et ${tariffCount} lignes tarifaires détectés. Cliquez sur "Prévisualiser" pour valider.`,
         });
       }
     } catch (error: any) {
@@ -170,6 +215,22 @@ export default function AdminUpload() {
         variant: "destructive",
       });
     }
+  };
+
+  const openPreview = (file: UploadedFile) => {
+    setSelectedFile(file);
+    setPreviewDialogOpen(true);
+  };
+
+  const handleInsertComplete = () => {
+    if (selectedFile) {
+      updateFileStatus(selectedFile.id, { status: "success" });
+      toast({
+        title: "✅ Données insérées",
+        description: "Les codes ont été enregistrés en base de données",
+      });
+    }
+    setSelectedFile(null);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -234,8 +295,10 @@ export default function AdminUpload() {
         return <Loader2 className="h-5 w-5 animate-spin text-accent" />;
       case "analyzing":
         return <Brain className="h-5 w-5 animate-pulse text-warning" />;
+      case "preview":
+        return <Eye className="h-5 w-5 text-accent" />;
       case "success":
-        return <CheckCircle2 className="h-5 w-5 text-green-500" />;
+        return <CheckCircle2 className="h-5 w-5 text-success" />;
       case "error":
         return <XCircle className="h-5 w-5 text-destructive" />;
     }
@@ -247,6 +310,8 @@ export default function AdminUpload() {
         return "Upload...";
       case "analyzing":
         return "Analyse IA...";
+      case "preview":
+        return "À valider";
       case "success":
         return "Terminé";
       case "error":
@@ -260,12 +325,12 @@ export default function AdminUpload() {
       <div className="animate-fade-in">
         <h1 className="text-3xl font-bold text-foreground">Upload intelligent</h1>
         <p className="text-muted-foreground mt-1">
-          Déposez vos PDFs — L'IA analyse et stocke automatiquement les données
+          Déposez vos PDFs — L'IA analyse et vous permet de valider avant insertion
         </p>
       </div>
 
       {/* Process explanation */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="bg-accent/5 border-accent/20">
           <CardContent className="pt-6 text-center">
             <Upload className="h-8 w-8 mx-auto mb-2 text-accent" />
@@ -280,11 +345,18 @@ export default function AdminUpload() {
             <p className="text-sm text-muted-foreground">Extraction automatique</p>
           </CardContent>
         </Card>
-        <Card className="bg-green-500/5 border-green-500/20">
+        <Card className="bg-accent/5 border-accent/20">
           <CardContent className="pt-6 text-center">
-            <Database className="h-8 w-8 mx-auto mb-2 text-green-500" />
-            <p className="font-medium">3. Stockage</p>
-            <p className="text-sm text-muted-foreground">Données en base</p>
+            <Eye className="h-8 w-8 mx-auto mb-2 text-accent" />
+            <p className="font-medium">3. Prévisualisation</p>
+            <p className="text-sm text-muted-foreground">Correction manuelle</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-success/5 border-success/20">
+          <CardContent className="pt-6 text-center">
+            <Database className="h-8 w-8 mx-auto mb-2 text-success" />
+            <p className="font-medium">4. Insertion</p>
+            <p className="text-sm text-muted-foreground">Données validées</p>
           </CardContent>
         </Card>
       </div>
@@ -362,7 +434,7 @@ export default function AdminUpload() {
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
-                          <FileText className="h-8 w-8 text-red-500 shrink-0" />
+                          <FileText className="h-8 w-8 text-destructive shrink-0" />
                           <div className="min-w-0">
                             <p className="font-medium truncate max-w-[180px]">
                               {file.name}
@@ -380,6 +452,8 @@ export default function AdminUpload() {
                                 ? "default"
                                 : file.status === "error"
                                 ? "destructive"
+                                : file.status === "preview"
+                                ? "secondary"
                                 : "secondary"
                             }
                             className="shrink-0"
@@ -397,35 +471,38 @@ export default function AdminUpload() {
                         <p className="text-sm text-destructive">{file.error}</p>
                       )}
 
-                      {file.analysis && (
-                        <div className="pt-2 border-t space-y-2">
+                      {file.status === "preview" && file.analysis && (
+                        <div className="pt-2 border-t space-y-3">
                           <p className="text-sm line-clamp-2">
                             <strong>Résumé:</strong> {file.analysis.summary}
                           </p>
-                          {file.analysis.hs_codes?.length > 0 && (
-                            <div>
-                              <p className="text-xs font-medium text-muted-foreground mb-1">
-                                Codes SH extraits:
-                              </p>
-                              <div className="flex flex-wrap gap-1">
-                                {file.analysis.hs_codes.slice(0, 8).map((hsCode, i) => (
-                                  <Badge key={i} variant="outline" className="text-xs font-mono">
-                                    {typeof hsCode === 'string' ? hsCode : hsCode.code || hsCode.code_clean}
-                                  </Badge>
-                                ))}
-                                {file.analysis.hs_codes.length > 8 && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    +{file.analysis.hs_codes.length - 8}
-                                  </Badge>
-                                )}
-                              </div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex gap-2">
+                              <Badge variant="outline" className="text-xs">
+                                {file.analysis.hs_codes?.length || 0} codes SH
+                              </Badge>
+                              <Badge variant="outline" className="text-xs">
+                                {file.analysis.tariff_lines?.length || 0} lignes tarifaires
+                              </Badge>
                             </div>
-                          )}
-                          {file.analysis.tariff_lines && file.analysis.tariff_lines.length > 0 && (
-                            <p className="text-xs text-green-600">
-                              ✓ {file.analysis.tariff_lines.length} lignes tarifaires stockées
-                            </p>
-                          )}
+                            <Button 
+                              size="sm" 
+                              onClick={() => openPreview(file)}
+                              className="gap-2"
+                            >
+                              <Eye className="h-4 w-4" />
+                              Prévisualiser
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {file.status === "success" && file.analysis && (
+                        <div className="pt-2 border-t">
+                          <p className="text-xs text-success flex items-center gap-1">
+                            <CheckCircle2 className="h-4 w-4" />
+                            {file.analysis.hs_codes?.length || 0} codes SH et {file.analysis.tariff_lines?.length || 0} lignes tarifaires insérés
+                          </p>
                         </div>
                       )}
                     </div>
@@ -436,6 +513,19 @@ export default function AdminUpload() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Preview Dialog */}
+      {selectedFile && selectedFile.analysis && (
+        <ExtractionPreviewDialog
+          open={previewDialogOpen}
+          onOpenChange={setPreviewDialogOpen}
+          extractionData={selectedFile.analysis}
+          pdfId={selectedFile.pdfId || ""}
+          pdfTitle={selectedFile.name}
+          countryCode={selectedFile.countryCode || "MA"}
+          onInsertComplete={handleInsertComplete}
+        />
+      )}
     </div>
   );
 }

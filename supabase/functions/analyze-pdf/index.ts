@@ -224,7 +224,7 @@ serve(async (req) => {
   }
 
   try {
-    const { pdfId, filePath } = await req.json();
+    const { pdfId, filePath, previewOnly = true } = await req.json();
 
     if (!pdfId || !filePath) {
       return new Response(
@@ -270,6 +270,7 @@ serve(async (req) => {
 
     const title = pdfDoc?.title || "Tarif douanier";
     const category = pdfDoc?.category || "tarif";
+    const countryCode = pdfDoc?.country_code || "MA";
 
     // Try with progressively fewer lines if truncated
     const maxLinesToTry = [50, 30, 15];
@@ -318,6 +319,27 @@ serve(async (req) => {
       };
     }
 
+    console.log("Analysis complete for PDF:", pdfId, 
+      "HS codes:", analysisResult.hs_codes?.length || 0,
+      "Tariff lines:", analysisResult.tariff_lines?.length || 0,
+      "Preview only:", previewOnly
+    );
+
+    // In preview mode, just return the data without inserting
+    if (previewOnly) {
+      return new Response(
+        JSON.stringify({
+          ...analysisResult,
+          pdfId,
+          pdfTitle: title,
+          countryCode,
+          previewOnly: true
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // LEGACY: Direct insertion mode (when previewOnly is false)
     // Save extraction to database
     const { error: insertError } = await supabase
       .from("pdf_extractions")
@@ -342,8 +364,6 @@ serve(async (req) => {
 
     // INSERT TARIFF LINES INTO country_tariffs TABLE
     if (analysisResult.tariff_lines && analysisResult.tariff_lines.length > 0) {
-      const countryCode = pdfDoc?.country_code || "MA";
-      
       const tariffRows = analysisResult.tariff_lines.map(line => ({
         country_code: countryCode,
         hs_code_6: line.hs_code_6,
@@ -416,11 +436,6 @@ serve(async (req) => {
       .from("pdf_documents")
       .update(updateData)
       .eq("id", pdfId);
-
-    console.log("Analysis complete for PDF:", pdfId, 
-      "HS codes:", analysisResult.hs_codes?.length || 0,
-      "Tariff lines:", analysisResult.tariff_lines?.length || 0
-    );
 
     return new Response(
       JSON.stringify(analysisResult),
