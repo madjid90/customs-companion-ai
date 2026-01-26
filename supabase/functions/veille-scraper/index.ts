@@ -23,6 +23,95 @@ interface VeilleKeyword {
   country_code: string | null;
 }
 
+// Claude AI analysis function
+async function analyzeWithClaude(apiKey: string, prompt: string, maxTokens: number = 4096) {
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: maxTokens,
+        messages: [
+          { role: "user", content: prompt }
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Claude API error:", response.status, errorText);
+      return null;
+    }
+
+    const data = await response.json();
+    const text = data.content?.[0]?.text || "{}";
+    
+    // Parse JSON from response
+    let cleaned = text.trim();
+    if (cleaned.startsWith("```json")) cleaned = cleaned.slice(7);
+    if (cleaned.startsWith("```")) cleaned = cleaned.slice(3);
+    if (cleaned.endsWith("```")) cleaned = cleaned.slice(0, -3);
+    
+    return JSON.parse(cleaned.trim());
+  } catch (e) {
+    console.error("Claude analysis failed:", e);
+    return null;
+  }
+}
+
+async function analyzeContent(apiKey: string, content: string, site: VeilleSite) {
+  const prompt = `Analyse ce contenu web d'un site douanier officiel (${site.name}).
+Extrait les documents, circulaires, notes ou réglementations importantes.
+
+Contenu:
+${content.substring(0, 8000)}
+
+Réponds en JSON avec cette structure:
+{
+  "documents": [
+    {
+      "title": "Titre du document",
+      "summary": "Résumé court",
+      "date": "2024-01-15",
+      "category": "circulaire|note|tarif|regulation|other",
+      "importance": "haute|moyenne|basse",
+      "hs_codes": ["8501", "8502"],
+      "tariff_changes": [{"hs_code": "8501", "old_rate": 10, "new_rate": 5}],
+      "content": "Extrait du contenu pertinent",
+      "url": "URL si disponible",
+      "confidence": 0.85
+    }
+  ]
+}
+
+Si aucun document pertinent, retourne {"documents": []}`;
+
+  return await analyzeWithClaude(apiKey, prompt, 4096);
+}
+
+async function analyzeDocument(apiKey: string, content: string, title: string) {
+  const prompt = `Analyse ce document douanier: "${title}"
+
+Contenu:
+${content.substring(0, 4000)}
+
+Réponds en JSON:
+{
+  "summary": "Résumé en 2-3 phrases",
+  "importance": "haute|moyenne|basse",
+  "hs_codes": ["codes SH mentionnés"],
+  "tariff_changes": [{"hs_code": "", "description": "", "change": ""}],
+  "confidence": 0.8
+}`;
+
+  return await analyzeWithClaude(apiKey, prompt, 1024);
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -32,12 +121,16 @@ serve(async (req) => {
     const { mode = "full", siteId, keywordId } = await req.json().catch(() => ({}));
 
     const FIRECRAWL_API_KEY = Deno.env.get("FIRECRAWL_API_KEY");
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!FIRECRAWL_API_KEY) {
       throw new Error("FIRECRAWL_API_KEY is not configured");
+    }
+
+    if (!ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY is not configured");
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
@@ -128,9 +221,9 @@ serve(async (req) => {
           })
           .eq("id", site.id);
 
-        // Analyze content with AI
-        if (LOVABLE_API_KEY && content.length > 100) {
-          const analysisResult = await analyzeContent(LOVABLE_API_KEY, content, site);
+        // Analyze content with Claude AI
+        if (content.length > 100) {
+          const analysisResult = await analyzeContent(ANTHROPIC_API_KEY, content, site);
           
           if (analysisResult && analysisResult.documents?.length > 0) {
             for (const doc of analysisResult.documents) {
@@ -241,8 +334,8 @@ serve(async (req) => {
               .maybeSingle();
 
             if (!existing && result.markdown) {
-              // Analyze with AI
-              const docAnalysis = await analyzeDocument(LOVABLE_API_KEY!, result.markdown, title);
+              // Analyze with Claude AI
+              const docAnalysis = await analyzeDocument(ANTHROPIC_API_KEY, result.markdown, title);
 
               const { error: insertError } = await supabase
                 .from("veille_documents")
@@ -325,117 +418,3 @@ serve(async (req) => {
     );
   }
 });
-
-async function analyzeContent(apiKey: string, content: string, site: VeilleSite) {
-  try {
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        max_tokens: 4096,
-        messages: [
-          {
-            role: "user",
-            content: `Analyse ce contenu web d'un site douanier officiel (${site.name}).
-Extrait les documents, circulaires, notes ou réglementations importantes.
-
-Contenu:
-${content.substring(0, 8000)}
-
-Réponds en JSON avec cette structure:
-{
-  "documents": [
-    {
-      "title": "Titre du document",
-      "summary": "Résumé court",
-      "date": "2024-01-15",
-      "category": "circulaire|note|tarif|regulation|other",
-      "importance": "haute|moyenne|basse",
-      "hs_codes": ["8501", "8502"],
-      "tariff_changes": [{"hs_code": "8501", "old_rate": 10, "new_rate": 5}],
-      "content": "Extrait du contenu pertinent",
-      "url": "URL si disponible",
-      "confidence": 0.85
-    }
-  ]
-}
-
-Si aucun document pertinent, retourne {"documents": []}`,
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      console.error("AI analysis error:", await response.text());
-      return null;
-    }
-
-    const data = await response.json();
-    const text = data.choices?.[0]?.message?.content || "{}";
-    
-    // Parse JSON from response
-    let cleaned = text.trim();
-    if (cleaned.startsWith("```json")) cleaned = cleaned.slice(7);
-    if (cleaned.startsWith("```")) cleaned = cleaned.slice(3);
-    if (cleaned.endsWith("```")) cleaned = cleaned.slice(0, -3);
-    
-    return JSON.parse(cleaned.trim());
-  } catch (e) {
-    console.error("Failed to analyze content:", e);
-    return null;
-  }
-}
-
-async function analyzeDocument(apiKey: string, content: string, title: string) {
-  try {
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        max_tokens: 1024,
-        messages: [
-          {
-            role: "user",
-            content: `Analyse ce document douanier: "${title}"
-
-Contenu:
-${content.substring(0, 4000)}
-
-Réponds en JSON:
-{
-  "summary": "Résumé en 2-3 phrases",
-  "importance": "haute|moyenne|basse",
-  "hs_codes": ["codes SH mentionnés"],
-  "tariff_changes": [{"hs_code": "", "description": "", "change": ""}],
-  "confidence": 0.8
-}`,
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    const text = data.choices?.[0]?.message?.content || "{}";
-    
-    let cleaned = text.trim();
-    if (cleaned.startsWith("```json")) cleaned = cleaned.slice(7);
-    if (cleaned.startsWith("```")) cleaned = cleaned.slice(3);
-    if (cleaned.endsWith("```")) cleaned = cleaned.slice(0, -3);
-    
-    return JSON.parse(cleaned.trim());
-  } catch (e) {
-    console.error("Failed to analyze document:", e);
-    return null;
-  }
-}
