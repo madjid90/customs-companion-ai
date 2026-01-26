@@ -100,48 +100,85 @@ export default function AdminUpload() {
         filePath: filePath,
       });
 
-      // 3. Call AI analysis edge function (preview mode by default) with retry
+      // 3. Call AI analysis edge function with AbortController timeout and retry
       let analysisData = null;
       let analysisError = null;
-      const MAX_RETRIES = 2;
+      const MAX_RETRIES = 3;
+      const TIMEOUT_MS = 300000; // 5 minutes timeout for large PDFs
       
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
-          const result = await supabase.functions.invoke(
-            "analyze-pdf",
+          // Create AbortController for timeout
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+          
+          updateFileStatus(fileId, { 
+            progress: 65 + attempt * 5,
+            error: attempt > 0 ? `Tentative ${attempt + 1}/${MAX_RETRIES + 1}...` : undefined
+          });
+          
+          // Use fetch directly with AbortSignal for better timeout control
+          const response = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-pdf`,
             {
-              body: { 
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+                "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+              },
+              body: JSON.stringify({ 
                 pdfId: pdfDoc.id,
                 filePath: filePath,
                 previewOnly: true
-              },
+              }),
+              signal: controller.signal,
             }
           );
           
-          if (result.error) {
-            // Check if it's a rate limit or network error
-            const errorMsg = result.error?.message || "";
-            if (errorMsg.includes("429") || errorMsg.includes("rate") || errorMsg.includes("network")) {
+          clearTimeout(timeoutId);
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            // Check if it's a rate limit error
+            if (response.status === 429 || response.status === 503) {
               if (attempt < MAX_RETRIES) {
-                console.log(`Retry ${attempt + 1}/${MAX_RETRIES} after network/rate error...`);
-                updateFileStatus(fileId, { progress: 70 + attempt * 10 });
-                await new Promise(resolve => setTimeout(resolve, 5000 * (attempt + 1)));
+                const waitTime = 10000 * (attempt + 1);
+                console.log(`Rate limited, retry ${attempt + 1}/${MAX_RETRIES} in ${waitTime/1000}s...`);
+                updateFileStatus(fileId, { 
+                  progress: 70 + attempt * 5,
+                  error: `Service occupé, nouvelle tentative dans ${waitTime/1000}s...`
+                });
+                await new Promise(resolve => setTimeout(resolve, waitTime));
                 continue;
               }
             }
-            analysisError = result.error;
-          } else {
-            analysisData = result.data;
+            throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
           }
+          
+          analysisData = await response.json();
           break;
+          
         } catch (err: any) {
-          // Network connection lost or fetch error
-          if (attempt < MAX_RETRIES) {
-            console.log(`Network error, retry ${attempt + 1}/${MAX_RETRIES}...`);
-            updateFileStatus(fileId, { progress: 70 + attempt * 10 });
-            await new Promise(resolve => setTimeout(resolve, 5000 * (attempt + 1)));
+          // Handle abort/timeout or network errors
+          const isTimeout = err.name === "AbortError";
+          const isNetworkError = err.message?.includes("Failed to fetch") || 
+                                  err.message?.includes("NetworkError") ||
+                                  err.message?.includes("network");
+          
+          if ((isTimeout || isNetworkError) && attempt < MAX_RETRIES) {
+            const waitTime = 8000 * (attempt + 1);
+            console.log(`${isTimeout ? "Timeout" : "Network error"}, retry ${attempt + 1}/${MAX_RETRIES} in ${waitTime/1000}s...`);
+            updateFileStatus(fileId, { 
+              progress: 70 + attempt * 5,
+              error: isTimeout 
+                ? `Analyse longue, nouvelle tentative ${attempt + 1}/${MAX_RETRIES}...` 
+                : `Connexion perdue, réessai dans ${waitTime/1000}s...`
+            });
+            await new Promise(resolve => setTimeout(resolve, waitTime));
             continue;
           }
+          
           analysisError = err;
         }
       }
