@@ -189,13 +189,14 @@ serve(async (req) => {
 
     console.log(`Found ${sites?.length || 0} sites to scrape`);
 
-    // Process each site
+    // Process each site - FULL CRAWL until all pages are done
     for (const site of (sites as VeilleSite[]) || []) {
       try {
-        console.log(`Scraping site: ${site.name} (${site.url})`);
+        console.log(`Starting FULL CRAWL of site: ${site.name} (${site.url})`);
 
-        // Use Firecrawl to scrape the site
-        const scrapeResponse = await fetch("https://api.firecrawl.dev/v1/scrape", {
+        // Step 1: Use Firecrawl MAP to discover ALL URLs on the site
+        console.log(`Mapping all URLs for ${site.name}...`);
+        const mapResponse = await fetch("https://api.firecrawl.dev/v1/map", {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${FIRECRAWL_API_KEY}`,
@@ -203,116 +204,184 @@ serve(async (req) => {
           },
           body: JSON.stringify({
             url: site.url,
-            formats: ["markdown", "links"],
-            onlyMainContent: true,
+            limit: 500, // Get up to 500 URLs
+            includeSubdomains: false,
           }),
         });
 
-        if (!scrapeResponse.ok) {
-          const errorText = await scrapeResponse.text();
-          console.error(`Firecrawl error for ${site.name}:`, errorText);
-          errors.push(`${site.name}: ${errorText}`);
+        let allUrls: string[] = [site.url];
+        
+        if (mapResponse.ok) {
+          const mapData = await mapResponse.json();
+          const discoveredUrls = mapData.links || mapData.data?.links || [];
+          console.log(`Discovered ${discoveredUrls.length} URLs on ${site.name}`);
           
-          await supabase
-            .from("veille_sites")
-            .update({ last_scrape_status: "error", last_scraped_at: new Date().toISOString() })
-            .eq("id", site.id);
+          // Filter URLs to keep only relevant ones (documents, circulaires, etc.)
+          const relevantPatterns = [
+            /circulaire/i, /note/i, /decision/i, /arrete/i, /decret/i,
+            /tarif/i, /douane/i, /reglementation/i, /actualite/i, /news/i,
+            /pdf$/i, /\.pdf/i, /document/i, /publication/i, /communique/i
+          ];
           
-          continue;
+          allUrls = discoveredUrls.filter((url: string) => {
+            // Always include the main URL
+            if (url === site.url) return true;
+            // Check if URL matches relevant patterns
+            return relevantPatterns.some(pattern => pattern.test(url));
+          });
+          
+          // If no filtered URLs, take all URLs (up to 100)
+          if (allUrls.length <= 1) {
+            allUrls = discoveredUrls.slice(0, 100);
+          }
+          
+          console.log(`Will scrape ${allUrls.length} relevant URLs from ${site.name}`);
+        } else {
+          console.log(`Map failed for ${site.name}, will scrape main URL only`);
         }
 
-        const scrapeData = await scrapeResponse.json();
-        const content = scrapeData.data?.markdown || "";
-        const links = scrapeData.data?.links || [];
+        // Update site status to "crawling"
+        await supabase
+          .from("veille_sites")
+          .update({
+            last_scrape_status: "crawling",
+            last_scraped_at: new Date().toISOString(),
+          })
+          .eq("id", site.id);
 
-        console.log(`Got ${content.length} chars content and ${links.length} links from ${site.name}`);
+        let siteDocumentsFound = 0;
+        let siteNewDocuments = 0;
+        
+        // Step 2: Scrape EACH URL discovered
+        for (let i = 0; i < allUrls.length; i++) {
+          const pageUrl = allUrls[i];
+          console.log(`Scraping page ${i + 1}/${allUrls.length}: ${pageUrl}`);
+          
+          try {
+            const scrapeResponse = await fetch("https://api.firecrawl.dev/v1/scrape", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${FIRECRAWL_API_KEY}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                url: pageUrl,
+                formats: ["markdown", "links"],
+                onlyMainContent: true,
+              }),
+            });
 
-        // Update site status
+            if (!scrapeResponse.ok) {
+              console.error(`Scrape error for ${pageUrl}: ${scrapeResponse.status}`);
+              continue;
+            }
+
+            const scrapeData = await scrapeResponse.json();
+            const content = scrapeData.data?.markdown || "";
+
+            // Analyze content with Claude AI
+            if (content.length > 100) {
+              const analysisResult = await analyzeContent(ANTHROPIC_API_KEY, content, site);
+              
+              if (analysisResult && analysisResult.documents?.length > 0) {
+                for (const doc of analysisResult.documents) {
+                  // Enhanced duplicate detection
+                  const docUrl = doc.url || pageUrl;
+                  const normalizedTitle = doc.title?.toLowerCase().trim().replace(/\s+/g, ' ') || '';
+                  
+                  // Check for existing document by URL first
+                  const { data: existingByUrl } = await supabase
+                    .from("veille_documents")
+                    .select("id")
+                    .eq("source_url", docUrl)
+                    .maybeSingle();
+
+                  if (existingByUrl) {
+                    console.log(`Duplicate (URL): ${docUrl}`);
+                    siteDocumentsFound++;
+                    continue;
+                  }
+
+                  // Check by normalized title and source
+                  const { data: existingByTitle } = await supabase
+                    .from("veille_documents")
+                    .select("id, title")
+                    .eq("source_name", site.name)
+                    .ilike("title", `%${normalizedTitle.substring(0, 50)}%`)
+                    .limit(5);
+
+                  const isDuplicate = existingByTitle?.some(existing => {
+                    const existingNormalized = existing.title?.toLowerCase().trim().replace(/\s+/g, ' ') || '';
+                    return calculateSimilarity(normalizedTitle, existingNormalized) > 0.85;
+                  });
+
+                  if (isDuplicate) {
+                    console.log(`Duplicate (Title): ${doc.title}`);
+                    siteDocumentsFound++;
+                    continue;
+                  }
+
+                  // Insert new document
+                  const { error: insertError } = await supabase
+                    .from("veille_documents")
+                    .insert({
+                      title: doc.title,
+                      source_name: site.name,
+                      source_url: docUrl,
+                      category: doc.category || site.categories?.[0],
+                      country_code: site.country_code,
+                      publication_date: doc.date || null,
+                      importance: doc.importance || "moyenne",
+                      summary: doc.summary,
+                      content: doc.content,
+                      mentioned_hs_codes: doc.hs_codes || [],
+                      detected_tariff_changes: doc.tariff_changes || [],
+                      confidence_score: doc.confidence || 0.8,
+                      collected_by: "automatic",
+                    });
+
+                  if (!insertError) {
+                    siteNewDocuments++;
+                    console.log(`NEW: ${doc.title}`);
+                  }
+                  siteDocumentsFound++;
+                }
+              }
+            }
+            
+            // Small delay to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+          } catch (pageError) {
+            console.error(`Error scraping page ${pageUrl}:`, pageError);
+          }
+        }
+
+        // Update totals
+        totalDocumentsFound += siteDocumentsFound;
+        totalNewDocuments += siteNewDocuments;
+
+        // Update site status to success with count
         await supabase
           .from("veille_sites")
           .update({
             last_scrape_status: "success",
             last_scraped_at: new Date().toISOString(),
+            total_documents_found: siteDocumentsFound,
           })
           .eq("id", site.id);
 
-        // Analyze content with Claude AI
-        if (content.length > 100) {
-          const analysisResult = await analyzeContent(ANTHROPIC_API_KEY, content, site);
-          
-          if (analysisResult && analysisResult.documents?.length > 0) {
-            for (const doc of analysisResult.documents) {
-              // Enhanced duplicate detection - check by title, URL, and content similarity
-              const docUrl = doc.url || site.url;
-              const normalizedTitle = doc.title?.toLowerCase().trim().replace(/\s+/g, ' ') || '';
-              
-              // Check for existing document by URL first (most reliable)
-              const { data: existingByUrl } = await supabase
-                .from("veille_documents")
-                .select("id")
-                .eq("source_url", docUrl)
-                .maybeSingle();
-
-              if (existingByUrl) {
-                console.log(`Duplicate detected (URL): ${docUrl}`);
-                totalDocumentsFound++;
-                continue;
-              }
-
-              // Check by normalized title and source
-              const { data: existingByTitle } = await supabase
-                .from("veille_documents")
-                .select("id, title")
-                .eq("source_name", site.name)
-                .ilike("title", `%${normalizedTitle.substring(0, 50)}%`)
-                .limit(5);
-
-              // Check for similar titles (fuzzy matching)
-              const isDuplicate = existingByTitle?.some(existing => {
-                const existingNormalized = existing.title?.toLowerCase().trim().replace(/\s+/g, ' ') || '';
-                // Calculate simple similarity score
-                const similarity = calculateSimilarity(normalizedTitle, existingNormalized);
-                return similarity > 0.85; // 85% similarity threshold
-              });
-
-              if (isDuplicate) {
-                console.log(`Duplicate detected (Title similarity): ${doc.title}`);
-                totalDocumentsFound++;
-                continue;
-              }
-
-              // Insert new document
-              const { error: insertError } = await supabase
-                .from("veille_documents")
-                .insert({
-                  title: doc.title,
-                  source_name: site.name,
-                  source_url: docUrl,
-                  category: doc.category || site.categories?.[0],
-                  country_code: site.country_code,
-                  publication_date: doc.date || null,
-                  importance: doc.importance || "moyenne",
-                  summary: doc.summary,
-                  content: doc.content,
-                  mentioned_hs_codes: doc.hs_codes || [],
-                  detected_tariff_changes: doc.tariff_changes || [],
-                  confidence_score: doc.confidence || 0.8,
-                  collected_by: "automatic",
-                });
-
-              if (!insertError) {
-                totalNewDocuments++;
-                console.log(`New document inserted: ${doc.title}`);
-              }
-              totalDocumentsFound++;
-            }
-          }
-        }
-
+        console.log(`Finished ${site.name}: ${siteNewDocuments} new / ${siteDocumentsFound} total docs from ${allUrls.length} pages`);
         logEntry.sites_scraped++;
+        
       } catch (siteError) {
-        console.error(`Error scraping site ${site.name}:`, siteError);
+        console.error(`Error crawling site ${site.name}:`, siteError);
         errors.push(`${site.name}: ${siteError instanceof Error ? siteError.message : "Unknown error"}`);
+        
+        await supabase
+          .from("veille_sites")
+          .update({ last_scrape_status: "error", last_scraped_at: new Date().toISOString() })
+          .eq("id", site.id);
       }
     }
 
