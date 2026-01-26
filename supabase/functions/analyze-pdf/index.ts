@@ -255,7 +255,63 @@ serve(async (req) => {
       });
 
     if (insertError) {
-      console.error("Insert error:", insertError);
+      console.error("Insert extraction error:", insertError);
+    }
+
+    // INSERT TARIFF LINES INTO country_tariffs TABLE
+    if (analysisResult.tariff_lines && analysisResult.tariff_lines.length > 0) {
+      const countryCode = pdfDoc?.country_code || "MA";
+      
+      const tariffRows = analysisResult.tariff_lines.map(line => ({
+        country_code: countryCode,
+        hs_code_6: line.hs_code_6,
+        national_code: line.national_code,
+        description_local: line.description,
+        duty_rate: line.duty_rate,
+        vat_rate: 20, // Default Morocco VAT
+        unit_code: line.unit || null,
+        is_active: true,
+        source: `PDF: ${title}`,
+      }));
+
+      // Upsert to avoid duplicates (update if exists)
+      const { error: tariffError, count } = await supabase
+        .from("country_tariffs")
+        .upsert(tariffRows, { 
+          onConflict: "country_code,national_code",
+          ignoreDuplicates: false 
+        });
+
+      if (tariffError) {
+        console.error("Tariff insert error:", tariffError);
+      } else {
+        console.log(`Inserted/updated ${tariffRows.length} tariff lines into country_tariffs`);
+      }
+    }
+
+    // INSERT HS CODES INTO hs_codes TABLE (if chapter info available)
+    if (analysisResult.hs_codes && analysisResult.hs_codes.length > 0) {
+      const hsRows = analysisResult.hs_codes.map(code => ({
+        code: code.length === 4 ? `${code.slice(0,2)}.${code.slice(2)}` : code,
+        code_clean: code.replace(/\./g, ""),
+        description_fr: `Code ${code} - Extrait de ${title}`,
+        chapter_number: analysisResult.chapter_info?.number || parseInt(code.slice(0,2)) || null,
+        is_active: true,
+        level: code.length === 4 ? "heading" : "subheading",
+      }));
+
+      const { error: hsError } = await supabase
+        .from("hs_codes")
+        .upsert(hsRows, { 
+          onConflict: "code",
+          ignoreDuplicates: true 
+        });
+
+      if (hsError) {
+        console.error("HS codes insert error:", hsError);
+      } else {
+        console.log(`Inserted ${hsRows.length} HS codes into hs_codes table`);
+      }
     }
 
     // Update PDF document with chapter info
