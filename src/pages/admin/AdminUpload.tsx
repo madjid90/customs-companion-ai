@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useUploadState, UploadedFile, ExtractionData } from "@/hooks/useUploadState";
@@ -15,16 +15,18 @@ import {
   XCircle, 
   Brain,
   Database,
-  Eye
+  Eye,
+  Clock
 } from "lucide-react";
 import ExtractionPreviewDialog from "@/components/admin/ExtractionPreviewDialog";
 
 export default function AdminUpload() {
-  const { files, updateFileStatus, addFile } = useUploadState();
+  const { files, updateFileStatus, queueFile, processNext, isProcessing, setIsProcessing } = useUploadState();
   const [isDragging, setIsDragging] = useState(false);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null);
   const { toast } = useToast();
+  const processingRef = useRef(false);
 
   const detectDocumentType = (fileName: string): { category: string; label: string } => {
     const name = fileName.toLowerCase();
@@ -51,20 +53,11 @@ export default function AdminUpload() {
     return { category: "autre", label: "Document douanier" };
   };
 
-  const uploadAndAnalyze = async (file: File) => {
-    const fileId = crypto.randomUUID();
+  // Process a single file
+  const processFile = async (file: File, fileId: string) => {
     const docType = detectDocumentType(file.name);
     
-    const uploadedFile: UploadedFile = {
-      id: fileId,
-      name: file.name,
-      size: file.size,
-      status: "uploading",
-      progress: 0,
-      countryCode: "MA",
-    };
-
-    addFile(uploadedFile);
+    updateFileStatus(fileId, { status: "uploading", progress: 10 });
 
     try {
       // 1. Upload to Supabase Storage
@@ -207,6 +200,50 @@ export default function AdminUpload() {
     }
   };
 
+  // Process the queue one by one
+  const processQueue = useCallback(async () => {
+    if (processingRef.current) return;
+    
+    const nextItem = processNext();
+    if (!nextItem) {
+      setIsProcessing(false);
+      return;
+    }
+
+    processingRef.current = true;
+    setIsProcessing(true);
+    
+    await processFile(nextItem.file, nextItem.fileId);
+    
+    processingRef.current = false;
+    
+    // Process next file after a small delay
+    setTimeout(() => {
+      processQueue();
+    }, 500);
+  }, [processNext, setIsProcessing]);
+
+  // Start processing when files are queued
+  useEffect(() => {
+    if (!isProcessing && files.some(f => f.status === "queued")) {
+      processQueue();
+    }
+  }, [files, isProcessing, processQueue]);
+
+  // Queue a file for processing
+  const addToQueue = (file: File) => {
+    const fileId = crypto.randomUUID();
+    const uploadedFile: UploadedFile = {
+      id: fileId,
+      name: file.name,
+      size: file.size,
+      status: "queued",
+      progress: 0,
+      countryCode: "MA",
+    };
+    queueFile(file, uploadedFile);
+  };
+
   const openPreview = (file: UploadedFile) => {
     setSelectedFile(file);
     setPreviewDialogOpen(true);
@@ -229,7 +266,7 @@ export default function AdminUpload() {
 
     Array.from(selectedFiles).forEach((file) => {
       if (file.type === "application/pdf") {
-        uploadAndAnalyze(file);
+        addToQueue(file);
       } else {
         toast({
           title: "Format non supporté",
@@ -250,7 +287,7 @@ export default function AdminUpload() {
       const droppedFiles = e.dataTransfer.files;
       Array.from(droppedFiles).forEach((file) => {
         if (file.type === "application/pdf") {
-          uploadAndAnalyze(file);
+          addToQueue(file);
         } else {
           toast({
             title: "Format non supporté",
@@ -260,7 +297,7 @@ export default function AdminUpload() {
         }
       });
     },
-    []
+    [queueFile]
   );
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -281,6 +318,8 @@ export default function AdminUpload() {
 
   const getStatusIcon = (status: UploadedFile["status"]) => {
     switch (status) {
+      case "queued":
+        return <Clock className="h-5 w-5 text-muted-foreground" />;
       case "uploading":
         return <Loader2 className="h-5 w-5 animate-spin text-accent" />;
       case "analyzing":
@@ -296,6 +335,8 @@ export default function AdminUpload() {
 
   const getStatusLabel = (status: UploadedFile["status"]) => {
     switch (status) {
+      case "queued":
+        return "En attente";
       case "uploading":
         return "Upload...";
       case "analyzing":
@@ -308,6 +349,9 @@ export default function AdminUpload() {
         return "Erreur";
     }
   };
+
+  // Count queued files
+  const queuedCount = files.filter(f => f.status === "queued").length;
 
   return (
     <div className="space-y-6">
