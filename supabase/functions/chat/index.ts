@@ -795,26 +795,39 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => `- **${p.tit
     const hasRangeRate = context.tariffs_with_inheritance.some(t => t.rate_source === "range");
     const responseTextLower = responseText.toLowerCase();
     
-    // Check for percentage-based confidence (e.g., "95%", "80%")
-    const percentageMatch = responseText.match(/(\d{1,3})\s*%/);
-    if (percentageMatch) {
-      const percentage = parseInt(percentageMatch[1], 10);
-      if (percentage >= 80) {
-        confidence = "high";
-      } else if (percentage >= 50) {
-        confidence = "medium";
-      } else {
-        confidence = "low";
+    // Priority 1: Check for emoji indicators (most reliable)
+    if (responseText.includes("🟢")) {
+      confidence = "high";
+    } else if (responseText.includes("🔴")) {
+      confidence = "low";
+    } else if (responseText.includes("🟡")) {
+      confidence = "medium";
+    }
+    // Priority 2: Check for explicit confidence text patterns (case-insensitive)
+    else if (responseTextLower.includes("confiance haute") || responseTextLower.includes("confiance élevée") || responseTextLower.includes("confiance elevee") || responseTextLower.includes("niveau de confiance : élevé") || responseTextLower.includes("confiance : haute") || responseTextLower.includes("confiance : élevée")) {
+      confidence = "high";
+    } else if (responseTextLower.includes("confiance faible") || responseTextLower.includes("confiance basse") || responseTextLower.includes("niveau de confiance : faible") || responseTextLower.includes("confiance : faible")) {
+      confidence = "low";
+    } else if (responseTextLower.includes("confiance moyenne") || responseTextLower.includes("confiance modérée") || responseTextLower.includes("niveau de confiance : moyen") || responseTextLower.includes("confiance : moyenne")) {
+      confidence = "medium";
+    }
+    // Priority 3: Check for percentage specifically linked to confidence (e.g., "confiance: 95%", "95% de confiance")
+    else {
+      const confidencePercentMatch = responseText.match(/(?:confiance|fiabilité|certitude)[:\s]*(\d{1,3})\s*%/i) || 
+                                      responseText.match(/(\d{1,3})\s*%\s*(?:de\s+)?(?:confiance|fiabilité|certitude)/i);
+      if (confidencePercentMatch) {
+        const percentage = parseInt(confidencePercentMatch[1], 10);
+        if (percentage >= 80) {
+          confidence = "high";
+        } else if (percentage >= 50) {
+          confidence = "medium";
+        } else {
+          confidence = "low";
+        }
       }
     }
-    // Check for emoji and text-based confidence indicators (case-insensitive)
-    else if (responseText.includes("🟢") || responseTextLower.includes("confiance haute") || responseTextLower.includes("confiance élevée") || responseTextLower.includes("confiance elevee")) {
-      confidence = "high";
-    } else if (responseText.includes("🔴") || responseTextLower.includes("confiance faible") || responseTextLower.includes("confiance basse")) {
-      confidence = "low";
-    } else if (responseText.includes("🟡") || responseTextLower.includes("confiance moyenne") || responseTextLower.includes("confiance modérée")) {
-      confidence = "medium";
-    } else if (hasDirectRate || hasInheritedRate) {
+    // Priority 4: Fallback to context-based confidence
+    if (confidence === "medium" && (hasDirectRate || hasInheritedRate)) {
       confidence = "high";
     } else if (hasRangeRate) {
       confidence = "medium";
