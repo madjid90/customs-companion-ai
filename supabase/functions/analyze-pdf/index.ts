@@ -586,37 +586,231 @@ async function analyzeWithClaude(
     }
   }
   
-  // Parse with repair for truncated JSON
-  const parseJsonWithRepair = (text: string): any | null => {
-    try {
-      return JSON.parse(text);
-    } catch (e) {
-      let repaired = text;
-      const openBraces = (text.match(/\{/g) || []).length;
-      const closeBraces = (text.match(/\}/g) || []).length;
-      const openBrackets = (text.match(/\[/g) || []).length;
-      const closeBrackets = (text.match(/\]/g) || []).length;
-      
-      for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += "]";
-      for (let i = 0; i < openBraces - closeBraces; i++) repaired += "}";
-      
-      try {
-        return JSON.parse(repaired);
-      } catch {
-        return null;
+  // =========================================================================
+  // PARSING JSON ROBUSTE MULTI-NIVEAUX
+  // =========================================================================
+  
+  /**
+   * Tente de réparer un JSON tronqué avec plusieurs stratégies
+   */
+  const repairTruncatedJson = (text: string): string => {
+    let repaired = text.trim();
+    
+    // Stratégie 1: Supprimer les virgules pendantes
+    repaired = repaired.replace(/,\s*([}\]])/g, '$1');
+    
+    // Stratégie 2: Compléter les chaînes de caractères ouvertes
+    // Trouver les guillemets non fermés dans les 500 derniers caractères
+    const lastPart = repaired.slice(-500);
+    const lastQuote = lastPart.lastIndexOf('"');
+    if (lastQuote !== -1) {
+      const afterLastQuote = lastPart.slice(lastQuote + 1);
+      // Si après le dernier guillemet on n'a pas de fermeture valide...
+      if (!afterLastQuote.match(/^\s*[,:}\]]/)) {
+        // Fermer la chaîne et ajouter une fermeture
+        repaired = repaired + '"';
       }
     }
+    
+    // Stratégie 3: Équilibrer les accolades et crochets
+    const openBraces = (repaired.match(/\{/g) || []).length;
+    const closeBraces = (repaired.match(/\}/g) || []).length;
+    const openBrackets = (repaired.match(/\[/g) || []).length;
+    const closeBrackets = (repaired.match(/\]/g) || []).length;
+    
+    for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += "]";
+    for (let i = 0; i < openBraces - closeBraces; i++) repaired += "}";
+    
+    return repaired;
   };
   
-  const parsed = parseJsonWithRepair(cleanedResponse);
+  /**
+   * Extrait les données partielles depuis un JSON malformé
+   */
+  const extractPartialData = (text: string): any => {
+    const result: any = {};
+    
+    // Extraire le summary
+    const summaryMatch = text.match(/"summary"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+    if (summaryMatch) result.summary = summaryMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+    
+    // Extraire key_points
+    const keyPointsMatch = text.match(/"key_points"\s*:\s*\[((?:[^\[\]]|\[(?:[^\[\]]|\[[^\[\]]*\])*\])*)\]/);
+    if (keyPointsMatch) {
+      try {
+        result.key_points = JSON.parse('[' + keyPointsMatch[1] + ']');
+      } catch {
+        const points = keyPointsMatch[1].match(/"([^"]+)"/g);
+        result.key_points = points ? points.map(p => p.replace(/"/g, '')) : [];
+      }
+    }
+    
+    // Extraire chapter_info
+    const chapterMatch = text.match(/"chapter_info"\s*:\s*\{([^}]+)\}/);
+    if (chapterMatch) {
+      try {
+        result.chapter_info = JSON.parse('{' + chapterMatch[1] + '}');
+      } catch {
+        const numMatch = chapterMatch[1].match(/"number"\s*:\s*(\d+)/);
+        const titleMatch = chapterMatch[1].match(/"title"\s*:\s*"([^"]+)"/);
+        if (numMatch || titleMatch) {
+          result.chapter_info = {
+            number: numMatch ? parseInt(numMatch[1]) : 0,
+            title: titleMatch ? titleMatch[1] : ""
+          };
+        }
+      }
+    }
+    
+    // Extraire raw_lines (le plus important!)
+    const rawLinesMatch = text.match(/"raw_lines"\s*:\s*\[([\s\S]*?)(?:\](?:\s*,\s*"|\s*\})|$)/);
+    if (rawLinesMatch) {
+      const rawLinesContent = rawLinesMatch[1];
+      const lines: any[] = [];
+      
+      // Parser chaque objet de ligne séparément
+      const lineMatches = rawLinesContent.matchAll(/\{([^{}]*)\}/g);
+      for (const match of lineMatches) {
+        try {
+          const lineObj: any = {};
+          const content = match[1];
+          
+          // Extraire col1-col5
+          for (let i = 1; i <= 5; i++) {
+            const colMatch = content.match(new RegExp(`"col${i}"\\s*:\\s*"([^"]*)"`));
+            lineObj[`col${i}`] = colMatch ? colMatch[1] : "";
+          }
+          
+          // Extraire description
+          const descMatch = content.match(/"description"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+          lineObj.description = descMatch ? descMatch[1].replace(/\\"/g, '"') : "";
+          
+          // Extraire duty_rate
+          const dutyMatch = content.match(/"duty_rate"\s*:\s*(?:"([^"]+)"|(\d+\.?\d*)|null)/);
+          if (dutyMatch) {
+            lineObj.duty_rate = dutyMatch[1] || (dutyMatch[2] ? parseFloat(dutyMatch[2]) : null);
+          } else {
+            lineObj.duty_rate = null;
+          }
+          
+          // Extraire unit
+          const unitMatch = content.match(/"unit"\s*:\s*(?:"([^"]+)"|null)/);
+          lineObj.unit = unitMatch ? unitMatch[1] || null : null;
+          
+          // Ne garder que si col1 a une valeur
+          if (lineObj.col1 && lineObj.col1.trim() !== "") {
+            lines.push(lineObj);
+          }
+        } catch (lineError) {
+          console.warn("Failed to parse individual line, skipping:", match[0].substring(0, 100));
+        }
+      }
+      
+      if (lines.length > 0) {
+        result.raw_lines = lines;
+        console.log(`Extracted ${lines.length} raw_lines from partial data`);
+      }
+    }
+    
+    // Extraire hs_codes si raw_lines n'est pas disponible
+    if (!result.raw_lines) {
+      const hsCodesMatch = text.match(/"hs_codes"\s*:\s*\[([\s\S]*?)(?:\](?:\s*,\s*"|\s*\})|$)/);
+      if (hsCodesMatch) {
+        const codes: any[] = [];
+        const codeMatches = hsCodesMatch[1].matchAll(/\{([^{}]*)\}/g);
+        for (const match of codeMatches) {
+          try {
+            const codeObj = JSON.parse('{' + match[1] + '}');
+            if (codeObj.code_clean && /^\d{6}$/.test(codeObj.code_clean)) {
+              codes.push(codeObj);
+            }
+          } catch {}
+        }
+        if (codes.length > 0) {
+          result.hs_codes = codes;
+          console.log(`Extracted ${codes.length} hs_codes from partial data`);
+        }
+      }
+    }
+    
+    // Extraire trade_agreements
+    const agreementsMatch = text.match(/"trade_agreements"\s*:\s*\[([\s\S]*?)(?:\](?:\s*,\s*"|\s*\})|$)/);
+    if (agreementsMatch && agreementsMatch[1].trim().length > 2) {
+      try {
+        result.trade_agreements = JSON.parse('[' + agreementsMatch[1] + ']');
+      } catch {}
+    }
+    
+    // Extraire preferential_rates
+    const prefRatesMatch = text.match(/"preferential_rates"\s*:\s*\[([\s\S]*?)(?:\](?:\s*,\s*"|\s*\})|$)/);
+    if (prefRatesMatch && prefRatesMatch[1].trim().length > 2) {
+      try {
+        result.preferential_rates = JSON.parse('[' + prefRatesMatch[1] + ']');
+      } catch {}
+    }
+    
+    return result;
+  };
+  
+  /**
+   * Parser JSON avec tentatives multiples
+   */
+  const parseJsonRobust = (text: string): { parsed: any | null; method: string } => {
+    // Tentative 1: Parse direct
+    try {
+      return { parsed: JSON.parse(text), method: "direct" };
+    } catch {}
+    
+    // Tentative 2: Après réparation
+    const repaired = repairTruncatedJson(text);
+    try {
+      return { parsed: JSON.parse(repaired), method: "repaired" };
+    } catch {}
+    
+    // Tentative 3: Trouver le plus grand objet JSON valide
+    let bestParsed: any = null;
+    let bestLength = 0;
+    
+    for (let endPos = text.length; endPos > 100; endPos -= 50) {
+      const truncatedText = repairTruncatedJson(text.slice(0, endPos));
+      try {
+        const attempt = JSON.parse(truncatedText);
+        if (JSON.stringify(attempt).length > bestLength) {
+          bestParsed = attempt;
+          bestLength = JSON.stringify(attempt).length;
+        }
+        // Si on a trouvé un résultat avec des données, on arrête
+        if (attempt.raw_lines?.length > 0 || attempt.hs_codes?.length > 0) {
+          return { parsed: attempt, method: "truncated_search" };
+        }
+      } catch {}
+    }
+    
+    if (bestParsed) {
+      return { parsed: bestParsed, method: "best_truncated" };
+    }
+    
+    // Tentative 4: Extraction partielle
+    const partial = extractPartialData(text);
+    if (partial.raw_lines?.length > 0 || partial.hs_codes?.length > 0 || partial.summary) {
+      console.log("Using partial extraction method");
+      return { parsed: partial, method: "partial_extraction" };
+    }
+    
+    return { parsed: null, method: "failed" };
+  };
+  
+  const { parsed, method } = parseJsonRobust(cleanedResponse);
+  console.log(`JSON parsing method: ${method}`);
   
   if (!parsed) {
-    console.error("Failed to parse Claude response");
-    console.error("Raw response (first 1000):", responseText.substring(0, 1000));
+    console.error("All JSON parsing methods failed");
+    console.error("Raw response (first 2000):", responseText.substring(0, 2000));
+    console.error("Raw response (last 500):", responseText.substring(responseText.length - 500));
     return { 
       result: {
-        summary: "Analyse échouée - Impossible de parser la réponse",
-        key_points: [],
+        summary: "Analyse échouée - Impossible de parser la réponse. Veuillez réessayer.",
+        key_points: ["Le document a été analysé mais le format de réponse était invalide."],
         hs_codes: [],
         tariff_lines: [],
       }, 
