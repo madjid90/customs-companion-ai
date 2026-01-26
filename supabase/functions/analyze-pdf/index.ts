@@ -14,10 +14,17 @@ interface TariffLine {
   unit?: string;
 }
 
+interface HSCodeEntry {
+  code: string;
+  code_clean: string;
+  description: string;
+  level: string;
+}
+
 interface AnalysisResult {
   summary: string;
   key_points: string[];
-  hs_codes: string[];
+  hs_codes: HSCodeEntry[];
   tariff_lines: TariffLine[];
   chapter_info?: { number: number; title: string };
   authorities?: string[];
@@ -40,35 +47,44 @@ STRUCTURE HIÉRARCHIQUE DU TARIF MAROCAIN :
 Le tarif utilise un système de codes à 10 chiffres. Les sous-positions HÉRITENT du préfixe parent.
 
 RÈGLES D'HÉRITAGE DES CODES :
-1. Quand tu vois "04.01" → mémorise "0401" comme préfixe de position
-2. Quand tu vois "0401.10" → mémorise "040110" comme préfixe de sous-position  
-3. Quand tu vois une ligne avec juste "10 00" ou "90 00" → c'est un SUFFIXE à ajouter au préfixe courant
+1. Quand tu vois "04.01" → mémorise "0401" comme préfixe de position (4 chiffres)
+2. Quand tu vois "0401.10" → c'est une SOUS-POSITION à 6 chiffres = "040110"  
+3. Quand tu vois une ligne avec tirets et "10 00" ou "90 00" → c'est un SUFFIXE à ajouter au préfixe courant
 
 EXEMPLE DE RECONSTITUTION :
-| Codification    | Ce que tu fais                                    |
-|-----------------|---------------------------------------------------|
-| 04.01           | Préfixe = "0401" (position parente)               |
-| 0401.10         | Préfixe = "040110" (sous-position)                |
-|      10 00      | Code = "040110" + "1000" = "0401101000"           |
-|      90 00      | Code = "040110" + "9000" = "0401109000"           |
-| 0401.20         | Préfixe = "040120" (nouvelle sous-position)       |
-|      10 00      | Code = "040120" + "1000" = "0401201000"           |
+| Codification          | Description dans le PDF               | Ce que tu extrais                     |
+|-----------------------|---------------------------------------|---------------------------------------|
+| 04.01                 | Lait et crème de lait                 | Position parente (préfixe "0401")     |
+| 0401.10               | - Teneur en matières grasses <= 1%   | hs_code = "040110" + description      |
+|      10 00            | -- Conditionné pour vente au détail  | national_code = "0401101000"          |
+|      90 00            | -- Autres                            | national_code = "0401109000"          |
 
-IMPORTANT :
+EXTRACTION DES HS_CODES (OBLIGATOIRE - 6 CHIFFRES) :
+Pour CHAQUE sous-position dans le document, extrais :
+- code: format "XXXX.XX" (ex: "0401.10")
+- code_clean: 6 chiffres sans point (ex: "040110")  
+- description: la VRAIE description du document (ex: "Lait d'une teneur en matières grasses n'excédant pas 1%")
+- level: "subheading" pour 6 chiffres, "heading" pour 4 chiffres
+
+IMPORTANT - VALIDATION :
 - Chaque national_code doit avoir EXACTEMENT 10 chiffres
-- Retire TOUS les points, espaces et tirets
-- hs_code_6 = les 6 premiers chiffres du national_code
+- Chaque hs_code dans la liste doit avoir EXACTEMENT 6 chiffres (pas 4 !)
+- hs_code_6 dans tariff_lines = les 6 premiers chiffres du national_code
 - Extrais MAXIMUM ${maxLines} lignes tarifaires avec un taux DDI
+- Extrais TOUTES les sous-positions à 6 chiffres visibles dans le document
 
 Réponds avec CE JSON (et rien d'autre) :
 {
   "summary": "Résumé court du chapitre",
   "key_points": ["Note 1", "Note 2"],
-  "hs_codes": ["0401", "0402"],
-  "tariff_lines": [
-    {"national_code": "0401101000", "hs_code_6": "040110", "description": "Description", "duty_rate": 10, "unit": "kg"}
+  "hs_codes": [
+    {"code": "0401.10", "code_clean": "040110", "description": "Lait d'une teneur en matières grasses n'excédant pas 1%", "level": "subheading"},
+    {"code": "0401.20", "code_clean": "040120", "description": "Lait d'une teneur en matières grasses excédant 1% mais n'excédant pas 6%", "level": "subheading"}
   ],
-  "chapter_info": {"number": 4, "title": "Titre"}
+  "tariff_lines": [
+    {"national_code": "0401101000", "hs_code_6": "040110", "description": "Description précise", "duty_rate": 10, "unit": "kg"}
+  ],
+  "chapter_info": {"number": 4, "title": "Lait et produits de la laiterie"}
 }`;
 
   // Call Claude API (Anthropic)
@@ -249,7 +265,7 @@ serve(async (req) => {
         pdf_id: pdfId,
         summary: analysisResult.summary,
         key_points: analysisResult.key_points || [],
-        mentioned_hs_codes: analysisResult.hs_codes || [],
+        mentioned_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
         detected_tariff_changes: analysisResult.tariff_lines || [],
         extracted_data: {
           chapter_info: analysisResult.chapter_info || null,
@@ -295,28 +311,33 @@ serve(async (req) => {
       }
     }
 
-    // INSERT HS CODES INTO hs_codes TABLE (if chapter info available)
+    // INSERT HS CODES INTO hs_codes TABLE with proper descriptions
     if (analysisResult.hs_codes && analysisResult.hs_codes.length > 0) {
-      const hsRows = analysisResult.hs_codes.map(code => ({
-        code: code.length === 4 ? `${code.slice(0,2)}.${code.slice(2)}` : code,
-        code_clean: code.replace(/\./g, ""),
-        description_fr: `Code ${code} - Extrait de ${title}`,
-        chapter_number: analysisResult.chapter_info?.number || parseInt(code.slice(0,2)) || null,
+      const chapterNumber = analysisResult.chapter_info?.number || null;
+      const chapterTitle = analysisResult.chapter_info?.title || null;
+      
+      const hsRows = analysisResult.hs_codes.map(hsCode => ({
+        code: hsCode.code,
+        code_clean: hsCode.code_clean,
+        description_fr: hsCode.description,
+        chapter_number: chapterNumber || (hsCode.code_clean ? parseInt(hsCode.code_clean.slice(0, 2)) : null),
+        chapter_title_fr: chapterTitle,
         is_active: true,
-        level: code.length === 4 ? "heading" : "subheading",
+        level: hsCode.level || (hsCode.code_clean?.length === 6 ? "subheading" : "heading"),
+        parent_code: hsCode.code_clean?.length === 6 ? hsCode.code_clean.slice(0, 4) : null,
       }));
 
       const { error: hsError } = await supabase
         .from("hs_codes")
         .upsert(hsRows, { 
           onConflict: "code",
-          ignoreDuplicates: true 
+          ignoreDuplicates: false // Update existing records with new descriptions
         });
 
       if (hsError) {
         console.error("HS codes insert error:", hsError);
       } else {
-        console.log(`Inserted ${hsRows.length} HS codes into hs_codes table`);
+        console.log(`Inserted/updated ${hsRows.length} HS codes with descriptions into hs_codes table`);
       }
     }
 
@@ -324,7 +345,7 @@ serve(async (req) => {
     const updateData: Record<string, unknown> = {
       is_verified: true,
       verified_at: new Date().toISOString(),
-      related_hs_codes: analysisResult.hs_codes || [],
+      related_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
     };
     
     if (analysisResult.chapter_info?.number) {
