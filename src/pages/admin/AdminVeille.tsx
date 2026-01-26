@@ -583,16 +583,16 @@ export default function AdminVeille() {
                     <div className="space-y-2">
                       <Label>Pays</Label>
                       <Select
-                        value={keywordForm.country_code}
+                        value={keywordForm.country_code || "all"}
                         onValueChange={(value) =>
-                          setKeywordForm({ ...keywordForm, country_code: value })
+                          setKeywordForm({ ...keywordForm, country_code: value === "all" ? "" : value })
                         }
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Tous" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Tous les pays</SelectItem>
+                          <SelectItem value="all">Tous les pays</SelectItem>
                           {countries?.map((country) => (
                             <SelectItem key={country.code} value={country.code}>
                               {country.name_fr}
