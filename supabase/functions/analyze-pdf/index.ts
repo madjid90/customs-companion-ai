@@ -21,12 +21,12 @@ serve(async (req) => {
       );
     }
 
-    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!ANTHROPIC_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY is not configured");
+    if (!LOVABLE_API_KEY) {
+      throw new Error("LOVABLE_API_KEY is not configured");
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
@@ -39,10 +39,6 @@ serve(async (req) => {
     const pdfUrl = publicUrlData?.publicUrl;
     console.log("PDF URL:", pdfUrl);
 
-    // Download PDF content for analysis
-    // Note: For now, we'll do a simplified analysis based on the PDF metadata
-    // In production, you'd use a PDF parsing library or Claude's document understanding
-
     // Get PDF document metadata
     const { data: pdfDoc } = await supabase
       .from("pdf_documents")
@@ -50,7 +46,7 @@ serve(async (req) => {
       .eq("id", pdfId)
       .single();
 
-    // Call Claude to analyze based on document metadata
+    // Call Lovable AI to analyze based on document metadata
     const analysisPrompt = `Tu es un expert en douane et commerce international.
 
 Analyse ce document PDF douanier :
@@ -68,15 +64,15 @@ Génère une analyse structurée au format JSON avec :
 
 Réponds UNIQUEMENT avec le JSON, sans markdown ni explication.`;
 
-    const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
+    // Use Lovable AI Gateway (OpenAI-compatible format)
+    const aiResponse = await fetch("https://api.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
+        "Authorization": `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "google/gemini-2.5-flash",
         max_tokens: 2048,
         messages: [
           { role: "user", content: analysisPrompt }
@@ -86,17 +82,28 @@ Réponds UNIQUEMENT avec le JSON, sans markdown ni explication.`;
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
-      console.error("Claude API error:", aiResponse.status, errorText);
-      throw new Error("Claude API error");
+      console.error("Lovable AI error:", aiResponse.status, errorText);
+      throw new Error(`Lovable AI error: ${aiResponse.status}`);
     }
 
     const aiData = await aiResponse.json();
-    const responseText = aiData.content?.[0]?.text || "{}";
+    const responseText = aiData.choices?.[0]?.message?.content || "{}";
     
-    // Parse AI response
+    // Parse AI response - clean markdown if present
     let analysisResult;
     try {
-      analysisResult = JSON.parse(responseText);
+      let cleanedResponse = responseText.trim();
+      // Remove markdown code blocks if present
+      if (cleanedResponse.startsWith("```json")) {
+        cleanedResponse = cleanedResponse.slice(7);
+      }
+      if (cleanedResponse.startsWith("```")) {
+        cleanedResponse = cleanedResponse.slice(3);
+      }
+      if (cleanedResponse.endsWith("```")) {
+        cleanedResponse = cleanedResponse.slice(0, -3);
+      }
+      analysisResult = JSON.parse(cleanedResponse.trim());
     } catch {
       console.warn("Failed to parse AI response, using defaults");
       analysisResult = {
@@ -117,7 +124,7 @@ Réponds UNIQUEMENT avec le JSON, sans markdown ni explication.`;
         key_points: analysisResult.key_points || [],
         mentioned_hs_codes: analysisResult.hs_codes || [],
         detected_tariff_changes: analysisResult.tariff_changes || [],
-        extraction_model: "claude-sonnet-4-20250514",
+        extraction_model: "google/gemini-2.5-flash",
         extraction_confidence: 0.8,
       });
 
