@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,9 @@ import {
   Save, 
   Trash2,
   Database,
-  Loader2
+  Loader2,
+  Download,
+  Upload
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -67,6 +69,7 @@ export default function ExtractionPreviewDialog({
   const [tariffLines, setTariffLines] = useState<TariffLine[]>([]);
   const [editingHsIndex, setEditingHsIndex] = useState<number | null>(null);
   const [editingTariffIndex, setEditingTariffIndex] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize state when dialog opens
   useState(() => {
@@ -258,6 +261,118 @@ export default function ExtractionPreviewDialog({
 
   const { validHs, validTariff } = getValidCounts();
 
+  // ===== CSV EXPORT =====
+  const exportToCSV = () => {
+    // Build CSV content with BOM for Excel compatibility
+    const BOM = '\uFEFF';
+    const headers = ['national_code', 'hs_code_6', 'description', 'duty_rate', 'unit'];
+    const rows = tariffLines.map(line => [
+      line.national_code,
+      line.hs_code_6,
+      `"${(line.description || '').replace(/"/g, '""')}"`,
+      line.duty_rate.toString(),
+      line.unit || ''
+    ]);
+    
+    const csvContent = BOM + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+    
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `extraction_${pdfTitle.replace(/[^a-zA-Z0-9]/g, '_')}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    toast({
+      title: "📥 Export CSV",
+      description: `${tariffLines.length} lignes exportées. Ouvrez dans Excel, corrigez, puis réimportez.`,
+    });
+  };
+
+  // ===== CSV IMPORT =====
+  const handleCSVImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        // Remove BOM if present
+        const cleanText = text.replace(/^\uFEFF/, '');
+        const lines = cleanText.split(/\r?\n/).filter(line => line.trim());
+        
+        // Skip header row
+        const dataLines = lines.slice(1);
+        
+        const importedTariffs: TariffLine[] = dataLines.map(line => {
+          // Handle both comma and semicolon as delimiters
+          const parts = line.includes(';') ? parseCSVLine(line, ';') : parseCSVLine(line, ',');
+          
+          return {
+            national_code: parts[0]?.trim() || '',
+            hs_code_6: parts[1]?.trim() || '',
+            description: parts[2]?.trim().replace(/^"|"$/g, '') || '',
+            duty_rate: parseFloat(parts[3]?.trim()) || 0,
+            unit: parts[4]?.trim() || undefined,
+          };
+        }).filter(t => t.national_code); // Filter out empty rows
+
+        setTariffLines(importedTariffs);
+        
+        toast({
+          title: "📤 Import CSV réussi",
+          description: `${importedTariffs.length} lignes importées. Vérifiez et insérez en base.`,
+        });
+      } catch (err) {
+        console.error("CSV parse error:", err);
+        toast({
+          title: "Erreur d'import",
+          description: "Format CSV invalide. Utilisez le format exporté.",
+          variant: "destructive",
+        });
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+    
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Parse CSV line handling quoted fields
+  const parseCSVLine = (line: string, delimiter: string): string[] => {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === delimiter && !inQuotes) {
+        result.push(current);
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current);
+    
+    return result;
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
@@ -276,20 +391,45 @@ export default function ExtractionPreviewDialog({
         )}
 
         <Tabs defaultValue="tariffs" className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="shrink-0">
-            <TabsTrigger value="tariffs" className="flex items-center gap-2">
-              Lignes tarifaires
-              <Badge variant={validTariff === tariffLines.length ? "default" : "destructive"} className="text-xs">
-                {validTariff}/{tariffLines.length}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="hscodes" className="flex items-center gap-2">
-              Codes SH
-              <Badge variant={validHs === hsCodes.length ? "default" : "destructive"} className="text-xs">
-                {validHs}/{hsCodes.length}
-              </Badge>
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex items-center justify-between shrink-0">
+            <TabsList>
+              <TabsTrigger value="tariffs" className="flex items-center gap-2">
+                Lignes tarifaires
+                <Badge variant={validTariff === tariffLines.length ? "default" : "destructive"} className="text-xs">
+                  {validTariff}/{tariffLines.length}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger value="hscodes" className="flex items-center gap-2">
+                Codes SH
+                <Badge variant={validHs === hsCodes.length ? "default" : "destructive"} className="text-xs">
+                  {validHs}/{hsCodes.length}
+                </Badge>
+              </TabsTrigger>
+            </TabsList>
+            
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={exportToCSV} className="gap-1">
+                <Download className="h-4 w-4" />
+                Export CSV
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => fileInputRef.current?.click()}
+                className="gap-1"
+              >
+                <Upload className="h-4 w-4" />
+                Import CSV
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                onChange={handleCSVImport}
+                className="hidden"
+              />
+            </div>
+          </div>
 
           <TabsContent value="tariffs" className="flex-1 overflow-hidden mt-4">
             <ScrollArea className="h-[400px] border rounded-lg">
