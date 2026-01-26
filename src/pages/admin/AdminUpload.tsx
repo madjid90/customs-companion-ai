@@ -151,28 +151,62 @@ export default function AdminUpload() {
         filePath: filePath,
       });
 
-      // 3. Call AI analysis edge function (preview mode by default)
-      const { data: analysisData, error: analysisError } = await supabase.functions.invoke(
-        "analyze-pdf",
-        {
-          body: { 
-            pdfId: pdfDoc.id,
-            filePath: filePath,
-            previewOnly: true  // New: preview mode
-          },
+      // 3. Call AI analysis edge function (preview mode by default) with retry
+      let analysisData = null;
+      let analysisError = null;
+      const MAX_RETRIES = 2;
+      
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const result = await supabase.functions.invoke(
+            "analyze-pdf",
+            {
+              body: { 
+                pdfId: pdfDoc.id,
+                filePath: filePath,
+                previewOnly: true
+              },
+            }
+          );
+          
+          if (result.error) {
+            // Check if it's a rate limit or network error
+            const errorMsg = result.error?.message || "";
+            if (errorMsg.includes("429") || errorMsg.includes("rate") || errorMsg.includes("network")) {
+              if (attempt < MAX_RETRIES) {
+                console.log(`Retry ${attempt + 1}/${MAX_RETRIES} after network/rate error...`);
+                updateFileStatus(fileId, { progress: 70 + attempt * 10 });
+                await new Promise(resolve => setTimeout(resolve, 5000 * (attempt + 1)));
+                continue;
+              }
+            }
+            analysisError = result.error;
+          } else {
+            analysisData = result.data;
+          }
+          break;
+        } catch (err: any) {
+          // Network connection lost or fetch error
+          if (attempt < MAX_RETRIES) {
+            console.log(`Network error, retry ${attempt + 1}/${MAX_RETRIES}...`);
+            updateFileStatus(fileId, { progress: 70 + attempt * 10 });
+            await new Promise(resolve => setTimeout(resolve, 5000 * (attempt + 1)));
+            continue;
+          }
+          analysisError = err;
         }
-      );
+      }
 
-      if (analysisError) {
+      if (analysisError || !analysisData) {
         console.warn("Analysis error (non-blocking):", analysisError);
         updateFileStatus(fileId, {
           status: "error",
           progress: 100,
-          error: "Erreur d'analyse IA",
+          error: analysisError?.message || "Erreur réseau - réessayez",
         });
         toast({
           title: "Erreur d'analyse",
-          description: "Le document a été uploadé mais l'analyse a échoué",
+          description: "Connexion perdue ou service surchargé. Réessayez dans quelques instants.",
           variant: "destructive",
         });
       } else {
