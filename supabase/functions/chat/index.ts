@@ -555,7 +555,7 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       context.knowledge_documents = [...new Map(context.knowledge_documents.map(d => [d.title, d])).values()].slice(0, 5);
     }
 
-    // 6. Get relevant PDF summaries
+    // 6. Get relevant PDF summaries AND full text for precise RAG
     const codes4ForPdf = context.hs_codes.length > 0 
       ? [...new Set(context.hs_codes.map(c => cleanHSCode(c.code || c.code_clean).substring(0, 4)))]
       : [];
@@ -566,9 +566,11 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
           summary,
           key_points,
           mentioned_hs_codes,
+          extracted_text,
+          extracted_data,
           pdf_documents!inner(title, category, country_code)
         `)
-        .limit(3);
+        .limit(5);
       
       if (codes4ForPdf.length > 0) {
         pdfQuery = pdfQuery.contains('mentioned_hs_codes', [codes4ForPdf[0]]);
@@ -581,6 +583,36 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
           category: p.pdf_documents?.category,
           summary: p.summary,
           key_points: p.key_points,
+          full_text: p.extracted_text,  // Texte intégral pour recherche précise
+          extracted_data: p.extracted_data,
+        }));
+      }
+    }
+    
+    // 6b. Recherche textuelle dans les extractions si pas trouvé par code
+    if (context.pdf_summaries.length === 0 && analysis.keywords.length > 0) {
+      // Chercher par mots-clés dans le texte extrait
+      const searchTerms = analysis.keywords.slice(0, 3).join(' ');
+      const { data: textSearchResults } = await supabase
+        .from('pdf_extractions')
+        .select(`
+          summary,
+          key_points,
+          extracted_text,
+          extracted_data,
+          pdf_documents!inner(title, category, country_code)
+        `)
+        .or(`summary.ilike.%${searchTerms}%,extracted_text.ilike.%${searchTerms}%`)
+        .limit(3);
+      
+      if (textSearchResults) {
+        context.pdf_summaries = textSearchResults.map((p: any) => ({
+          title: p.pdf_documents?.title,
+          category: p.pdf_documents?.category,
+          summary: p.summary,
+          key_points: p.key_points,
+          full_text: p.extracted_text,
+          extracted_data: p.extracted_data,
         }));
       }
     }
@@ -760,10 +792,27 @@ ${context.hs_codes.length > 0 ? JSON.stringify(context.hs_codes, null, 2) : "Auc
 ${context.controlled_products.length > 0 ? JSON.stringify(context.controlled_products, null, 2) : "Voir contrôles dans les tarifs ci-dessus"}
 
 ### Documents de référence
-${context.knowledge_documents.length > 0 ? context.knowledge_documents.map(d => `- **${d.title}**: ${d.content?.substring(0, 200)}...`).join('\n') : "Aucun document de référence"}
+${context.knowledge_documents.length > 0 ? context.knowledge_documents.map(d => `- **${d.title}**: ${d.content?.substring(0, 500)}...`).join('\n') : "Aucun document de référence"}
 
-### Résumés PDF pertinents
-${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => `- **${p.title}** (${p.category}): ${p.summary?.substring(0, 150)}...`).join('\n') : "Aucun PDF pertinent"}
+### Contenu PDF pertinents (texte intégral)
+${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => {
+  let content = `#### ${p.title} (${p.category})\n**Résumé:** ${p.summary || 'N/A'}\n`;
+  if (p.key_points && p.key_points.length > 0) {
+    content += `**Points clés:**\n${p.key_points.map((kp: string) => `- ${kp}`).join('\n')}\n`;
+  }
+  // Inclure le texte intégral pour réponses précises (limité à 8000 chars par doc)
+  if (p.full_text) {
+    content += `**Texte du document:**\n${p.full_text.substring(0, 8000)}${p.full_text.length > 8000 ? '...[tronqué]' : ''}\n`;
+  }
+  // Inclure les données structurées
+  if (p.extracted_data?.trade_agreements?.length > 0) {
+    content += `**Accords commerciaux:** ${p.extracted_data.trade_agreements.map((a: any) => a.name).join(', ')}\n`;
+  }
+  if (p.extracted_data?.authorities?.length > 0) {
+    content += `**Autorités:** ${p.extracted_data.authorities.join(', ')}\n`;
+  }
+  return content;
+}).join('\n---\n') : "Aucun PDF pertinent"}
 
 ---
 ⚠️ RAPPEL CRITIQUE: POSE **UNE SEULE QUESTION** par message. Utilise le format avec tirets pour les options (elles seront transformées en boutons cliquables).`;
