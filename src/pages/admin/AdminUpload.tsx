@@ -167,6 +167,42 @@ export default function AdminUpload() {
                                   err.message?.includes("network");
           
           if ((isTimeout || isNetworkError) && attempt < MAX_RETRIES) {
+            // NOUVEAU: Vérifier si l'extraction existe déjà en base (le serveur a peut-être réussi)
+            updateFileStatus(fileId, { 
+              progress: 75,
+              error: `Vérification de l'extraction en base...`
+            });
+            
+            const { data: existingExtraction } = await supabase
+              .from("pdf_extractions")
+              .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text")
+              .eq("pdf_id", pdfDoc.id)
+              .maybeSingle();
+            
+            if (existingExtraction && existingExtraction.summary) {
+              // L'extraction existe! Récupérer les données depuis la base
+              console.log("Extraction found in database despite network error, recovering...");
+              
+              // Reconstruire les données depuis la base
+              const tariffChanges = existingExtraction.detected_tariff_changes as any[] || [];
+              const hsCodesRaw = existingExtraction.mentioned_hs_codes as string[] || [];
+              
+              analysisData = {
+                summary: existingExtraction.summary,
+                key_points: existingExtraction.key_points || [],
+                tariff_lines: tariffChanges,
+                hs_codes: hsCodesRaw.map((code: string) => ({
+                  code: code,
+                  code_clean: code.replace(/[^0-9]/g, ""),
+                  description: "",
+                  level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
+                })),
+                document_type: tariffChanges.length > 0 ? "tariff" : "regulatory",
+                full_text: existingExtraction.extracted_text || "",
+              };
+              break;
+            }
+            
             const waitTime = 8000 * (attempt + 1);
             console.log(`${isTimeout ? "Timeout" : "Network error"}, retry ${attempt + 1}/${MAX_RETRIES} in ${waitTime/1000}s...`);
             updateFileStatus(fileId, { 
@@ -180,6 +216,41 @@ export default function AdminUpload() {
           }
           
           analysisError = err;
+        }
+      }
+
+      // NOUVEAU: Après toutes les tentatives, vérifier une dernière fois si l'extraction existe
+      if ((analysisError || !analysisData)) {
+        updateFileStatus(fileId, { 
+          progress: 90,
+          error: `Vérification finale de l'extraction...`
+        });
+        
+        const { data: finalCheck } = await supabase
+          .from("pdf_extractions")
+          .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text")
+          .eq("pdf_id", pdfDoc.id)
+          .maybeSingle();
+        
+        if (finalCheck && finalCheck.summary) {
+          console.log("Extraction found in final check, recovering data...");
+          const tariffChanges = finalCheck.detected_tariff_changes as any[] || [];
+          const hsCodesRaw = finalCheck.mentioned_hs_codes as string[] || [];
+          
+          analysisData = {
+            summary: finalCheck.summary,
+            key_points: finalCheck.key_points || [],
+            tariff_lines: tariffChanges,
+            hs_codes: hsCodesRaw.map((code: string) => ({
+              code: code,
+              code_clean: code.replace(/[^0-9]/g, ""),
+              description: "",
+              level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
+            })),
+            document_type: tariffChanges.length > 0 ? "tariff" : "regulatory",
+            full_text: finalCheck.extracted_text || "",
+          };
+          analysisError = null;
         }
       }
 
