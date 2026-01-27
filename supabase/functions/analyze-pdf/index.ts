@@ -1248,7 +1248,77 @@ serve(async (req) => {
       "Preview only:", previewOnly
     );
 
-    // Preview mode
+    // === TOUJOURS SAUVEGARDER L'EXTRACTION (même en mode preview) ===
+    // Ceci permet au Chat RAG de retrouver les informations extraites
+    
+    // Vérifier si une extraction existe déjà pour ce PDF
+    const { data: existingExtraction } = await supabase
+      .from("pdf_extractions")
+      .select("id")
+      .eq("pdf_id", pdfId)
+      .maybeSingle();
+    
+    if (!existingExtraction) {
+      // Créer l'extraction si elle n'existe pas
+      const { error: extractionError } = await supabase.from("pdf_extractions").insert({
+        pdf_id: pdfId,
+        summary: analysisResult.summary,
+        key_points: analysisResult.key_points || [],
+        mentioned_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
+        detected_tariff_changes: analysisResult.tariff_lines || [],
+        extracted_data: {
+          chapter_info: analysisResult.chapter_info || null,
+          notes: analysisResult.notes || null,
+          footnotes: analysisResult.footnotes || null,
+          tariff_lines_count: analysisResult.tariff_lines?.length || 0,
+          inherited_lines_count: analysisResult.tariff_lines?.filter(l => l.is_inherited).length || 0,
+          trade_agreements: analysisResult.trade_agreements || [],
+          preferential_rates: analysisResult.preferential_rates || [],
+          authorities: analysisResult.authorities || [],
+          legal_references: analysisResult.legal_references || [],
+          document_type: isRegulatoryDoc ? "regulatory" : "tariff",
+        },
+        extraction_model: "claude-sonnet-4-20250514",
+        extraction_confidence: 0.92,
+      });
+      
+      if (extractionError) {
+        console.error("Extraction save error:", extractionError);
+      } else {
+        console.log("Extraction saved to database for PDF:", pdfId);
+      }
+    } else {
+      // Mettre à jour l'extraction existante
+      const { error: updateError } = await supabase.from("pdf_extractions").update({
+        summary: analysisResult.summary,
+        key_points: analysisResult.key_points || [],
+        mentioned_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
+        detected_tariff_changes: analysisResult.tariff_lines || [],
+        extracted_data: {
+          chapter_info: analysisResult.chapter_info || null,
+          notes: analysisResult.notes || null,
+          footnotes: analysisResult.footnotes || null,
+          tariff_lines_count: analysisResult.tariff_lines?.length || 0,
+          inherited_lines_count: analysisResult.tariff_lines?.filter(l => l.is_inherited).length || 0,
+          trade_agreements: analysisResult.trade_agreements || [],
+          preferential_rates: analysisResult.preferential_rates || [],
+          authorities: analysisResult.authorities || [],
+          legal_references: analysisResult.legal_references || [],
+          document_type: isRegulatoryDoc ? "regulatory" : "tariff",
+        },
+        extraction_model: "claude-sonnet-4-20250514",
+        extraction_confidence: 0.92,
+        extracted_at: new Date().toISOString(),
+      }).eq("id", existingExtraction.id);
+      
+      if (updateError) {
+        console.error("Extraction update error:", updateError);
+      } else {
+        console.log("Extraction updated for PDF:", pdfId);
+      }
+    }
+
+    // Preview mode - retourne les résultats sans insérer les tarifs/HS codes
     if (previewOnly) {
       return new Response(
         JSON.stringify({
