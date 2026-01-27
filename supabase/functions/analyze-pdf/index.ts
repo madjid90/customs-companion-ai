@@ -75,6 +75,7 @@ interface AnalysisResult {
   document_type?: string;  // "tariff" ou "regulatory"
   effective_date?: string;
   legal_references?: string[];
+  full_text?: string;  // Texte intégral du document pour recherche RAG
 }
 
 // =============================================================================
@@ -169,7 +170,8 @@ Ligne: "1 | 90 |  |  |" → HÉRITAGE 100111 + "90" + "00" = 1001119000
     {"code": "1001.19", "code_clean": "100119", "description": "Autres", "level": "subheading"}
   ],
   "trade_agreements": [],
-  "preferential_rates": []
+  "preferential_rates": [],
+  "full_text": "TEXTE INTÉGRAL DU DOCUMENT - Copie ici TOUT le contenu textuel visible du PDF, incluant les titres, notes, descriptions, conditions, articles, paragraphes. Ce texte sera utilisé pour répondre aux questions précises."
 }
 
 === RÈGLES STRICTES ===
@@ -181,6 +183,7 @@ Ligne: "1 | 90 |  |  |" → HÉRITAGE 100111 + "90" + "00" = 1001119000
 ✓ IGNORER COMPLÈTEMENT les codes entre crochets [XX.XX] ou [XXXX.XX] - ce sont des positions RÉSERVÉES/VIDES - NE PAS les inclure dans raw_lines ni dans hs_codes
 ✓ Les positions simples XX.XX (ex: 14.01, 14.04) sont des headings valides à extraire
 ✓ TOUS les codes dans hs_codes doivent avoir un code_clean de EXACTEMENT 6 CHIFFRES (ex: "140100", "100111")
+✓ CRITIQUE: full_text doit contenir le TEXTE INTÉGRAL du document (jusqu'à 50000 caractères) pour permettre la recherche précise
 
 RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
 
@@ -260,7 +263,8 @@ Tu dois extraire les informations juridiques et réglementaires pertinentes.
   ],
   "authorities": ["Autorité compétente 1", "Ministère X"],
   "effective_date": "Date d'entrée en vigueur si mentionnée",
-  "legal_references": ["Référence à d'autres textes"]
+  "legal_references": ["Référence à d'autres textes"],
+  "full_text": "TEXTE INTÉGRAL DU DOCUMENT - Copie ici TOUT le contenu textuel visible du PDF, incluant les articles, paragraphes, conditions, dispositions, annexes. Ce texte sera utilisé pour répondre aux questions précises."
 }
 
 === RÈGLES ===
@@ -269,6 +273,7 @@ Tu dois extraire les informations juridiques et réglementaires pertinentes.
 ✓ Concentre-toi sur le contenu juridique et réglementaire
 ✓ Extraire tous les accords commerciaux mentionnés avec leurs détails
 ✓ Si le document est un accord de transport, identifier les parties et conditions
+✓ CRITIQUE: full_text doit contenir le TEXTE INTÉGRAL du document (jusqu'à 50000 caractères) pour permettre la recherche précise
 
 RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
 
@@ -1266,6 +1271,7 @@ serve(async (req) => {
         key_points: analysisResult.key_points || [],
         mentioned_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
         detected_tariff_changes: analysisResult.tariff_lines || [],
+        extracted_text: analysisResult.full_text || null,  // TEXTE INTÉGRAL pour RAG précis
         extracted_data: {
           chapter_info: analysisResult.chapter_info || null,
           notes: analysisResult.notes || null,
@@ -1285,7 +1291,7 @@ serve(async (req) => {
       if (extractionError) {
         console.error("Extraction save error:", extractionError);
       } else {
-        console.log("Extraction saved to database for PDF:", pdfId);
+        console.log("Extraction saved to database for PDF:", pdfId, "- Full text length:", analysisResult.full_text?.length || 0);
       }
     } else {
       // Mettre à jour l'extraction existante
@@ -1294,6 +1300,7 @@ serve(async (req) => {
         key_points: analysisResult.key_points || [],
         mentioned_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
         detected_tariff_changes: analysisResult.tariff_lines || [],
+        extracted_text: analysisResult.full_text || null,  // TEXTE INTÉGRAL pour RAG précis
         extracted_data: {
           chapter_info: analysisResult.chapter_info || null,
           notes: analysisResult.notes || null,
@@ -1314,7 +1321,7 @@ serve(async (req) => {
       if (updateError) {
         console.error("Extraction update error:", updateError);
       } else {
-        console.log("Extraction updated for PDF:", pdfId);
+        console.log("Extraction updated for PDF:", pdfId, "- Full text length:", analysisResult.full_text?.length || 0);
       }
     }
 
