@@ -209,7 +209,7 @@ export default function AdminDocuments() {
     }
   };
 
-  // Batch analyze all pending documents - sequential processing with proper await
+  // Batch analyze all pending documents - using Supabase SDK for reliability
   const analyzeAllPending = async () => {
     const pendingDocs = documents?.filter(d => !getExtraction(d.id)) || [];
     
@@ -232,61 +232,47 @@ export default function AdminDocuments() {
     let successCount = 0;
     let failCount = 0;
 
-    // Process documents one by one - wait for each to complete before starting next
+    // Process documents one by one using Supabase SDK
     for (let i = 0; i < pendingDocs.length; i++) {
       const doc = pendingDocs[i];
       setBatchProgress(prev => ({ ...prev, current: i + 1 }));
 
       try {
-        // Use AbortController for timeout (120 seconds per document)
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 120000);
+        console.log(`🔄 [${i + 1}/${pendingDocs.length}] Démarrage: ${doc.title}`);
+        
+        // Use Supabase SDK invoke - handles auth and CORS automatically
+        const { data, error } = await supabase.functions.invoke("analyze-pdf", {
+          body: {
+            pdfId: doc.id,
+            filePath: doc.file_path,
+            previewOnly: false,
+          },
+        });
 
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-pdf`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-            },
-            body: JSON.stringify({
-              pdfId: doc.id,
-              filePath: doc.file_path,
-              previewOnly: false,
-            }),
-            signal: controller.signal,
-          }
-        );
-
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
+        if (error) {
+          console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title}:`, error);
+          failCount++;
+        } else if (data?.error) {
+          console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title}:`, data.error);
+          failCount++;
+        } else {
           await supabase
             .from("pdf_documents")
             .update({ is_verified: true, verified_at: new Date().toISOString() })
             .eq("id", doc.id);
           successCount++;
           console.log(`✅ [${i + 1}/${pendingDocs.length}] ${doc.title}`);
-        } else {
-          const errorData = await response.json().catch(() => ({}));
-          console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title}:`, errorData);
-          failCount++;
         }
       } catch (error: any) {
-        if (error.name === 'AbortError') {
-          console.error(`⏱️ [${i + 1}/${pendingDocs.length}] Timeout: ${doc.title}`);
-        } else {
-          console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title}:`, error);
-        }
+        console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title}:`, error);
         failCount++;
       }
 
       setBatchProgress(prev => ({ ...prev, success: successCount, failed: failCount }));
 
-      // Small delay between requests to avoid rate limiting (2 seconds)
+      // Delay between requests to avoid rate limiting (3 seconds)
       if (i < pendingDocs.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
 
