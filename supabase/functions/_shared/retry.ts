@@ -70,10 +70,11 @@ export async function fetchWithRetry(
 }
 
 // Fonction spécifique pour Anthropic
+// IMPORTANT: Timeout augmenté à 3 minutes pour les PDFs volumineux
 export async function callAnthropicWithRetry(
   apiKey: string,
   body: object,
-  timeoutMs: number = 60000
+  timeoutMs: number = 180000 // 3 minutes au lieu de 60s
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -92,9 +93,9 @@ export async function callAnthropicWithRetry(
         signal: controller.signal,
       },
       {
-        maxRetries: 3,
-        initialDelayMs: 2000,
-        maxDelayMs: 15000,
+        maxRetries: 5,        // Plus de tentatives
+        initialDelayMs: 3000, // 3s entre les tentatives
+        maxDelayMs: 30000,    // Max 30s d'attente
         retryableStatuses: [429, 500, 502, 503, 504, 529] // 529 = Anthropic overloaded
       }
     );
