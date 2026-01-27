@@ -1,10 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import {
+  getCorsHeaders,
+  handleCorsPreFlight,
+  checkRateLimit,
+  rateLimitResponse,
+  getClientId,
+  errorResponse,
+  successResponse,
+} from "../_shared/cors.ts";
 
 // ============================================================================
 // UTILITAIRES CODES SH (héritage hiérarchique)
@@ -632,18 +636,30 @@ IMPORTANT:
 }
 
 serve(async (req) => {
+  // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreFlight(req);
+  }
+
+  // ============================================================================
+  // PHASE 4: RATE LIMITING
+  // ============================================================================
+  const clientId = getClientId(req);
+  const rateLimit = checkRateLimit(clientId, {
+    maxRequests: 30,     // 30 requests
+    windowMs: 60000,      // per minute
+    blockDurationMs: 300000, // 5 min block
+  });
+
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(req, rateLimit.resetAt);
   }
 
   try {
     const { question, sessionId, images, conversationHistory } = await req.json();
 
     if (!question && (!images || images.length === 0)) {
-      return new Response(
-        JSON.stringify({ error: "Question or images required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse(req, "Question or images required", 400);
     }
 
     const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
@@ -683,7 +699,7 @@ serve(async (req) => {
                 similarity: cachedResponse.response.similarity,
               },
             }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
           );
         }
       }
@@ -1331,10 +1347,7 @@ ${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
       clearTimeout(timeoutId);
       if (fetchError.name === 'AbortError') {
         console.error("Claude API timeout after", CLAUDE_TIMEOUT_MS, "ms");
-        return new Response(
-          JSON.stringify({ error: "La requête a pris trop de temps. Veuillez réessayer avec une question plus simple." }),
-          { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return errorResponse(req, "La requête a pris trop de temps. Veuillez réessayer avec une question plus simple.", 504);
       }
       throw fetchError;
     }
@@ -1342,18 +1355,12 @@ ${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
 
     if (!aiResponse.ok) {
       if (aiResponse.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Trop de requêtes. Veuillez réessayer dans quelques instants." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return errorResponse(req, "Trop de requêtes. Veuillez réessayer dans quelques instants.", 429);
       }
       if (aiResponse.status === 402 || aiResponse.status === 400) {
         const errorData = await aiResponse.json().catch(() => ({}));
         console.error("Claude API error:", aiResponse.status, errorData);
-        return new Response(
-          JSON.stringify({ error: "Erreur API Claude. Vérifiez votre clé API." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return errorResponse(req, "Erreur API Claude. Vérifiez votre clé API.", 402);
       }
       const errorText = await aiResponse.text();
       console.error("Claude API error:", aiResponse.status, errorText);
@@ -1490,13 +1497,17 @@ ${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
           cached: false,
         }
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   } catch (error) {
     console.error("Chat error:", error);
-    return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Erreur interne" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    const errorId = crypto.randomUUID();
+    console.error(`[ERROR:${errorId}]`, error);
+    return errorResponse(
+      req,
+      "Une erreur est survenue. Veuillez réessayer.",
+      500,
+      errorId
     );
   }
 });

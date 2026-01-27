@@ -1,10 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import {
+  getCorsHeaders,
+  handleCorsPreFlight,
+  checkRateLimit,
+  rateLimitResponse,
+  getClientId,
+  errorResponse,
+  successResponse,
+} from "../_shared/cors.ts";
 
 interface WCODecision {
   title: string;
@@ -126,8 +130,21 @@ function extractCookies(setCookieHeader: string | null): string {
 }
 
 serve(async (req) => {
+  // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreFlight(req);
+  }
+
+  // Rate limiting (1 request per 5 minutes - authenticated scraper)
+  const clientId = getClientId(req);
+  const rateLimit = checkRateLimit(clientId, {
+    maxRequests: 1,
+    windowMs: 300000,
+    blockDurationMs: 600000,
+  });
+
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(req, rateLimit.resetAt);
   }
 
   try {
@@ -139,10 +156,7 @@ serve(async (req) => {
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!WCO_USERNAME || !WCO_PASSWORD) {
-      return new Response(
-        JSON.stringify({ error: "WCO credentials not configured" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse(req, "WCO credentials not configured", 400);
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
@@ -332,7 +346,7 @@ serve(async (req) => {
         new_documents: newDocuments,
         sample: decisions.slice(0, 3),
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
 
   } catch (error) {

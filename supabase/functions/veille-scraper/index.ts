@@ -1,10 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import {
+  getCorsHeaders,
+  handleCorsPreFlight,
+  checkRateLimit,
+  rateLimitResponse,
+  getClientId,
+  errorResponse,
+  successResponse,
+} from "../_shared/cors.ts";
 
 // ============= CONFIGURATION =============
 const CONFIG = {
@@ -1238,7 +1242,19 @@ async function searchKeyword(
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreFlight(req);
+  }
+
+  // Rate limiting (1 request per minute - heavy operation)
+  const clientId = getClientId(req);
+  const rateLimit = checkRateLimit(clientId, {
+    maxRequests: 1,
+    windowMs: 60000,
+    blockDurationMs: 300000,
+  });
+
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(req, rateLimit.resetAt);
   }
 
   // Parse request body early to fail fast
@@ -1259,15 +1275,12 @@ serve(async (req) => {
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
   if (!FIRECRAWL_API_KEY) {
-    return new Response(
-      JSON.stringify({ error: "FIRECRAWL_API_KEY not configured" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return errorResponse(req, "FIRECRAWL_API_KEY not configured", 500);
   }
   if (!ANTHROPIC_API_KEY) {
     return new Response(
       JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   }
 
@@ -1326,7 +1339,7 @@ serve(async (req) => {
         mode,
         async: true,
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   }
 
@@ -1335,13 +1348,13 @@ serve(async (req) => {
     const result = await runScrapingCycle(FIRECRAWL_API_KEY, ANTHROPIC_API_KEY, supabase, logId, mode, siteId, keywordId);
     return new Response(
       JSON.stringify({ success: true, ...result }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   } catch (error) {
     console.error("Veille scraper error:", error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   }
 });
