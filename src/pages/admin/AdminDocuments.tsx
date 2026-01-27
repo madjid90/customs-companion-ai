@@ -209,7 +209,7 @@ export default function AdminDocuments() {
     }
   };
 
-  // Batch analyze all pending documents
+  // Batch analyze all pending documents - sequential processing with proper await
   const analyzeAllPending = async () => {
     const pendingDocs = documents?.filter(d => !getExtraction(d.id)) || [];
     
@@ -226,18 +226,22 @@ export default function AdminDocuments() {
 
     toast({
       title: "🚀 Analyse en lot démarrée",
-      description: `Traitement de ${pendingDocs.length} documents. Cette opération peut prendre plusieurs minutes.`,
+      description: `Traitement séquentiel de ${pendingDocs.length} documents. Chaque document prend ~30-60 secondes.`,
     });
 
     let successCount = 0;
     let failCount = 0;
 
-    // Process documents sequentially to avoid rate limits
+    // Process documents one by one - wait for each to complete before starting next
     for (let i = 0; i < pendingDocs.length; i++) {
       const doc = pendingDocs[i];
       setBatchProgress(prev => ({ ...prev, current: i + 1 }));
 
       try {
+        // Use AbortController for timeout (120 seconds per document)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000);
+
         const response = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-pdf`,
           {
@@ -251,8 +255,11 @@ export default function AdminDocuments() {
               filePath: doc.file_path,
               previewOnly: false,
             }),
+            signal: controller.signal,
           }
         );
+
+        clearTimeout(timeoutId);
 
         if (response.ok) {
           await supabase
@@ -260,19 +267,26 @@ export default function AdminDocuments() {
             .update({ is_verified: true, verified_at: new Date().toISOString() })
             .eq("id", doc.id);
           successCount++;
+          console.log(`✅ [${i + 1}/${pendingDocs.length}] ${doc.title}`);
         } else {
+          const errorData = await response.json().catch(() => ({}));
+          console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title}:`, errorData);
           failCount++;
         }
-      } catch (error) {
-        console.error(`Failed to analyze ${doc.title}:`, error);
+      } catch (error: any) {
+        if (error.name === 'AbortError') {
+          console.error(`⏱️ [${i + 1}/${pendingDocs.length}] Timeout: ${doc.title}`);
+        } else {
+          console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title}:`, error);
+        }
         failCount++;
       }
 
       setBatchProgress(prev => ({ ...prev, success: successCount, failed: failCount }));
 
-      // Delay between documents to avoid rate limiting (500ms)
+      // Small delay between requests to avoid rate limiting (2 seconds)
       if (i < pendingDocs.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
 
