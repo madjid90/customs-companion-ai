@@ -1,5 +1,5 @@
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -321,9 +321,19 @@ function isRegulatoryDocument(category: string, title: string): boolean {
 
 /**
  * Nettoie un code SH (supprime points, espaces, tirets)
+ * AMÉLIORATION: Préserve les zéros des chapitres 01-09
  */
 function cleanCode(code: string): string {
-  return (code || "").replace(/[.\-\s]/g, "").replace(/^0+(?=\d)/, "");
+  const cleaned = (code || "").replace(/[.\-\s]/g, "");
+  // Ne pas supprimer les zéros si c'est un code de 2 chiffres (chapitre 01-09)
+  // ou si le code commence par 0 et fait partie d'un chapitre valide
+  if (cleaned.length === 2 && cleaned.startsWith("0")) {
+    return cleaned; // Préserver "01", "02", etc.
+  }
+  if (cleaned.length >= 4 && cleaned.startsWith("0")) {
+    return cleaned; // Préserver "0101", "0901", etc.
+  }
+  return cleaned;
 }
 
 /**
@@ -1365,24 +1375,8 @@ serve(async (req) => {
     }
 
     // === INSERTION EN BASE ===
-    
-    // 1. Save extraction
-    await supabase.from("pdf_extractions").insert({
-      pdf_id: pdfId,
-      summary: analysisResult.summary,
-      key_points: analysisResult.key_points || [],
-      mentioned_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
-      detected_tariff_changes: analysisResult.tariff_lines || [],
-      extracted_data: {
-        chapter_info: analysisResult.chapter_info || null,
-        notes: analysisResult.notes || null,
-        footnotes: analysisResult.footnotes || null,
-        tariff_lines_count: analysisResult.tariff_lines?.length || 0,
-        inherited_lines_count: analysisResult.tariff_lines?.filter(l => l.is_inherited).length || 0,
-      },
-      extraction_model: "claude-sonnet-4-20250514",
-      extraction_confidence: 0.92,
-    });
+    // NOTE: L'extraction PDF est déjà sauvegardée plus haut (lignes 1281-1340)
+    // On ne fait ici que l'insertion des tarifs et codes HS
 
     // 2. Insert tariff lines
     if (analysisResult.tariff_lines && analysisResult.tariff_lines.length > 0) {

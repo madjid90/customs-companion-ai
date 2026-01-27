@@ -475,9 +475,10 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
     };
 
     // 1. NOUVEAU: Recherche avec héritage pour les codes détectés
+    // AMÉLIORATION: Augmenté de 5 à 15 codes pour meilleure couverture
     if (analysis.detectedCodes.length > 0) {
       console.log("Searching with inheritance for codes:", analysis.detectedCodes);
-      for (const code of analysis.detectedCodes.slice(0, 5)) {
+      for (const code of analysis.detectedCodes.slice(0, 15)) {
         const tariffWithInheritance = await searchHSCodeWithInheritance(supabase, code, analysis.country);
         if (tariffWithInheritance.found) {
           context.tariffs_with_inheritance.push(tariffWithInheritance);
@@ -509,7 +510,8 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
     }
     
     // Remove duplicates
-    context.hs_codes = [...new Map(context.hs_codes.map(item => [item.code, item])).values()].slice(0, 15);
+    // AMÉLIORATION: Augmenté de 15 à 30 codes pour contexte plus riche
+    context.hs_codes = [...new Map(context.hs_codes.map(item => [item.code, item])).values()].slice(0, 30);
 
     // 3. Get tariffs for found codes (backup pour codes trouvés par keyword)
     const codes6 = [...new Set(context.hs_codes.map(c => cleanHSCode(c.code || c.code_clean).substring(0, 6)))];
@@ -541,18 +543,20 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
     }
 
     // 5. Search knowledge documents
+    // AMÉLIORATION: Augmenté de 2 à 5 termes et de 3 à 5 résultats par terme
     if (analysis.keywords.length > 0) {
-      const searchTerms = analysis.keywords.slice(0, 2);
+      const searchTerms = analysis.keywords.slice(0, 5);
       for (const term of searchTerms) {
         const { data } = await supabase
           .from('knowledge_documents')
           .select('title, content, category, source_url')
           .or(`title.ilike.%${term}%,content.ilike.%${term}%`)
           .eq('is_active', true)
-          .limit(3);
+          .limit(5);
         if (data) context.knowledge_documents.push(...data);
       }
-      context.knowledge_documents = [...new Map(context.knowledge_documents.map(d => [d.title, d])).values()].slice(0, 5);
+      // AMÉLIORATION: Augmenté de 5 à 10 documents de connaissance
+      context.knowledge_documents = [...new Map(context.knowledge_documents.map(d => [d.title, d])).values()].slice(0, 10);
     }
 
     // 6. Get relevant PDF summaries AND full text for precise RAG + download links
@@ -570,7 +574,8 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
           extracted_data,
           pdf_documents!inner(id, title, category, country_code, file_path)
         `)
-        .limit(5);
+        // AMÉLIORATION: Augmenté de 5 à 10 PDFs pour plus de sources
+        .limit(10);
       
       if (codes4ForPdf.length > 0) {
         pdfQuery = pdfQuery.contains('mentioned_hs_codes', [codes4ForPdf[0]]);
@@ -634,6 +639,38 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       }
     }
 
+    // 7. NOUVEAU: Recherche dans les documents de veille (circulaires, accords, etc.)
+    let veilleDocuments: any[] = [];
+    if (analysis.keywords.length > 0 || codes6.length > 0) {
+      const searchTerms = analysis.keywords.slice(0, 3).join(' | ');
+
+      // Recherche par mots-clés
+      const { data: veilleByKeywords } = await supabase
+        .from('veille_documents')
+        .select('title, summary, content, source_url, category, importance, mentioned_hs_codes')
+        .or(`title.ilike.%${analysis.keywords[0] || ''}%,summary.ilike.%${analysis.keywords[0] || ''}%`)
+        .eq('status', 'approved')
+        .order('publication_date', { ascending: false })
+        .limit(5);
+
+      if (veilleByKeywords) veilleDocuments.push(...veilleByKeywords);
+
+      // Recherche par codes HS mentionnés
+      if (codes6.length > 0) {
+        const { data: veilleByHs } = await supabase
+          .from('veille_documents')
+          .select('title, summary, content, source_url, category, importance, mentioned_hs_codes')
+          .contains('mentioned_hs_codes', [codes6[0]])
+          .eq('status', 'approved')
+          .limit(5);
+
+        if (veilleByHs) veilleDocuments.push(...veilleByHs);
+      }
+
+      // Dédupliquer
+      veilleDocuments = [...new Map(veilleDocuments.map(d => [d.title, d])).values()].slice(0, 8);
+    }
+
     console.log("Context collected:", {
       tariffs_with_inheritance: context.tariffs_with_inheritance.length,
       hs_codes: context.hs_codes.length,
@@ -641,6 +678,7 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       controlled: context.controlled_products.length,
       documents: context.knowledge_documents.length,
       pdfs: context.pdf_summaries.length,
+      veille: veilleDocuments.length,
     });
 
     // Build context with inheritance for RAG
@@ -813,6 +851,25 @@ Chaque question doit suivre ce format pour permettre des boutons cliquables:
 2. Usage prévu (commercial/personnel)
 3. → Info sur les autorisations AVEC CITATIONS
 
+## 🔍 VALIDATION CROISÉE DES SOURCES (NOUVEAU)
+
+**RÈGLE IMPORTANTE**: Avant de donner une réponse finale, tu DOIS valider les informations:
+
+1. **Vérifier la cohérence** entre les différentes sources (tarifs, PDFs, documents de veille)
+2. **Prioriser les sources** dans cet ordre:
+   - 🥇 **Tarif officiel** (country_tariffs) = Source la plus fiable
+   - 🥈 **PDF extrait** (pdf_extractions) = Source officielle analysée
+   - 🥉 **Document de veille** (veille_documents) = Source secondaire
+
+3. **Si les sources se contredisent**, signale-le clairement:
+   > ⚠️ **Attention - Sources contradictoires:**
+   > - Tarif officiel: [info A]
+   > - Document PDF: [info B]
+   > → Recommandation: Vérifier auprès de l'ADII (www.douane.gov.ma)
+
+4. **Indique le nombre de sources** qui confirment ton information:
+   > ✅ Information confirmée par X source(s)
+
 ## 📚 CONTEXTE À UTILISER POUR TA RÉPONSE FINALE
 
 ${imageAnalysisContext}
@@ -838,9 +895,9 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => {
   if (p.key_points && p.key_points.length > 0) {
     content += `**Points clés:**\n${p.key_points.map((kp: string) => `- ${kp}`).join('\n')}\n`;
   }
-  // Inclure le texte intégral pour permettre des citations exactes (limité à 10000 chars par doc)
+  // AMÉLIORATION: Augmenté de 10000 à 25000 chars pour meilleures citations
   if (p.full_text) {
-    content += `**📝 TEXTE COMPLET DU DOCUMENT (utilise-le pour citer des passages exacts):**\n\`\`\`\n${p.full_text.substring(0, 10000)}${p.full_text.length > 10000 ? '\n...[document tronqué à 10000 caractères]' : ''}\n\`\`\`\n`;
+    content += `**📝 TEXTE COMPLET DU DOCUMENT (utilise-le pour citer des passages exacts):**\n\`\`\`\n${p.full_text.substring(0, 25000)}${p.full_text.length > 25000 ? '\n...[document tronqué à 25000 caractères]' : ''}\n\`\`\`\n`;
   }
   // Inclure les données structurées
   if (p.extracted_data?.trade_agreements?.length > 0) {
@@ -851,6 +908,17 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => {
   }
   return content;
 }).join('\n---\n') : "Aucun PDF pertinent"}
+
+### Documents de veille récents (circulaires, accords, actualités)
+${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
+  let content = `#### 📰 ${v.title} (${v.category || 'document'})\n`;
+  content += `**Importance:** ${v.importance || 'moyenne'}\n`;
+  if (v.summary) content += `**Résumé:** ${v.summary}\n`;
+  if (v.content) content += `**Extrait:** ${v.content.substring(0, 3000)}...\n`;
+  if (v.source_url) content += `**Source:** ${v.source_url}\n`;
+  if (v.mentioned_hs_codes?.length > 0) content += `**Codes HS mentionnés:** ${v.mentioned_hs_codes.join(', ')}\n`;
+  return content;
+}).join('\n---\n') : "Aucun document de veille pertinent"}
 
 ---
 ⚠️ RAPPELS CRITIQUES:
@@ -999,8 +1067,10 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => {
           controlled: context.controlled_products.length,
           documents: context.knowledge_documents.length,
           pdfs: context.pdf_summaries.length,
+          veille: veilleDocuments.length,
         },
         pdfs_used: context.pdf_summaries.map(p => p.title),
+        veille_docs_used: veilleDocuments.map(v => v.title),
         confidence_level: confidence,
         response_time_ms: responseTime,
       })
@@ -1019,6 +1089,7 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => {
           controlled_found: context.controlled_products.length,
           documents_found: context.knowledge_documents.length,
           pdfs_used: context.pdf_summaries.length,
+          veille_docs: veilleDocuments.length,
         },
         metadata: {
           intent: analysis.intent,
