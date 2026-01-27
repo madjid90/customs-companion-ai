@@ -9,9 +9,17 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8080",
   "https://customs-companion.vercel.app",
   "https://customs-companion.netlify.app",
-  // Add your production domain here
-  // "https://your-domain.com",
+  // Lovable preview domains
+  "https://51d41d3f-1b65-481d-b04a-12695ec7c38e.lovableproject.com",
+  "https://id-preview--51d41d3f-1b65-481d-b04a-12695ec7c38e.lovable.app",
 ];
+
+// Check if origin is allowed - PERMISSIVE for Lovable domains
+function isLovableDomain(origin: string): boolean {
+  return origin.includes('.lovableproject.com') || 
+         origin.includes('.lovable.app') ||
+         origin.includes('.lovableproject.dev');
+}
 
 // Check if origin is allowed
 export function isOriginAllowed(origin: string | null): boolean {
@@ -19,6 +27,9 @@ export function isOriginAllowed(origin: string | null): boolean {
 
   // Allow localhost in development
   if (origin.startsWith("http://localhost:")) return true;
+
+  // Allow all Lovable domains dynamically
+  if (isLovableDomain(origin)) return true;
 
   return ALLOWED_ORIGINS.includes(origin);
 }
