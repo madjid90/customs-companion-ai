@@ -41,6 +41,15 @@ const getHSLevel = (code: string): string => {
   return "ligne_tarifaire";
 };
 
+// Escape special characters for SQL LIKE/ILIKE queries
+const escapeSearchTerm = (term: string): string => {
+  return term
+    .replace(/\\/g, '\\\\')
+    .replace(/%/g, '\\%')
+    .replace(/_/g, '\\_')
+    .replace(/'/g, "''");
+};
+
 // ============================================================================
 // RECHERCHE AVEC HÉRITAGE HIÉRARCHIQUE
 // ============================================================================
@@ -334,24 +343,31 @@ async function analyzeImageWithClaude(
     },
   }));
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 2048,
-      messages: [
-        {
-          role: "user",
-          content: [
-            ...imageContent,
-            {
-              type: "text",
-              text: `Tu es un expert en classification douanière. Analyse cette/ces image(s) pour identifier le produit.
+  // Vision API with 45 second timeout
+  const VISION_TIMEOUT_MS = 45000;
+  const visionController = new AbortController();
+  const visionTimeoutId = setTimeout(() => visionController.abort(), VISION_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 2048,
+        messages: [
+          {
+            role: "user",
+            content: [
+              ...imageContent,
+              {
+                type: "text",
+                text: `Tu es un expert en classification douanière. Analyse cette/ces image(s) pour identifier le produit.
 
 Question de l'utilisateur: "${question}"
 
@@ -366,12 +382,22 @@ IMPORTANT:
 - Si c'est une facture/fiche technique, extrais les informations produit
 - Suggère des codes SH basés sur ce que tu vois
 - Pose des questions uniquement si crucial pour la classification`,
-            },
-          ],
-        },
-      ],
-    }),
-  });
+              },
+            ],
+          },
+        ],
+      }),
+      signal: visionController.signal,
+    });
+  } catch (fetchError: any) {
+    clearTimeout(visionTimeoutId);
+    if (fetchError.name === 'AbortError') {
+      console.error("Vision API timeout after", VISION_TIMEOUT_MS, "ms");
+      throw new Error("Vision API timeout");
+    }
+    throw fetchError;
+  }
+  clearTimeout(visionTimeoutId);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -499,10 +525,11 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
     // 2. Search HS codes by keywords (fallback si pas de codes détectés)
     if (analysis.keywords.length > 0 && context.hs_codes.length < 10) {
       for (const keyword of analysis.keywords.slice(0, 3)) {
+        const escapedKeyword = escapeSearchTerm(keyword);
         const { data } = await supabase
           .from('hs_codes')
           .select('code, code_clean, description_fr, description_en, chapter_number, level')
-          .or(`description_fr.ilike.%${keyword}%,description_en.ilike.%${keyword}%`)
+          .or(`description_fr.ilike.%${escapedKeyword}%,description_en.ilike.%${escapedKeyword}%`)
           .eq('is_active', true)
           .limit(5);
         if (data) context.hs_codes.push(...data);
@@ -547,10 +574,11 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
     if (analysis.keywords.length > 0) {
       const searchTerms = analysis.keywords.slice(0, 5);
       for (const term of searchTerms) {
+        const escapedTerm = escapeSearchTerm(term);
         const { data } = await supabase
           .from('knowledge_documents')
           .select('title, content, category, source_url')
-          .or(`title.ilike.%${term}%,content.ilike.%${term}%`)
+          .or(`title.ilike.%${escapedTerm}%,content.ilike.%${escapedTerm}%`)
           .eq('is_active', true)
           .limit(5);
         if (data) context.knowledge_documents.push(...data);
@@ -606,7 +634,7 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
     // 6b. Recherche textuelle dans les extractions si pas trouvé par code
     if (context.pdf_summaries.length === 0 && analysis.keywords.length > 0) {
       // Chercher par mots-clés dans le texte extrait
-      const searchTerms = analysis.keywords.slice(0, 3).join(' ');
+      const searchTerms = escapeSearchTerm(analysis.keywords.slice(0, 3).join(' '));
       const { data: textSearchResults } = await supabase
         .from('pdf_extractions')
         .select(`
@@ -642,13 +670,12 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
     // 7. NOUVEAU: Recherche dans les documents de veille (circulaires, accords, etc.)
     let veilleDocuments: any[] = [];
     if (analysis.keywords.length > 0 || codes6.length > 0) {
-      const searchTerms = analysis.keywords.slice(0, 3).join(' | ');
-
-      // Recherche par mots-clés
+      // Recherche par mots-clés (avec échappement)
+      const firstKeyword = analysis.keywords[0] ? escapeSearchTerm(analysis.keywords[0]) : '';
       const { data: veilleByKeywords } = await supabase
         .from('veille_documents')
         .select('title, summary, content, source_url, category, importance, mentioned_hs_codes')
-        .or(`title.ilike.%${analysis.keywords[0] || ''}%,summary.ilike.%${analysis.keywords[0] || ''}%`)
+        .or(`title.ilike.%${firstKeyword}%,summary.ilike.%${firstKeyword}%`)
         .eq('status', 'approved')
         .order('publication_date', { ascending: false })
         .limit(5);
@@ -951,22 +978,43 @@ ${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
       content: enrichedQuestion || question || "Identifie ce produit",
     });
 
-    // Call Claude AI (Anthropic API)
+    // Call Claude AI (Anthropic API) with timeout
     const startTime = Date.now();
-    const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: claudeMessages,
-      }),
-    });
+    const CLAUDE_TIMEOUT_MS = 60000; // 60 seconds timeout
+
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS);
+
+    let aiResponse: Response;
+    try {
+      aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 4096,
+          system: systemPrompt,
+          messages: claudeMessages,
+        }),
+        signal: controller.signal,
+      });
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === 'AbortError') {
+        console.error("Claude API timeout after", CLAUDE_TIMEOUT_MS, "ms");
+        return new Response(
+          JSON.stringify({ error: "La requête a pris trop de temps. Veuillez réessayer avec une question plus simple." }),
+          { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      throw fetchError;
+    }
+    clearTimeout(timeoutId);
 
     if (!aiResponse.ok) {
       if (aiResponse.status === 429) {

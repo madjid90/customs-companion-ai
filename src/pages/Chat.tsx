@@ -58,16 +58,27 @@ export default function Chat() {
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
-  const [sessionId] = useState(() => crypto.randomUUID());
+  // Persist sessionId in sessionStorage to maintain conversation across page reloads
+  const [sessionId] = useState(() => {
+    const stored = sessionStorage.getItem('chat_session_id');
+    if (stored) return stored;
+    const newId = crypto.randomUUID();
+    sessionStorage.setItem('chat_session_id', newId);
+    return newId;
+  });
   const scrollRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const { toast } = useToast();
 
+  // Handle initial query from URL params
+  const hasProcessedInitialQuery = useRef(false);
   useEffect(() => {
-    if (initialQuery && messages.length === 0) {
+    if (initialQuery && messages.length === 0 && !hasProcessedInitialQuery.current) {
+      hasProcessedInitialQuery.current = true;
       handleSend(initialQuery);
       setInput("");
     }
-  }, []);
+  }, [initialQuery]);
 
   useEffect(() => {
     // Auto-scroll to bottom when messages change
@@ -120,6 +131,12 @@ export default function Chat() {
     setIsLoading(true);
 
     try {
+      // Cancel any pending request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
+
       // Build conversation history for context
       const conversationHistory = messages.map(msg => ({
         role: msg.role,
@@ -127,13 +144,16 @@ export default function Chat() {
       }));
 
       const { data, error } = await supabase.functions.invoke('chat', {
-        body: { 
-          question: messageText || "Identifie ce produit et donne-moi le code SH approprié", 
+        body: {
+          question: messageText || "Identifie ce produit et donne-moi le code SH approprié",
           sessionId,
           images: imagesToSend.length > 0 ? imagesToSend : undefined,
           conversationHistory, // Send previous messages for context
         },
       });
+
+      // Check if request was aborted
+      if (abortControllerRef.current?.signal.aborted) return;
 
       if (error) throw error;
 
@@ -207,8 +227,29 @@ export default function Chat() {
   };
 
   const handleRemoveFile = (index: number) => {
+    // Revoke blob URL to prevent memory leak
+    const fileToRemove = uploadedFiles[index];
+    if (fileToRemove?.type === "image" && fileToRemove.preview.startsWith("blob:")) {
+      URL.revokeObjectURL(fileToRemove.preview);
+    }
     setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
   };
+
+  // Cleanup blob URLs and abort pending requests on unmount
+  useEffect(() => {
+    return () => {
+      // Abort any pending request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      // Revoke all blob URLs
+      uploadedFiles.forEach((file) => {
+        if (file.type === "image" && file.preview.startsWith("blob:")) {
+          URL.revokeObjectURL(file.preview);
+        }
+      });
+    };
+  }, [uploadedFiles]);
 
   const suggestedQuestions = [
     "Quels documents sont requis pour importer des produits alimentaires ?",
