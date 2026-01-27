@@ -41,6 +41,221 @@ const getHSLevel = (code: string): string => {
   return "ligne_tarifaire";
 };
 
+// Escape special characters for SQL LIKE/ILIKE queries
+const escapeSearchTerm = (term: string): string => {
+  return term
+    .replace(/\\/g, '\\\\')
+    .replace(/%/g, '\\%')
+    .replace(/_/g, '\\_')
+    .replace(/'/g, "''");
+};
+
+// ============================================================================
+// SEMANTIC SEARCH & EMBEDDING FUNCTIONS (Phase 3)
+// ============================================================================
+
+// Generate embedding using OpenAI API
+async function generateQueryEmbedding(text: string, apiKey: string): Promise<number[] | null> {
+  try {
+    const response = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "text-embedding-3-small",
+        input: text.substring(0, 8000),
+        dimensions: 1536,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("OpenAI embedding error:", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.data[0].embedding;
+  } catch (error) {
+    console.error("Embedding generation failed:", error);
+    return null;
+  }
+}
+
+// Check response cache for semantically similar questions
+async function checkResponseCache(
+  supabase: any,
+  queryEmbedding: number[],
+  similarityThreshold: number = 0.92
+): Promise<{ found: boolean; response?: any }> {
+  try {
+    const { data, error } = await supabase.rpc("find_cached_response", {
+      query_embedding: queryEmbedding,
+      similarity_threshold: similarityThreshold,
+    });
+
+    if (error || !data || data.length === 0) {
+      return { found: false };
+    }
+
+    // Update hit count
+    await supabase.rpc("update_cache_hit", { cache_id: data[0].id });
+
+    return {
+      found: true,
+      response: {
+        text: data[0].response_text,
+        confidence: data[0].confidence_level,
+        context: data[0].context_used,
+        similarity: data[0].similarity,
+        cached: true,
+      },
+    };
+  } catch (error) {
+    console.error("Cache lookup failed:", error);
+    return { found: false };
+  }
+}
+
+// Save response to cache
+async function saveToResponseCache(
+  supabase: any,
+  question: string,
+  questionEmbedding: number[],
+  response: string,
+  contextUsed: any,
+  confidenceLevel: string
+): Promise<void> {
+  try {
+    // Create hash for deduplication
+    const encoder = new TextEncoder();
+    const data = encoder.encode(question.toLowerCase().trim());
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const questionHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+    await supabase.from("response_cache").upsert(
+      {
+        question_hash: questionHash,
+        question_text: question,
+        question_embedding: questionEmbedding,
+        response_text: response,
+        context_used: contextUsed,
+        confidence_level: confidenceLevel,
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
+      },
+      { onConflict: "question_hash" }
+    );
+  } catch (error) {
+    console.error("Failed to save to cache:", error);
+  }
+}
+
+// Semantic search for HS codes
+async function searchHSCodesSemantic(
+  supabase: any,
+  queryEmbedding: number[],
+  threshold: number = 0.65,
+  limit: number = 10
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.rpc("search_hs_codes_semantic", {
+      query_embedding: queryEmbedding,
+      match_threshold: threshold,
+      match_count: limit,
+    });
+
+    if (error) {
+      console.error("Semantic HS search error:", error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("Semantic HS search failed:", error);
+    return [];
+  }
+}
+
+// Semantic search for knowledge documents
+async function searchKnowledgeSemantic(
+  supabase: any,
+  queryEmbedding: number[],
+  threshold: number = 0.6,
+  limit: number = 5
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.rpc("search_knowledge_semantic", {
+      query_embedding: queryEmbedding,
+      match_threshold: threshold,
+      match_count: limit,
+    });
+
+    if (error) {
+      console.error("Semantic knowledge search error:", error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("Semantic knowledge search failed:", error);
+    return [];
+  }
+}
+
+// Semantic search for PDF extractions
+async function searchPDFsSemantic(
+  supabase: any,
+  queryEmbedding: number[],
+  threshold: number = 0.6,
+  limit: number = 5
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.rpc("search_pdfs_semantic", {
+      query_embedding: queryEmbedding,
+      match_threshold: threshold,
+      match_count: limit,
+    });
+
+    if (error) {
+      console.error("Semantic PDF search error:", error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("Semantic PDF search failed:", error);
+    return [];
+  }
+}
+
+// Semantic search for veille documents
+async function searchVeilleSemantic(
+  supabase: any,
+  queryEmbedding: number[],
+  threshold: number = 0.6,
+  limit: number = 5
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.rpc("search_veille_semantic", {
+      query_embedding: queryEmbedding,
+      match_threshold: threshold,
+      match_count: limit,
+    });
+
+    if (error) {
+      console.error("Semantic veille search error:", error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("Semantic veille search failed:", error);
+    return [];
+  }
+}
+
 // ============================================================================
 // RECHERCHE AVEC HÉRITAGE HIÉRARCHIQUE
 // ============================================================================
@@ -334,24 +549,31 @@ async function analyzeImageWithClaude(
     },
   }));
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 2048,
-      messages: [
-        {
-          role: "user",
-          content: [
-            ...imageContent,
-            {
-              type: "text",
-              text: `Tu es un expert en classification douanière. Analyse cette/ces image(s) pour identifier le produit.
+  // Vision API with 45 second timeout
+  const VISION_TIMEOUT_MS = 45000;
+  const visionController = new AbortController();
+  const visionTimeoutId = setTimeout(() => visionController.abort(), VISION_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 2048,
+        messages: [
+          {
+            role: "user",
+            content: [
+              ...imageContent,
+              {
+                type: "text",
+                text: `Tu es un expert en classification douanière. Analyse cette/ces image(s) pour identifier le produit.
 
 Question de l'utilisateur: "${question}"
 
@@ -366,12 +588,22 @@ IMPORTANT:
 - Si c'est une facture/fiche technique, extrais les informations produit
 - Suggère des codes SH basés sur ce que tu vois
 - Pose des questions uniquement si crucial pour la classification`,
-            },
-          ],
-        },
-      ],
-    }),
-  });
+              },
+            ],
+          },
+        ],
+      }),
+      signal: visionController.signal,
+    });
+  } catch (fetchError: any) {
+    clearTimeout(visionTimeoutId);
+    if (fetchError.name === 'AbortError') {
+      console.error("Vision API timeout after", VISION_TIMEOUT_MS, "ms");
+      throw new Error("Vision API timeout");
+    }
+    throw fetchError;
+  }
+  clearTimeout(visionTimeoutId);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -415,6 +647,7 @@ serve(async (req) => {
     }
 
     const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY"); // For embeddings
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -423,6 +656,38 @@ serve(async (req) => {
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+
+    // ============================================================================
+    // PHASE 3: SEMANTIC CACHE CHECK
+    // ============================================================================
+    let queryEmbedding: number[] | null = null;
+    let useSemanticSearch = false;
+
+    // Generate embedding for the question if OpenAI key is available
+    if (OPENAI_API_KEY && question) {
+      queryEmbedding = await generateQueryEmbedding(question, OPENAI_API_KEY);
+      useSemanticSearch = queryEmbedding !== null;
+
+      // Check response cache first (only for text questions, not images)
+      if (queryEmbedding && (!images || images.length === 0)) {
+        const cachedResponse = await checkResponseCache(supabase, queryEmbedding, 0.92);
+        if (cachedResponse.found && cachedResponse.response) {
+          console.log("Cache hit! Similarity:", cachedResponse.response.similarity);
+          return new Response(
+            JSON.stringify({
+              response: cachedResponse.response.text,
+              confidence: cachedResponse.response.confidence || "medium",
+              context: cachedResponse.response.context || {},
+              metadata: {
+                cached: true,
+                similarity: cachedResponse.response.similarity,
+              },
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+    }
 
     // If images are provided, analyze them first with Claude Vision
     let imageAnalysis: { productDescription: string; suggestedCodes: string[]; questions: string[] } | null = null;
@@ -475,9 +740,10 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
     };
 
     // 1. NOUVEAU: Recherche avec héritage pour les codes détectés
+    // AMÉLIORATION: Augmenté de 5 à 15 codes pour meilleure couverture
     if (analysis.detectedCodes.length > 0) {
       console.log("Searching with inheritance for codes:", analysis.detectedCodes);
-      for (const code of analysis.detectedCodes.slice(0, 5)) {
+      for (const code of analysis.detectedCodes.slice(0, 15)) {
         const tariffWithInheritance = await searchHSCodeWithInheritance(supabase, code, analysis.country);
         if (tariffWithInheritance.found) {
           context.tariffs_with_inheritance.push(tariffWithInheritance);
@@ -498,10 +764,11 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
     // 2. Search HS codes by keywords (fallback si pas de codes détectés)
     if (analysis.keywords.length > 0 && context.hs_codes.length < 10) {
       for (const keyword of analysis.keywords.slice(0, 3)) {
+        const escapedKeyword = escapeSearchTerm(keyword);
         const { data } = await supabase
           .from('hs_codes')
           .select('code, code_clean, description_fr, description_en, chapter_number, level')
-          .or(`description_fr.ilike.%${keyword}%,description_en.ilike.%${keyword}%`)
+          .or(`description_fr.ilike.%${escapedKeyword}%,description_en.ilike.%${escapedKeyword}%`)
           .eq('is_active', true)
           .limit(5);
         if (data) context.hs_codes.push(...data);
@@ -509,7 +776,8 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
     }
     
     // Remove duplicates
-    context.hs_codes = [...new Map(context.hs_codes.map(item => [item.code, item])).values()].slice(0, 15);
+    // AMÉLIORATION: Augmenté de 15 à 30 codes pour contexte plus riche
+    context.hs_codes = [...new Map(context.hs_codes.map(item => [item.code, item])).values()].slice(0, 30);
 
     // 3. Get tariffs for found codes (backup pour codes trouvés par keyword)
     const codes6 = [...new Set(context.hs_codes.map(c => cleanHSCode(c.code || c.code_clean).substring(0, 6)))];
@@ -541,18 +809,21 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
     }
 
     // 5. Search knowledge documents
+    // AMÉLIORATION: Augmenté de 2 à 5 termes et de 3 à 5 résultats par terme
     if (analysis.keywords.length > 0) {
-      const searchTerms = analysis.keywords.slice(0, 2);
+      const searchTerms = analysis.keywords.slice(0, 5);
       for (const term of searchTerms) {
+        const escapedTerm = escapeSearchTerm(term);
         const { data } = await supabase
           .from('knowledge_documents')
           .select('title, content, category, source_url')
-          .or(`title.ilike.%${term}%,content.ilike.%${term}%`)
+          .or(`title.ilike.%${escapedTerm}%,content.ilike.%${escapedTerm}%`)
           .eq('is_active', true)
-          .limit(3);
+          .limit(5);
         if (data) context.knowledge_documents.push(...data);
       }
-      context.knowledge_documents = [...new Map(context.knowledge_documents.map(d => [d.title, d])).values()].slice(0, 5);
+      // AMÉLIORATION: Augmenté de 5 à 10 documents de connaissance
+      context.knowledge_documents = [...new Map(context.knowledge_documents.map(d => [d.title, d])).values()].slice(0, 10);
     }
 
     // 6. Get relevant PDF summaries AND full text for precise RAG + download links
@@ -570,7 +841,8 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
           extracted_data,
           pdf_documents!inner(id, title, category, country_code, file_path)
         `)
-        .limit(5);
+        // AMÉLIORATION: Augmenté de 5 à 10 PDFs pour plus de sources
+        .limit(10);
       
       if (codes4ForPdf.length > 0) {
         pdfQuery = pdfQuery.contains('mentioned_hs_codes', [codes4ForPdf[0]]);
@@ -601,7 +873,7 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
     // 6b. Recherche textuelle dans les extractions si pas trouvé par code
     if (context.pdf_summaries.length === 0 && analysis.keywords.length > 0) {
       // Chercher par mots-clés dans le texte extrait
-      const searchTerms = analysis.keywords.slice(0, 3).join(' ');
+      const searchTerms = escapeSearchTerm(analysis.keywords.slice(0, 3).join(' '));
       const { data: textSearchResults } = await supabase
         .from('pdf_extractions')
         .select(`
@@ -634,6 +906,122 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       }
     }
 
+    // 7. NOUVEAU: Recherche dans les documents de veille (circulaires, accords, etc.)
+    let veilleDocuments: any[] = [];
+    if (analysis.keywords.length > 0 || codes6.length > 0) {
+      // Recherche par mots-clés (avec échappement)
+      const firstKeyword = analysis.keywords[0] ? escapeSearchTerm(analysis.keywords[0]) : '';
+      const { data: veilleByKeywords } = await supabase
+        .from('veille_documents')
+        .select('title, summary, content, source_url, category, importance, mentioned_hs_codes')
+        .or(`title.ilike.%${firstKeyword}%,summary.ilike.%${firstKeyword}%`)
+        .eq('status', 'approved')
+        .order('publication_date', { ascending: false })
+        .limit(5);
+
+      if (veilleByKeywords) veilleDocuments.push(...veilleByKeywords);
+
+      // Recherche par codes HS mentionnés
+      if (codes6.length > 0) {
+        const { data: veilleByHs } = await supabase
+          .from('veille_documents')
+          .select('title, summary, content, source_url, category, importance, mentioned_hs_codes')
+          .contains('mentioned_hs_codes', [codes6[0]])
+          .eq('status', 'approved')
+          .limit(5);
+
+        if (veilleByHs) veilleDocuments.push(...veilleByHs);
+      }
+
+      // Dédupliquer
+      veilleDocuments = [...new Map(veilleDocuments.map(d => [d.title, d])).values()].slice(0, 8);
+    }
+
+    // ============================================================================
+    // PHASE 3: SEMANTIC SEARCH ENHANCEMENT
+    // ============================================================================
+    let semanticResults = {
+      hs_codes: [] as any[],
+      knowledge: [] as any[],
+      pdfs: [] as any[],
+      veille: [] as any[],
+    };
+
+    if (useSemanticSearch && queryEmbedding) {
+      console.log("Using semantic search enhancement...");
+
+      // Parallel semantic searches
+      const [semanticHS, semanticKnowledge, semanticPDFs, semanticVeille] = await Promise.all([
+        // Only search HS if we don't have enough from keyword search
+        context.hs_codes.length < 10
+          ? searchHSCodesSemantic(supabase, queryEmbedding, 0.65, 10)
+          : Promise.resolve([]),
+        // Only search knowledge if we don't have enough
+        context.knowledge_documents.length < 5
+          ? searchKnowledgeSemantic(supabase, queryEmbedding, 0.6, 5)
+          : Promise.resolve([]),
+        // Only search PDFs if we don't have enough
+        context.pdf_summaries.length < 3
+          ? searchPDFsSemantic(supabase, queryEmbedding, 0.6, 5)
+          : Promise.resolve([]),
+        // Only search veille if we don't have enough
+        veilleDocuments.length < 3
+          ? searchVeilleSemantic(supabase, queryEmbedding, 0.6, 5)
+          : Promise.resolve([]),
+      ]);
+
+      semanticResults = {
+        hs_codes: semanticHS,
+        knowledge: semanticKnowledge,
+        pdfs: semanticPDFs,
+        veille: semanticVeille,
+      };
+
+      // Merge semantic results with keyword results (prioritizing keyword results)
+      if (semanticHS.length > 0) {
+        const existingCodes = new Set(context.hs_codes.map((c: any) => c.code || c.code_clean));
+        const newHSCodes = semanticHS
+          .filter((hs: any) => !existingCodes.has(hs.code))
+          .map((hs: any) => ({
+            ...hs,
+            semantic_match: true,
+            similarity: hs.similarity,
+          }));
+        context.hs_codes = [...context.hs_codes, ...newHSCodes].slice(0, 30);
+      }
+
+      if (semanticKnowledge.length > 0) {
+        const existingTitles = new Set(context.knowledge_documents.map((d: any) => d.title));
+        const newKnowledge = semanticKnowledge
+          .filter((d: any) => !existingTitles.has(d.title))
+          .map((d: any) => ({
+            ...d,
+            semantic_match: true,
+            similarity: d.similarity,
+          }));
+        context.knowledge_documents = [...context.knowledge_documents, ...newKnowledge].slice(0, 10);
+      }
+
+      if (semanticVeille.length > 0) {
+        const existingVeilleTitles = new Set(veilleDocuments.map((d: any) => d.title));
+        const newVeille = semanticVeille
+          .filter((d: any) => !existingVeilleTitles.has(d.title))
+          .map((d: any) => ({
+            ...d,
+            semantic_match: true,
+            similarity: d.similarity,
+          }));
+        veilleDocuments = [...veilleDocuments, ...newVeille].slice(0, 8);
+      }
+
+      console.log("Semantic search added:", {
+        hs_codes: semanticHS.length,
+        knowledge: semanticKnowledge.length,
+        pdfs: semanticPDFs.length,
+        veille: semanticVeille.length,
+      });
+    }
+
     console.log("Context collected:", {
       tariffs_with_inheritance: context.tariffs_with_inheritance.length,
       hs_codes: context.hs_codes.length,
@@ -641,6 +1029,7 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       controlled: context.controlled_products.length,
       documents: context.knowledge_documents.length,
       pdfs: context.pdf_summaries.length,
+      veille: veilleDocuments.length,
     });
 
     // Build context with inheritance for RAG
@@ -813,6 +1202,25 @@ Chaque question doit suivre ce format pour permettre des boutons cliquables:
 2. Usage prévu (commercial/personnel)
 3. → Info sur les autorisations AVEC CITATIONS
 
+## 🔍 VALIDATION CROISÉE DES SOURCES (NOUVEAU)
+
+**RÈGLE IMPORTANTE**: Avant de donner une réponse finale, tu DOIS valider les informations:
+
+1. **Vérifier la cohérence** entre les différentes sources (tarifs, PDFs, documents de veille)
+2. **Prioriser les sources** dans cet ordre:
+   - 🥇 **Tarif officiel** (country_tariffs) = Source la plus fiable
+   - 🥈 **PDF extrait** (pdf_extractions) = Source officielle analysée
+   - 🥉 **Document de veille** (veille_documents) = Source secondaire
+
+3. **Si les sources se contredisent**, signale-le clairement:
+   > ⚠️ **Attention - Sources contradictoires:**
+   > - Tarif officiel: [info A]
+   > - Document PDF: [info B]
+   > → Recommandation: Vérifier auprès de l'ADII (www.douane.gov.ma)
+
+4. **Indique le nombre de sources** qui confirment ton information:
+   > ✅ Information confirmée par X source(s)
+
 ## 📚 CONTEXTE À UTILISER POUR TA RÉPONSE FINALE
 
 ${imageAnalysisContext}
@@ -838,9 +1246,9 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => {
   if (p.key_points && p.key_points.length > 0) {
     content += `**Points clés:**\n${p.key_points.map((kp: string) => `- ${kp}`).join('\n')}\n`;
   }
-  // Inclure le texte intégral pour permettre des citations exactes (limité à 10000 chars par doc)
+  // AMÉLIORATION: Augmenté de 10000 à 25000 chars pour meilleures citations
   if (p.full_text) {
-    content += `**📝 TEXTE COMPLET DU DOCUMENT (utilise-le pour citer des passages exacts):**\n\`\`\`\n${p.full_text.substring(0, 10000)}${p.full_text.length > 10000 ? '\n...[document tronqué à 10000 caractères]' : ''}\n\`\`\`\n`;
+    content += `**📝 TEXTE COMPLET DU DOCUMENT (utilise-le pour citer des passages exacts):**\n\`\`\`\n${p.full_text.substring(0, 25000)}${p.full_text.length > 25000 ? '\n...[document tronqué à 25000 caractères]' : ''}\n\`\`\`\n`;
   }
   // Inclure les données structurées
   if (p.extracted_data?.trade_agreements?.length > 0) {
@@ -851,6 +1259,17 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => {
   }
   return content;
 }).join('\n---\n') : "Aucun PDF pertinent"}
+
+### Documents de veille récents (circulaires, accords, actualités)
+${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
+  let content = `#### 📰 ${v.title} (${v.category || 'document'})\n`;
+  content += `**Importance:** ${v.importance || 'moyenne'}\n`;
+  if (v.summary) content += `**Résumé:** ${v.summary}\n`;
+  if (v.content) content += `**Extrait:** ${v.content.substring(0, 3000)}...\n`;
+  if (v.source_url) content += `**Source:** ${v.source_url}\n`;
+  if (v.mentioned_hs_codes?.length > 0) content += `**Codes HS mentionnés:** ${v.mentioned_hs_codes.join(', ')}\n`;
+  return content;
+}).join('\n---\n') : "Aucun document de veille pertinent"}
 
 ---
 ⚠️ RAPPELS CRITIQUES:
@@ -883,22 +1302,43 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => {
       content: enrichedQuestion || question || "Identifie ce produit",
     });
 
-    // Call Claude AI (Anthropic API)
+    // Call Claude AI (Anthropic API) with timeout
     const startTime = Date.now();
-    const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: claudeMessages,
-      }),
-    });
+    const CLAUDE_TIMEOUT_MS = 60000; // 60 seconds timeout
+
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS);
+
+    let aiResponse: Response;
+    try {
+      aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 4096,
+          system: systemPrompt,
+          messages: claudeMessages,
+        }),
+        signal: controller.signal,
+      });
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === 'AbortError') {
+        console.error("Claude API timeout after", CLAUDE_TIMEOUT_MS, "ms");
+        return new Response(
+          JSON.stringify({ error: "La requête a pris trop de temps. Veuillez réessayer avec une question plus simple." }),
+          { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      throw fetchError;
+    }
+    clearTimeout(timeoutId);
 
     if (!aiResponse.ok) {
       if (aiResponse.status === 429) {
@@ -984,6 +1424,17 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => {
     console.info(`Final confidence: ${confidence}`);
 
     // Save conversation to database
+    const contextUsed = {
+      tariffs_with_inheritance: context.tariffs_with_inheritance.length,
+      hs_codes: context.hs_codes.length,
+      tariffs: context.tariffs.length,
+      controlled: context.controlled_products.length,
+      documents: context.knowledge_documents.length,
+      pdfs: context.pdf_summaries.length,
+      veille: veilleDocuments.length,
+      semantic_search_used: useSemanticSearch,
+    };
+
     const { data: conversation } = await supabase
       .from('conversations')
       .insert({
@@ -992,20 +1443,29 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => {
         response: responseText,
         detected_intent: analysis.intent,
         detected_hs_codes: context.hs_codes.map(c => c.code || c.code_clean),
-        context_used: {
-          tariffs_with_inheritance: context.tariffs_with_inheritance.length,
-          hs_codes: context.hs_codes.length,
-          tariffs: context.tariffs.length,
-          controlled: context.controlled_products.length,
-          documents: context.knowledge_documents.length,
-          pdfs: context.pdf_summaries.length,
-        },
+        context_used: contextUsed,
         pdfs_used: context.pdf_summaries.map(p => p.title),
+        veille_docs_used: veilleDocuments.map(v => v.title),
         confidence_level: confidence,
         response_time_ms: responseTime,
       })
       .select('id')
       .single();
+
+    // ============================================================================
+    // PHASE 3: SAVE TO RESPONSE CACHE
+    // ============================================================================
+    // Only cache if confidence is medium or high and we have an embedding
+    if (queryEmbedding && confidence !== "low" && (!images || images.length === 0)) {
+      saveToResponseCache(
+        supabase,
+        question,
+        queryEmbedding,
+        responseText,
+        contextUsed,
+        confidence
+      ).catch((err) => console.error("Cache save error:", err));
+    }
 
     return new Response(
       JSON.stringify({
@@ -1019,12 +1479,15 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => {
           controlled_found: context.controlled_products.length,
           documents_found: context.knowledge_documents.length,
           pdfs_used: context.pdf_summaries.length,
+          veille_docs: veilleDocuments.length,
         },
         metadata: {
           intent: analysis.intent,
           country: analysis.country,
           response_time_ms: responseTime,
           inheritance_used: context.tariffs_with_inheritance.length > 0,
+          semantic_search_used: useSemanticSearch,
+          cached: false,
         }
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
