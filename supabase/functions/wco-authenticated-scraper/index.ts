@@ -273,7 +273,7 @@ serve(async (req) => {
           status: loginResponse.status,
           message: "Check your WCO credentials or the site may be blocking automated access"
         }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 401, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -353,7 +353,7 @@ serve(async (req) => {
     console.error("WCO scraper error:", error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   }
 });
