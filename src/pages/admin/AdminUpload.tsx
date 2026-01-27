@@ -211,20 +211,37 @@ export default function AdminUpload() {
           full_text_length: analysisData?.full_text?.length || 0,
         };
 
-        updateFileStatus(fileId, {
-          status: "preview",
-          progress: 100,
-          pdfId: pdfDoc.id,
-          analysis: extractionData,
-        });
-        
+        const isRegulatoryDoc = extractionData.document_type === "regulatory";
         const hsCount = extractionData.hs_codes?.length || 0;
         const tariffCount = extractionData.tariff_lines?.length || 0;
-        
-        toast({
-          title: "📋 Analyse terminée - Prévisualisation",
-          description: `${hsCount} codes SH et ${tariffCount} lignes tarifaires détectés. Cliquez sur "Prévisualiser" pour valider.`,
-        });
+
+        // For regulatory documents with no tariff data, mark as success directly
+        if (isRegulatoryDoc && hsCount === 0 && tariffCount === 0) {
+          updateFileStatus(fileId, {
+            status: "success",
+            progress: 100,
+            pdfId: pdfDoc.id,
+            analysis: extractionData,
+          });
+          
+          toast({
+            title: "✅ Document réglementaire traité",
+            description: `Texte extrait et indexé pour le chat RAG (${extractionData.full_text_length} caractères)`,
+          });
+        } else {
+          // Tariff documents need validation
+          updateFileStatus(fileId, {
+            status: "preview",
+            progress: 100,
+            pdfId: pdfDoc.id,
+            analysis: extractionData,
+          });
+          
+          toast({
+            title: "📋 Analyse terminée - Prévisualisation",
+            description: `${hsCount} codes SH et ${tariffCount} lignes tarifaires détectés. Cliquez sur "Prévisualiser" pour valider.`,
+          });
+        }
       }
     } catch (error: any) {
       console.error("Upload error:", error);
