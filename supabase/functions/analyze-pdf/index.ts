@@ -1,10 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import {
+  getCorsHeaders,
+  handleCorsPreFlight,
+  checkRateLimit,
+  rateLimitResponse,
+  getClientId,
+  errorResponse,
+} from "../_shared/cors.ts";
 
 // =============================================================================
 // INTERFACES
@@ -1153,18 +1156,28 @@ async function analyzeWithClaude(
 // =============================================================================
 
 serve(async (req) => {
+  // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreFlight(req);
+  }
+
+  // Rate limiting (5 requests per minute for PDF analysis - more expensive)
+  const clientId = getClientId(req);
+  const rateLimit = checkRateLimit(clientId, {
+    maxRequests: 5,
+    windowMs: 60000,
+    blockDurationMs: 300000,
+  });
+
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(req, rateLimit.resetAt);
   }
 
   try {
     const { pdfId, filePath, previewOnly = true } = await req.json();
 
     if (!pdfId || !filePath) {
-      return new Response(
-        JSON.stringify({ error: "pdfId and filePath are required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse(req, "pdfId and filePath are required", 400);
     }
 
     const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
@@ -1194,7 +1207,7 @@ serve(async (req) => {
           error: `Le PDF est trop volumineux (${fileSizeMB.toFixed(1)}MB). Limite: ${MAX_FILE_SIZE_MB}MB.`,
           fileSizeMB: fileSizeMB.toFixed(2)
         }),
-        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 413, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -1246,7 +1259,7 @@ serve(async (req) => {
       if (rateLimited) {
         return new Response(
           JSON.stringify({ error: "Rate limited. Please wait before retrying.", rateLimited: true }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 429, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
         );
       }
       
@@ -1370,7 +1383,7 @@ serve(async (req) => {
             is_regulatory: isRegulatoryDoc,
           }
         }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -1439,7 +1452,7 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify(analysisResult),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
 
   } catch (error) {

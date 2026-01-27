@@ -1,10 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import {
+  getCorsHeaders,
+  handleCorsPreFlight,
+  checkRateLimit,
+  rateLimitResponse,
+  getClientId,
+  errorResponse,
+  successResponse,
+} from "../_shared/cors.ts";
 
 // Generate embedding using OpenAI API
 async function generateEmbedding(text: string, apiKey: string): Promise<number[]> {
@@ -58,19 +62,38 @@ async function generateEmbeddingsBatch(
 }
 
 serve(async (req) => {
+  // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreFlight(req);
+  }
+
+  // Rate limiting (2 requests per minute - admin function)
+  const clientId = getClientId(req);
+  const rateLimit = checkRateLimit(clientId, {
+    maxRequests: 2,
+    windowMs: 60000,
+    blockDurationMs: 600000,
+  });
+
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(req, rateLimit.resetAt);
   }
 
   try {
     const { table, limit = 100, forceUpdate = false } = await req.json();
+
+    // Validate table parameter to prevent injection
+    const validTables = ["hs_codes", "knowledge_documents", "pdf_extractions", "veille_documents"];
+    if (table && !validTables.includes(table)) {
+      return errorResponse(req, `Invalid table. Must be one of: ${validTables.join(", ")}`, 400);
+    }
 
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY is not configured");
+      return errorResponse(req, "OPENAI_API_KEY is not configured", 500);
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
@@ -318,26 +341,12 @@ serve(async (req) => {
       }
     }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        results,
-      }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+    return successResponse(req, {
+      success: true,
+      results,
+    });
   } catch (error) {
     console.error("Generate embeddings error:", error);
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+    return errorResponse(req, "Erreur lors de la génération des embeddings", 500);
   }
 });

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { ImageUploadButton, type UploadedFile } from "@/components/chat/ImageUploadButton";
 import { InteractiveQuestions, parseQuestionsFromResponse } from "@/components/chat/InteractiveQuestions";
 import { ConversationSummary } from "@/components/chat/ConversationSummary";
@@ -325,6 +326,17 @@ export default function Chat() {
                 {message.role === "assistant" && !message.content.startsWith("⚠️") ? (
                   <div className="prose prose-sm dark:prose-invert max-w-none">
                     <ReactMarkdown
+                      rehypePlugins={[[rehypeSanitize, {
+                        ...defaultSchema,
+                        tagNames: [
+                          ...(defaultSchema.tagNames || []),
+                          'table', 'thead', 'tbody', 'tr', 'th', 'td'
+                        ],
+                        attributes: {
+                          ...defaultSchema.attributes,
+                          '*': ['className'],
+                        },
+                      }]]}
                       components={{
                         h2: ({ children }) => <h2 className="text-base font-semibold mt-4 mb-2 first:mt-0">{children}</h2>,
                         h3: ({ children }) => <h3 className="text-sm font-semibold mt-3 mb-1">{children}</h3>,
