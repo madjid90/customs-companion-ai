@@ -89,7 +89,7 @@ interface AnalysisResult {
 // PROMPT CLAUDE - DOCUMENTS TARIFAIRES (tableaux SH codes)
 // =============================================================================
 
-const getTariffPrompt = (title: string, category: string, maxLines: number) => `Tu es un expert en tarifs douaniers marocains. Analyse ce document PDF avec EXTRÊME PRÉCISION.
+const getTariffPrompt = (title: string, category: string) => `Tu es un expert en tarifs douaniers marocains. Analyse ce document PDF avec EXTRÊME PRÉCISION et EXTRAIS TOUTES LES LIGNES SANS EXCEPTION.
 
 Document : ${title}
 Catégorie : ${category}
@@ -182,15 +182,18 @@ Ligne: "1 | 90 |  |  |" → HÉRITAGE 100111 + "90" + "00" = 1001119000
 }
 
 === RÈGLES STRICTES ===
-✓ Extraire TOUTES les lignes, même celles sans taux
+✓ **EXTRAIRE ABSOLUMENT TOUTES LES LIGNES DU TABLEAU** - sans limite, sans troncature !
+✓ Parcourir le PDF de la PREMIÈRE à la DERNIÈRE page
+✓ Chaque position (ex: 07.01, 07.02... jusqu'à 07.14) doit apparaître dans raw_lines
 ✓ Le "1" en col1 est un MARQUEUR, pas un chiffre du code
 ✓ Préserver les notes (a), (b) etc. dans duty_rate
-✓ Maximum ${maxLines} raw_lines avec taux
 ✓ Les tirets "–" dans description indiquent le niveau hiérarchique
-✓ IGNORER COMPLÈTEMENT les codes entre crochets [XX.XX] ou [XXXX.XX] - ce sont des positions RÉSERVÉES/VIDES - NE PAS les inclure dans raw_lines ni dans hs_codes
-✓ Les positions simples XX.XX (ex: 14.01, 14.04) sont des headings valides à extraire
-✓ TOUS les codes dans hs_codes doivent avoir un code_clean de EXACTEMENT 6 CHIFFRES (ex: "140100", "100111")
-✓ CRITIQUE: full_text doit contenir le TEXTE INTÉGRAL du document (jusqu'à 50000 caractères) pour permettre la recherche précise
+✓ IGNORER les codes entre crochets [XX.XX] ou [XXXX.XX] - positions RÉSERVÉES
+✓ Les positions simples XX.XX (ex: 07.01, 07.11) sont des headings valides
+✓ TOUS les codes dans hs_codes doivent avoir un code_clean de EXACTEMENT 6 CHIFFRES
+✓ CRITIQUE: full_text doit contenir le TEXTE INTÉGRAL du document (jusqu'à 50000 caractères)
+
+**NE JAMAIS TRONQUER LE RÉSULTAT - EXTRAIRE 100% DES LIGNES DU TABLEAU !**
 
 RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
 
@@ -291,7 +294,7 @@ RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
 const TARIFF_CATEGORIES = ["tarif", "chapitre", "chapter", "nomenclature", "sh_code", "hs_code"];
 const REGULATORY_CATEGORIES = ["circulaire", "accord", "note", "instruction", "reglement", "règlement", "convention", "loi", "decret", "décret", "arrete", "arrêté"];
 
-function getAnalysisPrompt(title: string, category: string, maxLines: number): string {
+function getAnalysisPrompt(title: string, category: string): string {
   const categoryLower = category.toLowerCase();
   const titleLower = title.toLowerCase();
   
@@ -310,7 +313,7 @@ function getAnalysisPrompt(title: string, category: string, maxLines: number): s
   }
   
   console.log(`Using TARIFF prompt for: "${title}" (category: ${category})`);
-  return getTariffPrompt(title, category, maxLines);
+  return getTariffPrompt(title, category);
 }
 
 // Fonction utilitaire pour vérifier le type de document
@@ -726,14 +729,13 @@ async function analyzeWithClaude(
   title: string,
   category: string,
   apiKey: string,
-  maxLines: number,
   retryCount = 0
 ): Promise<{ result: AnalysisResult | null; truncated: boolean; rateLimited: boolean }> {
   
   const MAX_RETRIES = 5;
   const BASE_DELAY = 10000;
   
-  const prompt = getAnalysisPrompt(title, category, maxLines);
+  const prompt = getAnalysisPrompt(title, category);
 
   const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -744,7 +746,7 @@ async function analyzeWithClaude(
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 32000,  // Augmenté pour avoir plus de marge
+      max_tokens: 64000,  // Augmenté à 64K pour extraire TOUTES les lignes sans troncature
       messages: [
         {
           role: "user",
@@ -770,7 +772,7 @@ async function analyzeWithClaude(
       const delayMs = BASE_DELAY * Math.pow(2, retryCount);
       console.log(`Rate limited (429). Retry ${retryCount + 1}/${MAX_RETRIES} after ${delayMs}ms...`);
       await delay(delayMs);
-      return analyzeWithClaude(base64Pdf, title, category, apiKey, maxLines, retryCount + 1);
+      return analyzeWithClaude(base64Pdf, title, category, apiKey, retryCount + 1);
     } else {
       console.error("Max retries reached for rate limiting");
       return { result: null, truncated: false, rateLimited: true };
@@ -1349,30 +1351,24 @@ serve(async (req) => {
     const category = pdfDoc?.category || "tarif";
     const countryCode = pdfDoc?.country_code || "MA";
 
-    // Analyze with Claude
-    const maxLinesToTry = [100, 50, 30];
-    let analysisResult: AnalysisResult | null = null;
+    // Analyze with Claude - extraction complète sans limite
+    console.log(`Attempting full document analysis (no line limit)...`);
     
-    for (const maxLines of maxLinesToTry) {
-      console.log(`Attempting analysis with max ${maxLines} lines...`);
-      
-      const { result, truncated, rateLimited } = await analyzeWithClaude(
-        base64Pdf, title, category, ANTHROPIC_API_KEY, maxLines
+    const { result, truncated, rateLimited } = await analyzeWithClaude(
+      base64Pdf, title, category, ANTHROPIC_API_KEY
+    );
+    
+    let analysisResult: AnalysisResult | null = result;
+    
+    if (rateLimited) {
+      return new Response(
+        JSON.stringify({ error: "Rate limited. Please wait before retrying.", rateLimited: true }),
+        { status: 429, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
-      
-      if (rateLimited) {
-        return new Response(
-          JSON.stringify({ error: "Rate limited. Please wait before retrying.", rateLimited: true }),
-          { status: 429, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
-        );
-      }
-      
-      if (result && !truncated) {
-        analysisResult = result;
-        break;
-      } else if (result) {
-        analysisResult = result;
-      }
+    }
+    
+    if (truncated && analysisResult) {
+      console.warn("Response was truncated, but using partial results");
     }
     
     if (!analysisResult) {
