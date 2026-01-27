@@ -811,6 +811,27 @@ export type Database = {
         }
         Relationships: []
       }
+      rate_limits: {
+        Row: {
+          blocked_until: string | null
+          client_id: string
+          request_count: number | null
+          window_start: string | null
+        }
+        Insert: {
+          blocked_until?: string | null
+          client_id: string
+          request_count?: number | null
+          window_start?: string | null
+        }
+        Update: {
+          blocked_until?: string | null
+          client_id?: string
+          request_count?: number | null
+          window_start?: string | null
+        }
+        Relationships: []
+      }
       statistics: {
         Row: {
           avg_rating: number | null
@@ -1245,6 +1266,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_old_rate_limits: { Args: never; Returns: number }
       get_dashboard_stats: {
         Args: never
         Returns: {

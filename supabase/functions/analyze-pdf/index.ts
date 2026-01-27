@@ -8,6 +8,9 @@ import {
   getClientId,
   errorResponse,
 } from "../_shared/cors.ts";
+import { validateAnalyzePdfRequest } from "../_shared/validation.ts";
+import { callAnthropicWithRetry } from "../_shared/retry.ts";
+import { createLogger } from "../_shared/logger.ts";
 
 // =============================================================================
 // INTERFACES
@@ -1156,10 +1159,14 @@ async function analyzeWithClaude(
 // =============================================================================
 
 serve(async (req) => {
+  const logger = createLogger("analyze-pdf", req);
+  
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return handleCorsPreFlight(req);
   }
+
+  logger.info("Request received");
 
   // Rate limiting (5 requests per minute for PDF analysis - more expensive)
   const clientId = getClientId(req);
@@ -1174,10 +1181,26 @@ serve(async (req) => {
   }
 
   try {
-    const { pdfId, filePath, previewOnly = true } = await req.json();
+    // Valider le body
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch (e) {
+      logger.error("Invalid JSON", e as Error);
+      return errorResponse(req, "Body JSON invalide", 400);
+    }
 
-    if (!pdfId || !filePath) {
-      return errorResponse(req, "pdfId and filePath are required", 400);
+    const validation = validateAnalyzePdfRequest(body);
+    if (!validation.valid) {
+      logger.warn("Validation failed", { error: validation.error });
+      return errorResponse(req, validation.error!, 400);
+    }
+
+    const { pdfId, filePath, previewOnly = true } = validation.data!;
+    logger.info("Analyzing PDF", { pdfId, previewOnly });
+
+    if (!filePath) {
+      return errorResponse(req, "filePath is required", 400);
     }
 
     const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
@@ -1456,7 +1479,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error("Analyze PDF error:", error);
+    logger.error("Analyze PDF error", error as Error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Erreur d'analyse" }),
       { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }

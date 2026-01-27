@@ -9,6 +9,9 @@ import {
   errorResponse,
   successResponse,
 } from "../_shared/cors.ts";
+import { validateChatRequest } from "../_shared/validation.ts";
+import { callAnthropicWithRetry } from "../_shared/retry.ts";
+import { createLogger } from "../_shared/logger.ts";
 
 // ============================================================================
 // UTILITAIRES CODES SH (héritage hiérarchique)
@@ -636,10 +639,15 @@ IMPORTANT:
 }
 
 serve(async (req) => {
+  // Créer le logger
+  const logger = createLogger("chat", req);
+  
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return handleCorsPreFlight(req);
   }
+
+  logger.info("Request received", { method: req.method });
 
   // ============================================================================
   // PHASE 4: RATE LIMITING
@@ -656,7 +664,23 @@ serve(async (req) => {
   }
 
   try {
-    const { question, sessionId, images, conversationHistory } = await req.json();
+    // Parser et valider le body
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch (e) {
+      logger.error("Invalid JSON body", e as Error);
+      return errorResponse(req, "Body JSON invalide", 400);
+    }
+
+    const validation = validateChatRequest(body);
+    if (!validation.valid) {
+      logger.warn("Validation failed", { error: validation.error });
+      return errorResponse(req, validation.error!, 400);
+    }
+
+    const { question, sessionId, images, conversationHistory } = validation.data!;
+    logger.info("Request validated", { sessionId, hasImages: !!images?.length });
 
     if (!question && (!images || images.length === 0)) {
       return errorResponse(req, "Question or images required", 400);
@@ -1328,30 +1352,31 @@ ${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
 
     let aiResponse: Response;
     try {
-      aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+      logger.info("Calling Claude API", { model: "claude-sonnet-4-20250514" });
+      
+      aiResponse = await callAnthropicWithRetry(
+        ANTHROPIC_API_KEY,
+        {
           model: "claude-sonnet-4-20250514",
           max_tokens: 4096,
           system: systemPrompt,
           messages: claudeMessages,
-        }),
-        signal: controller.signal,
-      });
+        },
+        CLAUDE_TIMEOUT_MS
+      );
+      clearTimeout(timeoutId);
+      
+      logger.info("Claude API responded", { status: aiResponse.status });
+      
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
       if (fetchError.name === 'AbortError') {
-        console.error("Claude API timeout after", CLAUDE_TIMEOUT_MS, "ms");
-        return errorResponse(req, "La requête a pris trop de temps. Veuillez réessayer avec une question plus simple.", 504);
+        logger.error("Claude API timeout", fetchError, { timeoutMs: CLAUDE_TIMEOUT_MS });
+        return errorResponse(req, "La requête a pris trop de temps. Veuillez réessayer.", 504);
       }
-      throw fetchError;
+      logger.error("Claude API error after retries", fetchError);
+      return errorResponse(req, "Service temporairement indisponible.", 503);
     }
-    clearTimeout(timeoutId);
 
     if (!aiResponse.ok) {
       if (aiResponse.status === 429) {
@@ -1463,7 +1488,7 @@ ${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
     // PHASE 3: SAVE TO RESPONSE CACHE
     // ============================================================================
     // Only cache if confidence is medium or high and we have an embedding
-    if (queryEmbedding && confidence !== "low" && (!images || images.length === 0)) {
+    if (queryEmbedding && confidence !== "low" && (!images || images.length === 0) && question) {
       saveToResponseCache(
         supabase,
         question,
@@ -1500,14 +1525,12 @@ ${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
       { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   } catch (error) {
-    console.error("Chat error:", error);
-    const errorId = crypto.randomUUID();
-    console.error(`[ERROR:${errorId}]`, error);
+    logger.error("Unexpected chat error", error as Error);
     return errorResponse(
       req,
       "Une erreur est survenue. Veuillez réessayer.",
       500,
-      errorId
+      logger.getRequestId()
     );
   }
 });
