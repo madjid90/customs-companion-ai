@@ -206,6 +206,9 @@ export default function AdminUpload() {
           pdfId: pdfDoc.id,
           pdfTitle: pdfTitle,
           countryCode: "MA",
+          document_type: analysisData?.document_type || "tariff",
+          trade_agreements: analysisData?.trade_agreements || [],
+          full_text_length: analysisData?.full_text?.length || 0,
         };
 
         updateFileStatus(fileId, {
@@ -548,13 +551,34 @@ export default function AdminUpload() {
                             <strong>Résumé:</strong> {file.analysis.summary}
                           </p>
                           <div className="flex items-center justify-between">
-                            <div className="flex gap-2">
-                              <Badge variant="outline" className="text-xs">
-                                {file.analysis.hs_codes?.length || 0} codes SH
-                              </Badge>
-                              <Badge variant="outline" className="text-xs">
-                                {file.analysis.tariff_lines?.length || 0} lignes tarifaires
-                              </Badge>
+                            <div className="flex gap-2 flex-wrap">
+                              {/* Affichage adapté selon le type de document */}
+                              {file.analysis.document_type === "regulatory" ? (
+                                <>
+                                  <Badge variant="outline" className="text-xs bg-accent/10">
+                                    📋 Réglementaire
+                                  </Badge>
+                                  {(file.analysis.trade_agreements?.length || 0) > 0 && (
+                                    <Badge variant="outline" className="text-xs">
+                                      {file.analysis.trade_agreements?.length} accord(s)
+                                    </Badge>
+                                  )}
+                                  {(file.analysis.full_text_length || 0) > 0 && (
+                                    <Badge variant="outline" className="text-xs bg-success/10 text-success">
+                                      ✓ Texte extrait
+                                    </Badge>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  <Badge variant="outline" className="text-xs">
+                                    {file.analysis.hs_codes?.length || 0} codes SH
+                                  </Badge>
+                                  <Badge variant="outline" className="text-xs">
+                                    {file.analysis.tariff_lines?.length || 0} lignes tarifaires
+                                  </Badge>
+                                </>
+                              )}
                             </div>
                             <Button 
                               size="sm" 
@@ -572,7 +596,10 @@ export default function AdminUpload() {
                         <div className="pt-2 border-t">
                           <p className="text-xs text-success flex items-center gap-1">
                             <CheckCircle2 className="h-4 w-4" />
-                            {file.analysis.hs_codes?.length || 0} codes SH et {file.analysis.tariff_lines?.length || 0} lignes tarifaires insérés
+                            {file.analysis.document_type === "regulatory" 
+                              ? `Document réglementaire sauvegardé${file.analysis.full_text_length ? ` (${Math.round(file.analysis.full_text_length / 1000)}k caractères)` : ""}`
+                              : `${file.analysis.hs_codes?.length || 0} codes SH et ${file.analysis.tariff_lines?.length || 0} lignes tarifaires insérés`
+                            }
                           </p>
                         </div>
                       )}
