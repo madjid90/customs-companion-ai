@@ -555,7 +555,7 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       context.knowledge_documents = [...new Map(context.knowledge_documents.map(d => [d.title, d])).values()].slice(0, 5);
     }
 
-    // 6. Get relevant PDF summaries AND full text for precise RAG
+    // 6. Get relevant PDF summaries AND full text for precise RAG + download links
     const codes4ForPdf = context.hs_codes.length > 0 
       ? [...new Set(context.hs_codes.map(c => cleanHSCode(c.code || c.code_clean).substring(0, 4)))]
       : [];
@@ -568,7 +568,7 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
           mentioned_hs_codes,
           extracted_text,
           extracted_data,
-          pdf_documents!inner(title, category, country_code)
+          pdf_documents!inner(id, title, category, country_code, file_path)
         `)
         .limit(5);
       
@@ -578,14 +578,23 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       
       const { data } = await pdfQuery;
       if (data) {
-        context.pdf_summaries = data.map((p: any) => ({
-          title: p.pdf_documents?.title,
-          category: p.pdf_documents?.category,
-          summary: p.summary,
-          key_points: p.key_points,
-          full_text: p.extracted_text,  // Texte intégral pour recherche précise
-          extracted_data: p.extracted_data,
-        }));
+        context.pdf_summaries = data.map((p: any) => {
+          // Generate public download URL for the PDF
+          const filePath = p.pdf_documents?.file_path;
+          const downloadUrl = filePath 
+            ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${filePath}`
+            : null;
+          
+          return {
+            title: p.pdf_documents?.title,
+            category: p.pdf_documents?.category,
+            summary: p.summary,
+            key_points: p.key_points,
+            full_text: p.extracted_text,
+            extracted_data: p.extracted_data,
+            download_url: downloadUrl,
+          };
+        });
       }
     }
     
@@ -600,20 +609,28 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
           key_points,
           extracted_text,
           extracted_data,
-          pdf_documents!inner(title, category, country_code)
+          pdf_documents!inner(id, title, category, country_code, file_path)
         `)
         .or(`summary.ilike.%${searchTerms}%,extracted_text.ilike.%${searchTerms}%`)
         .limit(3);
       
       if (textSearchResults) {
-        context.pdf_summaries = textSearchResults.map((p: any) => ({
-          title: p.pdf_documents?.title,
-          category: p.pdf_documents?.category,
-          summary: p.summary,
-          key_points: p.key_points,
-          full_text: p.extracted_text,
-          extracted_data: p.extracted_data,
-        }));
+        context.pdf_summaries = textSearchResults.map((p: any) => {
+          const filePath = p.pdf_documents?.file_path;
+          const downloadUrl = filePath 
+            ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${filePath}`
+            : null;
+          
+          return {
+            title: p.pdf_documents?.title,
+            category: p.pdf_documents?.category,
+            summary: p.summary,
+            key_points: p.key_points,
+            full_text: p.extracted_text,
+            extracted_data: p.extracted_data,
+            download_url: downloadUrl,
+          };
+        });
       }
     }
 
@@ -663,21 +680,27 @@ Termine TOUJOURS ton message par une de ces lignes:
 
 **RÈGLE CRITIQUE**: Quand tu donnes une réponse finale, tu DOIS citer les sources avec des EXTRAITS EXACTS des documents. Le client peut demander une justification documentée !
 
-### Format de citation obligatoire:
+### Format de citation obligatoire (avec lien de téléchargement):
 \`\`\`
 📄 **Source:** [Titre du document]
 > "[Extrait exact du texte source, entre guillemets]"
+>
+> [📥 Télécharger le document officiel](URL_DU_DOCUMENT)
 \`\`\`
 
-### Exemple de réponse avec citations:
+### Exemple de réponse avec citations et liens:
 > **Code SH:** 0901.21.00
 > **DDI:** 25%
 >
 > 📄 **Source:** Circulaire n°4212 - Accord Maroco-Finnois
 > > "Les produits originaires de la Finlande bénéficient d'une exonération totale des droits de douane conformément à l'article 3 de l'accord..."
+> >
+> > [📥 Télécharger le document officiel](https://...)
 >
 > 📄 **Source:** Tarif Douanier Marocain - Chapitre 09
 > > "Position 0901.21 - Café, non torréfié, non décaféiné : DDI 25%, TVA 20%"
+> >
+> > [📥 Télécharger le document officiel](https://...)
 >
 > 🟢 **Confiance élevée** - Données confirmées par 2 sources officielles
 
@@ -805,9 +828,13 @@ ${context.controlled_products.length > 0 ? JSON.stringify(context.controlled_pro
 ### Documents de référence
 ${context.knowledge_documents.length > 0 ? context.knowledge_documents.map(d => `- **${d.title}**: ${d.content?.substring(0, 500)}...`).join('\n') : "Aucun document de référence"}
 
-### Contenu PDF pertinents (texte intégral pour citations)
+### Contenu PDF pertinents (texte intégral pour citations + liens de téléchargement)
 ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => {
-  let content = `#### 📄 ${p.title} (${p.category})\n**Résumé:** ${p.summary || 'N/A'}\n`;
+  let content = `#### 📄 ${p.title} (${p.category})\n`;
+  if (p.download_url) {
+    content += `**🔗 Lien de téléchargement:** ${p.download_url}\n`;
+  }
+  content += `**Résumé:** ${p.summary || 'N/A'}\n`;
   if (p.key_points && p.key_points.length > 0) {
     content += `**Points clés:**\n${p.key_points.map((kp: string) => `- ${kp}`).join('\n')}\n`;
   }
@@ -830,7 +857,8 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map(p => {
 1. POSE **UNE SEULE QUESTION** par message
 2. Utilise le format avec tirets pour les options (elles seront transformées en boutons cliquables)
 3. **CITE TOUJOURS tes sources** avec des extraits EXACTS des documents fournis ci-dessus quand tu donnes une réponse finale
-4. Le format de citation est: 📄 **Source:** [Titre] suivi de > "[extrait exact]"`;
+4. Le format de citation est: 📄 **Source:** [Titre] suivi de > "[extrait exact]"
+5. **INCLUS LE LIEN DE TÉLÉCHARGEMENT** du document source quand tu cites. Format: [📥 Télécharger le document](URL)`;
 
     // Build messages array with conversation history
     const claudeMessages: { role: "user" | "assistant"; content: string }[] = [];
