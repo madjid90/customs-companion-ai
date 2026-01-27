@@ -61,7 +61,7 @@ interface AnalysisResult {
   key_points: string[];
   hs_codes: HSCodeEntry[];
   tariff_lines: TariffLine[];
-  chapter_info?: { number: number; title: string };
+  chapter_info?: { number: number | null; title: string };
   notes?: {
     legal: string[];
     subposition: string[];
@@ -72,13 +72,16 @@ interface AnalysisResult {
   trade_agreements?: TradeAgreementMention[];
   preferential_rates?: PreferentialRate[];
   raw_lines?: RawTarifLine[];  // Pour debug
+  document_type?: string;  // "tariff" ou "regulatory"
+  effective_date?: string;
+  legal_references?: string[];
 }
 
 // =============================================================================
-// PROMPT CLAUDE OPTIMISÉ V2
+// PROMPT CLAUDE - DOCUMENTS TARIFAIRES (tableaux SH codes)
 // =============================================================================
 
-const getAnalysisPrompt = (title: string, category: string, maxLines: number) => `Tu es un expert en tarifs douaniers marocains. Analyse ce document PDF avec EXTRÊME PRÉCISION.
+const getTariffPrompt = (title: string, category: string, maxLines: number) => `Tu es un expert en tarifs douaniers marocains. Analyse ce document PDF avec EXTRÊME PRÉCISION.
 
 Document : ${title}
 Catégorie : ${category}
@@ -180,6 +183,132 @@ Ligne: "1 | 90 |  |  |" → HÉRITAGE 100111 + "90" + "00" = 1001119000
 ✓ TOUS les codes dans hs_codes doivent avoir un code_clean de EXACTEMENT 6 CHIFFRES (ex: "140100", "100111")
 
 RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
+
+// =============================================================================
+// PROMPT CLAUDE - DOCUMENTS RÉGLEMENTAIRES (circulaires, accords, notes)
+// =============================================================================
+
+const getRegulatoryPrompt = (title: string, category: string) => `Tu es un expert en réglementation douanière marocaine. Analyse ce document PDF (${category}) avec précision.
+
+Document : ${title}
+Type : ${category}
+
+=== CONTEXTE ===
+Ce document est un texte RÉGLEMENTAIRE/JURIDIQUE (circulaire, accord commercial, note, instruction, convention). 
+Il NE CONTIENT PAS de tableau tarifaire avec des codes SH à extraire.
+Tu dois extraire les informations juridiques et réglementaires pertinentes.
+
+=== INFORMATIONS À EXTRAIRE ===
+
+1. RÉSUMÉ : Une synthèse claire du contenu et de l'objectif du document
+
+2. POINTS CLÉS : Les dispositions, règles ou obligations principales
+
+3. ACCORDS COMMERCIAUX (si applicable) :
+   - Nom de l'accord
+   - Type (bilatéral, multilatéral, régional, transport, etc.)
+   - Parties/Pays concernés
+   - Date de signature et d'entrée en vigueur
+   - Principales dispositions et avantages
+
+4. TAUX PRÉFÉRENTIELS (si mentionnés) :
+   - Code accord
+   - Taux préférentiel
+   - Conditions d'application
+   - Pays d'origine concernés
+
+5. CODES SH MENTIONNÉS (si le document fait référence à des codes spécifiques) :
+   - Code au format XXXX.XX
+   - Description associée
+
+6. INFORMATIONS COMPLÉMENTAIRES :
+   - Autorités compétentes citées
+   - Dates importantes (application, expiration)
+   - Références à d'autres textes
+
+=== FORMAT JSON DE SORTIE ===
+
+{
+  "summary": "Résumé clair du document et son objectif principal",
+  "key_points": [
+    "Disposition principale 1",
+    "Obligation ou règle importante 2",
+    "Autre point clé 3"
+  ],
+  "chapter_info": {"number": null, "title": "Titre du document ou de l'accord"},
+  "document_type": "${category}",
+  "raw_lines": [],
+  "hs_codes": [],
+  "trade_agreements": [
+    {
+      "code": "CODE_ACCORD",
+      "name": "Nom complet de l'accord",
+      "type": "Type d'accord (bilatéral, transport, association, etc.)",
+      "countries": ["Pays 1", "Pays 2"],
+      "mentioned_benefits": ["Avantage 1", "Exemption X"]
+    }
+  ],
+  "preferential_rates": [
+    {
+      "agreement_code": "CODE_ACCORD",
+      "agreement_name": "Nom de l'accord",
+      "hs_code": "XXXXXX",
+      "preferential_rate": 0,
+      "conditions": "Conditions d'application",
+      "origin_countries": ["Pays d'origine"]
+    }
+  ],
+  "authorities": ["Autorité compétente 1", "Ministère X"],
+  "effective_date": "Date d'entrée en vigueur si mentionnée",
+  "legal_references": ["Référence à d'autres textes"]
+}
+
+=== RÈGLES ===
+✓ raw_lines DOIT être un tableau VIDE [] car ce n'est pas un document tarifaire
+✓ hs_codes peut contenir des codes SI le document y fait explicitement référence
+✓ Concentre-toi sur le contenu juridique et réglementaire
+✓ Extraire tous les accords commerciaux mentionnés avec leurs détails
+✓ Si le document est un accord de transport, identifier les parties et conditions
+
+RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
+
+// =============================================================================
+// SÉLECTION DU PROMPT APPROPRIÉ
+// =============================================================================
+
+const TARIFF_CATEGORIES = ["tarif", "chapitre", "chapter", "nomenclature", "sh_code", "hs_code"];
+const REGULATORY_CATEGORIES = ["circulaire", "accord", "note", "instruction", "reglement", "règlement", "convention", "loi", "decret", "décret", "arrete", "arrêté"];
+
+function getAnalysisPrompt(title: string, category: string, maxLines: number): string {
+  const categoryLower = category.toLowerCase();
+  const titleLower = title.toLowerCase();
+  
+  // Vérifier si c'est un document tarifaire
+  const isTariff = TARIFF_CATEGORIES.some(t => categoryLower.includes(t) || titleLower.includes(t)) ||
+                   titleLower.includes("chapitre") ||
+                   /sh\s*code/i.test(titleLower);
+  
+  // Vérifier si c'est un document réglementaire
+  const isRegulatory = REGULATORY_CATEGORIES.some(r => categoryLower.includes(r) || titleLower.includes(r));
+  
+  // Si explicitement réglementaire, ou si pas tarifaire et catégorie suggère réglementaire
+  if (isRegulatory || (!isTariff && !categoryLower.includes("tarif"))) {
+    console.log(`Using REGULATORY prompt for: "${title}" (category: ${category})`);
+    return getRegulatoryPrompt(title, category);
+  }
+  
+  console.log(`Using TARIFF prompt for: "${title}" (category: ${category})`);
+  return getTariffPrompt(title, category, maxLines);
+}
+
+// Fonction utilitaire pour vérifier le type de document
+function isRegulatoryDocument(category: string, title: string): boolean {
+  const categoryLower = category.toLowerCase();
+  const titleLower = title.toLowerCase();
+  
+  return REGULATORY_CATEGORIES.some(r => categoryLower.includes(r) || titleLower.includes(r)) &&
+         !TARIFF_CATEGORIES.some(t => categoryLower.includes(t) || titleLower.includes(t));
+}
 
 // =============================================================================
 // FONCTIONS DE TRAITEMENT
@@ -806,9 +935,13 @@ async function analyzeWithClaude(
   // Log pour debug: vérifier ce que Claude a renvoyé
   console.log(`Parsed data check - raw_lines: ${parsed?.raw_lines?.length ?? 'undefined'}, hs_codes: ${parsed?.hs_codes?.length ?? 'undefined'}, summary: ${parsed?.summary?.substring(0, 50) ?? 'undefined'}`);
   
+  // Vérifier si c'est un document réglementaire (circulaire, accord, etc.)
+  const isRegulatory = isRegulatoryDocument(category, title);
+  
   // Si parsed existe mais n'a pas de raw_lines, essayer une extraction plus agressive
-  if (parsed && (!parsed.raw_lines || parsed.raw_lines.length === 0)) {
-    console.log("No raw_lines found in parsed data, attempting aggressive extraction...");
+  // SEULEMENT pour les documents tarifaires (pas les circulaires/accords)
+  if (parsed && (!parsed.raw_lines || parsed.raw_lines.length === 0) && !isRegulatory) {
+    console.log("No raw_lines found in parsed data (tariff document), attempting aggressive extraction...");
     console.log("Looking for raw_lines in response (first 3000 chars):", cleanedResponse.substring(0, 3000));
     
     // Tentative d'extraction directe avec regex plus flexible
@@ -905,7 +1038,24 @@ async function analyzeWithClaude(
   let tariffLines: TariffLine[] = [];
   let hsCodeEntries: HSCodeEntry[] = [];
   
-  if (parsed.raw_lines && Array.isArray(parsed.raw_lines)) {
+  // Pour les documents réglementaires (circulaires, accords), 
+  // on utilise directement les hs_codes retournés par Claude (s'il y en a)
+  if (isRegulatory) {
+    console.log(`Processing REGULATORY document - no tariff lines expected`);
+    
+    // Utiliser les hs_codes mentionnés dans le document (si Claude en a trouvé)
+    if (parsed.hs_codes && Array.isArray(parsed.hs_codes)) {
+      hsCodeEntries = parsed.hs_codes.filter((hs: any) => 
+        hs.code_clean && /^\d{6}$/.test(hs.code_clean)
+      );
+      console.log(`Found ${hsCodeEntries.length} HS codes mentioned in regulatory document`);
+    }
+    
+    // Pas de lignes tarifaires pour les documents réglementaires
+    tariffLines = [];
+    
+  } else if (parsed.raw_lines && Array.isArray(parsed.raw_lines) && parsed.raw_lines.length > 0) {
+    // Pour les documents tarifaires: traitement normal avec héritage
     console.log(`Processing ${parsed.raw_lines.length} raw lines with inheritance...`);
     
     // Reconstruire avec l'héritage
@@ -935,6 +1085,9 @@ async function analyzeWithClaude(
       .filter(line => line.national_code.length === 10 && line.duty_rate > 0);
     
     hsCodeEntries = parsed.hs_codes || [];
+  } else {
+    // Fallback pour les documents sans raw_lines ni tariff_lines
+    hsCodeEntries = parsed.hs_codes || [];
   }
   
   const result: AnalysisResult = {
@@ -948,12 +1101,18 @@ async function analyzeWithClaude(
     trade_agreements: parsed.trade_agreements || [],
     preferential_rates: parsed.preferential_rates || [],
     raw_lines: parsed.raw_lines,  // Garder pour debug
+    document_type: isRegulatory ? "regulatory" : "tariff",
+    authorities: parsed.authorities || [],
+    effective_date: parsed.effective_date,
+    legal_references: parsed.legal_references || [],
   };
   
   console.log("Final result:", 
+    "document_type:", isRegulatory ? "regulatory" : "tariff",
     "tariff_lines:", result.tariff_lines.length,
     "hs_codes:", result.hs_codes.length,
-    "inherited:", result.tariff_lines.filter(l => l.is_inherited).length
+    "trade_agreements:", result.trade_agreements?.length || 0,
+    isRegulatory ? "" : `inherited: ${result.tariff_lines.filter(l => l.is_inherited).length}`
   );
   
   return { result, truncated, rateLimited: false };
@@ -1078,9 +1237,14 @@ serve(async (req) => {
       };
     }
 
+    // Déterminer si c'est un document réglementaire
+    const isRegulatoryDoc = isRegulatoryDocument(category, title);
+    
     console.log("Analysis complete:", 
+      "Document type:", isRegulatoryDoc ? "regulatory" : "tariff",
       "HS codes:", analysisResult.hs_codes?.length || 0,
       "Tariff lines:", analysisResult.tariff_lines?.length || 0,
+      "Trade agreements:", analysisResult.trade_agreements?.length || 0,
       "Preview only:", previewOnly
     );
 
@@ -1093,11 +1257,15 @@ serve(async (req) => {
           pdfTitle: title,
           countryCode,
           previewOnly: true,
+          document_type: isRegulatoryDoc ? "regulatory" : "tariff",
           statistics: {
             total_lines: analysisResult.tariff_lines?.length || 0,
             inherited_lines: analysisResult.tariff_lines?.filter(l => l.is_inherited).length || 0,
             hs_codes_count: analysisResult.hs_codes?.length || 0,
+            trade_agreements_count: analysisResult.trade_agreements?.length || 0,
+            preferential_rates_count: analysisResult.preferential_rates?.length || 0,
             has_footnotes: Object.keys(analysisResult.footnotes || {}).length > 0,
+            is_regulatory: isRegulatoryDoc,
           }
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
