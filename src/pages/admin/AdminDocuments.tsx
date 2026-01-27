@@ -209,7 +209,7 @@ export default function AdminDocuments() {
     }
   };
 
-  // Batch analyze all pending documents - UNLIMITED TIME per document
+  // Batch analyze all pending documents - with retry and server-side check
   const analyzeAllPending = async () => {
     const pendingDocs = documents?.filter(d => !getExtraction(d.id)) || [];
     
@@ -226,7 +226,7 @@ export default function AdminDocuments() {
 
     toast({
       title: "🚀 Analyse en lot démarrée",
-      description: `Traitement séquentiel de ${pendingDocs.length} documents. Chaque document prend le temps nécessaire (sans limite).`,
+      description: `Traitement de ${pendingDocs.length} documents. Chaque analyse prend le temps nécessaire.`,
     });
 
     let successCount = 0;
@@ -235,58 +235,112 @@ export default function AdminDocuments() {
     const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
     const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-    // Process documents one by one - NO TIMEOUT (let each analysis complete)
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 5000; // 5 seconds between retries
+
+    // Helper: Check if extraction already exists in DB
+    const checkExtractionExists = async (pdfId: string): Promise<boolean> => {
+      const { data } = await supabase
+        .from("pdf_extractions")
+        .select("id")
+        .eq("pdf_id", pdfId)
+        .maybeSingle();
+      return !!data;
+    };
+
+    // Process documents one by one with retry logic
     for (let i = 0; i < pendingDocs.length; i++) {
       const doc = pendingDocs[i];
       setBatchProgress(prev => ({ ...prev, current: i + 1 }));
 
-      const startTime = Date.now();
-      console.log(`🔄 [${i + 1}/${pendingDocs.length}] Démarrage: ${doc.title}`);
+      // First, check if extraction already exists (maybe created by a previous failed request)
+      const alreadyExists = await checkExtractionExists(doc.id);
+      if (alreadyExists) {
+        console.log(`✅ [${i + 1}/${pendingDocs.length}] ${doc.title} - Extraction déjà existante`);
+        await supabase
+          .from("pdf_documents")
+          .update({ is_verified: true, verified_at: new Date().toISOString() })
+          .eq("id", doc.id);
+        successCount++;
+        setBatchProgress(prev => ({ ...prev, success: successCount }));
+        continue;
+      }
 
-      try {
-        // NO AbortController - let the request take as long as needed
-        const response = await fetch(`${SUPABASE_URL}/functions/v1/analyze-pdf`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${ANON_KEY}`,
-          },
-          body: JSON.stringify({
-            pdfId: doc.id,
-            filePath: doc.file_path,
-            previewOnly: false,
-          }),
-        });
+      let success = false;
+      let lastError = "";
 
-        const elapsed = Math.round((Date.now() - startTime) / 1000);
+      for (let attempt = 1; attempt <= MAX_RETRIES && !success; attempt++) {
+        const startTime = Date.now();
+        console.log(`🔄 [${i + 1}/${pendingDocs.length}] Tentative ${attempt}/${MAX_RETRIES}: ${doc.title}`);
 
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => "Unknown error");
-          console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title}: HTTP ${response.status} (${elapsed}s)`, errorText);
-          failCount++;
-        } else {
-          const data = await response.json();
-          if (data?.error) {
-            console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title}: (${elapsed}s)`, data.error);
-            failCount++;
+        try {
+          const response = await fetch(`${SUPABASE_URL}/functions/v1/analyze-pdf`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${ANON_KEY}`,
+            },
+            body: JSON.stringify({
+              pdfId: doc.id,
+              filePath: doc.file_path,
+              previewOnly: false,
+            }),
+          });
+
+          const elapsed = Math.round((Date.now() - startTime) / 1000);
+
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => "Unknown error");
+            lastError = `HTTP ${response.status}: ${errorText}`;
+            console.warn(`⚠️ [${i + 1}] Tentative ${attempt} échouée (${elapsed}s): ${lastError}`);
           } else {
+            const data = await response.json();
+            if (data?.error) {
+              lastError = data.error;
+              console.warn(`⚠️ [${i + 1}] Tentative ${attempt} échouée (${elapsed}s): ${lastError}`);
+            } else {
+              await supabase
+                .from("pdf_documents")
+                .update({ is_verified: true, verified_at: new Date().toISOString() })
+                .eq("id", doc.id);
+              success = true;
+              successCount++;
+              console.log(`✅ [${i + 1}/${pendingDocs.length}] ${doc.title} - ${data.hs_codes?.length || 0} HS codes (${elapsed}s)`);
+            }
+          }
+        } catch (error: any) {
+          const elapsed = Math.round((Date.now() - startTime) / 1000);
+          lastError = error.message || "Failed to fetch";
+          console.warn(`⚠️ [${i + 1}] Tentative ${attempt} échouée (${elapsed}s): ${lastError}`);
+          
+          // After network error, check if extraction was actually saved server-side
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          const savedAnyway = await checkExtractionExists(doc.id);
+          if (savedAnyway) {
+            console.log(`✅ [${i + 1}] ${doc.title} - Extraction trouvée après erreur réseau`);
             await supabase
               .from("pdf_documents")
               .update({ is_verified: true, verified_at: new Date().toISOString() })
               .eq("id", doc.id);
+            success = true;
             successCount++;
-            console.log(`✅ [${i + 1}/${pendingDocs.length}] ${doc.title} - ${data.hs_codes?.length || 0} HS codes (${elapsed}s)`);
           }
         }
-      } catch (error: any) {
-        const elapsed = Math.round((Date.now() - startTime) / 1000);
-        console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title} (${elapsed}s):`, error.message || error);
+
+        // Wait before retry (if not successful and more retries available)
+        if (!success && attempt < MAX_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+        }
+      }
+
+      if (!success) {
+        console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title}: Échec après ${MAX_RETRIES} tentatives - ${lastError}`);
         failCount++;
       }
 
       setBatchProgress(prev => ({ ...prev, success: successCount, failed: failCount }));
 
-      // Small delay between requests to avoid overwhelming the server (3 seconds)
+      // Delay between documents (3 seconds)
       if (i < pendingDocs.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 3000));
       }
