@@ -440,23 +440,64 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
     if (col1Raw.includes(".")) {
       const parts = col1Raw.split(".");
       
-      // Format "XX.XX" (ou "X.XX") → Position à 4 chiffres (chapitre.position)
-      // Ex: "07.02" → "0702", "7.02" → "0702"
+      // Format "XX.XX" (ou "X.XX") → Position heading (chapitre.position)
+      // Ex: "07.02" → position 0702, mais le CODE réel peut être en Col2
       if (parts[0].length <= 2 && parts[1]?.length === 2) {
         // CRITIQUE: Préserver le zéro initial du chapitre
         const chapter = parts[0].padStart(2, "0"); // "7" → "07"
-        const position = parts[1]; // "02"
-        lastPosition = chapter + position; // "0702"
+        const positionPart = parts[1]; // "02"
+        lastPosition = chapter + positionPart; // "0702"
         lastSubheading = "";
         lastCol2 = "";
         lastCol3 = "";
         lastCol4 = "";
         lastCol5 = "";
         
-        // Pas de ligne tarifaire pour les positions sans taux
-        if (!line.duty_rate) continue;
-        
-        nationalCode = lastPosition.padEnd(10, "0");
+        // NOUVEAU: Vérifier si Col2 contient un code sous-position "XXXX.XX"
+        // C'est le cas pour le format du tarif marocain où la colonne 1 est la position
+        // et la colonne 2 contient le code SH à 6 chiffres (ex: "0702.00")
+        if (col2 && col2.includes(".")) {
+          const col2Parts = col2.split(".");
+          // Format "XXXX.XX" dans col2
+          if (col2Parts[0].length === 4 && col2Parts[1]?.length === 2) {
+            // Utiliser le code de col2 comme base
+            const col2Clean = cleanCode(col2);
+            lastPosition = col2Clean.slice(0, 4);
+            lastSubheading = col2Clean.slice(4, 6);
+            
+            // col3 devient la première extension
+            lastCol2 = (col3 && /^\d+$/.test(col3)) ? col3.padStart(2, "0") : "";
+            lastCol3 = (col4 && /^\d+$/.test(col4)) ? col4.padStart(2, "0") : "";
+            lastCol4 = (col5 && /^\d+$/.test(col5)) ? col5.padStart(2, "0") : "";
+            lastCol5 = "";
+            
+            // Pas de ligne tarifaire pour les headings sans taux
+            if (!line.duty_rate) continue;
+            
+            // Construire le code: position + subheading + extensions
+            let code = lastPosition + lastSubheading;
+            code += lastCol2 || "00";
+            code += lastCol3 || "00";
+            nationalCode = code.slice(0, 10);
+          } else {
+            // Col2 a un point mais pas le format attendu
+            if (!line.duty_rate) continue;
+            nationalCode = lastPosition.padEnd(10, "0");
+          }
+        } else {
+          // Format classique: col2 contient juste "00" ou une extension numérique
+          lastCol2 = (col2 && /^\d+$/.test(col2)) ? col2.padStart(2, "0") : "";
+          lastCol3 = (col3 && /^\d+$/.test(col3)) ? col3.padStart(2, "0") : "";
+          
+          // Pas de ligne tarifaire pour les positions sans taux
+          if (!line.duty_rate) continue;
+          
+          // Construire: position (4) + "00" (subheading) + col2 + col3
+          let code = lastPosition + "00";
+          code += lastCol2 || "00";
+          code += lastCol3 || "00";
+          nationalCode = code.slice(0, 10);
+        }
         
       } else if (col1Clean.length >= 6) {
         // Format "XXXX.XX" ou plus → Sous-position à 6+ chiffres
