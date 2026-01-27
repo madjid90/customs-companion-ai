@@ -803,6 +803,88 @@ async function analyzeWithClaude(
   const { parsed, method } = parseJsonRobust(cleanedResponse);
   console.log(`JSON parsing method: ${method}`);
   
+  // Log pour debug: vérifier ce que Claude a renvoyé
+  console.log(`Parsed data check - raw_lines: ${parsed?.raw_lines?.length ?? 'undefined'}, hs_codes: ${parsed?.hs_codes?.length ?? 'undefined'}, summary: ${parsed?.summary?.substring(0, 50) ?? 'undefined'}`);
+  
+  // Si parsed existe mais n'a pas de raw_lines, essayer une extraction plus agressive
+  if (parsed && (!parsed.raw_lines || parsed.raw_lines.length === 0)) {
+    console.log("No raw_lines found in parsed data, attempting aggressive extraction...");
+    console.log("Looking for raw_lines in response (first 3000 chars):", cleanedResponse.substring(0, 3000));
+    
+    // Tentative d'extraction directe avec regex plus flexible
+    const rawLinesRegex = /["']raw_lines["']\s*:\s*\[\s*([\s\S]*?)\s*\]\s*(?:,\s*["']|$|\})/;
+    const rawLinesMatch = cleanedResponse.match(rawLinesRegex);
+    
+    if (rawLinesMatch) {
+      console.log("Found raw_lines section, attempting manual extraction...");
+      const rawLinesContent = rawLinesMatch[1];
+      const lines: any[] = [];
+      
+      // Regex pour matcher chaque objet de ligne individuellement
+      const objectRegex = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g;
+      let match;
+      
+      while ((match = objectRegex.exec(rawLinesContent)) !== null) {
+        try {
+          const lineObj = JSON.parse(match[0]);
+          if (lineObj.col1 !== undefined || lineObj.description !== undefined) {
+            lines.push(lineObj);
+          }
+        } catch {
+          // Si le parse JSON échoue, extraire manuellement
+          const lineData: any = {};
+          for (let i = 1; i <= 5; i++) {
+            const colMatch = match[0].match(new RegExp(`["']col${i}["']\\s*:\\s*["']([^"']*)["']`));
+            lineData[`col${i}`] = colMatch ? colMatch[1] : "";
+          }
+          const descMatch = match[0].match(/["']description["']\s*:\s*["']([^"']*(?:\\.[^"']*)*)["']/);
+          lineData.description = descMatch ? descMatch[1].replace(/\\"/g, '"') : "";
+          const dutyMatch = match[0].match(/["']duty_rate["']\s*:\s*(?:["']([^"']+)["']|(\d+\.?\d*)|null)/);
+          lineData.duty_rate = dutyMatch ? (dutyMatch[1] || (dutyMatch[2] ? parseFloat(dutyMatch[2]) : null)) : null;
+          const unitMatch = match[0].match(/["']unit["']\s*:\s*(?:["']([^"']*)["']|null)/);
+          lineData.unit = unitMatch ? unitMatch[1] || null : null;
+          
+          if (lineData.col1 || lineData.description) {
+            lines.push(lineData);
+          }
+        }
+      }
+      
+      if (lines.length > 0) {
+        console.log(`Aggressive extraction found ${lines.length} raw_lines!`);
+        parsed.raw_lines = lines;
+      }
+    }
+    
+    // Si toujours pas de raw_lines, chercher des hs_codes directement
+    if (!parsed.raw_lines || parsed.raw_lines.length === 0) {
+      console.log("Still no raw_lines, trying direct hs_codes extraction...");
+      
+      const hsCodesRegex = /["']hs_codes["']\s*:\s*\[\s*([\s\S]*?)\s*\]\s*(?:,\s*["']|$|\})/;
+      const hsMatch = cleanedResponse.match(hsCodesRegex);
+      
+      if (hsMatch) {
+        const codes: any[] = [];
+        const codeObjectRegex = /\{[^{}]*\}/g;
+        let codeMatch;
+        
+        while ((codeMatch = codeObjectRegex.exec(hsMatch[1])) !== null) {
+          try {
+            const codeObj = JSON.parse(codeMatch[0]);
+            if (codeObj.code_clean && /^\d{6}$/.test(codeObj.code_clean)) {
+              codes.push(codeObj);
+            }
+          } catch {}
+        }
+        
+        if (codes.length > 0) {
+          console.log(`Direct extraction found ${codes.length} hs_codes!`);
+          parsed.hs_codes = codes;
+        }
+      }
+    }
+  }
+  
   if (!parsed) {
     console.error("All JSON parsing methods failed");
     console.error("Raw response (first 2000):", responseText.substring(0, 2000));
