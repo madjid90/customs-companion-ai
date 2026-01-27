@@ -57,7 +57,7 @@ export function handleCorsPreFlight(request: Request): Response {
 }
 
 // ============================================================================
-// RATE LIMITING - In-Memory (per Edge Function instance)
+// RATE LIMITING - In-Memory (per Edge Function instance) - FALLBACK
 // ============================================================================
 
 interface RateLimitEntry {
@@ -101,7 +101,7 @@ export function getClientId(request: Request): string {
   );
 }
 
-// Check rate limit
+// In-memory rate limit check (fallback)
 export function checkRateLimit(
   clientId: string,
   config: RateLimitConfig = DEFAULT_CONFIG
@@ -145,6 +145,137 @@ export function checkRateLimit(
     remaining: config.maxRequests - entry.count,
     resetAt: entry.resetAt,
   };
+}
+
+// ============================================================================
+// RATE LIMITING - Distributed (using Supabase rate_limits table)
+// ============================================================================
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+interface DistributedRateLimitResult {
+  allowed: boolean;
+  remaining: number;
+  resetAt: number;
+  error?: string;
+}
+
+/**
+ * Distributed rate limiting using Supabase rate_limits table.
+ * Falls back to in-memory rate limiting if database is unavailable.
+ */
+export async function checkRateLimitDistributed(
+  clientId: string,
+  config: RateLimitConfig = DEFAULT_CONFIG
+): Promise<DistributedRateLimitResult> {
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+  // Fallback to in-memory if env vars missing
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    console.warn("[RateLimit] Missing env vars, using in-memory fallback");
+    return checkRateLimit(clientId, config);
+  }
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - config.windowMs);
+
+  try {
+    // Check existing rate limit entry
+    const { data: existing, error: selectError } = await supabase
+      .from("rate_limits")
+      .select("*")
+      .eq("client_id", clientId)
+      .single();
+
+    if (selectError && selectError.code !== "PGRST116") {
+      // PGRST116 = no rows found, which is fine
+      console.error("[RateLimit] Select error:", selectError);
+      return checkRateLimit(clientId, config); // Fallback
+    }
+
+    // Check if blocked
+    if (existing?.blocked_until) {
+      const blockedUntil = new Date(existing.blocked_until);
+      if (blockedUntil > now) {
+        return {
+          allowed: false,
+          remaining: 0,
+          resetAt: blockedUntil.getTime(),
+        };
+      }
+    }
+
+    // Check if window is still valid
+    if (existing?.window_start) {
+      const existingWindowStart = new Date(existing.window_start);
+      
+      if (existingWindowStart > windowStart) {
+        // Window still active
+        if (existing.request_count >= config.maxRequests) {
+          // Rate limited - set block
+          const blockedUntil = new Date(now.getTime() + config.blockDurationMs);
+          
+          await supabase
+            .from("rate_limits")
+            .update({ blocked_until: blockedUntil.toISOString() })
+            .eq("client_id", clientId);
+
+          return {
+            allowed: false,
+            remaining: 0,
+            resetAt: blockedUntil.getTime(),
+          };
+        }
+
+        // Increment counter
+        const { error: updateError } = await supabase
+          .from("rate_limits")
+          .update({ request_count: existing.request_count + 1 })
+          .eq("client_id", clientId);
+
+        if (updateError) {
+          console.error("[RateLimit] Update error:", updateError);
+          return checkRateLimit(clientId, config);
+        }
+
+        return {
+          allowed: true,
+          remaining: config.maxRequests - existing.request_count - 1,
+          resetAt: existingWindowStart.getTime() + config.windowMs,
+        };
+      }
+    }
+
+    // New window - upsert entry
+    const resetAt = now.getTime() + config.windowMs;
+    
+    const { error: upsertError } = await supabase
+      .from("rate_limits")
+      .upsert({
+        client_id: clientId,
+        request_count: 1,
+        window_start: now.toISOString(),
+        blocked_until: null,
+      }, {
+        onConflict: "client_id",
+      });
+
+    if (upsertError) {
+      console.error("[RateLimit] Upsert error:", upsertError);
+      return checkRateLimit(clientId, config);
+    }
+
+    return {
+      allowed: true,
+      remaining: config.maxRequests - 1,
+      resetAt,
+    };
+  } catch (error) {
+    console.error("[RateLimit] Unexpected error:", error);
+    return checkRateLimit(clientId, config); // Fallback
+  }
 }
 
 // Create rate limit response
