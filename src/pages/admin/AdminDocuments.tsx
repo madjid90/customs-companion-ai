@@ -209,7 +209,7 @@ export default function AdminDocuments() {
     }
   };
 
-  // Batch analyze all pending documents - using raw fetch with proper timeout
+  // Batch analyze all pending documents - UNLIMITED TIME per document
   const analyzeAllPending = async () => {
     const pendingDocs = documents?.filter(d => !getExtraction(d.id)) || [];
     
@@ -226,7 +226,7 @@ export default function AdminDocuments() {
 
     toast({
       title: "🚀 Analyse en lot démarrée",
-      description: `Traitement séquentiel de ${pendingDocs.length} documents. Chaque document prend ~30-120 secondes.`,
+      description: `Traitement séquentiel de ${pendingDocs.length} documents. Chaque document prend le temps nécessaire (sans limite).`,
     });
 
     let successCount = 0;
@@ -235,18 +235,16 @@ export default function AdminDocuments() {
     const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
     const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-    // Process documents one by one with explicit timeout handling
+    // Process documents one by one - NO TIMEOUT (let each analysis complete)
     for (let i = 0; i < pendingDocs.length; i++) {
       const doc = pendingDocs[i];
       setBatchProgress(prev => ({ ...prev, current: i + 1 }));
 
+      const startTime = Date.now();
+      console.log(`🔄 [${i + 1}/${pendingDocs.length}] Démarrage: ${doc.title}`);
+
       try {
-        console.log(`🔄 [${i + 1}/${pendingDocs.length}] Démarrage: ${doc.title}`);
-        
-        // Create AbortController with 180s timeout (3 minutes per document)
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 180000);
-        
+        // NO AbortController - let the request take as long as needed
         const response = await fetch(`${SUPABASE_URL}/functions/v1/analyze-pdf`, {
           method: "POST",
           headers: {
@@ -258,19 +256,18 @@ export default function AdminDocuments() {
             filePath: doc.file_path,
             previewOnly: false,
           }),
-          signal: controller.signal,
         });
-        
-        clearTimeout(timeoutId);
+
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
 
         if (!response.ok) {
           const errorText = await response.text().catch(() => "Unknown error");
-          console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title}: HTTP ${response.status}`, errorText);
+          console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title}: HTTP ${response.status} (${elapsed}s)`, errorText);
           failCount++;
         } else {
           const data = await response.json();
           if (data?.error) {
-            console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title}:`, data.error);
+            console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title}: (${elapsed}s)`, data.error);
             failCount++;
           } else {
             await supabase
@@ -278,23 +275,20 @@ export default function AdminDocuments() {
               .update({ is_verified: true, verified_at: new Date().toISOString() })
               .eq("id", doc.id);
             successCount++;
-            console.log(`✅ [${i + 1}/${pendingDocs.length}] ${doc.title} - ${data.hs_codes?.length || 0} HS codes`);
+            console.log(`✅ [${i + 1}/${pendingDocs.length}] ${doc.title} - ${data.hs_codes?.length || 0} HS codes (${elapsed}s)`);
           }
         }
       } catch (error: any) {
-        if (error.name === 'AbortError') {
-          console.error(`⏱️ [${i + 1}/${pendingDocs.length}] Timeout (180s): ${doc.title}`);
-        } else {
-          console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title}:`, error);
-        }
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        console.error(`❌ [${i + 1}/${pendingDocs.length}] ${doc.title} (${elapsed}s):`, error.message || error);
         failCount++;
       }
 
       setBatchProgress(prev => ({ ...prev, success: successCount, failed: failCount }));
 
-      // Delay between requests to avoid rate limiting (5 seconds)
+      // Small delay between requests to avoid overwhelming the server (3 seconds)
       if (i < pendingDocs.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
 
