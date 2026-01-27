@@ -1,9 +1,9 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   getCorsHeaders,
   handleCorsPreFlight,
-  checkRateLimit,
+  checkRateLimitDistributed,
   rateLimitResponse,
   getClientId,
   errorResponse,
@@ -66,9 +66,9 @@ serve(async (req) => {
     return handleCorsPreFlight(req);
   }
 
-  // Rate limiting (2 requests per minute - admin function)
+  // Rate limiting distribué (2 requests per minute - admin function)
   const clientId = getClientId(req);
-  const rateLimit = checkRateLimit(clientId, {
+  const rateLimit = await checkRateLimitDistributed(clientId, {
     maxRequests: 2,
     windowMs: 60000,
     blockDurationMs: 600000,

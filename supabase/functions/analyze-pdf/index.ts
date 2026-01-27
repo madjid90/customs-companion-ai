@@ -3,10 +3,11 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   getCorsHeaders,
   handleCorsPreFlight,
-  checkRateLimit,
+  checkRateLimitDistributed,
   rateLimitResponse,
   getClientId,
   errorResponse,
+  successResponse,
 } from "../_shared/cors.ts";
 import { validateAnalyzePdfRequest } from "../_shared/validation.ts";
 import { callAnthropicWithRetry } from "../_shared/retry.ts";
@@ -1168,9 +1169,9 @@ serve(async (req) => {
 
   logger.info("Request received");
 
-  // Rate limiting (5 requests per minute for PDF analysis - more expensive)
+  // Rate limiting distribué (5 requests per minute for PDF analysis - more expensive)
   const clientId = getClientId(req);
-  const rateLimit = checkRateLimit(clientId, {
+  const rateLimit = await checkRateLimitDistributed(clientId, {
     maxRequests: 5,
     windowMs: 60000,
     blockDurationMs: 300000,

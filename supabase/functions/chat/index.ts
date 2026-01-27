@@ -1,9 +1,9 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   getCorsHeaders,
   handleCorsPreFlight,
-  checkRateLimit,
+  checkRateLimitDistributed,
   rateLimitResponse,
   getClientId,
   errorResponse,
@@ -650,10 +650,10 @@ serve(async (req) => {
   logger.info("Request received", { method: req.method });
 
   // ============================================================================
-  // PHASE 4: RATE LIMITING
+  // PHASE 4: RATE LIMITING DISTRIBUÉ
   // ============================================================================
   const clientId = getClientId(req);
-  const rateLimit = checkRateLimit(clientId, {
+  const rateLimit = await checkRateLimitDistributed(clientId, {
     maxRequests: 30,     // 30 requests
     windowMs: 60000,      // per minute
     blockDurationMs: 300000, // 5 min block
