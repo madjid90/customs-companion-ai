@@ -167,8 +167,9 @@ async function searchHSCodesSemantic(
   limit: number = 10
 ): Promise<any[]> {
   try {
+    // Convert embedding array to string format for pgvector
     const { data, error } = await supabase.rpc("search_hs_codes_semantic", {
-      query_embedding: queryEmbedding,
+      query_embedding: `[${queryEmbedding.join(",")}]`,
       match_threshold: threshold,
       match_count: limit,
     });
@@ -193,8 +194,8 @@ async function searchKnowledgeSemantic(
   limit: number = 5
 ): Promise<any[]> {
   try {
-    const { data, error } = await supabase.rpc("search_knowledge_semantic", {
-      query_embedding: queryEmbedding,
+    const { data, error } = await supabase.rpc("search_knowledge_documents_semantic", {
+      query_embedding: `[${queryEmbedding.join(",")}]`,
       match_threshold: threshold,
       match_count: limit,
     });
@@ -219,8 +220,8 @@ async function searchPDFsSemantic(
   limit: number = 5
 ): Promise<any[]> {
   try {
-    const { data, error } = await supabase.rpc("search_pdfs_semantic", {
-      query_embedding: queryEmbedding,
+    const { data, error } = await supabase.rpc("search_pdf_extractions_semantic", {
+      query_embedding: `[${queryEmbedding.join(",")}]`,
       match_threshold: threshold,
       match_count: limit,
     });
@@ -245,8 +246,8 @@ async function searchVeilleSemantic(
   limit: number = 5
 ): Promise<any[]> {
   try {
-    const { data, error } = await supabase.rpc("search_veille_semantic", {
-      query_embedding: queryEmbedding,
+    const { data, error } = await supabase.rpc("search_veille_documents_semantic", {
+      query_embedding: `[${queryEmbedding.join(",")}]`,
       match_threshold: threshold,
       match_count: limit,
     });
