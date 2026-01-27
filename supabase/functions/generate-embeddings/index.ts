@@ -9,21 +9,21 @@ import {
   errorResponse,
   successResponse,
 } from "../_shared/cors.ts";
+import { validateGenerateEmbeddingsRequest } from "../_shared/validation.ts";
+import { callOpenAIWithRetry } from "../_shared/retry.ts";
+import { createLogger } from "../_shared/logger.ts";
 
-// Generate embedding using OpenAI API
+// Generate embedding using OpenAI API with retry
 async function generateEmbedding(text: string, apiKey: string): Promise<number[]> {
-  const response = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+  const response = await callOpenAIWithRetry(
+    apiKey,
+    "embeddings",
+    {
       model: "text-embedding-3-small",
-      input: text.substring(0, 8000), // Limit input to avoid token limits
+      input: text.substring(0, 8000),
       dimensions: 1536,
-    }),
-  });
+    }
+  );
 
   if (!response.ok) {
     const error = await response.text();
@@ -34,23 +34,20 @@ async function generateEmbedding(text: string, apiKey: string): Promise<number[]
   return data.data[0].embedding;
 }
 
-// Process batch of texts into embeddings
+// Process batch of texts into embeddings with retry
 async function generateEmbeddingsBatch(
   texts: string[],
   apiKey: string
 ): Promise<number[][]> {
-  const response = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+  const response = await callOpenAIWithRetry(
+    apiKey,
+    "embeddings",
+    {
       model: "text-embedding-3-small",
       input: texts.map(t => t.substring(0, 8000)),
       dimensions: 1536,
-    }),
-  });
+    }
+  );
 
   if (!response.ok) {
     const error = await response.text();
@@ -62,6 +59,8 @@ async function generateEmbeddingsBatch(
 }
 
 serve(async (req) => {
+  const logger = createLogger("generate-embeddings", req);
+  
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return handleCorsPreFlight(req);
@@ -80,7 +79,20 @@ serve(async (req) => {
   }
 
   try {
-    const { table, limit = 100, forceUpdate = false } = await req.json();
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch (e) {
+      return errorResponse(req, "Body JSON invalide", 400);
+    }
+
+    const validation = validateGenerateEmbeddingsRequest(body);
+    if (!validation.valid) {
+      return errorResponse(req, validation.error!, 400);
+    }
+
+    const { table, limit = 100, forceUpdate = false } = validation.data!;
+    logger.info("Starting embeddings generation", { table, limit, forceUpdate });
 
     // Validate table parameter to prevent injection
     const validTables = ["hs_codes", "knowledge_documents", "pdf_extractions", "veille_documents"];
