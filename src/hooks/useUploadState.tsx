@@ -15,6 +15,14 @@ export interface TariffLine {
   unit?: string;
 }
 
+export interface TradeAgreement {
+  code: string;
+  name: string;
+  type: string;
+  countries: string[];
+  mentioned_benefits?: string[];
+}
+
 export interface ExtractionData {
   summary: string;
   key_points: string[];
@@ -24,6 +32,9 @@ export interface ExtractionData {
   pdfId?: string;
   pdfTitle?: string;
   countryCode?: string;
+  document_type?: "tariff" | "regulatory";
+  trade_agreements?: TradeAgreement[];
+  full_text_length?: number;
 }
 
 export interface UploadedFile {

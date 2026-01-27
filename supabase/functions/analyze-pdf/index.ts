@@ -768,6 +768,16 @@ async function analyzeWithClaude(
     const summaryMatch = text.match(/"summary"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
     if (summaryMatch) result.summary = summaryMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
     
+    // IMPORTANT: Extraire full_text (texte intégral du document)
+    const fullTextMatch = text.match(/"full_text"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (fullTextMatch) {
+      result.full_text = fullTextMatch[1]
+        .replace(/\\"/g, '"')
+        .replace(/\\n/g, '\n')
+        .replace(/\\t/g, '\t')
+        .replace(/\\\\/g, '\\');
+    }
+    
     // Extraire key_points
     const keyPointsMatch = text.match(/"key_points"\s*:\s*\[((?:[^\[\]]|\[(?:[^\[\]]|\[[^\[\]]*\])*\])*)\]/);
     if (keyPointsMatch) {
@@ -1095,6 +1105,9 @@ async function analyzeWithClaude(
     hsCodeEntries = parsed.hs_codes || [];
   }
   
+  // Récupérer le texte intégral du document (critique pour RAG)
+  const fullText = parsed.full_text || "";
+  
   const result: AnalysisResult = {
     summary: parsed.summary || "",
     key_points: parsed.key_points || [],
@@ -1110,6 +1123,7 @@ async function analyzeWithClaude(
     authorities: parsed.authorities || [],
     effective_date: parsed.effective_date,
     legal_references: parsed.legal_references || [],
+    full_text: fullText,  // TEXTE INTÉGRAL pour recherche RAG
   };
   
   console.log("Final result:", 
@@ -1117,6 +1131,7 @@ async function analyzeWithClaude(
     "tariff_lines:", result.tariff_lines.length,
     "hs_codes:", result.hs_codes.length,
     "trade_agreements:", result.trade_agreements?.length || 0,
+    "full_text_length:", fullText.length,
     isRegulatory ? "" : `inherited: ${result.tariff_lines.filter(l => l.is_inherited).length}`
   );
   
