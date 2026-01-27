@@ -1459,7 +1459,7 @@ serve(async (req) => {
     console.error("Analyze PDF error:", error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Erreur d'analyse" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   }
 });

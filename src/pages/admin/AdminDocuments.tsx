@@ -76,6 +76,8 @@ export default function AdminDocuments() {
   const [selectedDoc, setSelectedDoc] = useState<PdfDocument | null>(null);
   const [selectedExtraction, setSelectedExtraction] = useState<PdfExtraction | null>(null);
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set());
+  const [batchAnalyzing, setBatchAnalyzing] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, success: 0, failed: 0 });
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -207,6 +209,85 @@ export default function AdminDocuments() {
     }
   };
 
+  // Batch analyze all pending documents
+  const analyzeAllPending = async () => {
+    const pendingDocs = documents?.filter(d => !getExtraction(d.id)) || [];
+    
+    if (pendingDocs.length === 0) {
+      toast({
+        title: "✅ Aucun document en attente",
+        description: "Tous les documents ont déjà été analysés",
+      });
+      return;
+    }
+
+    setBatchAnalyzing(true);
+    setBatchProgress({ current: 0, total: pendingDocs.length, success: 0, failed: 0 });
+
+    toast({
+      title: "🚀 Analyse en lot démarrée",
+      description: `Traitement de ${pendingDocs.length} documents. Cette opération peut prendre plusieurs minutes.`,
+    });
+
+    let successCount = 0;
+    let failCount = 0;
+
+    // Process documents sequentially to avoid rate limits
+    for (let i = 0; i < pendingDocs.length; i++) {
+      const doc = pendingDocs[i];
+      setBatchProgress(prev => ({ ...prev, current: i + 1 }));
+
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-pdf`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            },
+            body: JSON.stringify({
+              pdfId: doc.id,
+              filePath: doc.file_path,
+              previewOnly: false,
+            }),
+          }
+        );
+
+        if (response.ok) {
+          await supabase
+            .from("pdf_documents")
+            .update({ is_verified: true, verified_at: new Date().toISOString() })
+            .eq("id", doc.id);
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch (error) {
+        console.error(`Failed to analyze ${doc.title}:`, error);
+        failCount++;
+      }
+
+      setBatchProgress(prev => ({ ...prev, success: successCount, failed: failCount }));
+
+      // Delay between documents to avoid rate limiting (500ms)
+      if (i < pendingDocs.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    setBatchAnalyzing(false);
+
+    toast({
+      title: "🎉 Analyse en lot terminée",
+      description: `${successCount} réussies, ${failCount} échouées sur ${pendingDocs.length} documents`,
+    });
+
+    // Refresh data
+    queryClient.invalidateQueries({ queryKey: ["pdf-documents"] });
+    queryClient.invalidateQueries({ queryKey: ["pdf-extractions"] });
+  };
+
   const pendingCount = documents?.filter(d => !getExtraction(d.id)).length || 0;
 
   const totalHsCodes = extractions?.reduce((acc, ext) => {
@@ -218,12 +299,62 @@ export default function AdminDocuments() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="animate-fade-in">
-        <h1 className="text-3xl font-bold text-foreground">Documents analysés</h1>
-        <p className="text-muted-foreground mt-1">
-          Consultez les PDFs uploadés et leurs codes SH extraits
-        </p>
+      <div className="animate-fade-in flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">Documents analysés</h1>
+          <p className="text-muted-foreground mt-1">
+            Consultez les PDFs uploadés et leurs codes SH extraits
+          </p>
+        </div>
+        
+        {pendingCount > 0 && (
+          <Button
+            onClick={analyzeAllPending}
+            disabled={batchAnalyzing}
+            className="gap-2"
+          >
+            {batchAnalyzing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {batchProgress.current}/{batchProgress.total} en cours...
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4" />
+                Analyser tous ({pendingCount})
+              </>
+            )}
+          </Button>
+        )}
       </div>
+
+      {/* Batch Progress */}
+      {batchAnalyzing && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              <div className="flex-1">
+                <p className="font-medium">
+                  Analyse en cours: {batchProgress.current} / {batchProgress.total}
+                </p>
+                <div className="flex gap-4 text-sm text-muted-foreground mt-1">
+                  <span className="text-green-600">✓ {batchProgress.success} réussies</span>
+                  {batchProgress.failed > 0 && (
+                    <span className="text-red-600">✗ {batchProgress.failed} échouées</span>
+                  )}
+                </div>
+                <div className="h-2 bg-muted rounded-full mt-2 overflow-hidden">
+                  <div 
+                    className="h-full bg-primary transition-all duration-300"
+                    style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -245,7 +376,7 @@ export default function AdminDocuments() {
                 <p className="text-2xl font-bold">{verifiedCount}</p>
                 <p className="text-sm text-muted-foreground">Analysés</p>
               </div>
-              <CheckCircle className="h-8 w-8 text-green-500/50" />
+              <CheckCircle className="h-8 w-8 text-green-600/50" />
             </div>
           </CardContent>
         </Card>
@@ -264,10 +395,10 @@ export default function AdminDocuments() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-amber-600">{pendingCount}</p>
+                <p className="text-2xl font-bold text-destructive">{pendingCount}</p>
                 <p className="text-sm text-muted-foreground">Non analysés</p>
               </div>
-              <AlertCircle className="h-8 w-8 text-amber-500/50" />
+              <AlertCircle className="h-8 w-8 text-destructive/50" />
             </div>
           </CardContent>
         </Card>
