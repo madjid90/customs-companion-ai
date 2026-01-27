@@ -166,13 +166,17 @@ export default function AdminUpload() {
                                   err.message?.includes("NetworkError") ||
                                   err.message?.includes("network");
           
-          if ((isTimeout || isNetworkError) && attempt < MAX_RETRIES) {
-            // NOUVEAU: Vérifier si l'extraction existe déjà en base (le serveur a peut-être réussi)
+          if (isTimeout || isNetworkError) {
+            // Attendre un peu car le serveur peut encore être en train de sauvegarder
             updateFileStatus(fileId, { 
               progress: 75,
-              error: `Vérification de l'extraction en base...`
+              error: `Connexion perdue, vérification en cours...`
             });
             
+            // Attendre 3 secondes pour laisser le serveur terminer
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+            // Vérifier si l'extraction existe déjà en base (le serveur a peut-être réussi)
             const { data: existingExtraction } = await supabase
               .from("pdf_extractions")
               .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text")
@@ -181,7 +185,7 @@ export default function AdminUpload() {
             
             if (existingExtraction && existingExtraction.summary) {
               // L'extraction existe! Récupérer les données depuis la base
-              console.log("Extraction found in database despite network error, recovering...");
+              console.log("✅ Extraction found in database despite network error, recovering...");
               
               // Reconstruire les données depuis la base
               const tariffChanges = existingExtraction.detected_tariff_changes as any[] || [];
@@ -200,19 +204,21 @@ export default function AdminUpload() {
                 document_type: tariffChanges.length > 0 ? "tariff" : "regulatory",
                 full_text: existingExtraction.extracted_text || "",
               };
+              // SORTIR IMMEDIATEMENT de la boucle de retry
               break;
             }
             
-            const waitTime = 8000 * (attempt + 1);
-            console.log(`${isTimeout ? "Timeout" : "Network error"}, retry ${attempt + 1}/${MAX_RETRIES} in ${waitTime/1000}s...`);
-            updateFileStatus(fileId, { 
-              progress: 70 + attempt * 5,
-              error: isTimeout 
-                ? `Analyse longue, nouvelle tentative ${attempt + 1}/${MAX_RETRIES}...` 
-                : `Connexion perdue, réessai dans ${waitTime/1000}s...`
-            });
-            await new Promise(resolve => setTimeout(resolve, waitTime));
-            continue;
+            // Si pas trouvé et qu'il reste des tentatives, réessayer
+            if (attempt < MAX_RETRIES) {
+              const waitTime = 5000 * (attempt + 1);
+              console.log(`${isTimeout ? "Timeout" : "Network error"}, retry ${attempt + 1}/${MAX_RETRIES} in ${waitTime/1000}s...`);
+              updateFileStatus(fileId, { 
+                progress: 70 + attempt * 5,
+                error: `Réessai ${attempt + 1}/${MAX_RETRIES}...`
+              });
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+              continue;
+            }
           }
           
           analysisError = err;
