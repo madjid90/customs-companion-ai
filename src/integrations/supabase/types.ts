@@ -441,6 +441,8 @@ export type Database = {
           description_ar: string | null
           description_en: string | null
           description_fr: string
+          embedding: string | null
+          embedding_updated_at: string | null
           explanatory_notes: string | null
           hs_version: string | null
           id: string
@@ -461,6 +463,8 @@ export type Database = {
           description_ar?: string | null
           description_en?: string | null
           description_fr: string
+          embedding?: string | null
+          embedding_updated_at?: string | null
           explanatory_notes?: string | null
           hs_version?: string | null
           id?: string
@@ -481,6 +485,8 @@ export type Database = {
           description_ar?: string | null
           description_en?: string | null
           description_fr?: string
+          embedding?: string | null
+          embedding_updated_at?: string | null
           explanatory_notes?: string | null
           hs_version?: string | null
           id?: string
@@ -500,6 +506,8 @@ export type Database = {
           content: string
           country_code: string | null
           created_at: string
+          embedding: string | null
+          embedding_updated_at: string | null
           id: string
           is_active: boolean | null
           language: string | null
@@ -519,6 +527,8 @@ export type Database = {
           content: string
           country_code?: string | null
           created_at?: string
+          embedding?: string | null
+          embedding_updated_at?: string | null
           id?: string
           is_active?: boolean | null
           language?: string | null
@@ -538,6 +548,8 @@ export type Database = {
           content?: string
           country_code?: string | null
           created_at?: string
+          embedding?: string | null
+          embedding_updated_at?: string | null
           id?: string
           is_active?: boolean | null
           language?: string | null
@@ -729,6 +741,8 @@ export type Database = {
         Row: {
           created_at: string
           detected_tariff_changes: Json | null
+          embedding: string | null
+          embedding_updated_at: string | null
           extracted_at: string | null
           extracted_data: Json | null
           extracted_text: string | null
@@ -745,6 +759,8 @@ export type Database = {
         Insert: {
           created_at?: string
           detected_tariff_changes?: Json | null
+          embedding?: string | null
+          embedding_updated_at?: string | null
           extracted_at?: string | null
           extracted_data?: Json | null
           extracted_text?: string | null
@@ -761,6 +777,8 @@ export type Database = {
         Update: {
           created_at?: string
           detected_tariff_changes?: Json | null
+          embedding?: string | null
+          embedding_updated_at?: string | null
           extracted_at?: string | null
           extracted_data?: Json | null
           extracted_text?: string | null
@@ -1014,6 +1032,8 @@ export type Database = {
           created_at: string
           detected_new_controls: Json | null
           detected_tariff_changes: Json | null
+          embedding: string | null
+          embedding_updated_at: string | null
           external_id: string | null
           id: string
           importance: string | null
@@ -1042,6 +1062,8 @@ export type Database = {
           created_at?: string
           detected_new_controls?: Json | null
           detected_tariff_changes?: Json | null
+          embedding?: string | null
+          embedding_updated_at?: string | null
           external_id?: string | null
           id?: string
           importance?: string | null
@@ -1070,6 +1092,8 @@ export type Database = {
           created_at?: string
           detected_new_controls?: Json | null
           detected_tariff_changes?: Json | null
+          embedding?: string | null
+          embedding_updated_at?: string | null
           external_id?: string | null
           id?: string
           importance?: string | null
@@ -1303,6 +1327,20 @@ export type Database = {
         }
         Returns: boolean
       }
+      search_all_semantic: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          content_preview: string
+          similarity: number
+          source_id: string
+          source_table: string
+          title: string
+        }[]
+      }
       search_hs_codes: {
         Args: { limit_count?: number; search_term: string }
         Returns: {
@@ -1310,6 +1348,71 @@ export type Database = {
           code: string
           description_fr: string
           id: string
+        }[]
+      }
+      search_hs_codes_semantic: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          chapter_number: number
+          code: string
+          description_en: string
+          description_fr: string
+          id: string
+          level: string
+          section_number: number
+          similarity: number
+        }[]
+      }
+      search_knowledge_documents_semantic: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          category: string
+          content: string
+          country_code: string
+          id: string
+          similarity: number
+          summary: string
+          title: string
+        }[]
+      }
+      search_pdf_extractions_semantic: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          extracted_text: string
+          id: string
+          key_points: Json
+          pdf_id: string
+          similarity: number
+          summary: string
+        }[]
+      }
+      search_veille_documents_semantic: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          category: string
+          content: string
+          country_code: string
+          id: string
+          importance: string
+          similarity: number
+          summary: string
+          title: string
         }[]
       }
       show_limit: { Args: never; Returns: number }
