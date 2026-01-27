@@ -10,8 +10,14 @@ import {
   successResponse,
 } from "../_shared/cors.ts";
 import { validateChatRequest } from "../_shared/validation.ts";
-import { callAnthropicWithRetry } from "../_shared/retry.ts";
 import { createLogger } from "../_shared/logger.ts";
+
+// =============================================================================
+// CONFIGURATION LOVABLE AI
+// =============================================================================
+
+const LOVABLE_AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const LOVABLE_AI_MODEL = "google/gemini-2.5-flash"; // Rapide et efficace pour le chat
 
 // ============================================================================
 // UTILITAIRES CODES SH (héritage hiérarchique)
@@ -533,7 +539,7 @@ function analyzeQuestion(question: string) {
 }
 
 // ============================================================================
-// ANALYSE D'IMAGE AVEC CLAUDE VISION
+// ANALYSE D'IMAGE AVEC LOVABLE AI (Gemini Vision)
 // ============================================================================
 
 interface ImageInput {
@@ -542,18 +548,17 @@ interface ImageInput {
   mediaType: string;
 }
 
-async function analyzeImageWithClaude(
+async function analyzeImageWithLovableAI(
   images: ImageInput[],
   question: string,
   apiKey: string
 ): Promise<{ productDescription: string; suggestedCodes: string[]; questions: string[] }> {
   
+  // Format OpenAI/Gemini pour les images
   const imageContent = images.map(img => ({
-    type: "image" as const,
-    source: {
-      type: "base64" as const,
-      media_type: img.mediaType,
-      data: img.base64,
+    type: "image_url" as const,
+    image_url: {
+      url: `data:${img.mediaType};base64,${img.base64}`,
     },
   }));
 
@@ -564,15 +569,14 @@ async function analyzeImageWithClaude(
 
   let response: Response;
   try {
-    response = await fetch("https://api.anthropic.com/v1/messages", {
+    response = await fetch(LOVABLE_AI_GATEWAY, {
       method: "POST",
       headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
+        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "google/gemini-2.5-flash",
         max_tokens: 2048,
         messages: [
           {
@@ -620,10 +624,9 @@ IMPORTANT:
   }
 
   const data = await response.json();
-  const text = data.content?.[0]?.text || "{}";
+  const text = data.choices?.[0]?.message?.content || "{}";
   
   try {
-    // Extract JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
@@ -687,13 +690,13 @@ serve(async (req) => {
       return errorResponse(req, "Question or images required", 400);
     }
 
-    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY"); // For embeddings
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!ANTHROPIC_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY is not configured");
+    if (!LOVABLE_API_KEY) {
+      throw new Error("LOVABLE_API_KEY is not configured");
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
@@ -730,14 +733,14 @@ serve(async (req) => {
       }
     }
 
-    // If images are provided, analyze them first with Claude Vision
+    // If images are provided, analyze them first with Lovable AI Vision
     let imageAnalysis: { productDescription: string; suggestedCodes: string[]; questions: string[] } | null = null;
     let enrichedQuestion = question || "";
     
     if (images && images.length > 0) {
-      console.log("Analyzing", images.length, "image(s) with Claude Vision...");
+      console.log("Analyzing", images.length, "image(s) with Lovable AI Vision...");
       try {
-        imageAnalysis = await analyzeImageWithClaude(images, question || "Identifie ce produit", ANTHROPIC_API_KEY);
+        imageAnalysis = await analyzeImageWithLovableAI(images, question || "Identifie ce produit", LOVABLE_API_KEY);
         console.log("Image analysis result:", JSON.stringify(imageAnalysis));
         
         // Enrich the question with image analysis
@@ -1343,39 +1346,45 @@ ${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
       content: enrichedQuestion || question || "Identifie ce produit",
     });
 
-    // Call Claude AI (Anthropic API) with timeout
+    // Call Lovable AI (Gemini) with timeout
     const startTime = Date.now();
-    const CLAUDE_TIMEOUT_MS = 60000; // 60 seconds timeout
+    const AI_TIMEOUT_MS = 60000; // 60 seconds timeout
 
     // Create AbortController for timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
 
     let aiResponse: Response;
     try {
-      logger.info("Calling Claude API", { model: "claude-sonnet-4-20250514" });
+      logger.info("Calling Lovable AI", { model: LOVABLE_AI_MODEL });
       
-      aiResponse = await callAnthropicWithRetry(
-        ANTHROPIC_API_KEY,
-        {
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 4096,
-          system: systemPrompt,
-          messages: claudeMessages,
+      aiResponse = await fetch(LOVABLE_AI_GATEWAY, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
         },
-        CLAUDE_TIMEOUT_MS
-      );
+        body: JSON.stringify({
+          model: LOVABLE_AI_MODEL,
+          max_tokens: 4096,
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...claudeMessages,
+          ],
+        }),
+        signal: controller.signal,
+      });
       clearTimeout(timeoutId);
       
-      logger.info("Claude API responded", { status: aiResponse.status });
+      logger.info("Lovable AI responded", { status: aiResponse.status });
       
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
       if (fetchError.name === 'AbortError') {
-        logger.error("Claude API timeout", fetchError, { timeoutMs: CLAUDE_TIMEOUT_MS });
+        logger.error("Lovable AI timeout", fetchError, { timeoutMs: AI_TIMEOUT_MS });
         return errorResponse(req, "La requête a pris trop de temps. Veuillez réessayer.", 504);
       }
-      logger.error("Claude API error after retries", fetchError);
+      logger.error("Lovable AI error", fetchError);
       return errorResponse(req, "Service temporairement indisponible.", 503);
     }
 
@@ -1383,19 +1392,17 @@ ${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
       if (aiResponse.status === 429) {
         return errorResponse(req, "Trop de requêtes. Veuillez réessayer dans quelques instants.", 429);
       }
-      if (aiResponse.status === 402 || aiResponse.status === 400) {
-        const errorData = await aiResponse.json().catch(() => ({}));
-        console.error("Claude API error:", aiResponse.status, errorData);
-        return errorResponse(req, "Erreur API Claude. Vérifiez votre clé API.", 402);
+      if (aiResponse.status === 402) {
+        return errorResponse(req, "Crédits Lovable AI épuisés. Rechargez dans Settings > Workspace > Usage.", 402);
       }
       const errorText = await aiResponse.text();
-      console.error("Claude API error:", aiResponse.status, errorText);
-      throw new Error("Claude API error");
+      console.error("Lovable AI error:", aiResponse.status, errorText);
+      throw new Error("Lovable AI error");
     }
 
     const aiData = await aiResponse.json();
     const responseTime = Date.now() - startTime;
-    const responseText = aiData.content?.[0]?.text || "Je n'ai pas pu générer de réponse.";
+    const responseText = aiData.choices?.[0]?.message?.content || "Je n'ai pas pu générer de réponse.";
 
     // Determine confidence level from response and context
     let confidence: "high" | "medium" | "low" = "medium";
