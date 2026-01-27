@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,10 +29,13 @@ import {
   CheckCircle,
   Clock,
   ExternalLink,
-  Loader2
+  Loader2,
+  Sparkles,
+  AlertCircle
 } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
+import { useToast } from "@/hooks/use-toast";
 
 interface PdfDocument {
   id: string;
@@ -72,6 +75,9 @@ export default function AdminDocuments() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDoc, setSelectedDoc] = useState<PdfDocument | null>(null);
   const [selectedExtraction, setSelectedExtraction] = useState<PdfExtraction | null>(null);
+  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set());
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: documents, isLoading } = useQuery({
     queryKey: ["pdf-documents"],
@@ -137,6 +143,72 @@ export default function AdminDocuments() {
     setSelectedExtraction(getExtraction(doc.id) || null);
   };
 
+  const analyzeDocument = async (doc: PdfDocument) => {
+    if (analyzingIds.has(doc.id)) return;
+    
+    setAnalyzingIds(prev => new Set(prev).add(doc.id));
+    
+    toast({
+      title: "🤖 Analyse en cours...",
+      description: `Traitement de "${doc.title}"`,
+    });
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-pdf`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({
+            pdfId: doc.id,
+            filePath: doc.file_path,
+            previewOnly: false,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Erreur lors de l'analyse");
+      }
+
+      const data = await response.json();
+      
+      // Mark document as verified
+      await supabase
+        .from("pdf_documents")
+        .update({ is_verified: true, verified_at: new Date().toISOString() })
+        .eq("id", doc.id);
+
+      toast({
+        title: "✅ Analyse terminée",
+        description: `${data.hs_codes?.length || 0} codes SH et ${data.tariff_lines?.length || 0} lignes tarifaires extraits`,
+      });
+
+      // Refresh data
+      queryClient.invalidateQueries({ queryKey: ["pdf-documents"] });
+      queryClient.invalidateQueries({ queryKey: ["pdf-extractions"] });
+    } catch (error: any) {
+      console.error("Analysis error:", error);
+      toast({
+        title: "❌ Erreur d'analyse",
+        description: error.message || "Une erreur est survenue",
+        variant: "destructive",
+      });
+    } finally {
+      setAnalyzingIds(prev => {
+        const next = new Set(prev);
+        next.delete(doc.id);
+        return next;
+      });
+    }
+  };
+
+  const pendingCount = documents?.filter(d => !getExtraction(d.id)).length || 0;
+
   const totalHsCodes = extractions?.reduce((acc, ext) => {
     return acc + (ext.mentioned_hs_codes?.length || 0);
   }, 0) || 0;
@@ -192,10 +264,10 @@ export default function AdminDocuments() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold">{extractions?.length || 0}</p>
-                <p className="text-sm text-muted-foreground">Extractions</p>
+                <p className="text-2xl font-bold text-amber-600">{pendingCount}</p>
+                <p className="text-sm text-muted-foreground">Non analysés</p>
               </div>
-              <Clock className="h-8 w-8 text-muted-foreground/50" />
+              <AlertCircle className="h-8 w-8 text-amber-500/50" />
             </div>
           </CardContent>
         </Card>
@@ -305,11 +377,27 @@ export default function AdminDocuments() {
                           {format(new Date(doc.created_at), "dd MMM yyyy", { locale: fr })}
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center justify-end gap-1">
+                            {!extraction && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => analyzeDocument(doc)}
+                                disabled={analyzingIds.has(doc.id)}
+                                title="Analyser par IA"
+                              >
+                                {analyzingIds.has(doc.id) ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Sparkles className="h-4 w-4 text-amber-500" />
+                                )}
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
                               onClick={() => viewDetails(doc)}
+                              title="Voir les détails"
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
@@ -317,6 +405,7 @@ export default function AdminDocuments() {
                               variant="ghost"
                               size="icon"
                               onClick={() => openDocument(doc.file_path)}
+                              title="Ouvrir le PDF"
                             >
                               <ExternalLink className="h-4 w-4" />
                             </Button>
