@@ -460,16 +460,26 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
           const col2Parts = col2.split(".");
           // Format "XXXX.XX" dans col2
           if (col2Parts[0].length === 4 && col2Parts[1]?.length === 2) {
-            // Utiliser le code de col2 comme base
-            const col2Clean = cleanCode(col2);
-            lastPosition = col2Clean.slice(0, 4);
-            lastSubheading = col2Clean.slice(4, 6);
+            // CRITIQUE: Utiliser le chapitre de COL1 (qui a le zéro initial correct)
+            // et non celui de col2 qui peut avoir perdu le zéro
+            // Ex: col1="07.02", col2="0702.00" → chapitre = "07" de col1
+            const chapterFromCol1 = chapter; // déjà calculé avec padStart(2, "0")
             
-            // col3 devient la première extension
+            // Prendre la sous-position de col2 (les 2 derniers chiffres après le point)
+            const subheadingFromCol2 = col2Parts[1]; // "00"
+            
+            // Construire lastPosition avec le chapitre de col1 + position
+            // col1="07.02" → chapter="07", positionPart="02"
+            // Donc lastPosition = "07" + "02" = "0702"
+            lastSubheading = subheadingFromCol2;
+            
+            // col3, col4, col5 deviennent les extensions
             lastCol2 = (col3 && /^\d+$/.test(col3)) ? col3.padStart(2, "0") : "";
             lastCol3 = (col4 && /^\d+$/.test(col4)) ? col4.padStart(2, "0") : "";
             lastCol4 = (col5 && /^\d+$/.test(col5)) ? col5.padStart(2, "0") : "";
             lastCol5 = "";
+            
+            console.log(`Format Marocain: col1="${col1Raw}", col2="${col2}" → position=${lastPosition}, subheading=${lastSubheading}`);
             
             // Pas de ligne tarifaire pour les headings sans taux
             if (!line.duty_rate) continue;
@@ -479,6 +489,8 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
             code += lastCol2 || "00";
             code += lastCol3 || "00";
             nationalCode = code.slice(0, 10);
+            
+            console.log(`Generated national code: ${nationalCode}`);
           } else {
             // Col2 a un point mais pas le format attendu
             if (!line.duty_rate) continue;
