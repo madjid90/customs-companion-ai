@@ -51,6 +51,212 @@ const escapeSearchTerm = (term: string): string => {
 };
 
 // ============================================================================
+// SEMANTIC SEARCH & EMBEDDING FUNCTIONS (Phase 3)
+// ============================================================================
+
+// Generate embedding using OpenAI API
+async function generateQueryEmbedding(text: string, apiKey: string): Promise<number[] | null> {
+  try {
+    const response = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "text-embedding-3-small",
+        input: text.substring(0, 8000),
+        dimensions: 1536,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("OpenAI embedding error:", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.data[0].embedding;
+  } catch (error) {
+    console.error("Embedding generation failed:", error);
+    return null;
+  }
+}
+
+// Check response cache for semantically similar questions
+async function checkResponseCache(
+  supabase: any,
+  queryEmbedding: number[],
+  similarityThreshold: number = 0.92
+): Promise<{ found: boolean; response?: any }> {
+  try {
+    const { data, error } = await supabase.rpc("find_cached_response", {
+      query_embedding: queryEmbedding,
+      similarity_threshold: similarityThreshold,
+    });
+
+    if (error || !data || data.length === 0) {
+      return { found: false };
+    }
+
+    // Update hit count
+    await supabase.rpc("update_cache_hit", { cache_id: data[0].id });
+
+    return {
+      found: true,
+      response: {
+        text: data[0].response_text,
+        confidence: data[0].confidence_level,
+        context: data[0].context_used,
+        similarity: data[0].similarity,
+        cached: true,
+      },
+    };
+  } catch (error) {
+    console.error("Cache lookup failed:", error);
+    return { found: false };
+  }
+}
+
+// Save response to cache
+async function saveToResponseCache(
+  supabase: any,
+  question: string,
+  questionEmbedding: number[],
+  response: string,
+  contextUsed: any,
+  confidenceLevel: string
+): Promise<void> {
+  try {
+    // Create hash for deduplication
+    const encoder = new TextEncoder();
+    const data = encoder.encode(question.toLowerCase().trim());
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const questionHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+    await supabase.from("response_cache").upsert(
+      {
+        question_hash: questionHash,
+        question_text: question,
+        question_embedding: questionEmbedding,
+        response_text: response,
+        context_used: contextUsed,
+        confidence_level: confidenceLevel,
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
+      },
+      { onConflict: "question_hash" }
+    );
+  } catch (error) {
+    console.error("Failed to save to cache:", error);
+  }
+}
+
+// Semantic search for HS codes
+async function searchHSCodesSemantic(
+  supabase: any,
+  queryEmbedding: number[],
+  threshold: number = 0.65,
+  limit: number = 10
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.rpc("search_hs_codes_semantic", {
+      query_embedding: queryEmbedding,
+      match_threshold: threshold,
+      match_count: limit,
+    });
+
+    if (error) {
+      console.error("Semantic HS search error:", error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("Semantic HS search failed:", error);
+    return [];
+  }
+}
+
+// Semantic search for knowledge documents
+async function searchKnowledgeSemantic(
+  supabase: any,
+  queryEmbedding: number[],
+  threshold: number = 0.6,
+  limit: number = 5
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.rpc("search_knowledge_semantic", {
+      query_embedding: queryEmbedding,
+      match_threshold: threshold,
+      match_count: limit,
+    });
+
+    if (error) {
+      console.error("Semantic knowledge search error:", error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("Semantic knowledge search failed:", error);
+    return [];
+  }
+}
+
+// Semantic search for PDF extractions
+async function searchPDFsSemantic(
+  supabase: any,
+  queryEmbedding: number[],
+  threshold: number = 0.6,
+  limit: number = 5
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.rpc("search_pdfs_semantic", {
+      query_embedding: queryEmbedding,
+      match_threshold: threshold,
+      match_count: limit,
+    });
+
+    if (error) {
+      console.error("Semantic PDF search error:", error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("Semantic PDF search failed:", error);
+    return [];
+  }
+}
+
+// Semantic search for veille documents
+async function searchVeilleSemantic(
+  supabase: any,
+  queryEmbedding: number[],
+  threshold: number = 0.6,
+  limit: number = 5
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.rpc("search_veille_semantic", {
+      query_embedding: queryEmbedding,
+      match_threshold: threshold,
+      match_count: limit,
+    });
+
+    if (error) {
+      console.error("Semantic veille search error:", error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("Semantic veille search failed:", error);
+    return [];
+  }
+}
+
+// ============================================================================
 // RECHERCHE AVEC HÉRITAGE HIÉRARCHIQUE
 // ============================================================================
 
@@ -441,6 +647,7 @@ serve(async (req) => {
     }
 
     const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY"); // For embeddings
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -449,6 +656,38 @@ serve(async (req) => {
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+
+    // ============================================================================
+    // PHASE 3: SEMANTIC CACHE CHECK
+    // ============================================================================
+    let queryEmbedding: number[] | null = null;
+    let useSemanticSearch = false;
+
+    // Generate embedding for the question if OpenAI key is available
+    if (OPENAI_API_KEY && question) {
+      queryEmbedding = await generateQueryEmbedding(question, OPENAI_API_KEY);
+      useSemanticSearch = queryEmbedding !== null;
+
+      // Check response cache first (only for text questions, not images)
+      if (queryEmbedding && (!images || images.length === 0)) {
+        const cachedResponse = await checkResponseCache(supabase, queryEmbedding, 0.92);
+        if (cachedResponse.found && cachedResponse.response) {
+          console.log("Cache hit! Similarity:", cachedResponse.response.similarity);
+          return new Response(
+            JSON.stringify({
+              response: cachedResponse.response.text,
+              confidence: cachedResponse.response.confidence || "medium",
+              context: cachedResponse.response.context || {},
+              metadata: {
+                cached: true,
+                similarity: cachedResponse.response.similarity,
+              },
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+    }
 
     // If images are provided, analyze them first with Claude Vision
     let imageAnalysis: { productDescription: string; suggestedCodes: string[]; questions: string[] } | null = null;
@@ -696,6 +935,91 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
 
       // Dédupliquer
       veilleDocuments = [...new Map(veilleDocuments.map(d => [d.title, d])).values()].slice(0, 8);
+    }
+
+    // ============================================================================
+    // PHASE 3: SEMANTIC SEARCH ENHANCEMENT
+    // ============================================================================
+    let semanticResults = {
+      hs_codes: [] as any[],
+      knowledge: [] as any[],
+      pdfs: [] as any[],
+      veille: [] as any[],
+    };
+
+    if (useSemanticSearch && queryEmbedding) {
+      console.log("Using semantic search enhancement...");
+
+      // Parallel semantic searches
+      const [semanticHS, semanticKnowledge, semanticPDFs, semanticVeille] = await Promise.all([
+        // Only search HS if we don't have enough from keyword search
+        context.hs_codes.length < 10
+          ? searchHSCodesSemantic(supabase, queryEmbedding, 0.65, 10)
+          : Promise.resolve([]),
+        // Only search knowledge if we don't have enough
+        context.knowledge_documents.length < 5
+          ? searchKnowledgeSemantic(supabase, queryEmbedding, 0.6, 5)
+          : Promise.resolve([]),
+        // Only search PDFs if we don't have enough
+        context.pdf_summaries.length < 3
+          ? searchPDFsSemantic(supabase, queryEmbedding, 0.6, 5)
+          : Promise.resolve([]),
+        // Only search veille if we don't have enough
+        veilleDocuments.length < 3
+          ? searchVeilleSemantic(supabase, queryEmbedding, 0.6, 5)
+          : Promise.resolve([]),
+      ]);
+
+      semanticResults = {
+        hs_codes: semanticHS,
+        knowledge: semanticKnowledge,
+        pdfs: semanticPDFs,
+        veille: semanticVeille,
+      };
+
+      // Merge semantic results with keyword results (prioritizing keyword results)
+      if (semanticHS.length > 0) {
+        const existingCodes = new Set(context.hs_codes.map((c: any) => c.code || c.code_clean));
+        const newHSCodes = semanticHS
+          .filter((hs: any) => !existingCodes.has(hs.code))
+          .map((hs: any) => ({
+            ...hs,
+            semantic_match: true,
+            similarity: hs.similarity,
+          }));
+        context.hs_codes = [...context.hs_codes, ...newHSCodes].slice(0, 30);
+      }
+
+      if (semanticKnowledge.length > 0) {
+        const existingTitles = new Set(context.knowledge_documents.map((d: any) => d.title));
+        const newKnowledge = semanticKnowledge
+          .filter((d: any) => !existingTitles.has(d.title))
+          .map((d: any) => ({
+            ...d,
+            semantic_match: true,
+            similarity: d.similarity,
+          }));
+        context.knowledge_documents = [...context.knowledge_documents, ...newKnowledge].slice(0, 10);
+      }
+
+      if (semanticVeille.length > 0) {
+        const existingVeilleTitles = new Set(veilleDocuments.map((d: any) => d.title));
+        const newVeille = semanticVeille
+          .filter((d: any) => !existingVeilleTitles.has(d.title))
+          .map((d: any) => ({
+            ...d,
+            semantic_match: true,
+            similarity: d.similarity,
+          }));
+        veilleDocuments = [...veilleDocuments, ...newVeille].slice(0, 8);
+      }
+
+      console.log("Semantic search added:", {
+        hs_codes: semanticHS.length,
+        knowledge: semanticKnowledge.length,
+        pdfs: semanticPDFs.length,
+        veille: semanticVeille.length,
+      });
     }
 
     console.log("Context collected:", {
@@ -1100,6 +1424,17 @@ ${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
     console.info(`Final confidence: ${confidence}`);
 
     // Save conversation to database
+    const contextUsed = {
+      tariffs_with_inheritance: context.tariffs_with_inheritance.length,
+      hs_codes: context.hs_codes.length,
+      tariffs: context.tariffs.length,
+      controlled: context.controlled_products.length,
+      documents: context.knowledge_documents.length,
+      pdfs: context.pdf_summaries.length,
+      veille: veilleDocuments.length,
+      semantic_search_used: useSemanticSearch,
+    };
+
     const { data: conversation } = await supabase
       .from('conversations')
       .insert({
@@ -1108,15 +1443,7 @@ ${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
         response: responseText,
         detected_intent: analysis.intent,
         detected_hs_codes: context.hs_codes.map(c => c.code || c.code_clean),
-        context_used: {
-          tariffs_with_inheritance: context.tariffs_with_inheritance.length,
-          hs_codes: context.hs_codes.length,
-          tariffs: context.tariffs.length,
-          controlled: context.controlled_products.length,
-          documents: context.knowledge_documents.length,
-          pdfs: context.pdf_summaries.length,
-          veille: veilleDocuments.length,
-        },
+        context_used: contextUsed,
         pdfs_used: context.pdf_summaries.map(p => p.title),
         veille_docs_used: veilleDocuments.map(v => v.title),
         confidence_level: confidence,
@@ -1124,6 +1451,21 @@ ${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
       })
       .select('id')
       .single();
+
+    // ============================================================================
+    // PHASE 3: SAVE TO RESPONSE CACHE
+    // ============================================================================
+    // Only cache if confidence is medium or high and we have an embedding
+    if (queryEmbedding && confidence !== "low" && (!images || images.length === 0)) {
+      saveToResponseCache(
+        supabase,
+        question,
+        queryEmbedding,
+        responseText,
+        contextUsed,
+        confidence
+      ).catch((err) => console.error("Cache save error:", err));
+    }
 
     return new Response(
       JSON.stringify({
@@ -1144,6 +1486,8 @@ ${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
           country: analysis.country,
           response_time_ms: responseTime,
           inheritance_used: context.tariffs_with_inheritance.length > 0,
+          semantic_search_used: useSemanticSearch,
+          cached: false,
         }
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
