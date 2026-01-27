@@ -68,7 +68,6 @@ export default function Chat() {
     return newId;
   });
   const scrollRef = useRef<HTMLDivElement>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
   const { toast } = useToast();
 
   // Handle initial query from URL params
@@ -132,31 +131,34 @@ export default function Chat() {
     setIsLoading(true);
 
     try {
-      // Cancel any pending request
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      abortControllerRef.current = new AbortController();
-
       // Build conversation history for context
       const conversationHistory = messages.map(msg => ({
         role: msg.role,
         content: msg.content,
       }));
 
+      console.log("[Chat] Sending request...", { question: messageText, sessionId });
+      
       const { data, error } = await supabase.functions.invoke('chat', {
         body: {
           question: messageText || "Identifie ce produit et donne-moi le code SH approprié",
           sessionId,
           images: imagesToSend.length > 0 ? imagesToSend : undefined,
-          conversationHistory, // Send previous messages for context
+          conversationHistory,
         },
       });
 
-      // Check if request was aborted
-      if (abortControllerRef.current?.signal.aborted) return;
+      console.log("[Chat] Response received:", { data, error });
 
-      if (error) throw error;
+      if (error) {
+        console.error("[Chat] Function error:", error);
+        throw error;
+      }
+
+      if (!data || !data.response) {
+        console.error("[Chat] Invalid response data:", data);
+        throw new Error("Réponse invalide du serveur");
+      }
 
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -166,6 +168,8 @@ export default function Chat() {
         conversationId: data.conversationId,
         context: data.context,
       };
+      
+      console.log("[Chat] Adding AI message to state:", aiMessage.content.substring(0, 100));
 
       setMessages((prev) => [...prev, aiMessage]);
     } catch (error: any) {
@@ -236,13 +240,9 @@ export default function Chat() {
     setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Cleanup blob URLs and abort pending requests on unmount
+  // Cleanup blob URLs on unmount
   useEffect(() => {
     return () => {
-      // Abort any pending request
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
       // Revoke all blob URLs
       uploadedFiles.forEach((file) => {
         if (file.type === "image" && file.preview.startsWith("blob:")) {
