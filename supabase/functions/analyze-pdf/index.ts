@@ -328,18 +328,41 @@ function isRegulatoryDocument(category: string, title: string): boolean {
 
 /**
  * Nettoie un code SH (supprime points, espaces, tirets)
- * AMÉLIORATION: Préserve les zéros des chapitres 01-09
+ * CRITIQUE: Préserve les zéros initiaux pour les chapitres 01-09
  */
 function cleanCode(code: string): string {
-  const cleaned = (code || "").replace(/[.\-\s]/g, "");
-  // Ne pas supprimer les zéros si c'est un code de 2 chiffres (chapitre 01-09)
-  // ou si le code commence par 0 et fait partie d'un chapitre valide
-  if (cleaned.length === 2 && cleaned.startsWith("0")) {
-    return cleaned; // Préserver "01", "02", etc.
+  if (!code) return "";
+  const raw = code.trim();
+  
+  // Traitement spécial pour les codes avec point (format XX.XX ou XXXX.XX)
+  if (raw.includes(".")) {
+    const parts = raw.split(".");
+    
+    // Format "XX.XX" (chapitre.position, ex: "07.02")
+    if (parts.length === 2 && parts[0].length <= 2 && parts[1].length === 2) {
+      // Préserver le zéro initial du chapitre: "07.02" → "0702"
+      const chapter = parts[0].padStart(2, "0"); // "7" → "07", "07" → "07"
+      const position = parts[1];
+      return chapter + position; // "0702"
+    }
+    
+    // Format "XXXX.XX" (position complète, ex: "0702.00" ou "1001.11")  
+    if (parts[0].length === 4 && parts[1].length === 2) {
+      // Préserver tel quel: "0702.00" → "070200"
+      return parts[0] + parts[1];
+    }
+    
+    // Autres formats avec point: supprimer les points et préserver les zéros initiaux
+    const cleaned = raw.replace(/[.\-\s]/g, "");
+    // Si le code original commençait par "0", s'assurer qu'il est préservé
+    if (raw.startsWith("0") && !cleaned.startsWith("0")) {
+      return "0" + cleaned;
+    }
+    return cleaned;
   }
-  if (cleaned.length >= 4 && cleaned.startsWith("0")) {
-    return cleaned; // Préserver "0101", "0901", etc.
-  }
+  
+  // Pas de point: nettoyer simplement
+  const cleaned = raw.replace(/[.\-\s]/g, "");
   return cleaned;
 }
 
@@ -417,9 +440,13 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
     if (col1Raw.includes(".")) {
       const parts = col1Raw.split(".");
       
-      if (parts[0].length === 2 && parts[1]?.length === 2) {
-        // Format "XX.XX" → Position à 4 chiffres (chapitre.position)
-        lastPosition = cleanCode(col1Raw);
+      // Format "XX.XX" (ou "X.XX") → Position à 4 chiffres (chapitre.position)
+      // Ex: "07.02" → "0702", "7.02" → "0702"
+      if (parts[0].length <= 2 && parts[1]?.length === 2) {
+        // CRITIQUE: Préserver le zéro initial du chapitre
+        const chapter = parts[0].padStart(2, "0"); // "7" → "07"
+        const position = parts[1]; // "02"
+        lastPosition = chapter + position; // "0702"
         lastSubheading = "";
         lastCol2 = "";
         lastCol3 = "";
