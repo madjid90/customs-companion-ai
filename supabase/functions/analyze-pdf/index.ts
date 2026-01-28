@@ -755,15 +755,33 @@ function isValidCleanCode(codeClean: string): boolean {
 
 /**
  * Extrait les codes HS à 6 chiffres uniques
+ * @param tariffLines - Lignes tarifaires reconstruites
+ * @param rawLines - Lignes brutes de Claude
+ * @param claudeHSCodes - Codes SH directement fournis par Claude (optionnel)
  */
-function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[]): HSCodeEntry[] {
+function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[], claudeHSCodes?: any[]): HSCodeEntry[] {
   const seen = new Set<string>();
   const results: HSCodeEntry[] = [];
   
-  // Map pour stocker les descriptions de heading depuis rawLines
+  // Map pour stocker les descriptions de heading depuis rawLines ET Claude
   const headingDescriptions = new Map<string, string>();
   
-  // ÉTAPE 1: D'abord parcourir les rawLines pour extraire les descriptions de HEADING
+  // ÉTAPE 0: D'abord récupérer les descriptions depuis hs_codes de Claude (fallback fiable)
+  if (claudeHSCodes && Array.isArray(claudeHSCodes)) {
+    for (const hs of claudeHSCodes) {
+      const code = hs.code_clean || cleanCode(hs.code || "");
+      const desc = (hs.description || "").trim();
+      if (code && code.length >= 4 && desc && desc.length > 2) {
+        const code6 = code.length >= 6 ? code.slice(0, 6) : code.padEnd(6, "0");
+        if (isValidCleanCode(code6) && !headingDescriptions.has(code6)) {
+          headingDescriptions.set(code6, desc);
+          console.log(`[Claude hs_codes] Description for ${code6}: "${desc.substring(0, 50)}..."`);
+        }
+      }
+    }
+  }
+  
+  // ÉTAPE 1: Ensuite parcourir les rawLines pour extraire les descriptions de HEADING
   // (lignes avec code SH mais sans taux = ce sont les en-têtes avec la vraie description)
   for (const line of rawLines) {
     const col1 = (line.col1 || "").trim();
@@ -778,17 +796,20 @@ function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[]): HS
       const desc = (line.description || "").replace(/^[–\-\s]+/, "").trim();
       
       // Les lignes SANS taux sont les headings/subheadings avec la vraie description
+      // Priorité aux descriptions longues et sans tirets de hiérarchie
       if (!line.duty_rate && desc && desc.length > 3) {
         if (clean.length >= 6 && isValidCleanCode(clean.slice(0, 6))) {
           const code6 = clean.slice(0, 6);
-          // Garder la première description non-vide trouvée pour chaque code
-          if (!headingDescriptions.has(code6)) {
+          // Remplacer si la nouvelle description est meilleure (plus longue, moins de tirets)
+          const existing = headingDescriptions.get(code6);
+          if (!existing || (desc.length > existing.length && !desc.startsWith("–"))) {
             headingDescriptions.set(code6, desc);
             console.log(`Found heading description for ${code6}: "${desc.substring(0, 50)}..."`);
           }
         } else if (clean.length === 4 && /^\d{4}$/.test(clean)) {
           const code6 = clean.padEnd(6, "0");
-          if (!headingDescriptions.has(code6)) {
+          const existing = headingDescriptions.get(code6);
+          if (!existing || (desc.length > existing.length && !desc.startsWith("–"))) {
             headingDescriptions.set(code6, desc);
             console.log(`Found position description for ${code6}: "${desc.substring(0, 50)}..."`);
           }
@@ -796,6 +817,8 @@ function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[]): HS
       }
     }
   }
+  
+  console.log(`[extractHSCodes] Total heading descriptions collected: ${headingDescriptions.size}`);
   
   // ÉTAPE 2: Maintenant extraire les codes SH depuis les rawLines (pour les headings)
   for (const line of rawLines) {
@@ -861,6 +884,13 @@ function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[]): HS
         level: "subheading",
       });
     }
+  }
+  
+  // Log les codes sans description pour debug
+  const missingDescriptions = results.filter(r => !r.description || r.description.length < 3);
+  if (missingDescriptions.length > 0) {
+    console.log(`[WARNING] ${missingDescriptions.length} HS codes without description:`, 
+      missingDescriptions.map(r => r.code_clean).join(", "));
   }
   
   // Filtrage final : ne garder que les codes valides
@@ -1364,7 +1394,8 @@ async function analyzeWithClaude(
     
     // Reconstruire avec l'héritage
     tariffLines = processRawLines(parsed.raw_lines);
-    hsCodeEntries = extractHSCodes(tariffLines, parsed.raw_lines);
+    // Passer aussi les hs_codes de Claude pour récupérer les descriptions
+    hsCodeEntries = extractHSCodes(tariffLines, parsed.raw_lines, parsed.hs_codes);
     
     console.log(`Reconstructed ${tariffLines.length} tariff lines and ${hsCodeEntries.length} HS codes`);
   } else if (parsed.tariff_lines) {
