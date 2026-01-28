@@ -17,7 +17,7 @@ import { createLogger } from "../_shared/logger.ts";
 // =============================================================================
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_MODEL = "claude-sonnet-4-20250514"; // Support vision PDF natif
+const ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"; // Claude 3.5 Sonnet avec support PDF natif
 
 // =============================================================================
 // INTERFACES
@@ -743,12 +743,13 @@ async function analyzeWithAnthropic(
   
   const prompt = getAnalysisPrompt(title, category);
 
-  // Claude API avec support PDF natif (vision)
+  // Claude API avec support PDF natif (vision) - Nécessite le header beta
   const aiResponse = await fetch(ANTHROPIC_API_URL, {
     method: "POST",
     headers: {
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
+      "anthropic-beta": "pdfs-2024-09-25",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
