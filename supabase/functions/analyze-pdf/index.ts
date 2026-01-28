@@ -565,40 +565,34 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
       // Compter combien de colonnes numériques on a
       const numericColCount = [hasCol2, hasCol3, hasCol4].filter(Boolean).length;
       
-      // CAS SPECIAL: Ligne intermédiaire sans taux (ex: "20 – – – matières premières...")
-      // Cette ligne établit un nouveau lastCol2 qui sera hérité par les sous-lignes suivantes
-      // La ligne elle-même n'est PAS une ligne tarifaire si elle n'a pas de taux
-      const isIntermediateHeader = !line.duty_rate && numericColCount === 1 && hasCol2;
+      // CAS SPECIAL 1: En-tête intermédiaire avec 1 colonne, sans taux (ex: "20 – – – matières premières...")
+      // Établit un nouveau lastCol2 hérité par les sous-lignes
+      const isIntermediateHeader1Col = !line.duty_rate && numericColCount === 1 && hasCol2;
       
-      if (isIntermediateHeader) {
-        // Établir le nouveau lastCol2 pour les lignes suivantes
+      if (isIntermediateHeader1Col) {
         lastCol2 = col2.padStart(2, "0");
-        // Réinitialiser lastCol3 car les sous-lignes fourniront leur propre extension
         lastCol3 = "00";
-        console.log(`Intermediate header detected: col2="${col2}" → setting lastCol2="${lastCol2}" for inheritance`);
-        continue; // Ne pas créer de ligne tarifaire pour cette ligne intermédiaire
+        console.log(`Intermediate header (1 col): col2="${col2}" → setting lastCol2="${lastCol2}"`);
+        continue;
       }
       
-      // CAS SPECIAL: Une seule colonne numérique présente (ex: col2="10", col3 et col4 vides)
-      // ET la ligne A un taux → c'est l'extension 9e-10e chiffre
-      if (numericColCount === 1 && hasCol2 && !hasCol3 && !hasCol4) {
-        // col2 contient l'extension 9e-10e → garder lastCol2 hérité, mettre col2 dans lastCol3
-        lastCol3 = col2.padStart(2, "0");
-        console.log(`Compacted column detected: col2="${col2}" → treating as 9th-10th digit extension (inheriting lastCol2="${lastCol2}")`);
-      }
-      // CAS STANDARD: Deux colonnes ou plus → format normal col2=7e-8e, col3=9e-10e
-      else if (hasCol2 && hasCol3) {
+      // CAS SPECIAL 2: En-tête intermédiaire avec 2 colonnes, sans taux (ex: "80 – autre:")
+      // Pour les lignes comme "80" suivi de sous-lignes "10", "90"
+      const isIntermediateHeader2Col = !line.duty_rate && numericColCount === 1 && hasCol2 && !hasCol3 && !hasCol4;
+      // NB: Déjà géré au-dessus, mais on doit aussi gérer "80" seul comme en-tête
+
+      // CAS SPECIAL 3: Ligne avec 2 colonnes numériques ET un taux (ex: "40 00 ... 2,5")
+      // C'est une ligne tarifaire complète: col2=7e-8e, col3=9e-10e
+      if (line.duty_rate && hasCol2 && hasCol3) {
         lastCol2 = col2.padStart(2, "0");
         lastCol3 = col3.padStart(2, "0");
+        console.log(`Full line with 2 cols: col2="${col2}", col3="${col3}" → code segment ${lastCol2}${lastCol3}`);
       }
-      // CAS: col2 présent seul avec col3 ou col4 vide mais on a plusieurs colonnes
-      else if (hasCol2 && numericColCount >= 2) {
-        lastCol2 = col2.padStart(2, "0");
-        if (hasCol3) {
-          lastCol3 = col3.padStart(2, "0");
-        } else if (hasCol4) {
-          lastCol3 = col4.padStart(2, "0");
-        }
+      // CAS SPECIAL 4: Ligne avec 1 colonne numérique ET un taux → extension 9e-10e
+      else if (line.duty_rate && numericColCount === 1 && hasCol2) {
+        // col2 = 9e-10e chiffre, on garde lastCol2 hérité
+        lastCol3 = col2.padStart(2, "0");
+        console.log(`Extension line: col2="${col2}" → 9th-10th digit, keeping lastCol2="${lastCol2}"`);
       }
       // CAS: col2 vide → chercher dans col3 ou col4
       else if (!hasCol2) {
