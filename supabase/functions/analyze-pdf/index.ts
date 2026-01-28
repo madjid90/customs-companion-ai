@@ -17,7 +17,7 @@ import { createLogger } from "../_shared/logger.ts";
 // =============================================================================
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const CLAUDE_MODEL_FAST = "claude-3-5-haiku-20241022"; // Fast model for large PDFs
+const CLAUDE_MODEL_FAST = "claude-3-haiku-20240307"; // Fast model for large PDFs (valid model)
 const CLAUDE_MODEL_PRECISE = "claude-sonnet-4-20250514"; // Precise model for smaller PDFs
 
 // Threshold: PDFs larger than this (base64 chars) use the fast model
