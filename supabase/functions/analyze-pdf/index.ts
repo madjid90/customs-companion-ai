@@ -520,11 +520,20 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
           }
         } else {
           // Format classique: col2 contient juste "00" ou une extension numérique
-          lastCol2 = (col2 && /^\d+$/.test(col2)) ? col2.padStart(2, "0") : "";
-          lastCol3 = (col3 && /^\d+$/.test(col3)) ? col3.padStart(2, "0") : "";
+          // CRITIQUE: Toujours mettre à jour lastCol2/lastCol3 pour l'héritage AVANT de vérifier le taux
+          const newCol2 = (col2 && /^\d+$/.test(col2)) ? col2.padStart(2, "0") : "";
+          const newCol3 = (col3 && /^\d+$/.test(col3)) ? col3.padStart(2, "0") : "";
           
-          // Pas de ligne tarifaire pour les positions sans taux
-          if (!line.duty_rate) continue;
+          // Mettre à jour l'état d'héritage
+          lastCol2 = newCol2;
+          lastCol3 = newCol3;
+          
+          // Si pas de taux → c'est un en-tête intermédiaire (ex: "1401.90 00")
+          // Ne pas créer de ligne, mais l'héritage est déjà établi
+          if (!line.duty_rate) {
+            console.log(`Subheading header: col1="${col1Raw}", col2="${col2}" → setting lastPosition="${lastPosition}", lastCol2="${lastCol2}" for inheritance`);
+            continue;
+          }
           
           // Construire: position (4) + "00" (subheading) + col2 + col3
           let code = lastPosition + "00";
