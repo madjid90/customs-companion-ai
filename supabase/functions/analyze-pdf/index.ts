@@ -548,18 +548,26 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
         lastPosition = col1Clean.slice(0, 4);
         lastSubheading = col1Clean.slice(4, 6).padEnd(2, "0");
         
-        // Mettre à jour les colonnes d'extension
-        lastCol2 = (col2 && /^\d+$/.test(col2)) ? col2.padStart(2, "0") : "";
-        lastCol3 = (col3 && /^\d+$/.test(col3)) ? col3.padStart(2, "0") : "";
-        lastCol4 = (col4 && /^\d+$/.test(col4)) ? col4.padStart(2, "0") : "";
-        lastCol5 = (col5 && /^\d+$/.test(col5)) ? col5.padStart(2, "0") : "";
+        // CRITIQUE: Mettre à jour les colonnes d'extension AVANT de vérifier le taux
+        // Ceci assure que même les en-têtes sans taux (comme "1401.90 00") établissent
+        // lastCol2 pour les sous-lignes qui suivent
+        const newCol2 = (col2 && /^\d+$/.test(col2)) ? col2.padStart(2, "0") : "";
+        const newCol3 = (col3 && /^\d+$/.test(col3)) ? col3.padStart(2, "0") : "";
+        const newCol4 = (col4 && /^\d+$/.test(col4)) ? col4.padStart(2, "0") : "";
+        const newCol5 = (col5 && /^\d+$/.test(col5)) ? col5.padStart(2, "0") : "";
+        
+        // Mettre à jour l'état d'héritage
+        lastCol2 = newCol2;
+        lastCol3 = newCol3;
+        lastCol4 = newCol4;
+        lastCol5 = newCol5;
         
         console.log(`Subheading ${col1Raw}: position=${lastPosition}, subheading=${lastSubheading}, lastCol2=${lastCol2}`);
         
         // Si pas de taux → c'est un en-tête (ex: "1401.90 00" sans taux)
-        // L'héritage est établi, on passe à la ligne suivante
+        // L'héritage est maintenant établi (lastCol2 est mis à jour), on passe à la ligne suivante
         if (!line.duty_rate) {
-          console.log(`Subheading header without rate: ${col1Raw} → setting lastSubheading="${lastSubheading}" for inheritance`);
+          console.log(`Subheading header without rate: ${col1Raw} col2="${col2}" → lastSubheading="${lastSubheading}", lastCol2="${lastCol2}" for inheritance`);
           continue;
         }
         
