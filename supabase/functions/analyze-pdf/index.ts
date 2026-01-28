@@ -13,11 +13,11 @@ import { validateAnalyzePdfRequest } from "../_shared/validation.ts";
 import { createLogger } from "../_shared/logger.ts";
 
 // =============================================================================
-// CONFIGURATION LOVABLE AI
+// CONFIGURATION ANTHROPIC CLAUDE (API directe)
 // =============================================================================
 
-const LOVABLE_AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const LOVABLE_AI_MODEL = "google/gemini-2.5-pro"; // Support multimodal natif
+const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_MODEL = "claude-sonnet-4-20250514"; // Support vision PDF natif
 
 // =============================================================================
 // INTERFACES
@@ -727,10 +727,10 @@ function delay(ms: number): Promise<void> {
 }
 
 // =============================================================================
-// APPEL LOVABLE AI (Gemini 2.5 Pro) - Multimodal avec support PDF/Image
+// APPEL ANTHROPIC CLAUDE (API directe) - Vision PDF native
 // =============================================================================
 
-async function analyzeWithLovableAI(
+async function analyzeWithAnthropic(
   base64Pdf: string,
   title: string,
   category: string,
@@ -743,68 +743,66 @@ async function analyzeWithLovableAI(
   
   const prompt = getAnalysisPrompt(title, category);
 
-  // Lovable AI Gateway utilise le format OpenAI avec support multimodal
-  // Gemini 2.5 Pro peut traiter des PDFs encodés en base64 comme des images
-  const aiResponse = await fetch(LOVABLE_AI_GATEWAY, {
+  // Claude API avec support PDF natif (vision)
+  const aiResponse = await fetch(ANTHROPIC_API_URL, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${apiKey}`,
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: LOVABLE_AI_MODEL,
-      max_tokens: 65536, // Gemini 2.5 Pro supporte une grande fenêtre de sortie
+      model: ANTHROPIC_MODEL,
+      max_tokens: 64000,
       messages: [
         {
           role: "user",
           content: [
-            { type: "text", text: prompt },
             {
-              type: "image_url",
-              image_url: {
-                url: `data:application/pdf;base64,${base64Pdf}`,
+              type: "document",
+              source: {
+                type: "base64",
+                media_type: "application/pdf",
+                data: base64Pdf,
               }
-            }
+            },
+            { type: "text", text: prompt }
           ]
         }
       ],
     }),
   });
 
-  // Handle rate limiting (429) and payment required (402)
-  if (aiResponse.status === 429) {
+  // Handle rate limiting (429) and overloaded (529)
+  if (aiResponse.status === 429 || aiResponse.status === 529) {
     if (retryCount < MAX_RETRIES) {
-      const delayMs = BASE_DELAY * Math.pow(2, retryCount);
-      console.log(`Rate limited (429). Retry ${retryCount + 1}/${MAX_RETRIES} after ${delayMs}ms...`);
+      const retryAfter = aiResponse.headers.get("Retry-After");
+      const delayMs = retryAfter ? parseInt(retryAfter) * 1000 : BASE_DELAY * Math.pow(2, retryCount);
+      console.log(`Rate limited (${aiResponse.status}). Retry ${retryCount + 1}/${MAX_RETRIES} after ${delayMs}ms...`);
       await delay(delayMs);
-      return analyzeWithLovableAI(base64Pdf, title, category, apiKey, retryCount + 1);
+      return analyzeWithAnthropic(base64Pdf, title, category, apiKey, retryCount + 1);
     } else {
       console.error("Max retries reached for rate limiting");
       return { result: null, truncated: false, rateLimited: true };
     }
   }
 
-  if (aiResponse.status === 402) {
-    console.error("Lovable AI: Payment required - credits exhausted");
-    throw new Error("Crédits Lovable AI épuisés. Veuillez recharger dans Settings > Workspace > Usage.");
-  }
-
   if (!aiResponse.ok) {
     const errorText = await aiResponse.text();
-    console.error("Lovable AI error:", aiResponse.status, errorText);
-    throw new Error(`Lovable AI error: ${aiResponse.status} - ${errorText}`);
+    console.error("Anthropic error:", aiResponse.status, errorText);
+    throw new Error(`Anthropic API error: ${aiResponse.status} - ${errorText}`);
   }
 
   const aiData = await aiResponse.json();
   
-  // Format OpenAI: finish_reason au lieu de stop_reason
-  const finishReason = aiData.choices?.[0]?.finish_reason;
-  const truncated = finishReason === "length";
+  // Format Anthropic: stop_reason
+  const stopReason = aiData.stop_reason;
+  const truncated = stopReason === "max_tokens";
   
-  console.log("Lovable AI response - finish_reason:", finishReason, "truncated:", truncated);
+  console.log("Anthropic response - stop_reason:", stopReason, "truncated:", truncated);
   
-  // Format OpenAI: message.content au lieu de content[0].text
-  const responseText = aiData.choices?.[0]?.message?.content || "{}";
+  // Format Anthropic: content[0].text
+  const responseText = aiData.content?.[0]?.text || "{}";
   
   // Parse JSON
   let cleanedResponse = responseText.trim();
@@ -1299,12 +1297,12 @@ serve(async (req) => {
       return errorResponse(req, "filePath is required", 400);
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    if (!ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY is not configured");
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
@@ -1367,8 +1365,8 @@ serve(async (req) => {
     // Analyze with Claude - extraction complète sans limite
     console.log(`Attempting full document analysis (no line limit)...`);
     
-    const { result, truncated, rateLimited } = await analyzeWithLovableAI(
-      base64Pdf, title, category, LOVABLE_API_KEY
+    const { result, truncated, rateLimited } = await analyzeWithAnthropic(
+      base64Pdf, title, category, ANTHROPIC_API_KEY
     );
     
     let analysisResult: AnalysisResult | null = result;
