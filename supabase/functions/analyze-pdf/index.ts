@@ -881,9 +881,9 @@ async function analyzeWithClaude(
   console.log("Sending request to Claude API...");
   
   const controller = new AbortController();
-  // Sonnet timeout: 4 minutes for all PDFs
-  const CLAUDE_TIMEOUT_MS = 240000;
-  console.log(`Timeout set to ${CLAUDE_TIMEOUT_MS / 1000}s for Sonnet`);
+  // Sonnet timeout: 290 seconds (just under 5 min Edge Function limit)
+  const CLAUDE_TIMEOUT_MS = 290000;
+  console.log(`Timeout set to ${CLAUDE_TIMEOUT_MS / 1000}s for Sonnet (max Edge Function limit ~300s)`);
   const timeoutId = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS);
   
   let aiResponse: Response;
