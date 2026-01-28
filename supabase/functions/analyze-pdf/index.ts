@@ -120,22 +120,30 @@ Les codes nationaux ont TOUJOURS 10 chiffres, construits ainsi:
 - Chiffres 9-10 : Extension nationale 2 - LE VRAI DÉTAIL (10, 20, 30, 80, 90, etc.)
 
 ⚠️⚠️⚠️ RÈGLE CRITIQUE DE CONSTRUCTION ⚠️⚠️⚠️
-Dans 95% des cas, les chiffres 7-8 sont "00" !
-Le dernier niveau de détail (10, 20, 30, 80, 90, etc.) va TOUJOURS en position 9-10 !
+Les chiffres 7-8 sont TOUJOURS "00" dans le tarif marocain standard !
+Le numéro de sous-ligne (10, 20, 30, 80, 90, etc.) va TOUJOURS aux positions 9-10 !
 
-EXEMPLE CONCRET:
+FORMULE UNIQUE ET DÉFINITIVE:
+Code_10_chiffres = Position_6_chiffres + "00" + Sous_ligne_2_chiffres
+
+EXEMPLES CORRECTS:
+Si tu vois "2617.90" avec des sous-lignes "10", "80", etc.:
+- Sous-ligne "10" pour "minerais de beryllium"  → 2617900010 (261790 + 00 + 10)
+- Sous-ligne "80" pour "autres"                 → 2617900080 (261790 + 00 + 80)
+
 Si tu vois "2621.90" avec des sous-lignes:
-- "10 00 – – – cendres de varech"     → 2621901000 (262190 + 10 + 00) - ATTENTION c'est 10 puis 00!
-- "20 00 – – – salins de betteraves"  → 2621902000 (262190 + 20 + 00)
-- "30 00 – – – autres salins"         → 2621903000 (262190 + 30 + 00)
-- "90 00 – – – autres"                → 2621909000 (262190 + 90 + 00)
+- Sous-ligne "10" pour "cendres de varech"      → 2621900010 (262190 + 00 + 10)
+- Sous-ligne "20" pour "salins de betteraves"   → 2621900020 (262190 + 00 + 20)
+- Sous-ligne "30" pour "autres salins"          → 2621900030 (262190 + 00 + 30)
+- Sous-ligne "90" pour "autres"                 → 2621900090 (262190 + 00 + 90)
 
-FORMULE: Quand tu as "XX 00" dans la colonne de détail:
-Code_10_chiffres = Position_6_chiffres + XX + 00
+⚠️ ATTENTION PIÈGE FRÉQUENT ⚠️
+Dans le PDF, tu peux voir "10 00" sur deux colonnes séparées.
+- Le "10" est le numéro de sous-ligne → va en position 9-10
+- Le "00" est juste un remplissage → positions 7-8
 
-AUTRE EXEMPLE (sans "00" final):
-Si tu vois "3201.90" avec "10" seul (pas "10 00"):
-- "10" pour "Sommac" → 3201900010 (320190 + 00 + 10)
+DONC: "10 00" dans le tableau = Code 6 chiffres + "00" + "10" = XXXXXX0010
+PAS: "10 00" = XXXXXX1000 ← C'EST FAUX !
 
 === CE QUE TU DOIS EXTRAIRE ===
 
@@ -167,11 +175,11 @@ Pour CHAQUE ligne tarifaire avec un taux de droit (duty_rate):
     "a": "Aux conditions fixées par la réglementation en vigueur.",
     "b": "Autre note..."
   },
-  "raw_lines": [
-    {"national_code": "2621901000", "hs_code_6": "262190", "description": "cendres de varech", "duty_rate": "2,5", "unit": "kg"},
-    {"national_code": "2621902000", "hs_code_6": "262190", "description": "salins de betteraves en tablettes", "duty_rate": "2,5", "unit": "kg"},
-    {"national_code": "2621903000", "hs_code_6": "262190", "description": "autres salins de betteraves", "duty_rate": "2,5", "unit": "kg"},
-    {"national_code": "2621909000", "hs_code_6": "262190", "description": "autres", "duty_rate": "2,5", "unit": "kg"}
+"raw_lines": [
+    {"national_code": "2617900010", "hs_code_6": "261790", "description": "minerais de beryllium", "duty_rate": "2,5", "unit": "kg"},
+    {"national_code": "2617900080", "hs_code_6": "261790", "description": "autres", "duty_rate": "2,5", "unit": "kg"},
+    {"national_code": "2621900010", "hs_code_6": "262190", "description": "cendres de varech", "duty_rate": "2,5", "unit": "kg"},
+    {"national_code": "2621900090", "hs_code_6": "262190", "description": "autres", "duty_rate": "2,5", "unit": "kg"}
   ],
   "hs_codes": [
     {"code": "2621.90", "code_clean": "262190", "description": "Autres scories et cendres", "level": "subheading"}
