@@ -104,36 +104,38 @@ Catégorie : ${category}
 Extraire TOUTES les lignes tarifaires avec le CODE NATIONAL COMPLET À 10 CHIFFRES.
 Le tarif marocain utilise un système de codification en 5 colonnes qui forment ensemble le code national.
 
+⚠️⚠️⚠️ RÈGLE LA PLUS IMPORTANTE ⚠️⚠️⚠️
+Tu DOIS analyser TOUTES LES PAGES du PDF, de la première à la dernière.
+CHAQUE ligne tarifaire de CHAQUE page doit être extraite, y compris:
+- Les lignes sur la DERNIÈRE PAGE du document
+- Les lignes qui apparaissent APRÈS les notes de bas de page
+- Les sous-lignes (ex: 10, 20, 30, 80, 90) même si elles sont sur une page différente de leur en-tête
+
 === STRUCTURE DU TARIF MAROCAIN ===
 
 Les codes nationaux ont TOUJOURS 10 chiffres, construits ainsi:
 - Chiffres 1-4 : Position (ex: 3201)
 - Chiffres 5-6 : Sous-position (ex: 90)
 - Chiffres 7-8 : Extension nationale 1 - GÉNÉRALEMENT 00
-- Chiffres 9-10 : Extension nationale 2 - LE VRAI DÉTAIL (10, 92, 98, etc.)
+- Chiffres 9-10 : Extension nationale 2 - LE VRAI DÉTAIL (10, 20, 30, 80, 90, etc.)
 
-⚠️⚠️⚠️ RÈGLE CRITIQUE ⚠️⚠️⚠️
+⚠️⚠️⚠️ RÈGLE CRITIQUE DE CONSTRUCTION ⚠️⚠️⚠️
 Dans 95% des cas, les chiffres 7-8 sont "00" !
-Le dernier niveau de détail (10, 92, 98, etc.) va TOUJOURS en position 9-10 !
+Le dernier niveau de détail (10, 20, 30, 80, 90, etc.) va TOUJOURS en position 9-10 !
 
 EXEMPLE CONCRET:
-Si tu vois "3201.90" avec une sous-ligne "10" pour "Sommac":
-- CORRECT:   3201900010 (320190 + 00 + 10)
-- INCORRECT: 3201901000 (320190 + 10 + 00) ← NE FAIS PAS ÇA!
+Si tu vois "2621.90" avec des sous-lignes:
+- "10 00 – – – cendres de varech"     → 2621901000 (262190 + 10 + 00) - ATTENTION c'est 10 puis 00!
+- "20 00 – – – salins de betteraves"  → 2621902000 (262190 + 20 + 00)
+- "30 00 – – – autres salins"         → 2621903000 (262190 + 30 + 00)
+- "90 00 – – – autres"                → 2621909000 (262190 + 90 + 00)
 
-Si tu vois "3201.90" avec une sous-ligne "92" pour "à l'éther":
-- CORRECT:   3201900092 (320190 + 00 + 92)
-- INCORRECT: 3201909200 (320190 + 92 + 00) ← NE FAIS PAS ÇA!
+FORMULE: Quand tu as "XX 00" dans la colonne de détail:
+Code_10_chiffres = Position_6_chiffres + XX + 00
 
-FORMULE SIMPLE:
-Code_10_chiffres = Position_6_chiffres + "00" + Extension_2_chiffres
-
-EXEMPLES CORRECTS:
-- Sommac (10)        → 3201900010 (pas 3201901000)
-- À l'éther (92)     → 3201900092 (pas 3201909200)
-- Autres (98)        → 3201900098 (pas 3201909800)
-- Quebracho base     → 3201100000 (pas de sous-extension)
-- Mimosa base        → 3201200000 (pas de sous-extension)
+AUTRE EXEMPLE (sans "00" final):
+Si tu vois "3201.90" avec "10" seul (pas "10 00"):
+- "10" pour "Sommac" → 3201900010 (320190 + 00 + 10)
 
 === CE QUE TU DOIS EXTRAIRE ===
 
@@ -166,16 +168,13 @@ Pour CHAQUE ligne tarifaire avec un taux de droit (duty_rate):
     "b": "Autre note..."
   },
   "raw_lines": [
-    {"national_code": "3201100000", "hs_code_6": "320110", "description": "Extrait de quebracho, en poudre", "duty_rate": "2,5", "unit": "kg"},
-    {"national_code": "3201100010", "hs_code_6": "320110", "description": "Extrait de quebracho, autre", "duty_rate": "2,5", "unit": "kg"},
-    {"national_code": "3201200000", "hs_code_6": "320120", "description": "Extrait de mimosa", "duty_rate": "2,5", "unit": "kg"},
-    {"national_code": "3201900010", "hs_code_6": "320190", "description": "Sommac", "duty_rate": "2,5", "unit": "kg"},
-    {"national_code": "3201900090", "hs_code_6": "320190", "description": "Autres extraits tannants", "duty_rate": "2,5", "unit": "kg"}
+    {"national_code": "2621901000", "hs_code_6": "262190", "description": "cendres de varech", "duty_rate": "2,5", "unit": "kg"},
+    {"national_code": "2621902000", "hs_code_6": "262190", "description": "salins de betteraves en tablettes", "duty_rate": "2,5", "unit": "kg"},
+    {"national_code": "2621903000", "hs_code_6": "262190", "description": "autres salins de betteraves", "duty_rate": "2,5", "unit": "kg"},
+    {"national_code": "2621909000", "hs_code_6": "262190", "description": "autres", "duty_rate": "2,5", "unit": "kg"}
   ],
   "hs_codes": [
-    {"code": "3201.10", "code_clean": "320110", "description": "Extrait de quebracho", "level": "subheading"},
-    {"code": "3201.20", "code_clean": "320120", "description": "Extrait de mimosa", "level": "subheading"},
-    {"code": "3201.90", "code_clean": "320190", "description": "Autres", "level": "subheading"}
+    {"code": "2621.90", "code_clean": "262190", "description": "Autres scories et cendres", "level": "subheading"}
   ],
   "trade_agreements": [],
   "preferential_rates": [],
@@ -192,7 +191,11 @@ Pour CHAQUE ligne tarifaire avec un taux de droit (duty_rate):
 ✓ Préserver les notes (a), (b) dans duty_rate: "2,5(a)"
 ✓ full_text doit contenir le TEXTE INTÉGRAL (jusqu'à 50000 caractères)
 
-**NE JAMAIS TRONQUER - EXTRAIRE 100% DES LIGNES TARIFAIRES !**
+⚠️⚠️⚠️ VÉRIFICATION FINALE ⚠️⚠️⚠️
+Avant de répondre, vérifie que tu as bien parcouru TOUTES les pages du PDF.
+Les dernières lignes du chapitre sont souvent sur la dernière page - NE LES OUBLIE PAS!
+
+**NE JAMAIS TRONQUER - EXTRAIRE 100% DES LIGNES TARIFAIRES DE TOUTES LES PAGES !**
 
 RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
 
