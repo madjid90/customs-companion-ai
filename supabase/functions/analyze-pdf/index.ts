@@ -26,12 +26,9 @@ const CLAUDE_MODEL = "claude-sonnet-4-20250514"; // Sonnet 4 - supports native P
 // =============================================================================
 
 interface RawTarifLine {
-  // Colonnes brutes extraites par Claude
-  col1: string;      // Position/Sous-position ou "1" pour héritage
-  col2: string;      // Extension 2 chiffres
-  col3: string;      // Extension 2 chiffres  
-  col4: string;      // Extension 2 chiffres
-  col5: string;      // Extension 2 chiffres
+  // Structure SIMPLIFIÉE - Claude extrait directement le code national à 10 chiffres
+  national_code: string;    // Code national COMPLET à 10 chiffres (ex: "3201100000")
+  hs_code_6?: string;       // Code SH à 6 chiffres (optionnel, déduit si absent)
   description: string;
   duty_rate: string | number | null;
   unit: string | null;
@@ -97,124 +94,102 @@ interface AnalysisResult {
 // PROMPT CLAUDE - DOCUMENTS TARIFAIRES (tableaux SH codes)
 // =============================================================================
 
-const getTariffPrompt = (title: string, category: string) => `Expert en tarifs douaniers. Analyse ce PDF et extrais TOUTES les lignes tarifaires.
+const getTariffPrompt = (title: string, category: string) => `Expert en tarifs douaniers marocains. Analyse ce PDF et extrais TOUTES les lignes tarifaires.
 
 Doc: ${title}
 Catégorie : ${category}
 
-=== STRUCTURE EXACTE DU TABLEAU TARIFAIRE MAROCAIN ===
+=== TA MISSION ===
 
-Le tableau possède 5 colonnes de CODIFICATION qui doivent être lues SÉPARÉMENT :
+Extraire TOUTES les lignes tarifaires avec le CODE NATIONAL COMPLET À 10 CHIFFRES.
+Le tarif marocain utilise un système de codification en 5 colonnes qui forment ensemble le code national.
 
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│        CODIFICATION (5 colonnes)       │ Désignation  │ Droit │ Unité QN │ UC     │
-├──────────┬──────┬──────┬──────┬────────┼──────────────┼───────┼──────────┼────────┤
-│  Col1    │ Col2 │ Col3 │ Col4 │ Col5   │              │       │          │        │
-├──────────┼──────┼──────┼──────┼────────┼──────────────┼───────┼──────────┼────────┤
-│ 14.04    │      │      │      │        │ Produits...  │       │          │        │
-│ 1404.90  │ 00   │      │      │        │ – – Autres   │       │          │        │
-│          │ 40   │ 00   │      │        │ – – – matièr │ 2,5   │ kg       │        │
-│          │      │ 10   │      │        │ – – – – alfa │ 2,5   │ kg       │        │
-│          │      │ 90   │      │        │ – – – – autr │ 2,5   │ kg       │        │
-│          │ 80   │      │      │        │ – – – Autre: │       │          │   ← HEADER     │
-│          │      │ 10   │      │        │ – – – – ...  │ 2,5   │ kg       │        │
-│          │      │ 90   │      │        │ – – – – ...  │ 2,5   │ kg       │        │
-└──────────┴──────┴──────┴──────┴────────┴──────────────┴───────┴──────────┴────────┘
+=== STRUCTURE DU TARIF MAROCAIN ===
 
-=== RÈGLES CRITIQUES D'HÉRITAGE ===
+Les codes nationaux ont TOUJOURS 10 chiffres, construits ainsi:
+- Chiffres 1-4 : Position (ex: 3201)
+- Chiffres 5-6 : Sous-position (ex: 10)
+- Chiffres 7-8 : Extension nationale 1 (ex: 00)
+- Chiffres 9-10 : Extension nationale 2 (ex: 00)
 
-1. MARQUEUR "1" EN COL1:
-   Quand Col1 contient "1" (ou 2-9), c'est un MARQUEUR D'HÉRITAGE
-   → Les 6 premiers chiffres viennent de la DERNIÈRE ligne avec un code complet
+EXEMPLE D'UN CHAPITRE:
 
-2. EN-TÊTES INTERMÉDIAIRES (SANS TAUX):
-   TRÈS IMPORTANT: Quand une ligne a:
-   - Col1 VIDE et Col2 contient un nombre (40, 80, etc.)
-   - PAS de duty_rate (ou duty_rate vide)
-   → C'est un EN-TÊTE qui établit les 7e-8e chiffres pour les sous-lignes suivantes
-   → Les lignes suivantes avec col2 VIDE hériteront de ce "40" ou "80"
+| Position | Subheading | Ext1 | Ext2 | Description              | Droit |
+|----------|------------|------|------|--------------------------|-------|
+| 32.01    |            |      |      | Extraits tannants...     |       |
+| 3201.10  | 00         |      |      | – Extrait de quebracho   |       |
+|          |            | 00   |      | – – – En poudre          | 2,5   |
+|          |            | 10   |      | – – – Autre              | 2,5   |
+| 3201.20  | 00         |      |      | – Extrait de mimosa      | 2,5   |
+| 3201.90  | 00         |      |      | – Autres:                |       |
+|          |            | 10   |      | – – – Sommac             | 2,5   |
+|          |            | 90   |      | – – – Autres             | 2,5   |
 
-3. EXTENSIONS (AVEC TAUX):
-   Quand Col1 VIDE, Col2 VIDE, Col3 contient un nombre (10, 90), et duty_rate présent
-   → Col3 = 9e-10e chiffre, et on HÉRITE les 7e-8e du dernier en-tête
+Les codes nationaux résultants sont:
+- 3201100000 (Extrait de quebracho - en poudre)
+- 3201100010 (Extrait de quebracho - autre)
+- 3201200000 (Extrait de mimosa)
+- 3201901000 (Autres - Sommac)
+- 3201909000 (Autres - Autres)
 
-EXEMPLE DE RECONSTRUCTION AVEC EN-TÊTE:
-Ligne: "1404.90 | 00 |    |    |" → Code de base: 140490 + 00 = 14049000XX
-Ligne: "        | 80 |    |    |" → EN-TÊTE: établit 7e-8e = "80", pas de ligne créée
-Ligne: "        |    | 10 |    |" → HÉRITAGE 140490 + 80 + 10 = 1404908010
-Ligne: "        |    | 90 |    |" → HÉRITAGE 140490 + 80 + 90 = 1404908090
+=== CE QUE TU DOIS EXTRAIRE ===
 
-=== EXTRACTION DEMANDÉE ===
+Pour CHAQUE ligne tarifaire avec un taux de droit (duty_rate):
+1. Reconstruire le CODE NATIONAL COMPLET À 10 CHIFFRES
+2. Les 6 premiers chiffres forment le code SH (hs_code_6)
+3. La description exacte
+4. Le taux de droit (avec notes si présentes, ex: "2,5(a)")
+5. L'unité (kg, L, U, etc.)
 
-1. NOTES DU CHAPITRE - Extraire intégralement :
-   - Notes légales (après "Notes.")
-   - Notes de sous-position  
-   - Notes complémentaires
-   - Notes de bas de page : (a), (b), (c), (f) avec leur texte
+=== RÈGLES D'HÉRITAGE ===
 
-2. LIGNES BRUTES - Pour CHAQUE ligne du tableau, extraire :
-   - col1: valeur exacte de la colonne 1 (position ou "1")
-   - col2: valeur colonne 2 (ou "" si vide)
-   - col3: valeur colonne 3 (ou "" si vide)
-   - col4: valeur colonne 4 (ou "" si vide)
-   - col5: valeur colonne 5 (ou "" si vide)
-   - description: texte complet avec les tirets
-   - duty_rate: taux ou null (garder les notes comme "170(b)")
-   - unit: unité (kg, L, U, etc.)
-
-3. HS_CODES (6 chiffres) :
-   - Extraire chaque sous-position unique
-   - Format "XXXX.XX" et code_clean "XXXXXX"
-
-4. ACCORDS COMMERCIAUX ET TAUX PRÉFÉRENTIELS
+- Quand une colonne est VIDE, elle HÉRITE de la ligne précédente de niveau supérieur
+- Les lignes SANS taux sont des EN-TÊTES qui établissent le contexte pour les sous-lignes
+- Chaque ligne AVEC un taux doit avoir un code complet à 10 chiffres
 
 === FORMAT JSON DE SORTIE ===
 
 {
   "summary": "Résumé du chapitre",
   "key_points": ["Note importante 1", "Note 2"],
-  "chapter_info": {"number": 10, "title": "CEREALES"},
+  "chapter_info": {"number": 32, "title": "EXTRAITS TANNANTS"},
   "notes": {
-    "legal": ["1. A) Les produits...", "1. B) Le présent..."],
-    "subposition": ["1. On considère comme..."],
-    "complementary": ["1) comme riz en paille..."]
+    "legal": ["1. Le présent chapitre ne comprend pas..."],
+    "subposition": [],
+    "complementary": []
   },
   "footnotes": {
     "a": "Aux conditions fixées par la réglementation en vigueur.",
-    "b": "Ce taux est appliqué à la tranche ≤ 1000 DH/tonne, au-delà = 2,5%",
-    "f": "Ce taux est appliqué à la tranche ≤ 1000 DH/tonne, au-delà = 2,5%"
+    "b": "Autre note..."
   },
   "raw_lines": [
-    {"col1": "14.04", "col2": "", "col3": "", "col4": "", "col5": "", "description": "Produits végétaux...", "duty_rate": null, "unit": null},
-    {"col1": "1404.90", "col2": "00", "col3": "", "col4": "", "col5": "", "description": "– – Autres", "duty_rate": null, "unit": null},
-    {"col1": "", "col2": "40", "col3": "00", "col4": "", "col5": "", "description": "– – – matières végétales...", "duty_rate": "2,5", "unit": "kg"},
-    {"col1": "", "col2": "", "col3": "10", "col4": "", "col5": "", "description": "– – – – alfa...", "duty_rate": "2,5", "unit": "kg"},
-    {"col1": "", "col2": "", "col3": "90", "col4": "", "col5": "", "description": "– – – – autres", "duty_rate": "2,5", "unit": "kg"},
-    {"col1": "", "col2": "80", "col3": "", "col4": "", "col5": "", "description": "– – – Autre:", "duty_rate": null, "unit": null},
-    {"col1": "", "col2": "", "col3": "10", "col4": "", "col5": "", "description": "– – – – henné...", "duty_rate": "2,5", "unit": "kg"},
-    {"col1": "", "col2": "", "col3": "90", "col4": "", "col5": "", "description": "– – – – autres", "duty_rate": "2,5", "unit": "kg"}
+    {"national_code": "3201100000", "hs_code_6": "320110", "description": "Extrait de quebracho, en poudre", "duty_rate": "2,5", "unit": "kg"},
+    {"national_code": "3201100010", "hs_code_6": "320110", "description": "Extrait de quebracho, autre", "duty_rate": "2,5", "unit": "kg"},
+    {"national_code": "3201200000", "hs_code_6": "320120", "description": "Extrait de mimosa", "duty_rate": "2,5", "unit": "kg"},
+    {"national_code": "3201901000", "hs_code_6": "320190", "description": "Sommac", "duty_rate": "2,5", "unit": "kg"},
+    {"national_code": "3201909000", "hs_code_6": "320190", "description": "Autres extraits tannants", "duty_rate": "2,5", "unit": "kg"}
   ],
   "hs_codes": [
-    {"code": "1404.90", "code_clean": "140490", "description": "Autres", "level": "subheading"}
+    {"code": "3201.10", "code_clean": "320110", "description": "Extrait de quebracho", "level": "subheading"},
+    {"code": "3201.20", "code_clean": "320120", "description": "Extrait de mimosa", "level": "subheading"},
+    {"code": "3201.90", "code_clean": "320190", "description": "Autres", "level": "subheading"}
   ],
   "trade_agreements": [],
   "preferential_rates": [],
-  "full_text": "TEXTE INTÉGRAL DU DOCUMENT - Copie ici TOUT le contenu textuel visible du PDF, incluant les titres, notes, descriptions, conditions, articles, paragraphes. Ce texte sera utilisé pour répondre aux questions précises."
+  "full_text": "TEXTE INTÉGRAL DU DOCUMENT..."
 }
 
 === RÈGLES STRICTES ===
-✓ **EXTRAIRE ABSOLUMENT TOUTES LES LIGNES DU TABLEAU** - sans limite, sans troncature !
-✓ Parcourir le PDF de la PREMIÈRE à la DERNIÈRE page
-✓ Chaque position (ex: 07.01, 07.02... jusqu'à 07.14) doit apparaître dans raw_lines
-✓ Le "1" en col1 est un MARQUEUR, pas un chiffre du code
-✓ Préserver les notes (a), (b) etc. dans duty_rate
-✓ Les tirets "–" dans description indiquent le niveau hiérarchique
-✓ IGNORER les codes entre crochets [XX.XX] ou [XXXX.XX] - positions RÉSERVÉES
-✓ Les positions simples XX.XX (ex: 07.01, 07.11) sont des headings valides
-✓ TOUS les codes dans hs_codes doivent avoir un code_clean de EXACTEMENT 6 CHIFFRES
-✓ CRITIQUE: full_text doit contenir le TEXTE INTÉGRAL du document (jusqu'à 50000 caractères)
 
-**NE JAMAIS TRONQUER LE RÉSULTAT - EXTRAIRE 100% DES LIGNES DU TABLEAU !**
+✓ CHAQUE raw_line DOIT avoir un national_code de EXACTEMENT 10 CHIFFRES
+✓ CHAQUE raw_line DOIT avoir un duty_rate non-vide (sinon c'est un en-tête, pas une ligne tarifaire)
+✓ CHAQUE hs_codes DOIT avoir un code_clean de EXACTEMENT 6 CHIFFRES
+✓ IGNORER les codes entre crochets [XX.XX] - ce sont des positions réservées
+✓ EXTRAIRE ABSOLUMENT TOUTES LES LIGNES du tableau - sans limite, sans troncature
+✓ Préserver les notes (a), (b) dans duty_rate: "2,5(a)"
+✓ full_text doit contenir le TEXTE INTÉGRAL (jusqu'à 50000 caractères)
+
+**NE JAMAIS TRONQUER - EXTRAIRE 100% DES LIGNES TARIFAIRES !**
 
 RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
 
@@ -431,332 +406,59 @@ function parseDutyRate(dutyStr: string | number | null): { rate: number | null; 
 }
 
 /**
- * Reconstruit les codes SH à partir des lignes brutes avec gestion de l'héritage
+ * Traite les lignes brutes extraites par Claude (nouvelle version simplifiée)
+ * Claude fournit maintenant directement le national_code à 10 chiffres
  */
 function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
   const results: TariffLine[] = [];
   
-  // État de l'héritage - mémorise le dernier code complet à chaque niveau
-  let lastPosition: string = "";     // 4 chiffres (position SH, ex: "1001")
-  let lastSubheading: string = "";   // 2 chiffres supplémentaires (sous-position, ex: "11" → total "100111")
-  let lastCol2: string = "";         // Extension colonne 2
-  let lastCol3: string = "";         // Extension colonne 3
-  let lastCol4: string = "";         // Extension colonne 4
-  let lastCol5: string = "";         // Extension colonne 5
+  console.log(`Processing ${rawLines.length} raw lines from Claude...`);
   
   for (const line of rawLines) {
-    const col1Raw = (line.col1 || "").trim();
-    const col2 = (line.col2 || "").trim();
-    const col3 = (line.col3 || "").trim();
-    const col4 = (line.col4 || "").trim();
-    const col5 = (line.col5 || "").trim();
+    // Récupérer le code national directement fourni par Claude
+    let nationalCode = (line.national_code || "").trim().replace(/[.\-\s]/g, "");
     
-    let nationalCode: string;
-    let isInherited = false;
-    
-    // IGNORER les codes réservés entre crochets [XX.XX] ou [XXXX.XX]
-    if (isReservedCode(col1Raw)) {
-      console.log(`Skipping reserved code in processRawLines: "${col1Raw}"`);
+    // Vérifier qu'on a un code
+    if (!nationalCode) {
+      console.log(`Skipping line without national_code: ${line.description?.substring(0, 50)}`);
       continue;
     }
     
-    // Nettoyer col1 des points et espaces APRÈS vérification des crochets
-    const col1Clean = cleanCode(col1Raw);
+    // Préserver les zéros initiaux et compléter à 10 chiffres
+    nationalCode = nationalCode.padEnd(10, "0").slice(0, 10);
     
-    // Vérification supplémentaire après nettoyage - le code doit être numérique
-    if (col1Raw.includes(".") && col1Clean.length >= 4 && !/^\d+$/.test(col1Clean)) {
-      console.log(`Skipping non-numeric code: "${col1Raw}" -> "${col1Clean}"`);
+    // Validation: doit être exactement 10 chiffres
+    if (!/^\d{10}$/.test(nationalCode)) {
+      console.warn(`Invalid national_code format: ${line.national_code} -> ${nationalCode}`);
       continue;
     }
     
-    // CAS 1: Col1 contient un point → c'est un code SH complet ou partiel
-    if (col1Raw.includes(".")) {
-      const parts = col1Raw.split(".");
-      
-      // Format "XX.XX" (ou "X.XX") → Position heading (chapitre.position)
-      // Ex: "07.02" → position 0702, mais le CODE réel peut être en Col2
-      if (parts[0].length <= 2 && parts[1]?.length === 2) {
-        // CRITIQUE: Préserver le zéro initial du chapitre
-        const chapter = parts[0].padStart(2, "0"); // "7" → "07"
-        const positionPart = parts[1]; // "02"
-        lastPosition = chapter + positionPart; // "0702"
-        lastSubheading = "";
-        lastCol2 = "";
-        lastCol3 = "";
-        lastCol4 = "";
-        lastCol5 = "";
-        
-        // NOUVEAU: Vérifier si Col2 contient un code sous-position "XXXX.XX"
-        // C'est le cas pour le format du tarif marocain où la colonne 1 est la position
-        // et la colonne 2 contient le code SH à 6 chiffres (ex: "0702.00")
-        if (col2 && col2.includes(".")) {
-          const col2Parts = col2.split(".");
-          // Format "XXXX.XX" dans col2
-          if (col2Parts[0].length === 4 && col2Parts[1]?.length === 2) {
-            // CRITIQUE: Utiliser le chapitre de COL1 (qui a le zéro initial correct)
-            // et non celui de col2 qui peut avoir perdu le zéro
-            // Ex: col1="07.02", col2="0702.00" → chapitre = "07" de col1
-            const chapterFromCol1 = chapter; // déjà calculé avec padStart(2, "0")
-            
-            // Prendre la sous-position de col2 (les 2 derniers chiffres après le point)
-            const subheadingFromCol2 = col2Parts[1]; // "00"
-            
-            // Construire lastPosition avec le chapitre de col1 + position
-            // col1="07.02" → chapter="07", positionPart="02"
-            // Donc lastPosition = "07" + "02" = "0702"
-            lastSubheading = subheadingFromCol2;
-            
-            // col3, col4, col5 deviennent les extensions
-            lastCol2 = (col3 && /^\d+$/.test(col3)) ? col3.padStart(2, "0") : "";
-            lastCol3 = (col4 && /^\d+$/.test(col4)) ? col4.padStart(2, "0") : "";
-            lastCol4 = (col5 && /^\d+$/.test(col5)) ? col5.padStart(2, "0") : "";
-            lastCol5 = "";
-            
-            console.log(`Format Marocain: col1="${col1Raw}", col2="${col2}" → position=${lastPosition}, subheading=${lastSubheading}`);
-            
-            // Pas de ligne tarifaire pour les headings sans taux
-            if (!line.duty_rate) continue;
-            
-            // Construire le code: position + subheading + extensions
-            let code = lastPosition + lastSubheading;
-            code += lastCol2 || "00";
-            code += lastCol3 || "00";
-            nationalCode = code.slice(0, 10);
-            
-            console.log(`Generated national code: ${nationalCode}`);
-          } else {
-            // Col2 a un point mais pas le format attendu
-            if (!line.duty_rate) continue;
-            nationalCode = lastPosition.padEnd(10, "0");
-          }
-        } else {
-          // Format classique: col2 contient juste "00" ou une extension numérique
-          // CRITIQUE: Toujours mettre à jour lastCol2/lastCol3 pour l'héritage AVANT de vérifier le taux
-          const newCol2 = (col2 && /^\d+$/.test(col2)) ? col2.padStart(2, "0") : "";
-          const newCol3 = (col3 && /^\d+$/.test(col3)) ? col3.padStart(2, "0") : "";
-          
-          // Mettre à jour l'état d'héritage
-          lastCol2 = newCol2;
-          lastCol3 = newCol3;
-          
-          // Si pas de taux → c'est un en-tête intermédiaire (ex: "1401.90 00")
-          // Ne pas créer de ligne, mais l'héritage est déjà établi
-          if (!line.duty_rate) {
-            console.log(`Subheading header: col1="${col1Raw}", col2="${col2}" → setting lastPosition="${lastPosition}", lastCol2="${lastCol2}" for inheritance`);
-            continue;
-          }
-          
-          // Construire: position (4) + "00" (subheading) + col2 + col3
-          let code = lastPosition + "00";
-          code += lastCol2 || "00";
-          code += lastCol3 || "00";
-          nationalCode = code.slice(0, 10);
-        }
-        
-      } else if (col1Clean.length >= 6) {
-        // Format "XXXX.XX" ou plus → Sous-position à 6+ chiffres
-        // CRITIQUE: Toujours mettre à jour lastPosition et lastSubheading pour l'héritage
-        lastPosition = col1Clean.slice(0, 4);
-        lastSubheading = col1Clean.slice(4, 6).padEnd(2, "0");
-        
-        // CRITIQUE: Mettre à jour les colonnes d'extension AVANT de vérifier le taux
-        // Ceci assure que même les en-têtes sans taux (comme "1401.90 00") établissent
-        // lastCol2 pour les sous-lignes qui suivent
-        const newCol2 = (col2 && /^\d+$/.test(col2)) ? col2.padStart(2, "0") : "";
-        const newCol3 = (col3 && /^\d+$/.test(col3)) ? col3.padStart(2, "0") : "";
-        const newCol4 = (col4 && /^\d+$/.test(col4)) ? col4.padStart(2, "0") : "";
-        const newCol5 = (col5 && /^\d+$/.test(col5)) ? col5.padStart(2, "0") : "";
-        
-        // Mettre à jour l'état d'héritage
-        lastCol2 = newCol2;
-        lastCol3 = newCol3;
-        lastCol4 = newCol4;
-        lastCol5 = newCol5;
-        
-        console.log(`Subheading ${col1Raw}: position=${lastPosition}, subheading=${lastSubheading}, lastCol2=${lastCol2}`);
-        
-        // Si pas de taux → c'est un en-tête (ex: "1401.90 00" sans taux)
-        // L'héritage est maintenant établi (lastCol2 est mis à jour), on passe à la ligne suivante
-        if (!line.duty_rate) {
-          console.log(`Subheading header without rate: ${col1Raw} col2="${col2}" → lastSubheading="${lastSubheading}", lastCol2="${lastCol2}" for inheritance`);
-          continue;
-        }
-        
-        // Construire le code national (uniquement si on a un taux)
-        let code = lastPosition + lastSubheading;
-        code += lastCol2 || "00";
-        code += lastCol3 || "00";
-        nationalCode = code.slice(0, 10);
-        
-      } else {
-        // Autre format avec point - traiter comme position
-        lastPosition = col1Clean.padEnd(4, "0").slice(0, 4);
-        lastSubheading = "";
-        if (!line.duty_rate) continue;
-        nationalCode = lastPosition.padEnd(10, "0");
-      }
-      
-    // CAS 2a: Col1 = nombre à 2 chiffres (ex: "80", "20") → C'EST UN EN-TÊTE INTERMÉDIAIRE
-    // Dans le tarif marocain, "80" signifie le 7e-8e chiffre du code, pas une catégorie
-    } else if (/^\d{2}$/.test(col1Clean) && parseInt(col1Clean) >= 10) {
-      // C'est un en-tête intermédiaire qui établit le segment 7e-8e pour les sous-lignes
-      lastCol2 = col1Clean.padStart(2, "0");
-      lastCol3 = ""; // Réinitialiser pour les sous-lignes (pas "00", mais vide)
-      console.log(`Intermediate header in col1: "${col1Clean}" → setting lastCol2="${lastCol2}" for inheritance`);
-      continue; // Ne pas créer de ligne tarifaire, juste établir l'héritage
-      
-    // CAS 2b: Col1 = chiffre catégorie (1, 2, 3...) ou col1 vide/tiret → HÉRITAGE du niveau précédent
-    // Dans le tarif marocain, col1 peut contenir la catégorie tarifaire (1, 2, 3, etc.)
-    // Ces lignes héritent du code HS de la position/sous-position précédente
-    } else if (/^[1-9]$/.test(col1Clean) || col1Clean === "" || col1Raw === "–" || col1Raw === "-") {
-      isInherited = true;
-      
-      // La base est toujours position + sous-position (6 chiffres)
-      let baseCode = lastPosition + (lastSubheading || "00");
-      
-      // Détecter quel format de colonnes est utilisé pour cette ligne
-      // IMPORTANT: Claude peut compacter les colonnes vides, donc "10" peut arriver dans col2
-      // même si dans le PDF original il était dans la 4e colonne (9e-10e chiffre)
-      
-      const hasCol2 = col2 && /^\d+$/.test(col2);
-      const hasCol3 = col3 && /^\d+$/.test(col3) && col3 !== "00"; // "00" n'est PAS une vraie valeur
-      const hasCol4 = col4 && /^\d+$/.test(col4) && col4 !== "00";
-      const hasCol5 = col5 && /^\d+$/.test(col5) && col5 !== "00";
-      
-      // Compter combien de colonnes numériques NON-ZERO on a
-      const numericColCount = [hasCol2, hasCol3, hasCol4, hasCol5].filter(Boolean).length;
-      
-      // VÉRIFIER SI C'EST UN EN-TÊTE INTERMÉDIAIRE (sans taux)
-      const hasDutyRate = line.duty_rate !== null && line.duty_rate !== undefined && 
-                         line.duty_rate.toString().trim() !== "" && line.duty_rate.toString().trim() !== "–";
-      
-      // En-tête intermédiaire: pas de taux ET col2 est un nombre ≥ 10 (pas "00")
-      // Ex: ligne avec "" | "80" | "" → établit lastCol2="80"
-      const col2IsTwoDigitHeader = hasCol2 && /^\d{2}$/.test(col2) && parseInt(col2) >= 10;
-      const col3Absent = !col3 || col3 === "" || col3 === "00";
-      const isIntermediateHeader = !hasDutyRate && col2IsTwoDigitHeader && col3Absent;
-      
-      if (isIntermediateHeader) {
-        // Cette ligne établit le nouveau segment 7e-8e chiffre
-        lastCol2 = col2.padStart(2, "0");
-        lastCol3 = ""; // Réinitialiser pour les sous-lignes
-        console.log(`Intermediate header (col1 empty): col2="${col2}" → setting lastCol2="${lastCol2}" for inheritance`);
-        continue; // Ne pas créer de ligne tarifaire
-      }
-      
-      // MAINTENANT: TRAITER LES LIGNES TARIFAIRES AVEC TAUX
-      if (hasDutyRate) {
-        // ANALYSE DES COLONNES pour déterminer le bon mapping
-        // Formats possibles retournés par Claude:
-        // 1) col2="10", col3="20" → 7e-8e=10, 9e-10e=20 (2 colonnes d'extension)
-        // 2) col2="10", col3="" → dépend du contexte:
-        //    a) Si lastCol2 est déjà défini et col2 < lastCol2 → col2 est le 9e-10e
-        //    b) Sinon col2 est le 7e-8e
-        // 3) col2="00", col3="10" → col3 est le 9e-10e (format avec placeholder "00")
-        
-        // CAS 1: Deux colonnes d'extension présentes
-        if (hasCol2 && hasCol3) {
-          // col2 = 7e-8e, col3 = 9e-10e
-          lastCol2 = col2.padStart(2, "0");
-          lastCol3 = col3.padStart(2, "0");
-          console.log(`Full tariff line: col2="${col2}", col3="${col3}" → ${lastCol2}${lastCol3}`);
-        }
-        // CAS 2: Seulement col2 présent (valeur non-nulle)
-        else if (hasCol2 && !hasCol3) {
-          const col2Val = parseInt(col2);
-          const lastCol2Val = parseInt(lastCol2 || "0");
-          
-          // Si lastCol2 est déjà établi ET col2 est inférieur ou égal → c'est le 9e-10e chiffre
-          // Ex: lastCol2="90" (établi par en-tête), col2="10" → 9e-10e=10
-          if (lastCol2 && lastCol2Val >= 10 && col2Val < lastCol2Val) {
-            // col2 est l'extension 9e-10e, on garde lastCol2 hérité
-            lastCol3 = col2.padStart(2, "0");
-            console.log(`Extension line: col2="${col2}" → 9th-10th digit="${lastCol3}", keeping lastCol2="${lastCol2}"`);
-          }
-          // Sinon, col2 définit le 7e-8e
-          else {
-            lastCol2 = col2.padStart(2, "0");
-            lastCol3 = "00"; // Pas d'extension explicite
-            console.log(`Primary segment: col2="${col2}" → 7th-8th digit="${lastCol2}", 9th-10th="00"`);
-          }
-        }
-        // CAS 3: col2="00" (placeholder) → chercher dans col3
-        else if (col2 === "00" && (col3 && col3 !== "00")) {
-          // col3 est le 9e-10e chiffre
-          lastCol3 = col3.padStart(2, "0");
-          console.log(`Placeholder format: col2="00", col3="${col3}" → 9th-10th digit="${lastCol3}"`);
-        }
-        // CAS 4: Aucune extension → 00 00
-        else if (!hasCol2 && !hasCol3) {
-          // Garder lastCol2 hérité si existant, sinon 00
-          if (!lastCol2) lastCol2 = "00";
-          lastCol3 = "00";
-          console.log(`No extensions: using lastCol2="${lastCol2}", lastCol3="00"`);
-        }
-        
-        // CAS SUPPLÉMENTAIRE: col4/col5 comme extensions additionnelles
-        if (hasCol4) {
-          lastCol4 = col4.padStart(2, "0");
-        }
-        if (hasCol5) {
-          lastCol5 = col5.padStart(2, "0");
-        }
-      }
-      
-      // Construire le code national à 10 chiffres
-      let code = baseCode; // position + subheading (6 chiffres)
-      code += lastCol2 || "00"; // 7e-8e
-      code += lastCol3 || "00"; // 9e-10e
-      nationalCode = code.slice(0, 10);
-      
-      console.log(`Generated inherited code: ${nationalCode} (base=${baseCode}, col2=${lastCol2}, col3=${lastCol3})`)
-      
-    // CAS 3: Col1 contient uniquement des chiffres (6 ou plus) → Code complet sans point
-    } else if (/^\d{4,}$/.test(col1Clean)) {
-      // Ex: "100111" au lieu de "1001.11"
-      lastPosition = col1Clean.slice(0, 4);
-      lastSubheading = col1Clean.length >= 6 ? col1Clean.slice(4, 6) : "";
-      
-      lastCol2 = (col2 && /^\d+$/.test(col2)) ? col2.padStart(2, "0") : "";
-      lastCol3 = (col3 && /^\d+$/.test(col3)) ? col3.padStart(2, "0") : "";
-      lastCol4 = (col4 && /^\d+$/.test(col4)) ? col4.padStart(2, "0") : "";
-      lastCol5 = (col5 && /^\d+$/.test(col5)) ? col5.padStart(2, "0") : "";
-      
-      let code = lastPosition + (lastSubheading || "00");
-      code += lastCol2 || "00";
-      code += lastCol3 || "00";
-      nationalCode = code.slice(0, 10);
-      
-    // CAS 4: Autre valeur non reconnue → ignorer
-    } else {
-      console.log(`Ignoring unrecognized col1 format: "${col1Raw}"`);
-      continue;
-    }
-    
-    // Parser le taux
+    // Parser le taux de droit
     const { rate, note } = parseDutyRate(line.duty_rate);
     
     // Ne garder que les lignes avec un taux valide
-    if (rate === null) continue;
-    
-    // Validation: le code doit avoir exactement 10 chiffres
-    const cleanNationalCode = cleanCode(nationalCode).padEnd(10, "0");
-    if (cleanNationalCode.length !== 10 || !/^\d{10}$/.test(cleanNationalCode)) {
-      console.warn(`Invalid national code: ${nationalCode} (cleaned: ${cleanNationalCode}) from col1="${col1Raw}"`);
+    if (rate === null) {
+      console.log(`Skipping line without duty_rate: ${nationalCode}`);
       continue;
     }
     
+    // Déduire hs_code_6 si non fourni
+    const hsCode6 = line.hs_code_6 ? cleanCode(line.hs_code_6).slice(0, 6).padEnd(6, "0") : nationalCode.slice(0, 6);
+    
+    console.log(`Processed: ${nationalCode} (HS6: ${hsCode6}) - ${line.description?.substring(0, 40)}`);
+    
     results.push({
-      national_code: cleanNationalCode,
-      hs_code_6: cleanNationalCode.slice(0, 6),
+      national_code: nationalCode,
+      hs_code_6: hsCode6,
       description: (line.description || "").replace(/^[–\-\s]+/, "").trim(),
       duty_rate: rate,
       duty_note: note,
       unit: line.unit || null,
-      is_inherited: isInherited,
+      is_inherited: false,
     });
   }
   
+  console.log(`Processed ${results.length} valid tariff lines`);
   return results;
 }
 
@@ -787,19 +489,19 @@ function isValidCleanCode(codeClean: string): boolean {
 }
 
 /**
- * Extrait les codes HS à 6 chiffres uniques
+ * Extrait les codes HS à 6 chiffres uniques (version simplifiée)
  * @param tariffLines - Lignes tarifaires reconstruites
- * @param rawLines - Lignes brutes de Claude
+ * @param rawLines - Lignes brutes de Claude (avec national_code)
  * @param claudeHSCodes - Codes SH directement fournis par Claude (optionnel)
  */
 function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[], claudeHSCodes?: any[]): HSCodeEntry[] {
   const seen = new Set<string>();
   const results: HSCodeEntry[] = [];
   
-  // Map pour stocker les descriptions de heading depuis rawLines ET Claude
+  // Map pour stocker les descriptions de heading depuis Claude
   const headingDescriptions = new Map<string, string>();
   
-  // ÉTAPE 0: D'abord récupérer les descriptions depuis hs_codes de Claude (fallback fiable)
+  // ÉTAPE 1: Récupérer les descriptions depuis hs_codes de Claude (source fiable)
   if (claudeHSCodes && Array.isArray(claudeHSCodes)) {
     for (const hs of claudeHSCodes) {
       const code = hs.code_clean || cleanCode(hs.code || "");
@@ -814,101 +516,52 @@ function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[], cla
     }
   }
   
-  // ÉTAPE 1: Ensuite parcourir les rawLines pour extraire les descriptions de HEADING
-  // (lignes avec code SH mais sans taux = ce sont les en-têtes avec la vraie description)
-  for (const line of rawLines) {
-    const col1 = (line.col1 || "").trim();
-    
-    // IGNORER les codes réservés entre crochets [XX.XX]
-    if (isReservedCode(col1)) {
-      continue;
-    }
-    
-    if (col1.includes(".") && col1 !== "1") {
-      const clean = cleanCode(col1);
-      const desc = (line.description || "").replace(/^[–\-\s]+/, "").trim();
+  // ÉTAPE 2: Extraire les codes SH depuis les hs_codes de Claude
+  if (claudeHSCodes && Array.isArray(claudeHSCodes)) {
+    for (const hs of claudeHSCodes) {
+      const codeRaw = hs.code_clean || cleanCode(hs.code || "");
+      if (!codeRaw) continue;
       
-      // Les lignes SANS taux sont les headings/subheadings avec la vraie description
-      // Priorité aux descriptions longues et sans tirets de hiérarchie
-      if (!line.duty_rate && desc && desc.length > 3) {
-        if (clean.length >= 6 && isValidCleanCode(clean.slice(0, 6))) {
-          const code6 = clean.slice(0, 6);
-          // Remplacer si la nouvelle description est meilleure (plus longue, moins de tirets)
-          const existing = headingDescriptions.get(code6);
-          if (!existing || (desc.length > existing.length && !desc.startsWith("–"))) {
-            headingDescriptions.set(code6, desc);
-            console.log(`Found heading description for ${code6}: "${desc.substring(0, 50)}..."`);
-          }
-        } else if (clean.length === 4 && /^\d{4}$/.test(clean)) {
-          const code6 = clean.padEnd(6, "0");
-          const existing = headingDescriptions.get(code6);
-          if (!existing || (desc.length > existing.length && !desc.startsWith("–"))) {
-            headingDescriptions.set(code6, desc);
-            console.log(`Found position description for ${code6}: "${desc.substring(0, 50)}..."`);
-          }
-        }
+      const code6 = codeRaw.length >= 6 ? codeRaw.slice(0, 6) : codeRaw.padEnd(6, "0");
+      
+      if (isValidCleanCode(code6) && !seen.has(code6)) {
+        seen.add(code6);
+        const desc = headingDescriptions.get(code6) || (hs.description || "").trim();
+        results.push({
+          code: `${code6.slice(0, 4)}.${code6.slice(4, 6)}`,
+          code_clean: code6,
+          description: desc,
+          level: hs.level || "subheading",
+        });
       }
     }
   }
   
-  console.log(`[extractHSCodes] Total heading descriptions collected: ${headingDescriptions.size}`);
+  console.log(`[extractHSCodes] Collected ${results.length} codes from Claude hs_codes`);
   
-  // ÉTAPE 2: Maintenant extraire les codes SH depuis les rawLines (pour les headings)
+  // ÉTAPE 3: Compléter avec les codes depuis rawLines (hs_code_6)
   for (const line of rawLines) {
-    const col1 = (line.col1 || "").trim();
+    const hsCode6 = line.hs_code_6 ? cleanCode(line.hs_code_6).slice(0, 6) : 
+                    line.national_code ? line.national_code.replace(/[.\-\s]/g, "").slice(0, 6) : "";
     
-    if (isReservedCode(col1)) {
-      console.log(`Ignoring reserved/empty code in extractHSCodes: "${col1}"`);
-      continue;
-    }
-    
-    if (col1.includes(".") && col1 !== "1") {
-      const clean = cleanCode(col1);
-      
-      // Validation stricte après nettoyage
-      if (!isValidCleanCode(clean.slice(0, 6)) && clean.length >= 6) {
-        console.log(`Skipping invalid code after cleaning: "${col1}" -> "${clean}"`);
-        continue;
-      }
-      
-      if (clean.length >= 6 && isValidCleanCode(clean.slice(0, 6))) {
-        const code6 = clean.slice(0, 6);
-        if (!seen.has(code6)) {
-          seen.add(code6);
-          // Utiliser la description de heading si disponible, sinon celle de la ligne
-          const desc = headingDescriptions.get(code6) || 
-                       (line.description || "").replace(/^[–\-\s]+/, "").trim();
-          results.push({
-            code: `${code6.slice(0, 4)}.${code6.slice(4, 6)}`,
-            code_clean: code6,
-            description: desc,
-            level: "subheading",
-          });
-        }
-      } else if (clean.length === 4 && /^\d{4}$/.test(clean)) {
-        const code6 = clean.padEnd(6, "0");
-        if (!seen.has(code6)) {
-          seen.add(code6);
-          const desc = headingDescriptions.get(code6) || 
-                       (line.description || "").replace(/^[–\-\s]+/, "").trim();
-          results.push({
-            code: `${clean.slice(0, 2)}.${clean.slice(2, 4)}`,
-            code_clean: code6,
-            description: desc,
-            level: "heading",
-          });
-        }
-      }
+    if (hsCode6 && isValidCleanCode(hsCode6) && !seen.has(hsCode6)) {
+      seen.add(hsCode6);
+      const desc = headingDescriptions.get(hsCode6) || 
+                   (line.description || "").replace(/^[–\-\s]+/, "").trim();
+      results.push({
+        code: `${hsCode6.slice(0, 4)}.${hsCode6.slice(4, 6)}`,
+        code_clean: hsCode6,
+        description: desc,
+        level: "subheading",
+      });
     }
   }
   
-  // ÉTAPE 3: Ensuite depuis les lignes tarifaires (pour les codes manquants)
+  // ÉTAPE 4: Compléter avec les codes depuis tariffLines
   for (const line of tariffLines) {
     const code6 = line.hs_code_6;
-    // Validation stricte : 6 chiffres uniquement
     if (code6 && isValidCleanCode(code6) && !seen.has(code6)) {
       seen.add(code6);
-      // Utiliser la description de heading si disponible, sinon celle de la ligne tarifaire
       const desc = headingDescriptions.get(code6) || line.description;
       results.push({
         code: `${code6.slice(0, 4)}.${code6.slice(4, 6)}`,
@@ -919,16 +572,10 @@ function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[], cla
     }
   }
   
-  // Log les codes sans description pour debug
-  const missingDescriptions = results.filter(r => !r.description || r.description.length < 3);
-  if (missingDescriptions.length > 0) {
-    console.log(`[WARNING] ${missingDescriptions.length} HS codes without description:`, 
-      missingDescriptions.map(r => r.code_clean).join(", "));
-  }
-  
-  // Filtrage final : ne garder que les codes valides
-  return results.filter(hs => isValidCleanCode(hs.code_clean));
+  console.log(`[extractHSCodes] Total HS codes extracted: ${results.length}`);
+  return results;
 }
+// Code orphelin supprimé - fonction extractHSCodes complète ci-dessus
 
 // =============================================================================
 // HELPER FUNCTIONS
