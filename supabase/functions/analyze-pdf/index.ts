@@ -554,22 +554,42 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
       // La base est toujours position + sous-position (6 chiffres)
       let baseCode = lastPosition + (lastSubheading || "00");
       
-      // Appliquer les colonnes de la ligne courante, sinon hériter
-      // IMPORTANT: col2 de cette ligne REMPLACE lastCol2 si présent
-      if (col2 && /^\d+$/.test(col2)) {
+      // Détecter quel format de colonnes est utilisé pour cette ligne
+      // Format A: col2 + col3 contiennent les extensions (ex: "00" + "10")
+      // Format B: col2 vide, col3 ou col4 contient l'extension (ex: "" + "10" ou "" + "" + "10")
+      
+      const hasCol2 = col2 && /^\d+$/.test(col2);
+      const hasCol3 = col3 && /^\d+$/.test(col3);
+      const hasCol4 = col4 && /^\d+$/.test(col4);
+      
+      // Si col2 est présent, utiliser le format standard
+      if (hasCol2) {
         lastCol2 = col2.padStart(2, "0");
+        if (hasCol3) {
+          lastCol3 = col3.padStart(2, "0");
+        }
+      } else {
+        // col2 vide → l'extension peut être dans col3 ou col4
+        // On doit chercher la première valeur numérique disponible
+        if (hasCol3) {
+          // col3 contient l'extension des 2 derniers chiffres (8e+9e position)
+          // Garder lastCol2 (hérité) et mettre col3 dans lastCol3
+          lastCol3 = col3.padStart(2, "0");
+        } else if (hasCol4) {
+          // col4 contient l'extension → c'est le 9e-10e chiffre
+          // On garde lastCol2 hérité et on met col4 dans lastCol3
+          lastCol3 = col4.padStart(2, "0");
+        }
       }
-      if (col3 && /^\d+$/.test(col3)) {
-        lastCol3 = col3.padStart(2, "0");
-      }
-      if (col4 && /^\d+$/.test(col4)) {
+      
+      if (hasCol4 && hasCol3) {
         lastCol4 = col4.padStart(2, "0");
       }
       if (col5 && /^\d+$/.test(col5)) {
         lastCol5 = col5.padStart(2, "0");
       }
       
-      // Construire le code: base + col2 + col3 (10 chiffres au total)
+      // Construire le code: base + lastCol2 + lastCol3 (10 chiffres au total)
       let code = baseCode;
       code += lastCol2 || "00";
       code += lastCol3 || "00";
