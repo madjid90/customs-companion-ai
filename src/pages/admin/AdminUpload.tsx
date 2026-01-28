@@ -32,7 +32,9 @@ export default function AdminUpload() {
   const detectDocumentType = (fileName: string): { category: string; label: string } => {
     const name = fileName.toLowerCase();
     
-    if (name.includes("tarif") || name.includes("ddi") || name.includes("chapitre")) {
+    // Priorité aux documents tarifaires (incluant SH CODE / HS CODE)
+    if (name.includes("tarif") || name.includes("ddi") || name.includes("chapitre") ||
+        name.includes("sh code") || name.includes("hs code") || name.includes("shcode") || name.includes("hscode")) {
       return { category: "tarif", label: "Tarif douanier" };
     }
     if (name.includes("circulaire") || name.includes("circ")) {
