@@ -719,11 +719,14 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
 /**
  * Vérifie si un code est entre crochets (position réservée/vide)
  * Détecte aussi les codes nettoyés qui contenaient des crochets
+ * NOTE: Les codes VIDES ne sont PAS réservés - ils représentent des lignes héritées
  */
 function isReservedCode(code: string): boolean {
-  if (!code) return true;
+  // IMPORTANT: code vide = ligne héritée, PAS réservée
+  // Ces lignes doivent être traitées par la logique d'héritage (CAS 2b)
+  if (!code || code.trim() === "") return false;
   const raw = code.trim();
-  // Crochets présents
+  // Crochets présents = position réservée/vide
   if (raw.startsWith("[") || raw.endsWith("]") || raw.includes("[") || raw.includes("]")) {
     return true;
   }
