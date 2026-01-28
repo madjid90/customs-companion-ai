@@ -112,31 +112,38 @@ Les codes nationaux ont TOUJOURS 10 chiffres, construits ainsi:
 - Chiffres 7-8 : Extension nationale 1 (ex: 00)
 - Chiffres 9-10 : Extension nationale 2 (ex: 00)
 
-EXEMPLE D'UN CHAPITRE:
+EXEMPLE D'UN CHAPITRE MAROCAIN:
 
-| Position | Subheading | Ext1 | Ext2 | Description              | Droit |
-|----------|------------|------|------|--------------------------|-------|
-| 32.01    |            |      |      | Extraits tannants...     |       |
-| 3201.10  |            |      |      | – Extrait de quebracho   |       |
-|          | 00         |      |      | – – quebracho base       |       |
-|          |            | 00   |      | – – – En poudre          | 2,5   |
-|          |            | 10   |      | – – – Autre              | 2,5   |
-| 3201.20  |            |      |      | – Extrait de mimosa      |       |
-|          | 00         | 00   |      | – – mimosa en poudre     | 2,5   |
-| 3201.90  |            |      |      | – Autres:                |       |
-|          | 00         |      |      | – – extraits divers      |       |
-|          |            | 10   |      | – – – Sommac             | 2,5   |
-|          |            | 90   |      | – – – Autres             | 2,5   |
+Le PDF marocain a généralement ces colonnes:
+| Position | Ext1 | Ext2 | Description              | Droit |
+|----------|------|------|--------------------------|-------|
+| 32.01    |      |      | Extraits tannants...     |       |
+| 3201.10  |      |      | – Extrait de quebracho   |       |
+|          | 00   |      | – – quebracho base       |       |
+|          |      | 00   | – – – En poudre          | 2,5   |
+|          |      | 10   | – – – Autre              | 2,5   |
+| 3201.20  |      |      | – Extrait de mimosa      |       |
+|          | 00   | 00   | – – mimosa en poudre     | 2,5   |
+| 3201.90  |      |      | – Autres:                |       |
+|          | 00   |      | – – extraits divers      |       |
+|          |      | 10   | – – – Sommac             | 2,5   |
+|          |      | 90   | – – – Autres             | 2,5   |
 
 CONSTRUCTION DU CODE NATIONAL À 10 CHIFFRES:
-Position(4) + Subheading(2) + Ext1(2) + Ext2(2)
+Le code = Position_clean(6 chiffres) + Ext1(2 chiffres) + Ext2(2 chiffres)
 
-Les codes nationaux résultants sont (lecture GAUCHE À DROITE):
-- 3201.10 + 00 + 00 + 00 = 3201100000 (quebracho en poudre, Ext1=00 hérite, Ext2=00)
-- 3201.10 + 00 + 00 + 10 = 3201100010 (quebracho autre, Ext1=00 hérite, Ext2=10)
-- 3201.20 + 00 + 00 + 00 = 3201200000 (mimosa)
-- 3201.90 + 00 + 10 + 00 = 3201900010 (Sommac: Ext1=10, Ext2=00 par défaut)
-- 3201.90 + 00 + 90 + 00 = 3201900090 (Autres: Ext1=90, Ext2=00 par défaut)
+Position_clean = les 6 premiers chiffres (ex: 3201.90 → 320190)
+Ext1 = colonne après Position (hérite de la ligne parent si vide, sinon 00 par défaut)
+Ext2 = dernière colonne avant Description (hérite ou 00 par défaut)
+
+CALCUL POUR CHAQUE LIGNE AVEC TAUX:
+- 3201.10 → 320110, Ext1=00 (hérité), Ext2=00 → 3201100000 (quebracho en poudre)
+- 3201.10 → 320110, Ext1=00 (hérité), Ext2=10 → 3201100010 (quebracho autre)
+- 3201.20 → 320120, Ext1=00, Ext2=00 → 3201200000 (mimosa)
+- 3201.90 → 320190, Ext1=00 (hérité), Ext2=10 → 3201900010 (Sommac)
+- 3201.90 → 320190, Ext1=00 (hérité), Ext2=90 → 3201900090 (Autres)
+
+ATTENTION: La valeur de la dernière colonne numérique (10, 90, etc.) va dans Ext2, PAS dans Ext1!
 
 === CE QUE TU DOIS EXTRAIRE ===
 
