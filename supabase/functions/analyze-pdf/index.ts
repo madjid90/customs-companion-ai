@@ -321,21 +321,30 @@ function getAnalysisPrompt(title: string, category: string): string {
   const categoryLower = category.toLowerCase();
   const titleLower = title.toLowerCase();
   
-  // Vérifier si c'est un document tarifaire
+  // Vérifier si c'est un document tarifaire (PRIORITAIRE)
+  // "SH CODE" dans le titre = TOUJOURS tarifaire
   const isTariff = TARIFF_CATEGORIES.some(t => categoryLower.includes(t) || titleLower.includes(t)) ||
                    titleLower.includes("chapitre") ||
-                   /sh\s*code/i.test(titleLower);
+                   /sh\s*code/i.test(titleLower) ||
+                   /hs\s*code/i.test(titleLower);
+  
+  // Si c'est un document tarifaire, utiliser le prompt tarifaire (PRIORITÉ)
+  if (isTariff) {
+    console.log(`Using TARIFF prompt for: "${title}" (category: ${category}) - detected as tariff document`);
+    return getTariffPrompt(title, category);
+  }
   
   // Vérifier si c'est un document réglementaire
   const isRegulatory = REGULATORY_CATEGORIES.some(r => categoryLower.includes(r) || titleLower.includes(r));
   
-  // Si explicitement réglementaire, ou si pas tarifaire et catégorie suggère réglementaire
-  if (isRegulatory || (!isTariff && !categoryLower.includes("tarif"))) {
+  // Si explicitement réglementaire
+  if (isRegulatory) {
     console.log(`Using REGULATORY prompt for: "${title}" (category: ${category})`);
     return getRegulatoryPrompt(title, category);
   }
   
-  console.log(`Using TARIFF prompt for: "${title}" (category: ${category})`);
+  // Par défaut, utiliser le prompt tarifaire
+  console.log(`Using TARIFF prompt for: "${title}" (category: ${category}) - default`);
   return getTariffPrompt(title, category);
 }
 
