@@ -544,6 +544,7 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
         
       } else if (col1Clean.length >= 6) {
         // Format "XXXX.XX" ou plus → Sous-position à 6+ chiffres
+        // CRITIQUE: Toujours mettre à jour lastPosition et lastSubheading pour l'héritage
         lastPosition = col1Clean.slice(0, 4);
         lastSubheading = col1Clean.slice(4, 6).padEnd(2, "0");
         
@@ -553,7 +554,16 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
         lastCol4 = (col4 && /^\d+$/.test(col4)) ? col4.padStart(2, "0") : "";
         lastCol5 = (col5 && /^\d+$/.test(col5)) ? col5.padStart(2, "0") : "";
         
-        // Construire le code national
+        console.log(`Subheading ${col1Raw}: position=${lastPosition}, subheading=${lastSubheading}, lastCol2=${lastCol2}`);
+        
+        // Si pas de taux → c'est un en-tête (ex: "1401.90 00" sans taux)
+        // L'héritage est établi, on passe à la ligne suivante
+        if (!line.duty_rate) {
+          console.log(`Subheading header without rate: ${col1Raw} → setting lastSubheading="${lastSubheading}" for inheritance`);
+          continue;
+        }
+        
+        // Construire le code national (uniquement si on a un taux)
         let code = lastPosition + lastSubheading;
         code += lastCol2 || "00";
         code += lastCol3 || "00";
