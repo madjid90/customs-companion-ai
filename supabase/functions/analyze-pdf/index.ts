@@ -13,11 +13,11 @@ import { validateAnalyzePdfRequest } from "../_shared/validation.ts";
 import { createLogger } from "../_shared/logger.ts";
 
 // =============================================================================
-// CONFIGURATION LOVABLE AI GATEWAY (Gemini)
+// CONFIGURATION - ANTHROPIC CLAUDE (Native PDF Support)
 // =============================================================================
 
-const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const LOVABLE_AI_MODEL = "google/gemini-2.5-pro"; // Best for PDF + complex reasoning
+const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_MODEL = "claude-sonnet-4-20250514"; // Best for PDF + complex reasoning with native support
 
 // =============================================================================
 // INTERFACES
@@ -727,10 +727,10 @@ function delay(ms: number): Promise<void> {
 }
 
 // =============================================================================
-// APPEL LOVABLE AI GATEWAY (Gemini) - Vision PDF via native file input
+// APPEL ANTHROPIC CLAUDE API (Native PDF Support)
 // =============================================================================
 
-async function analyzeWithLovableAI(
+async function analyzeWithClaude(
   base64Pdf: string,
   title: string,
   category: string,
@@ -743,26 +743,24 @@ async function analyzeWithLovableAI(
   
   const prompt = getAnalysisPrompt(title, category);
 
-  console.log("Calling Lovable AI Gateway with model:", LOVABLE_AI_MODEL);
+  console.log("Calling Anthropic Claude with model:", ANTHROPIC_MODEL);
   console.log("PDF base64 size:", base64Pdf.length, "chars");
 
-  // Lovable AI Gateway - OpenAI-compatible format with inline base64 PDF
-  // Using image_url format which is the standard for multimodal content
+  // Anthropic Claude API - Native PDF support with anthropic-beta header
   const requestBody = {
-    model: LOVABLE_AI_MODEL,
+    model: ANTHROPIC_MODEL,
     max_tokens: 64000,
+    system: "Tu es un expert en tarifs douaniers et nomenclature du Système Harmonisé (SH). Analyse les documents PDF de manière exhaustive et retourne les données structurées en JSON.",
     messages: [
-      {
-        role: "system",
-        content: "Tu es un expert en tarifs douaniers et nomenclature du Système Harmonisé (SH). Analyse les documents PDF de manière exhaustive et retourne les données structurées en JSON."
-      },
       {
         role: "user",
         content: [
           {
-            type: "image_url",
-            image_url: {
-              url: `data:application/pdf;base64,${base64Pdf}`,
+            type: "document",
+            source: {
+              type: "base64",
+              media_type: "application/pdf",
+              data: base64Pdf,
             }
           },
           { type: "text", text: prompt }
@@ -771,18 +769,20 @@ async function analyzeWithLovableAI(
     ],
   };
 
-  console.log("Sending request to Lovable AI Gateway...");
+  console.log("Sending request to Anthropic Claude API...");
   
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
   
   let aiResponse: Response;
   try {
-    aiResponse = await fetch(LOVABLE_AI_URL, {
+    aiResponse = await fetch(ANTHROPIC_API_URL, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
         "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "pdfs-2024-09-25",
       },
       body: JSON.stringify(requestBody),
       signal: controller.signal,
@@ -797,20 +797,16 @@ async function analyzeWithLovableAI(
   }
   
   clearTimeout(timeoutId);
-  console.log("Lovable AI Gateway response status:", aiResponse.status);
+  console.log("Anthropic Claude response status:", aiResponse.status);
 
-  // Handle rate limiting (429) and payment required (402)
-  if (aiResponse.status === 429 || aiResponse.status === 402) {
-    if (aiResponse.status === 402) {
-      console.error("Lovable AI credits exhausted");
-      throw new Error("Crédits Lovable AI épuisés. Veuillez recharger dans Settings > Workspace > Usage.");
-    }
+  // Handle rate limiting (429) and overloaded (529)
+  if (aiResponse.status === 429 || aiResponse.status === 529) {
     if (retryCount < MAX_RETRIES) {
       const retryAfter = aiResponse.headers.get("Retry-After");
       const delayMs = retryAfter ? parseInt(retryAfter) * 1000 : BASE_DELAY * Math.pow(2, retryCount);
       console.log(`Rate limited (${aiResponse.status}). Retry ${retryCount + 1}/${MAX_RETRIES} after ${delayMs}ms...`);
       await delay(delayMs);
-      return analyzeWithLovableAI(base64Pdf, title, category, apiKey, retryCount + 1);
+      return analyzeWithClaude(base64Pdf, title, category, apiKey, retryCount + 1);
     } else {
       console.error("Max retries reached for rate limiting");
       return { result: null, truncated: false, rateLimited: true };
@@ -819,20 +815,20 @@ async function analyzeWithLovableAI(
 
   if (!aiResponse.ok) {
     const errorText = await aiResponse.text();
-    console.error("Lovable AI error:", aiResponse.status, errorText);
-    throw new Error(`Lovable AI error: ${aiResponse.status} - ${errorText}`);
+    console.error("Anthropic Claude error:", aiResponse.status, errorText);
+    throw new Error(`Anthropic Claude error: ${aiResponse.status} - ${errorText}`);
   }
 
   const aiData = await aiResponse.json();
   
-  // OpenAI-compatible format: finish_reason
-  const finishReason = aiData.choices?.[0]?.finish_reason;
-  const truncated = finishReason === "length";
+  // Anthropic format: stop_reason
+  const stopReason = aiData.stop_reason;
+  const truncated = stopReason === "max_tokens";
   
-  console.log("Lovable AI response - finish_reason:", finishReason, "truncated:", truncated);
+  console.log("Anthropic Claude response - stop_reason:", stopReason, "truncated:", truncated);
   
-  // OpenAI format: choices[0].message.content
-  const responseText = aiData.choices?.[0]?.message?.content || "{}";
+  // Anthropic format: content[0].text
+  const responseText = aiData.content?.[0]?.text || "{}";
   
   // Parse JSON
   let cleanedResponse = responseText.trim();
@@ -1327,12 +1323,12 @@ serve(async (req) => {
       return errorResponse(req, "filePath is required", 400);
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    if (!ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY is not configured");
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
@@ -1392,11 +1388,11 @@ serve(async (req) => {
     const category = pdfDoc?.category || "tarif";
     const countryCode = pdfDoc?.country_code || "MA";
 
-    // Analyze with Lovable AI (Gemini) - extraction complète sans limite
+    // Analyze with Anthropic Claude - extraction complète sans limite
     console.log(`Attempting full document analysis (no line limit)...`);
     
-    const { result, truncated, rateLimited } = await analyzeWithLovableAI(
-      base64Pdf, title, category, LOVABLE_API_KEY
+    const { result, truncated, rateLimited } = await analyzeWithClaude(
+      base64Pdf, title, category, ANTHROPIC_API_KEY
     );
     
     let analysisResult: AnalysisResult | null = result;
@@ -1463,7 +1459,7 @@ serve(async (req) => {
           legal_references: analysisResult.legal_references || [],
           document_type: isRegulatoryDoc ? "regulatory" : "tariff",
         },
-        extraction_model: "google/gemini-2.5-pro",
+        extraction_model: ANTHROPIC_MODEL,
         extraction_confidence: 0.92,
       });
       
@@ -1492,7 +1488,7 @@ serve(async (req) => {
           legal_references: analysisResult.legal_references || [],
           document_type: isRegulatoryDoc ? "regulatory" : "tariff",
         },
-        extraction_model: "google/gemini-2.5-pro",
+        extraction_model: ANTHROPIC_MODEL,
         extraction_confidence: 0.92,
         extracted_at: new Date().toISOString(),
       }).eq("id", existingExtraction.id);
