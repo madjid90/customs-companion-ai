@@ -17,11 +17,9 @@ import { createLogger } from "../_shared/logger.ts";
 // =============================================================================
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const CLAUDE_MODEL_FAST = "claude-3-haiku-20240307"; // Fast model for large PDFs (valid model)
-const CLAUDE_MODEL_PRECISE = "claude-sonnet-4-20250514"; // Precise model for smaller PDFs
-
-// Threshold: PDFs larger than this (base64 chars) use the fast model
-const LARGE_PDF_THRESHOLD = 500000; // ~375KB PDF file
+// NOTE: Only Sonnet models support native PDF input (anthropic-beta header)
+// Haiku does NOT support PDF input, so we use Sonnet for all PDF analysis
+const CLAUDE_MODEL = "claude-sonnet-4-20250514"; // Sonnet 4 - supports native PDF input
 
 // =============================================================================
 // INTERFACES
@@ -853,19 +851,14 @@ async function analyzeWithClaude(
   
   const prompt = getAnalysisPrompt(title, category);
 
-  // Use faster model for large PDFs to avoid timeout
-  const isLargePdf = base64Pdf.length > LARGE_PDF_THRESHOLD;
-  const selectedModel = isLargePdf ? CLAUDE_MODEL_FAST : CLAUDE_MODEL_PRECISE;
-  
-  console.log(`PDF base64 size: ${base64Pdf.length} chars (${isLargePdf ? 'LARGE' : 'normal'})`);
-  console.log("Using model:", selectedModel);
+  // All PDFs use Sonnet - it's the only model that supports native PDF input
+  console.log(`PDF base64 size: ${base64Pdf.length} chars`);
+  console.log("Using model:", CLAUDE_MODEL);
 
   // Claude API with native PDF support
-  // Use reduced tokens for Haiku (8192 max) vs Sonnet (64000)
-  const maxTokens = isLargePdf ? 8192 : 64000;
   const requestBody = {
-    model: selectedModel,
-    max_tokens: maxTokens,
+    model: CLAUDE_MODEL,
+    max_tokens: 64000,
     system: "Tu es un expert en tarifs douaniers et nomenclature du Système Harmonisé (SH). Analyse les documents PDF de manière exhaustive et retourne les données structurées en JSON.",
     messages: [
       {
@@ -888,10 +881,9 @@ async function analyzeWithClaude(
   console.log("Sending request to Claude API...");
   
   const controller = new AbortController();
-  // Timeout adaptatif: 2 min pour Haiku (rapide), 4 min pour Sonnet
-  // EdgeRuntime a un timeout global de ~5 minutes, on garde une marge
-  const CLAUDE_TIMEOUT_MS = isLargePdf ? 120000 : 240000;
-  console.log(`Timeout set to ${CLAUDE_TIMEOUT_MS / 1000}s for ${isLargePdf ? 'Haiku' : 'Sonnet'}`);
+  // Sonnet timeout: 4 minutes for all PDFs
+  const CLAUDE_TIMEOUT_MS = 240000;
+  console.log(`Timeout set to ${CLAUDE_TIMEOUT_MS / 1000}s for Sonnet`);
   const timeoutId = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS);
   
   let aiResponse: Response;
@@ -1571,7 +1563,7 @@ serve(async (req) => {
       key_points: [],
       mentioned_hs_codes: [],
       detected_tariff_changes: [],
-      extraction_model: CLAUDE_MODEL_PRECISE, // Will be updated after analysis with actual model used
+      extraction_model: CLAUDE_MODEL,
       extraction_confidence: 0,
     }).select("id").single();
     console.log("Created PROCESSING marker for PDF:", pdfId);
@@ -1640,7 +1632,7 @@ serve(async (req) => {
             legal_references: analysisResult.legal_references || [],
             document_type: isRegulatoryDoc ? "regulatory" : "tariff",
           },
-          extraction_model: base64Pdf.length > LARGE_PDF_THRESHOLD ? CLAUDE_MODEL_FAST : CLAUDE_MODEL_PRECISE,
+          extraction_model: CLAUDE_MODEL,
           extraction_confidence: 0.92,
           extracted_at: new Date().toISOString(),
         }).eq("pdf_id", pdfId);
