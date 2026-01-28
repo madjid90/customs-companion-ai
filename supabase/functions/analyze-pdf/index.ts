@@ -95,9 +95,9 @@ interface AnalysisResult {
 // PROMPT CLAUDE - DOCUMENTS TARIFAIRES (tableaux SH codes)
 // =============================================================================
 
-const getTariffPrompt = (title: string, category: string) => `Tu es un expert en tarifs douaniers marocains. Analyse ce document PDF avec EXTRÊME PRÉCISION et EXTRAIS TOUTES LES LIGNES SANS EXCEPTION.
+const getTariffPrompt = (title: string, category: string) => `Expert en tarifs douaniers. Analyse ce PDF et extrais TOUTES les lignes tarifaires.
 
-Document : ${title}
+Doc: ${title}
 Catégorie : ${category}
 
 === STRUCTURE EXACTE DU TABLEAU TARIFAIRE MAROCAIN ===
@@ -869,7 +869,10 @@ async function analyzeWithClaude(
   console.log("Sending request to Claude API...");
   
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
+  // RÉDUIT à 3 minutes - Supabase EdgeRuntime a un timeout global de ~5 minutes
+  // 3 min pour Claude + marge pour sauvegarde
+  const CLAUDE_TIMEOUT_MS = 180000;
+  const timeoutId = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS);
   
   let aiResponse: Response;
   try {
@@ -887,8 +890,8 @@ async function analyzeWithClaude(
   } catch (fetchError: any) {
     clearTimeout(timeoutId);
     if (fetchError.name === 'AbortError') {
-      console.error("Request timed out after 5 minutes");
-      throw new Error("Request timeout - le PDF est peut-être trop volumineux");
+      console.error(`Request timed out after ${CLAUDE_TIMEOUT_MS / 1000} seconds`);
+      throw new Error(`Timeout après ${CLAUDE_TIMEOUT_MS / 60000} min - PDF trop volumineux. Divisez le document en parties plus petites.`);
     }
     throw fetchError;
   }
