@@ -109,26 +109,38 @@ Le tableau possède 5 colonnes de CODIFICATION qui doivent être lues SÉPARÉME
 ├──────────┬──────┬──────┬──────┬────────┼──────────────┼───────┼──────────┼────────┤
 │  Col1    │ Col2 │ Col3 │ Col4 │ Col5   │              │       │          │        │
 ├──────────┼──────┼──────┼──────┼────────┼──────────────┼───────┼──────────┼────────┤
-│ 10.01    │      │      │      │        │ Froment...   │       │          │        │
-│ 1001.11  │ 00   │      │      │        │ – – De sem   │       │ kg       │ –      │
-│ 1        │ 10   │      │      │        │ – – – préb   │ 2,5   │ kg       │ –      │
-│ 1        │ 90   │      │      │        │ – – – autr   │ 2,5   │ kg       │ –      │
-│ 1001.19  │ 00   │      │      │        │ – – Autres   │       │          │        │
-│ 1        │ 10   │      │      │        │ – – – du 1   │170(b) │ kg       │ –      │
-│ 1        │ 90   │      │      │        │ – – – du 1   │ 2,5   │ kg       │ –      │
+│ 14.04    │      │      │      │        │ Produits...  │       │          │        │
+│ 1404.90  │ 00   │      │      │        │ – – Autres   │       │          │        │
+│          │ 40   │ 00   │      │        │ – – – matièr │ 2,5   │ kg       │        │
+│          │      │ 10   │      │        │ – – – – alfa │ 2,5   │ kg       │        │
+│          │      │ 90   │      │        │ – – – – autr │ 2,5   │ kg       │        │
+│          │ 80   │      │      │        │ – – – Autre: │       │          │   ← HEADER     │
+│          │      │ 10   │      │        │ – – – – ...  │ 2,5   │ kg       │        │
+│          │      │ 90   │      │        │ – – – – ...  │ 2,5   │ kg       │        │
 └──────────┴──────┴──────┴──────┴────────┴──────────────┴───────┴──────────┴────────┘
 
-=== RÈGLE CRITIQUE : LE CHIFFRE "1" EN COL1 ===
+=== RÈGLES CRITIQUES D'HÉRITAGE ===
 
-Quand Col1 contient UNIQUEMENT le chiffre "1" :
-→ C'est un MARQUEUR D'HÉRITAGE (pas un code!)
-→ Les 6 premiers chiffres viennent de la DERNIÈRE ligne avec un code complet en Col1
-→ Col2, Col3, Col4, Col5 complètent pour former le code à 10 chiffres
+1. MARQUEUR "1" EN COL1:
+   Quand Col1 contient "1" (ou 2-9), c'est un MARQUEUR D'HÉRITAGE
+   → Les 6 premiers chiffres viennent de la DERNIÈRE ligne avec un code complet
 
-EXEMPLE DE RECONSTRUCTION :
-Ligne: "1001.11 | 00 |  |  |" → Code de base: 100111
-Ligne: "1 | 10 |  |  |" → HÉRITAGE 100111 + "10" + "00" = 1001110010
-Ligne: "1 | 90 |  |  |" → HÉRITAGE 100111 + "90" + "00" = 1001119000
+2. EN-TÊTES INTERMÉDIAIRES (SANS TAUX):
+   TRÈS IMPORTANT: Quand une ligne a:
+   - Col1 VIDE et Col2 contient un nombre (40, 80, etc.)
+   - PAS de duty_rate (ou duty_rate vide)
+   → C'est un EN-TÊTE qui établit les 7e-8e chiffres pour les sous-lignes suivantes
+   → Les lignes suivantes avec col2 VIDE hériteront de ce "40" ou "80"
+
+3. EXTENSIONS (AVEC TAUX):
+   Quand Col1 VIDE, Col2 VIDE, Col3 contient un nombre (10, 90), et duty_rate présent
+   → Col3 = 9e-10e chiffre, et on HÉRITE les 7e-8e du dernier en-tête
+
+EXEMPLE DE RECONSTRUCTION AVEC EN-TÊTE:
+Ligne: "1404.90 | 00 |    |    |" → Code de base: 140490 + 00 = 14049000XX
+Ligne: "        | 80 |    |    |" → EN-TÊTE: établit 7e-8e = "80", pas de ligne créée
+Ligne: "        |    | 10 |    |" → HÉRITAGE 140490 + 80 + 10 = 1404908010
+Ligne: "        |    | 90 |    |" → HÉRITAGE 140490 + 80 + 90 = 1404908090
 
 === EXTRACTION DEMANDÉE ===
 
@@ -171,16 +183,17 @@ Ligne: "1 | 90 |  |  |" → HÉRITAGE 100111 + "90" + "00" = 1001119000
     "f": "Ce taux est appliqué à la tranche ≤ 1000 DH/tonne, au-delà = 2,5%"
   },
   "raw_lines": [
-    {"col1": "10.01", "col2": "", "col3": "", "col4": "", "col5": "", "description": "Froment (blé) et méteil.", "duty_rate": null, "unit": null},
-    {"col1": "1001.11", "col2": "00", "col3": "", "col4": "", "col5": "", "description": "– – De semence", "duty_rate": null, "unit": "kg"},
-    {"col1": "1", "col2": "10", "col3": "", "col4": "", "col5": "", "description": "– – – prébase et base (a)", "duty_rate": "2,5", "unit": "kg"},
-    {"col1": "1", "col2": "90", "col3": "", "col4": "", "col5": "", "description": "– – – autres (a)", "duty_rate": "2,5", "unit": "kg"},
-    {"col1": "1001.19", "col2": "00", "col3": "", "col4": "", "col5": "", "description": "– – Autres", "duty_rate": null, "unit": null},
-    {"col1": "1", "col2": "10", "col3": "", "col4": "", "col5": "", "description": "– – – du 1er Juin au 31 Juillet", "duty_rate": "170(b)", "unit": "kg"}
+    {"col1": "14.04", "col2": "", "col3": "", "col4": "", "col5": "", "description": "Produits végétaux...", "duty_rate": null, "unit": null},
+    {"col1": "1404.90", "col2": "00", "col3": "", "col4": "", "col5": "", "description": "– – Autres", "duty_rate": null, "unit": null},
+    {"col1": "", "col2": "40", "col3": "00", "col4": "", "col5": "", "description": "– – – matières végétales...", "duty_rate": "2,5", "unit": "kg"},
+    {"col1": "", "col2": "", "col3": "10", "col4": "", "col5": "", "description": "– – – – alfa...", "duty_rate": "2,5", "unit": "kg"},
+    {"col1": "", "col2": "", "col3": "90", "col4": "", "col5": "", "description": "– – – – autres", "duty_rate": "2,5", "unit": "kg"},
+    {"col1": "", "col2": "80", "col3": "", "col4": "", "col5": "", "description": "– – – Autre:", "duty_rate": null, "unit": null},
+    {"col1": "", "col2": "", "col3": "10", "col4": "", "col5": "", "description": "– – – – henné...", "duty_rate": "2,5", "unit": "kg"},
+    {"col1": "", "col2": "", "col3": "90", "col4": "", "col5": "", "description": "– – – – autres", "duty_rate": "2,5", "unit": "kg"}
   ],
   "hs_codes": [
-    {"code": "1001.11", "code_clean": "100111", "description": "De semence", "level": "subheading"},
-    {"code": "1001.19", "code_clean": "100119", "description": "Autres", "level": "subheading"}
+    {"code": "1404.90", "code_clean": "140490", "description": "Autres", "level": "subheading"}
   ],
   "trade_agreements": [],
   "preferential_rates": [],
