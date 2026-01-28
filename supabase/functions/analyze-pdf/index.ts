@@ -117,20 +117,26 @@ EXEMPLE D'UN CHAPITRE:
 | Position | Subheading | Ext1 | Ext2 | Description              | Droit |
 |----------|------------|------|------|--------------------------|-------|
 | 32.01    |            |      |      | Extraits tannants...     |       |
-| 3201.10  | 00         |      |      | – Extrait de quebracho   |       |
+| 3201.10  |            |      |      | – Extrait de quebracho   |       |
+|          | 00         |      |      | – – quebracho base       |       |
 |          |            | 00   |      | – – – En poudre          | 2,5   |
 |          |            | 10   |      | – – – Autre              | 2,5   |
-| 3201.20  | 00         |      |      | – Extrait de mimosa      | 2,5   |
-| 3201.90  | 00         |      |      | – Autres:                |       |
+| 3201.20  |            |      |      | – Extrait de mimosa      |       |
+|          | 00         | 00   |      | – – mimosa en poudre     | 2,5   |
+| 3201.90  |            |      |      | – Autres:                |       |
+|          | 00         |      |      | – – extraits divers      |       |
 |          |            | 10   |      | – – – Sommac             | 2,5   |
 |          |            | 90   |      | – – – Autres             | 2,5   |
 
-Les codes nationaux résultants sont:
-- 3201100000 (Extrait de quebracho - en poudre)
-- 3201100010 (Extrait de quebracho - autre)
-- 3201200000 (Extrait de mimosa)
-- 3201901000 (Autres - Sommac)
-- 3201909000 (Autres - Autres)
+CONSTRUCTION DU CODE NATIONAL À 10 CHIFFRES:
+Position(4) + Subheading(2) + Ext1(2) + Ext2(2)
+
+Les codes nationaux résultants sont (lecture GAUCHE À DROITE):
+- 3201.10 + 00 + 00 + 00 = 3201100000 (quebracho en poudre, Ext1=00 hérite, Ext2=00)
+- 3201.10 + 00 + 00 + 10 = 3201100010 (quebracho autre, Ext1=00 hérite, Ext2=10)
+- 3201.20 + 00 + 00 + 00 = 3201200000 (mimosa)
+- 3201.90 + 00 + 10 + 00 = 3201900010 (Sommac: Ext1=10, Ext2=00 par défaut)
+- 3201.90 + 00 + 90 + 00 = 3201900090 (Autres: Ext1=90, Ext2=00 par défaut)
 
 === CE QUE TU DOIS EXTRAIRE ===
 
@@ -166,8 +172,8 @@ Pour CHAQUE ligne tarifaire avec un taux de droit (duty_rate):
     {"national_code": "3201100000", "hs_code_6": "320110", "description": "Extrait de quebracho, en poudre", "duty_rate": "2,5", "unit": "kg"},
     {"national_code": "3201100010", "hs_code_6": "320110", "description": "Extrait de quebracho, autre", "duty_rate": "2,5", "unit": "kg"},
     {"national_code": "3201200000", "hs_code_6": "320120", "description": "Extrait de mimosa", "duty_rate": "2,5", "unit": "kg"},
-    {"national_code": "3201901000", "hs_code_6": "320190", "description": "Sommac", "duty_rate": "2,5", "unit": "kg"},
-    {"national_code": "3201909000", "hs_code_6": "320190", "description": "Autres extraits tannants", "duty_rate": "2,5", "unit": "kg"}
+    {"national_code": "3201900010", "hs_code_6": "320190", "description": "Sommac", "duty_rate": "2,5", "unit": "kg"},
+    {"national_code": "3201900090", "hs_code_6": "320190", "description": "Autres extraits tannants", "duty_rate": "2,5", "unit": "kg"}
   ],
   "hs_codes": [
     {"code": "3201.10", "code_clean": "320110", "description": "Extrait de quebracho", "level": "subheading"},
