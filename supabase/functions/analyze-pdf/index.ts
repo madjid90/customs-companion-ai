@@ -1490,224 +1490,239 @@ serve(async (req) => {
     // et d'attendre plus longtemps via polling
     const { data: existingProcExtraction } = await supabase
       .from("pdf_extractions")
-      .select("id")
+      .select("id, summary")
       .eq("pdf_id", pdfId)
       .maybeSingle();
     
-    if (!existingProcExtraction) {
-      await supabase.from("pdf_extractions").insert({
-        pdf_id: pdfId,
-        summary: "__PROCESSING__",
-        key_points: [],
-        mentioned_hs_codes: [],
-        detected_tariff_changes: [],
-        extraction_model: CLAUDE_MODEL,
-        extraction_confidence: 0,
-      });
-      console.log("Created PROCESSING marker for PDF:", pdfId);
-    }
-
-    // Analyze with Claude - extraction complète sans limite (native PDF support)
-    console.log(`Attempting full document analysis (no line limit)...`);
-    
-    const { result, truncated, rateLimited } = await analyzeWithClaude(
-      base64Pdf, title, category, ANTHROPIC_API_KEY
-    );
-    
-    let analysisResult: AnalysisResult | null = result;
-    
-    if (rateLimited) {
-      return new Response(
-        JSON.stringify({ error: "Rate limited. Please wait before retrying.", rateLimited: true }),
-        { status: 429, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
-      );
-    }
-    
-    if (truncated && analysisResult) {
-      console.warn("Response was truncated, but using partial results");
-    }
-    
-    if (!analysisResult) {
-      analysisResult = {
-        summary: "Analyse en attente de traitement manuel",
-        key_points: [],
-        hs_codes: [],
-        tariff_lines: [],
-      };
-    }
-
-    // Déterminer si c'est un document réglementaire
-    const isRegulatoryDoc = isRegulatoryDocument(category, title);
-    
-    console.log("Analysis complete:", 
-      "Document type:", isRegulatoryDoc ? "regulatory" : "tariff",
-      "HS codes:", analysisResult.hs_codes?.length || 0,
-      "Tariff lines:", analysisResult.tariff_lines?.length || 0,
-      "Trade agreements:", analysisResult.trade_agreements?.length || 0,
-      "Preview only:", previewOnly
-    );
-
-    // === TOUJOURS SAUVEGARDER L'EXTRACTION (même en mode preview) ===
-    // Ceci permet au Chat RAG de retrouver les informations extraites
-    
-    // Vérifier si une extraction existe déjà pour ce PDF
-    const { data: existingExtraction } = await supabase
-      .from("pdf_extractions")
-      .select("id")
-      .eq("pdf_id", pdfId)
-      .maybeSingle();
-    
-    if (!existingExtraction) {
-      // Créer l'extraction si elle n'existe pas
-      const { error: extractionError } = await supabase.from("pdf_extractions").insert({
-        pdf_id: pdfId,
-        summary: analysisResult.summary,
-        key_points: analysisResult.key_points || [],
-        mentioned_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
-        detected_tariff_changes: analysisResult.tariff_lines || [],
-        extracted_text: analysisResult.full_text || null,  // TEXTE INTÉGRAL pour RAG précis
-        extracted_data: {
-          chapter_info: analysisResult.chapter_info || null,
-          notes: analysisResult.notes || null,
-          footnotes: analysisResult.footnotes || null,
-          tariff_lines_count: analysisResult.tariff_lines?.length || 0,
-          inherited_lines_count: analysisResult.tariff_lines?.filter(l => l.is_inherited).length || 0,
-          trade_agreements: analysisResult.trade_agreements || [],
-          preferential_rates: analysisResult.preferential_rates || [],
-          authorities: analysisResult.authorities || [],
-          legal_references: analysisResult.legal_references || [],
-          document_type: isRegulatoryDoc ? "regulatory" : "tariff",
-        },
-        extraction_model: CLAUDE_MODEL,
-        extraction_confidence: 0.92,
-      });
+    // Si une extraction complète existe déjà, la retourner immédiatement
+    if (existingProcExtraction && existingProcExtraction.summary && existingProcExtraction.summary !== "__PROCESSING__") {
+      console.log("Extraction already exists for PDF:", pdfId, "- returning cached data");
       
-      if (extractionError) {
-        console.error("Extraction save error:", extractionError);
-      } else {
-        console.log("Extraction saved to database for PDF:", pdfId, "- Full text length:", analysisResult.full_text?.length || 0);
-      }
-    } else {
-      // Mettre à jour l'extraction existante
-      const { error: updateError } = await supabase.from("pdf_extractions").update({
-        summary: analysisResult.summary,
-        key_points: analysisResult.key_points || [],
-        mentioned_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
-        detected_tariff_changes: analysisResult.tariff_lines || [],
-        extracted_text: analysisResult.full_text || null,  // TEXTE INTÉGRAL pour RAG précis
-        extracted_data: {
-          chapter_info: analysisResult.chapter_info || null,
-          notes: analysisResult.notes || null,
-          footnotes: analysisResult.footnotes || null,
-          tariff_lines_count: analysisResult.tariff_lines?.length || 0,
-          inherited_lines_count: analysisResult.tariff_lines?.filter(l => l.is_inherited).length || 0,
-          trade_agreements: analysisResult.trade_agreements || [],
-          preferential_rates: analysisResult.preferential_rates || [],
-          authorities: analysisResult.authorities || [],
-          legal_references: analysisResult.legal_references || [],
-          document_type: isRegulatoryDoc ? "regulatory" : "tariff",
-        },
-        extraction_model: CLAUDE_MODEL,
-        extraction_confidence: 0.92,
-        extracted_at: new Date().toISOString(),
-      }).eq("id", existingExtraction.id);
+      // Récupérer les données complètes
+      const { data: fullExtraction } = await supabase
+        .from("pdf_extractions")
+        .select("*")
+        .eq("id", existingProcExtraction.id)
+        .single();
       
-      if (updateError) {
-        console.error("Extraction update error:", updateError);
-      } else {
-        console.log("Extraction updated for PDF:", pdfId, "- Full text length:", analysisResult.full_text?.length || 0);
+      if (fullExtraction) {
+        return new Response(
+          JSON.stringify({
+            summary: fullExtraction.summary,
+            key_points: fullExtraction.key_points || [],
+            hs_codes: (fullExtraction.mentioned_hs_codes as string[] || []).map(code => ({
+              code: code,
+              code_clean: code.replace(/[^0-9]/g, ""),
+              description: "",
+              level: "subheading"
+            })),
+            tariff_lines: fullExtraction.detected_tariff_changes || [],
+            full_text: fullExtraction.extracted_text || "",
+            pdfId,
+            pdfTitle: title,
+            countryCode,
+            cached: true,
+          }),
+          { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
+        );
       }
     }
-
-    // Preview mode - retourne les résultats sans insérer les tarifs/HS codes
-    if (previewOnly) {
+    
+    // Si le traitement est déjà en cours, retourner le statut
+    if (existingProcExtraction && existingProcExtraction.summary === "__PROCESSING__") {
+      console.log("PDF already being processed:", pdfId);
       return new Response(
         JSON.stringify({
-          ...analysisResult,
+          status: "processing",
+          message: "L'analyse est en cours, veuillez patienter...",
           pdfId,
-          pdfTitle: title,
-          countryCode,
-          previewOnly: true,
-          document_type: isRegulatoryDoc ? "regulatory" : "tariff",
-          statistics: {
-            total_lines: analysisResult.tariff_lines?.length || 0,
-            inherited_lines: analysisResult.tariff_lines?.filter(l => l.is_inherited).length || 0,
-            hs_codes_count: analysisResult.hs_codes?.length || 0,
-            trade_agreements_count: analysisResult.trade_agreements?.length || 0,
-            preferential_rates_count: analysisResult.preferential_rates?.length || 0,
-            has_footnotes: Object.keys(analysisResult.footnotes || {}).length > 0,
-            is_regulatory: isRegulatoryDoc,
-          }
         }),
         { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
+    
+    // Créer le marqueur PROCESSING
+    const { data: processingMarker } = await supabase.from("pdf_extractions").insert({
+      pdf_id: pdfId,
+      summary: "__PROCESSING__",
+      key_points: [],
+      mentioned_hs_codes: [],
+      detected_tariff_changes: [],
+      extraction_model: CLAUDE_MODEL,
+      extraction_confidence: 0,
+    }).select("id").single();
+    console.log("Created PROCESSING marker for PDF:", pdfId);
 
-    // === INSERTION EN BASE ===
-    // NOTE: L'extraction PDF est déjà sauvegardée plus haut (lignes 1281-1340)
-    // On ne fait ici que l'insertion des tarifs et codes HS
+    // === TRAITEMENT ASYNCHRONE AVEC EdgeRuntime.waitUntil ===
+    // Répondre immédiatement au client, puis continuer le traitement en arrière-plan
+    
+    const backgroundProcess = async () => {
+      try {
+        console.log(`[Background] Starting analysis for PDF: ${pdfId}`);
+        
+        const { result, truncated, rateLimited } = await analyzeWithClaude(
+          base64Pdf, title, category, ANTHROPIC_API_KEY
+        );
+        
+        let analysisResult: AnalysisResult | null = result;
+        
+        if (rateLimited) {
+          console.error("[Background] Rate limited for PDF:", pdfId);
+          await supabase.from("pdf_extractions").update({
+            summary: "Erreur: Rate limit API - réessayez dans quelques minutes",
+            extraction_confidence: 0,
+          }).eq("pdf_id", pdfId);
+          return;
+        }
+        
+        if (truncated && analysisResult) {
+          console.warn("[Background] Response was truncated for PDF:", pdfId);
+        }
+        
+        if (!analysisResult) {
+          console.error("[Background] No analysis result for PDF:", pdfId);
+          await supabase.from("pdf_extractions").update({
+            summary: "Erreur: Analyse échouée - contenu non structuré",
+            extraction_confidence: 0,
+          }).eq("pdf_id", pdfId);
+          return;
+        }
 
-    // 2. Insert tariff lines
-    if (analysisResult.tariff_lines && analysisResult.tariff_lines.length > 0) {
-      const tariffRows = analysisResult.tariff_lines.map(line => ({
-        country_code: countryCode,
-        hs_code_6: line.hs_code_6,
-        national_code: line.national_code,
-        description_local: line.description,
-        duty_rate: line.duty_rate,
-        duty_note: line.duty_note,
-        vat_rate: 20,
-        unit_code: line.unit || null,
-        is_active: true,
-        is_inherited: line.is_inherited,
-        source: `PDF: ${title}`,
-      }));
+        // Déterminer si c'est un document réglementaire
+        const isRegulatoryDoc = isRegulatoryDocument(category, title);
+        
+        console.log("[Background] Analysis complete for PDF:", pdfId,
+          "Document type:", isRegulatoryDoc ? "regulatory" : "tariff",
+          "HS codes:", analysisResult.hs_codes?.length || 0,
+          "Tariff lines:", analysisResult.tariff_lines?.length || 0,
+          "Trade agreements:", analysisResult.trade_agreements?.length || 0
+        );
 
-      const { error: tariffError } = await supabase
-        .from("country_tariffs")
-        .upsert(tariffRows, { onConflict: "country_code,national_code" });
+        // Mettre à jour l'extraction avec les données complètes
+        const { error: updateError } = await supabase.from("pdf_extractions").update({
+          summary: analysisResult.summary || "Document analysé",
+          key_points: analysisResult.key_points || [],
+          mentioned_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
+          detected_tariff_changes: analysisResult.tariff_lines || [],
+          extracted_text: analysisResult.full_text || null,
+          extracted_data: {
+            chapter_info: analysisResult.chapter_info || null,
+            notes: analysisResult.notes || null,
+            footnotes: analysisResult.footnotes || null,
+            tariff_lines_count: analysisResult.tariff_lines?.length || 0,
+            inherited_lines_count: analysisResult.tariff_lines?.filter(l => l.is_inherited).length || 0,
+            trade_agreements: analysisResult.trade_agreements || [],
+            preferential_rates: analysisResult.preferential_rates || [],
+            authorities: analysisResult.authorities || [],
+            legal_references: analysisResult.legal_references || [],
+            document_type: isRegulatoryDoc ? "regulatory" : "tariff",
+          },
+          extraction_model: CLAUDE_MODEL,
+          extraction_confidence: 0.92,
+          extracted_at: new Date().toISOString(),
+        }).eq("pdf_id", pdfId);
+        
+        if (updateError) {
+          console.error("[Background] Extraction update error:", updateError);
+        } else {
+          console.log("[Background] ✅ Extraction saved for PDF:", pdfId, "- Full text length:", analysisResult.full_text?.length || 0);
+        }
 
-      if (tariffError) {
-        console.error("Tariff insert error:", tariffError);
-      } else {
-        console.log(`Inserted ${tariffRows.length} tariff lines`);
+        // Pour les documents non-preview, insérer les tarifs et codes HS
+        if (!previewOnly) {
+          // Insert tariff lines
+          if (analysisResult.tariff_lines && analysisResult.tariff_lines.length > 0) {
+            const tariffRows = analysisResult.tariff_lines.map(line => ({
+              country_code: countryCode,
+              hs_code_6: line.hs_code_6,
+              national_code: line.national_code,
+              description_local: line.description,
+              duty_rate: line.duty_rate,
+              duty_note: line.duty_note,
+              vat_rate: 20,
+              unit_code: line.unit || null,
+              is_active: true,
+              is_inherited: line.is_inherited,
+              source: `PDF: ${title}`,
+            }));
+
+            const { error: tariffError } = await supabase
+              .from("country_tariffs")
+              .upsert(tariffRows, { onConflict: "country_code,national_code" });
+
+            if (tariffError) {
+              console.error("[Background] Tariff insert error:", tariffError);
+            } else {
+              console.log(`[Background] Inserted ${tariffRows.length} tariff lines`);
+            }
+          }
+
+          // Insert HS codes
+          if (analysisResult.hs_codes && analysisResult.hs_codes.length > 0) {
+            const hsRows = analysisResult.hs_codes.map(hsCode => ({
+              code: hsCode.code,
+              code_clean: hsCode.code_clean,
+              description_fr: hsCode.description,
+              chapter_number: analysisResult.chapter_info?.number || parseInt(hsCode.code_clean?.slice(0, 2) || "0"),
+              chapter_title_fr: analysisResult.chapter_info?.title,
+              is_active: true,
+              level: hsCode.level || "subheading",
+              parent_code: hsCode.code_clean?.slice(0, 4),
+            }));
+
+            const { error: hsError } = await supabase
+              .from("hs_codes")
+              .upsert(hsRows, { onConflict: "code" });
+
+            if (hsError) {
+              console.error("[Background] HS codes insert error:", hsError);
+            } else {
+              console.log(`[Background] Inserted ${hsRows.length} HS codes`);
+            }
+          }
+        }
+
+        // Update PDF document
+        await supabase.from("pdf_documents").update({
+          is_verified: true,
+          verified_at: new Date().toISOString(),
+          related_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
+          keywords: analysisResult.chapter_info?.number ? `Chapitre ${analysisResult.chapter_info.number}` : null,
+        }).eq("id", pdfId);
+        
+        console.log("[Background] ✅ PDF processing complete:", pdfId);
+        
+      } catch (bgError) {
+        console.error("[Background] Error processing PDF:", pdfId, bgError);
+        await supabase.from("pdf_extractions").update({
+          summary: `Erreur: ${bgError instanceof Error ? bgError.message : "Erreur inconnue"}`,
+          extraction_confidence: 0,
+        }).eq("pdf_id", pdfId);
       }
+    };
+
+    // Utiliser EdgeRuntime.waitUntil pour traitement en arrière-plan
+    // @ts-ignore - EdgeRuntime est disponible dans Supabase Edge Functions
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+      console.log("Using EdgeRuntime.waitUntil for background processing");
+      // @ts-ignore
+      EdgeRuntime.waitUntil(backgroundProcess());
+    } else {
+      // Fallback: exécuter de manière synchrone (ancien comportement)
+      console.log("EdgeRuntime.waitUntil not available, running synchronously");
+      await backgroundProcess();
     }
 
-    // 3. Insert HS codes
-    if (analysisResult.hs_codes && analysisResult.hs_codes.length > 0) {
-      const hsRows = analysisResult.hs_codes.map(hsCode => ({
-        code: hsCode.code,
-        code_clean: hsCode.code_clean,
-        description_fr: hsCode.description,
-        chapter_number: analysisResult.chapter_info?.number || parseInt(hsCode.code_clean?.slice(0, 2) || "0"),
-        chapter_title_fr: analysisResult.chapter_info?.title,
-        is_active: true,
-        level: hsCode.level || "subheading",
-        parent_code: hsCode.code_clean?.slice(0, 4),
-      }));
-
-      const { error: hsError } = await supabase
-        .from("hs_codes")
-        .upsert(hsRows, { onConflict: "code" });
-
-      if (hsError) {
-        console.error("HS codes insert error:", hsError);
-      } else {
-        console.log(`Inserted ${hsRows.length} HS codes`);
-      }
-    }
-
-    // 4. Update PDF document
-    await supabase.from("pdf_documents").update({
-      is_verified: true,
-      verified_at: new Date().toISOString(),
-      related_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
-      keywords: analysisResult.chapter_info?.number ? `Chapitre ${analysisResult.chapter_info.number}` : null,
-    }).eq("id", pdfId);
-
+    // Répondre immédiatement au client
     return new Response(
-      JSON.stringify(analysisResult),
+      JSON.stringify({
+        status: "processing",
+        message: "Analyse démarrée en arrière-plan. Le client peut polluer pour les résultats.",
+        pdfId,
+        pdfTitle: title,
+        countryCode,
+        extractionId: processingMarker?.id,
+      }),
       { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
 
