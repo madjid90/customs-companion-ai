@@ -545,7 +545,16 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
         nationalCode = lastPosition.padEnd(10, "0");
       }
       
-    // CAS 2: Col1 = chiffre catégorie (1, 2, 3...) ou col1 vide/tiret → HÉRITAGE du niveau précédent
+    // CAS 2a: Col1 = nombre à 2 chiffres (ex: "80", "20") → C'EST UN EN-TÊTE INTERMÉDIAIRE
+    // Dans le tarif marocain, "80" signifie le 7e-8e chiffre du code, pas une catégorie
+    } else if (/^\d{2}$/.test(col1Clean) && parseInt(col1Clean) >= 10) {
+      // C'est un en-tête intermédiaire qui établit le segment 7e-8e pour les sous-lignes
+      lastCol2 = col1Clean.padStart(2, "0");
+      lastCol3 = "00"; // Réinitialiser pour les sous-lignes
+      console.log(`Intermediate header in col1: "${col1Clean}" → setting lastCol2="${lastCol2}" for inheritance`);
+      continue; // Ne pas créer de ligne tarifaire, juste établir l'héritage
+      
+    // CAS 2b: Col1 = chiffre catégorie (1, 2, 3...) ou col1 vide/tiret → HÉRITAGE du niveau précédent
     // Dans le tarif marocain, col1 peut contenir la catégorie tarifaire (1, 2, 3, etc.)
     // Ces lignes héritent du code HS de la position/sous-position précédente
     } else if (/^[1-9]$/.test(col1Clean) || col1Clean === "" || col1Raw === "–" || col1Raw === "-") {
