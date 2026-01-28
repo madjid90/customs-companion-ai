@@ -1276,18 +1276,30 @@ serve(async (req) => {
         .single();
       
       if (fullExtraction) {
+        // Récupérer les codes SH complets depuis extracted_data (avec descriptions)
+        const extractedData = fullExtraction.extracted_data as Record<string, any> || {};
+        const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
+        
+        // Si les codes complets sont stockés, les utiliser; sinon fallback sur mentioned_hs_codes
+        const hsCodes = hsCodesFull.length > 0 
+          ? hsCodesFull 
+          : (fullExtraction.mentioned_hs_codes as string[] || []).map(code => ({
+              code: code,
+              code_clean: code.replace(/[^0-9]/g, ""),
+              description: "",  // Fallback sans description
+              level: "subheading"
+            }));
+        
         return new Response(
           JSON.stringify({
             summary: fullExtraction.summary,
             key_points: fullExtraction.key_points || [],
-            hs_codes: (fullExtraction.mentioned_hs_codes as string[] || []).map(code => ({
-              code: code,
-              code_clean: code.replace(/[^0-9]/g, ""),
-              description: "",
-              level: "subheading"
-            })),
+            hs_codes: hsCodes,
             tariff_lines: fullExtraction.detected_tariff_changes || [],
             full_text: fullExtraction.extracted_text || "",
+            chapter_info: extractedData.chapter_info || null,
+            trade_agreements: extractedData.trade_agreements || [],
+            preferential_rates: extractedData.preferential_rates || [],
             pdfId,
             pdfTitle: title,
             countryCode,
@@ -1369,6 +1381,7 @@ serve(async (req) => {
         );
 
         // Mettre à jour l'extraction avec les données complètes
+        // IMPORTANT: Stocker les hs_codes complets (avec descriptions) dans extracted_data
         const { error: updateError } = await supabase.from("pdf_extractions").update({
           summary: analysisResult.summary || "Document analysé",
           key_points: analysisResult.key_points || [],
@@ -1386,6 +1399,8 @@ serve(async (req) => {
             authorities: analysisResult.authorities || [],
             legal_references: analysisResult.legal_references || [],
             document_type: isRegulatoryDoc ? "regulatory" : "tariff",
+            // NOUVEAU: Stocker les codes SH complets avec leurs descriptions
+            hs_codes_full: analysisResult.hs_codes || [],
           },
           extraction_model: CLAUDE_MODEL,
           extraction_confidence: 0.92,
