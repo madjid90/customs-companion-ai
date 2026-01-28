@@ -616,17 +616,19 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
       
       // CAS SPECIAL 1: En-tête intermédiaire sans taux (ex: "20", "80" → matières premières, autre)
       // Établit un nouveau lastCol2 hérité par les sous-lignes
-      // On détecte via: pas de taux ET (col2 est 2 chiffres ≥ 10 OU col3 absent)
+      // On détecte via: pas de taux ET col2 est 2 chiffres ≥ 10 ET (col3 absent OU col3="00")
       const hasDutyRate = line.duty_rate && line.duty_rate.toString().trim() !== "";
       const col2IsTwoDigitHeader = hasCol2 && /^\d{2}$/.test(col2) && parseInt(col2) >= 10;
-      const isIntermediateHeader = !hasDutyRate && col2IsTwoDigitHeader && !hasCol3;
+      // col3 "vide" = soit pas de col3, soit col3="00" (placeholder)
+      const col3IsEmptyOrZero = !hasCol3 || col3 === "00";
+      const isIntermediateHeader = !hasDutyRate && col2IsTwoDigitHeader && col3IsEmptyOrZero;
       
       if (isIntermediateHeader) {
         // Cette ligne établit le nouveau segment 7e-8e chiffre
         lastCol2 = col2.padStart(2, "0");
         // Réinitialiser lastCol3 pour les sous-lignes
         lastCol3 = "";
-        console.log(`Intermediate header (col1 empty): col2="${col2}" → setting lastCol2="${lastCol2}", lastCol3="" for inheritance`);
+        console.log(`Intermediate header (col1 empty): col2="${col2}", col3="${col3}" → setting lastCol2="${lastCol2}", lastCol3="" for inheritance`);
         continue; // Ne pas créer de ligne tarifaire
       }
       
