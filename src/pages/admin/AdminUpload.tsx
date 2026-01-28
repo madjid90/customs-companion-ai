@@ -296,19 +296,27 @@ export default function AdminUpload() {
                   pollCheck.summary !== "__PROCESSING__" && 
                   !pollCheck.summary.startsWith("Erreur:")) {
                 const tariffChanges = pollCheck.detected_tariff_changes as any[] || [];
-                const hsCodesRaw = pollCheck.mentioned_hs_codes as string[] || [];
                 const extractedData = pollCheck.extracted_data as any || {};
+                
+                // Utiliser hs_codes_full depuis extracted_data (avec descriptions)
+                const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
+                const hsCodesRaw = pollCheck.mentioned_hs_codes as string[] || [];
+                
+                // Préférer hs_codes_full (avec descriptions) sinon fallback sur mentioned_hs_codes
+                const hsCodes = hsCodesFull.length > 0 
+                  ? hsCodesFull 
+                  : hsCodesRaw.map((code: string) => ({
+                      code: code,
+                      code_clean: code.replace(/[^0-9]/g, ""),
+                      description: "",
+                      level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
+                    }));
                 
                 analysisData = {
                   summary: pollCheck.summary,
                   key_points: pollCheck.key_points || [],
                   tariff_lines: tariffChanges,
-                  hs_codes: hsCodesRaw.map((code: string) => ({
-                    code: code,
-                    code_clean: code.replace(/[^0-9]/g, ""),
-                    description: "",
-                    level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
-                  })),
+                  hs_codes: hsCodes,
                   chapter_info: extractedData.chapter_info,
                   document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
                   trade_agreements: extractedData.trade_agreements || [],
@@ -334,7 +342,7 @@ export default function AdminUpload() {
         
         const { data: finalCheck } = await supabase
           .from("pdf_extractions")
-          .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text")
+          .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text, extracted_data")
           .eq("pdf_id", pdfDoc.id)
           .maybeSingle();
         
@@ -342,19 +350,30 @@ export default function AdminUpload() {
         if (finalCheck && finalCheck.summary && finalCheck.summary !== "__PROCESSING__") {
           console.log("Extraction found in final check, recovering data...");
           const tariffChanges = finalCheck.detected_tariff_changes as any[] || [];
+          const extractedData = finalCheck.extracted_data as any || {};
+          
+          // Utiliser hs_codes_full depuis extracted_data (avec descriptions)
+          const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
           const hsCodesRaw = finalCheck.mentioned_hs_codes as string[] || [];
+          
+          // Préférer hs_codes_full (avec descriptions) sinon fallback sur mentioned_hs_codes
+          const hsCodes = hsCodesFull.length > 0 
+            ? hsCodesFull 
+            : hsCodesRaw.map((code: string) => ({
+                code: code,
+                code_clean: code.replace(/[^0-9]/g, ""),
+                description: "",
+                level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
+              }));
           
           analysisData = {
             summary: finalCheck.summary,
             key_points: finalCheck.key_points || [],
             tariff_lines: tariffChanges,
-            hs_codes: hsCodesRaw.map((code: string) => ({
-              code: code,
-              code_clean: code.replace(/[^0-9]/g, ""),
-              description: "",
-              level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
-            })),
-            document_type: tariffChanges.length > 0 ? "tariff" : "regulatory",
+            hs_codes: hsCodes,
+            chapter_info: extractedData.chapter_info,
+            document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
+            trade_agreements: extractedData.trade_agreements || [],
             full_text: finalCheck.extracted_text || "",
           };
           analysisError = null;
