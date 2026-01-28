@@ -173,14 +173,15 @@ export default function AdminUpload() {
               error: `Connexion perdue, vérification en cours...`
             });
             
-            // Polling: vérifier toutes les 10 secondes pendant 2 minutes max
-            const MAX_POLLS = 12;
+            // Polling ÉTENDU: vérifier toutes les 10 secondes pendant 5 minutes max
+            // (PDFs volumineux peuvent prendre 2-3 minutes avec Claude)
+            const MAX_POLLS = 30;  // 5 minutes max
             const POLL_INTERVAL = 10000;
             
             for (let poll = 0; poll < MAX_POLLS; poll++) {
               updateFileStatus(fileId, { 
-                progress: 75 + Math.min(poll * 2, 15),
-                error: `Attente du serveur... (${poll * 10}s/${MAX_POLLS * 10}s)`
+                progress: 75 + Math.min(poll, 15),
+                error: `Analyse en cours... (${poll * 10}s/${MAX_POLLS * 10}s)`
               });
               
               await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
@@ -192,7 +193,8 @@ export default function AdminUpload() {
                 .eq("pdf_id", pdfDoc.id)
                 .maybeSingle();
               
-              if (existingExtraction && existingExtraction.summary) {
+              // Vérifier si c'est une extraction COMPLÈTE (pas juste le marqueur PROCESSING)
+              if (existingExtraction && existingExtraction.summary && existingExtraction.summary !== "__PROCESSING__") {
                 // L'extraction existe! Récupérer les données depuis la base
                 console.log(`✅ Extraction found in database after ${(poll + 1) * 10}s polling`);
                 
@@ -213,6 +215,9 @@ export default function AdminUpload() {
                   full_text: existingExtraction.extracted_text || "",
                 };
                 break;
+              } else if (existingExtraction?.summary === "__PROCESSING__") {
+                // Le serveur traite encore - continuer à attendre
+                console.log(`⏳ Server still processing PDF... (poll ${poll + 1})`);
               }
             }
             
@@ -251,7 +256,8 @@ export default function AdminUpload() {
           .eq("pdf_id", pdfDoc.id)
           .maybeSingle();
         
-        if (finalCheck && finalCheck.summary) {
+        // Vérifier que c'est une extraction COMPLÈTE (pas le marqueur PROCESSING)
+        if (finalCheck && finalCheck.summary && finalCheck.summary !== "__PROCESSING__") {
           console.log("Extraction found in final check, recovering data...");
           const tariffChanges = finalCheck.detected_tariff_changes as any[] || [];
           const hsCodesRaw = finalCheck.mentioned_hs_codes as string[] || [];

@@ -1485,6 +1485,28 @@ serve(async (req) => {
     const category = pdfDoc?.category || "tarif";
     const countryCode = pdfDoc?.country_code || "MA";
 
+    // === CRÉER UNE EXTRACTION "PROCESSING" IMMÉDIATEMENT ===
+    // Ceci permet au client de savoir que l'analyse est en cours
+    // et d'attendre plus longtemps via polling
+    const { data: existingProcExtraction } = await supabase
+      .from("pdf_extractions")
+      .select("id")
+      .eq("pdf_id", pdfId)
+      .maybeSingle();
+    
+    if (!existingProcExtraction) {
+      await supabase.from("pdf_extractions").insert({
+        pdf_id: pdfId,
+        summary: "__PROCESSING__",
+        key_points: [],
+        mentioned_hs_codes: [],
+        detected_tariff_changes: [],
+        extraction_model: CLAUDE_MODEL,
+        extraction_confidence: 0,
+      });
+      console.log("Created PROCESSING marker for PDF:", pdfId);
+    }
+
     // Analyze with Claude - extraction complète sans limite (native PDF support)
     console.log(`Attempting full document analysis (no line limit)...`);
     
