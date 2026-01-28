@@ -167,53 +167,66 @@ export default function AdminUpload() {
                                   err.message?.includes("network");
           
           if (isTimeout || isNetworkError) {
-            // Attendre un peu car le serveur peut encore être en train de sauvegarder
+            // Le serveur peut encore être en train de traiter - polling avec patience
             updateFileStatus(fileId, { 
               progress: 75,
               error: `Connexion perdue, vérification en cours...`
             });
             
-            // Attendre 3 secondes pour laisser le serveur terminer
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            // Polling: vérifier toutes les 10 secondes pendant 2 minutes max
+            const MAX_POLLS = 12;
+            const POLL_INTERVAL = 10000;
             
-            // Vérifier si l'extraction existe déjà en base (le serveur a peut-être réussi)
-            const { data: existingExtraction } = await supabase
-              .from("pdf_extractions")
-              .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text")
-              .eq("pdf_id", pdfDoc.id)
-              .maybeSingle();
+            for (let poll = 0; poll < MAX_POLLS; poll++) {
+              updateFileStatus(fileId, { 
+                progress: 75 + Math.min(poll * 2, 15),
+                error: `Attente du serveur... (${poll * 10}s/${MAX_POLLS * 10}s)`
+              });
+              
+              await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+              
+              // Vérifier si l'extraction existe déjà en base
+              const { data: existingExtraction } = await supabase
+                .from("pdf_extractions")
+                .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text")
+                .eq("pdf_id", pdfDoc.id)
+                .maybeSingle();
+              
+              if (existingExtraction && existingExtraction.summary) {
+                // L'extraction existe! Récupérer les données depuis la base
+                console.log(`✅ Extraction found in database after ${(poll + 1) * 10}s polling`);
+                
+                const tariffChanges = existingExtraction.detected_tariff_changes as any[] || [];
+                const hsCodesRaw = existingExtraction.mentioned_hs_codes as string[] || [];
+                
+                analysisData = {
+                  summary: existingExtraction.summary,
+                  key_points: existingExtraction.key_points || [],
+                  tariff_lines: tariffChanges,
+                  hs_codes: hsCodesRaw.map((code: string) => ({
+                    code: code,
+                    code_clean: code.replace(/[^0-9]/g, ""),
+                    description: "",
+                    level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
+                  })),
+                  document_type: tariffChanges.length > 0 ? "tariff" : "regulatory",
+                  full_text: existingExtraction.extracted_text || "",
+                };
+                break;
+              }
+            }
             
-            if (existingExtraction && existingExtraction.summary) {
-              // L'extraction existe! Récupérer les données depuis la base
-              console.log("✅ Extraction found in database despite network error, recovering...");
-              
-              // Reconstruire les données depuis la base
-              const tariffChanges = existingExtraction.detected_tariff_changes as any[] || [];
-              const hsCodesRaw = existingExtraction.mentioned_hs_codes as string[] || [];
-              
-              analysisData = {
-                summary: existingExtraction.summary,
-                key_points: existingExtraction.key_points || [],
-                tariff_lines: tariffChanges,
-                hs_codes: hsCodesRaw.map((code: string) => ({
-                  code: code,
-                  code_clean: code.replace(/[^0-9]/g, ""),
-                  description: "",
-                  level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
-                })),
-                document_type: tariffChanges.length > 0 ? "tariff" : "regulatory",
-                full_text: existingExtraction.extracted_text || "",
-              };
-              // SORTIR IMMEDIATEMENT de la boucle de retry
+            // Si trouvé via polling, sortir de la boucle retry
+            if (analysisData) {
               break;
             }
             
-            // Si pas trouvé et qu'il reste des tentatives, réessayer
+            // Si pas trouvé et qu'il reste des tentatives, réessayer l'appel
             if (attempt < MAX_RETRIES) {
-              const waitTime = 5000 * (attempt + 1);
-              console.log(`${isTimeout ? "Timeout" : "Network error"}, retry ${attempt + 1}/${MAX_RETRIES} in ${waitTime/1000}s...`);
+              const waitTime = 5000;
+              console.log(`${isTimeout ? "Timeout" : "Network error"}, retry ${attempt + 1}/${MAX_RETRIES}...`);
               updateFileStatus(fileId, { 
-                progress: 70 + attempt * 5,
+                progress: 70,
                 error: `Réessai ${attempt + 1}/${MAX_RETRIES}...`
               });
               await new Promise(resolve => setTimeout(resolve, waitTime));
