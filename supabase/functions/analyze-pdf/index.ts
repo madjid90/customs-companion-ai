@@ -601,7 +601,7 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
     } else if (/^\d{2}$/.test(col1Clean) && parseInt(col1Clean) >= 10) {
       // C'est un en-tête intermédiaire qui établit le segment 7e-8e pour les sous-lignes
       lastCol2 = col1Clean.padStart(2, "0");
-      lastCol3 = "00"; // Réinitialiser pour les sous-lignes
+      lastCol3 = ""; // Réinitialiser pour les sous-lignes (pas "00", mais vide)
       console.log(`Intermediate header in col1: "${col1Clean}" → setting lastCol2="${lastCol2}" for inheritance`);
       continue; // Ne pas créer de ligne tarifaire, juste établir l'héritage
       
@@ -619,64 +619,97 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
       // même si dans le PDF original il était dans la 4e colonne (9e-10e chiffre)
       
       const hasCol2 = col2 && /^\d+$/.test(col2);
-      const hasCol3 = col3 && /^\d+$/.test(col3);
-      const hasCol4 = col4 && /^\d+$/.test(col4);
+      const hasCol3 = col3 && /^\d+$/.test(col3) && col3 !== "00"; // "00" n'est PAS une vraie valeur
+      const hasCol4 = col4 && /^\d+$/.test(col4) && col4 !== "00";
+      const hasCol5 = col5 && /^\d+$/.test(col5) && col5 !== "00";
       
-      // Compter combien de colonnes numériques on a
-      const numericColCount = [hasCol2, hasCol3, hasCol4].filter(Boolean).length;
+      // Compter combien de colonnes numériques NON-ZERO on a
+      const numericColCount = [hasCol2, hasCol3, hasCol4, hasCol5].filter(Boolean).length;
       
-      // CAS SPECIAL 1: En-tête intermédiaire sans taux (ex: "20", "80" → matières premières, autre)
-      // Établit un nouveau lastCol2 hérité par les sous-lignes
-      // On détecte via: pas de taux ET col2 est 2 chiffres ≥ 10 ET (col3 absent OU col3="00")
-      const hasDutyRate = line.duty_rate && line.duty_rate.toString().trim() !== "";
+      // VÉRIFIER SI C'EST UN EN-TÊTE INTERMÉDIAIRE (sans taux)
+      const hasDutyRate = line.duty_rate !== null && line.duty_rate !== undefined && 
+                         line.duty_rate.toString().trim() !== "" && line.duty_rate.toString().trim() !== "–";
+      
+      // En-tête intermédiaire: pas de taux ET col2 est un nombre ≥ 10 (pas "00")
+      // Ex: ligne avec "" | "80" | "" → établit lastCol2="80"
       const col2IsTwoDigitHeader = hasCol2 && /^\d{2}$/.test(col2) && parseInt(col2) >= 10;
-      // col3 "vide" = soit pas de col3, soit col3="00" (placeholder)
-      const col3IsEmptyOrZero = !hasCol3 || col3 === "00";
-      const isIntermediateHeader = !hasDutyRate && col2IsTwoDigitHeader && col3IsEmptyOrZero;
+      const col3Absent = !col3 || col3 === "" || col3 === "00";
+      const isIntermediateHeader = !hasDutyRate && col2IsTwoDigitHeader && col3Absent;
       
       if (isIntermediateHeader) {
         // Cette ligne établit le nouveau segment 7e-8e chiffre
         lastCol2 = col2.padStart(2, "0");
-        // Réinitialiser lastCol3 pour les sous-lignes
-        lastCol3 = "";
-        console.log(`Intermediate header (col1 empty): col2="${col2}", col3="${col3}" → setting lastCol2="${lastCol2}", lastCol3="" for inheritance`);
+        lastCol3 = ""; // Réinitialiser pour les sous-lignes
+        console.log(`Intermediate header (col1 empty): col2="${col2}" → setting lastCol2="${lastCol2}" for inheritance`);
         continue; // Ne pas créer de ligne tarifaire
       }
       
-      // CAS 2: Ligne avec 2 colonnes numériques ET un taux (ex: "40 00 ... 2,5")
-      // C'est une ligne tarifaire complète: col2=7e-8e, col3=9e-10e
-      if (hasDutyRate && hasCol2 && hasCol3) {
-        lastCol2 = col2.padStart(2, "0");
-        lastCol3 = col3.padStart(2, "0");
-        console.log(`Full line with 2 cols: col2="${col2}", col3="${col3}" → code segment ${lastCol2}${lastCol3}`);
-      }
-      // CAS 3: Ligne avec 1 colonne numérique ET un taux → extension 9e-10e
-      else if (hasDutyRate && numericColCount === 1 && hasCol2) {
-        // col2 = 9e-10e chiffre, on garde lastCol2 hérité
-        lastCol3 = col2.padStart(2, "0");
-        console.log(`Extension line: col2="${col2}" → 9th-10th digit, keeping lastCol2="${lastCol2}"`);
-      }
-      // CAS 4: col2 vide → chercher dans col3 ou col4
-      else if (!hasCol2) {
-        if (hasCol3) {
+      // MAINTENANT: TRAITER LES LIGNES TARIFAIRES AVEC TAUX
+      if (hasDutyRate) {
+        // ANALYSE DES COLONNES pour déterminer le bon mapping
+        // Formats possibles retournés par Claude:
+        // 1) col2="10", col3="20" → 7e-8e=10, 9e-10e=20 (2 colonnes d'extension)
+        // 2) col2="10", col3="" → dépend du contexte:
+        //    a) Si lastCol2 est déjà défini et col2 < lastCol2 → col2 est le 9e-10e
+        //    b) Sinon col2 est le 7e-8e
+        // 3) col2="00", col3="10" → col3 est le 9e-10e (format avec placeholder "00")
+        
+        // CAS 1: Deux colonnes d'extension présentes
+        if (hasCol2 && hasCol3) {
+          // col2 = 7e-8e, col3 = 9e-10e
+          lastCol2 = col2.padStart(2, "0");
           lastCol3 = col3.padStart(2, "0");
-        } else if (hasCol4) {
-          lastCol3 = col4.padStart(2, "0");
+          console.log(`Full tariff line: col2="${col2}", col3="${col3}" → ${lastCol2}${lastCol3}`);
+        }
+        // CAS 2: Seulement col2 présent (valeur non-nulle)
+        else if (hasCol2 && !hasCol3) {
+          const col2Val = parseInt(col2);
+          const lastCol2Val = parseInt(lastCol2 || "0");
+          
+          // Si lastCol2 est déjà établi ET col2 est inférieur ou égal → c'est le 9e-10e chiffre
+          // Ex: lastCol2="90" (établi par en-tête), col2="10" → 9e-10e=10
+          if (lastCol2 && lastCol2Val >= 10 && col2Val < lastCol2Val) {
+            // col2 est l'extension 9e-10e, on garde lastCol2 hérité
+            lastCol3 = col2.padStart(2, "0");
+            console.log(`Extension line: col2="${col2}" → 9th-10th digit="${lastCol3}", keeping lastCol2="${lastCol2}"`);
+          }
+          // Sinon, col2 définit le 7e-8e
+          else {
+            lastCol2 = col2.padStart(2, "0");
+            lastCol3 = "00"; // Pas d'extension explicite
+            console.log(`Primary segment: col2="${col2}" → 7th-8th digit="${lastCol2}", 9th-10th="00"`);
+          }
+        }
+        // CAS 3: col2="00" (placeholder) → chercher dans col3
+        else if (col2 === "00" && (col3 && col3 !== "00")) {
+          // col3 est le 9e-10e chiffre
+          lastCol3 = col3.padStart(2, "0");
+          console.log(`Placeholder format: col2="00", col3="${col3}" → 9th-10th digit="${lastCol3}"`);
+        }
+        // CAS 4: Aucune extension → 00 00
+        else if (!hasCol2 && !hasCol3) {
+          // Garder lastCol2 hérité si existant, sinon 00
+          if (!lastCol2) lastCol2 = "00";
+          lastCol3 = "00";
+          console.log(`No extensions: using lastCol2="${lastCol2}", lastCol3="00"`);
+        }
+        
+        // CAS SUPPLÉMENTAIRE: col4/col5 comme extensions additionnelles
+        if (hasCol4) {
+          lastCol4 = col4.padStart(2, "0");
+        }
+        if (hasCol5) {
+          lastCol5 = col5.padStart(2, "0");
         }
       }
       
-      if (hasCol4 && hasCol3) {
-        lastCol4 = col4.padStart(2, "0");
-      }
-      if (col5 && /^\d+$/.test(col5)) {
-        lastCol5 = col5.padStart(2, "0");
-      }
-      
-      // Construire le code: base + lastCol2 + lastCol3 (10 chiffres au total)
-      let code = baseCode;
-      code += lastCol2 || "00";
-      code += lastCol3 || "00";
+      // Construire le code national à 10 chiffres
+      let code = baseCode; // position + subheading (6 chiffres)
+      code += lastCol2 || "00"; // 7e-8e
+      code += lastCol3 || "00"; // 9e-10e
       nationalCode = code.slice(0, 10);
+      
+      console.log(`Generated inherited code: ${nationalCode} (base=${baseCode}, col2=${lastCol2}, col3=${lastCol3})`)
       
     // CAS 3: Col1 contient uniquement des chiffres (6 ou plus) → Code complet sans point
     } else if (/^\d{4,}$/.test(col1Clean)) {
