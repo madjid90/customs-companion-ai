@@ -16,7 +16,8 @@ import {
   Brain,
   Database,
   Eye,
-  Clock
+  Clock,
+  RotateCcw
 } from "lucide-react";
 import ExtractionPreviewDialog from "@/components/admin/ExtractionPreviewDialog";
 
@@ -413,6 +414,148 @@ export default function AdminUpload() {
     setSelectedFile(null);
   };
 
+  // Relancer l'analyse d'un fichier en erreur
+  const retryAnalysis = async (file: UploadedFile) => {
+    if (!file.pdfId || !file.filePath) {
+      toast({
+        title: "Erreur",
+        description: "Informations manquantes pour relancer l'analyse",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Supprimer toute extraction existante (marqueur PROCESSING ou erreur)
+    await supabase
+      .from("pdf_extractions")
+      .delete()
+      .eq("pdf_id", file.pdfId);
+
+    // Mettre à jour le statut
+    updateFileStatus(file.id, { 
+      status: "analyzing", 
+      progress: 60,
+      error: undefined 
+    });
+
+    toast({
+      title: "🔄 Relance de l'analyse",
+      description: "Analyse IA en cours...",
+    });
+
+    // Relancer l'analyse
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-pdf`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          },
+          body: JSON.stringify({ 
+            pdfId: file.pdfId,
+            filePath: file.filePath,
+            previewOnly: true
+          }),
+          signal: controller.signal,
+        }
+      );
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const analysisData = await response.json();
+
+      const extractionData: ExtractionData = {
+        summary: analysisData?.summary || "",
+        key_points: analysisData?.key_points || [],
+        hs_codes: analysisData?.hs_codes || [],
+        tariff_lines: analysisData?.tariff_lines || [],
+        chapter_info: analysisData?.chapter_info,
+        pdfId: file.pdfId,
+        pdfTitle: file.name,
+        countryCode: "MA",
+        document_type: analysisData?.document_type || "tariff",
+        trade_agreements: analysisData?.trade_agreements || [],
+        full_text_length: analysisData?.full_text?.length || 0,
+      };
+
+      updateFileStatus(file.id, {
+        status: "preview",
+        progress: 100,
+        analysis: extractionData,
+        error: undefined,
+      });
+
+      toast({
+        title: "✅ Analyse terminée",
+        description: `${extractionData.hs_codes?.length || 0} codes SH et ${extractionData.tariff_lines?.length || 0} lignes détectées`,
+      });
+
+    } catch (err: any) {
+      // Vérifier si l'extraction a été créée malgré l'erreur réseau
+      const { data: extraction } = await supabase
+        .from("pdf_extractions")
+        .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text")
+        .eq("pdf_id", file.pdfId)
+        .maybeSingle();
+
+      if (extraction && extraction.summary && extraction.summary !== "__PROCESSING__") {
+        const tariffChanges = extraction.detected_tariff_changes as any[] || [];
+        const hsCodesRaw = extraction.mentioned_hs_codes as string[] || [];
+
+        const extractionData: ExtractionData = {
+          summary: extraction.summary,
+          key_points: extraction.key_points as string[] || [],
+          hs_codes: hsCodesRaw.map((code: string) => ({
+            code: code,
+            code_clean: code.replace(/[^0-9]/g, ""),
+            description: "",
+            level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
+          })),
+          tariff_lines: tariffChanges,
+          pdfId: file.pdfId,
+          pdfTitle: file.name,
+          countryCode: "MA",
+          document_type: tariffChanges.length > 0 ? "tariff" : "regulatory",
+          full_text_length: extraction.extracted_text?.length || 0,
+        };
+
+        updateFileStatus(file.id, {
+          status: "preview",
+          progress: 100,
+          analysis: extractionData,
+          error: undefined,
+        });
+
+        toast({
+          title: "✅ Extraction récupérée",
+          description: "L'analyse a réussi côté serveur",
+        });
+      } else {
+        updateFileStatus(file.id, {
+          status: "error",
+          progress: 100,
+          error: err.message || "Erreur d'analyse",
+        });
+
+        toast({
+          title: "Erreur",
+          description: err.message || "Impossible d'analyser le fichier",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
     if (!selectedFiles) return;
@@ -655,7 +798,20 @@ export default function AdminUpload() {
                       )}
 
                       {file.error && (
-                        <p className="text-sm text-destructive">{file.error}</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm text-destructive">{file.error}</p>
+                          {file.status === "error" && file.pdfId && file.filePath && (
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => retryAnalysis(file)}
+                              className="gap-2 ml-2 shrink-0"
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                              Relancer
+                            </Button>
+                          )}
+                        </div>
                       )}
 
                       {file.status === "preview" && file.analysis && (
