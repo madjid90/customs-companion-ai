@@ -108,42 +108,32 @@ Le tarif marocain utilise un système de codification en 5 colonnes qui forment 
 
 Les codes nationaux ont TOUJOURS 10 chiffres, construits ainsi:
 - Chiffres 1-4 : Position (ex: 3201)
-- Chiffres 5-6 : Sous-position (ex: 10)
-- Chiffres 7-8 : Extension nationale 1 (ex: 00)
-- Chiffres 9-10 : Extension nationale 2 (ex: 00)
+- Chiffres 5-6 : Sous-position (ex: 90)
+- Chiffres 7-8 : Extension nationale 1 - GÉNÉRALEMENT 00
+- Chiffres 9-10 : Extension nationale 2 - LE VRAI DÉTAIL (10, 92, 98, etc.)
 
-EXEMPLE D'UN CHAPITRE MAROCAIN:
+⚠️⚠️⚠️ RÈGLE CRITIQUE ⚠️⚠️⚠️
+Dans 95% des cas, les chiffres 7-8 sont "00" !
+Le dernier niveau de détail (10, 92, 98, etc.) va TOUJOURS en position 9-10 !
 
-Le PDF marocain a généralement ces colonnes:
-| Position | Ext1 | Ext2 | Description              | Droit |
-|----------|------|------|--------------------------|-------|
-| 32.01    |      |      | Extraits tannants...     |       |
-| 3201.10  |      |      | – Extrait de quebracho   |       |
-|          | 00   |      | – – quebracho base       |       |
-|          |      | 00   | – – – En poudre          | 2,5   |
-|          |      | 10   | – – – Autre              | 2,5   |
-| 3201.20  |      |      | – Extrait de mimosa      |       |
-|          | 00   | 00   | – – mimosa en poudre     | 2,5   |
-| 3201.90  |      |      | – Autres:                |       |
-|          | 00   |      | – – extraits divers      |       |
-|          |      | 10   | – – – Sommac             | 2,5   |
-|          |      | 90   | – – – Autres             | 2,5   |
+EXEMPLE CONCRET:
+Si tu vois "3201.90" avec une sous-ligne "10" pour "Sommac":
+- CORRECT:   3201900010 (320190 + 00 + 10)
+- INCORRECT: 3201901000 (320190 + 10 + 00) ← NE FAIS PAS ÇA!
 
-CONSTRUCTION DU CODE NATIONAL À 10 CHIFFRES:
-Le code = Position_clean(6 chiffres) + Ext1(2 chiffres) + Ext2(2 chiffres)
+Si tu vois "3201.90" avec une sous-ligne "92" pour "à l'éther":
+- CORRECT:   3201900092 (320190 + 00 + 92)
+- INCORRECT: 3201909200 (320190 + 92 + 00) ← NE FAIS PAS ÇA!
 
-Position_clean = les 6 premiers chiffres (ex: 3201.90 → 320190)
-Ext1 = colonne après Position (hérite de la ligne parent si vide, sinon 00 par défaut)
-Ext2 = dernière colonne avant Description (hérite ou 00 par défaut)
+FORMULE SIMPLE:
+Code_10_chiffres = Position_6_chiffres + "00" + Extension_2_chiffres
 
-CALCUL POUR CHAQUE LIGNE AVEC TAUX:
-- 3201.10 → 320110, Ext1=00 (hérité), Ext2=00 → 3201100000 (quebracho en poudre)
-- 3201.10 → 320110, Ext1=00 (hérité), Ext2=10 → 3201100010 (quebracho autre)
-- 3201.20 → 320120, Ext1=00, Ext2=00 → 3201200000 (mimosa)
-- 3201.90 → 320190, Ext1=00 (hérité), Ext2=10 → 3201900010 (Sommac)
-- 3201.90 → 320190, Ext1=00 (hérité), Ext2=90 → 3201900090 (Autres)
-
-ATTENTION: La valeur de la dernière colonne numérique (10, 90, etc.) va dans Ext2, PAS dans Ext1!
+EXEMPLES CORRECTS:
+- Sommac (10)        → 3201900010 (pas 3201901000)
+- À l'éther (92)     → 3201900092 (pas 3201909200)
+- Autres (98)        → 3201900098 (pas 3201909800)
+- Quebracho base     → 3201100000 (pas de sous-extension)
+- Mimosa base        → 3201200000 (pas de sous-extension)
 
 === CE QUE TU DOIS EXTRAIRE ===
 
