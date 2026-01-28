@@ -27,6 +27,7 @@ export interface ExtractionData {
   summary: string;
   key_points: string[];
   hs_codes: HSCodeEntry[];
+  hs_codes_full?: HSCodeEntry[]; // Full HS codes with descriptions from Claude
   tariff_lines: TariffLine[];
   chapter_info?: { number: number; title: string };
   pdfId?: string;

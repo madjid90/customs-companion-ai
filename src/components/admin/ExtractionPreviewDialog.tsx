@@ -59,6 +59,7 @@ interface ExtractionData {
   summary: string;
   key_points: string[];
   hs_codes: HSCodeEntry[];
+  hs_codes_full?: HSCodeEntry[]; // Full HS codes with descriptions from Claude
   tariff_lines: TariffLine[];
   chapter_info?: { number: number; title: string };
   trade_agreements?: TradeAgreementMention[];
@@ -92,17 +93,19 @@ export default function ExtractionPreviewDialog({
   const [editingTariffIndex, setEditingTariffIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize state when dialog opens
+  // Initialize state when dialog opens - prefer hs_codes_full for descriptions
   useState(() => {
     if (extractionData) {
-      setHsCodes(extractionData.hs_codes || []);
+      const hsSource = extractionData.hs_codes_full || extractionData.hs_codes || [];
+      setHsCodes(hsSource);
       setTariffLines(extractionData.tariff_lines || []);
     }
   });
 
-  // Reset state when extraction data changes
-  if (extractionData && hsCodes.length === 0 && extractionData.hs_codes?.length > 0) {
-    setHsCodes([...extractionData.hs_codes]);
+  // Reset state when extraction data changes - prefer hs_codes_full for descriptions
+  const hsCodesSource = extractionData?.hs_codes_full || extractionData?.hs_codes || [];
+  if (extractionData && hsCodes.length === 0 && hsCodesSource.length > 0) {
+    setHsCodes([...hsCodesSource]);
   }
   if (extractionData && tariffLines.length === 0 && extractionData.tariff_lines?.length > 0) {
     setTariffLines([...extractionData.tariff_lines]);

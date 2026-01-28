@@ -197,16 +197,25 @@ export default function AdminUpload() {
               const hsCodesRaw = extraction.mentioned_hs_codes as string[] || [];
               const extractedData = extraction.extracted_data as any || {};
               
+              // Utiliser hs_codes_full depuis extracted_data (avec descriptions)
+              const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
+              
+              // Préférer hs_codes_full (avec descriptions) sinon fallback sur mentioned_hs_codes
+              const hsCodes = hsCodesFull.length > 0 
+                ? hsCodesFull 
+                : hsCodesRaw.map((code: string) => ({
+                    code: code,
+                    code_clean: code.replace(/[^0-9]/g, ""),
+                    description: "",
+                    level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
+                  }));
+              
               analysisData = {
                 summary: extraction.summary,
                 key_points: extraction.key_points || [],
                 tariff_lines: tariffChanges,
-                hs_codes: hsCodesRaw.map((code: string) => ({
-                  code: code,
-                  code_clean: code.replace(/[^0-9]/g, ""),
-                  description: "",
-                  level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
-                })),
+                hs_codes: hsCodes,
+                hs_codes_full: hsCodesFull,
                 chapter_info: extractedData.chapter_info,
                 document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
                 trade_agreements: extractedData.trade_agreements || [],
@@ -257,16 +266,25 @@ export default function AdminUpload() {
             const hsCodesRaw = recoveryCheck.mentioned_hs_codes as string[] || [];
             const extractedData = recoveryCheck.extracted_data as any || {};
             
+            // Utiliser hs_codes_full depuis extracted_data (avec descriptions)
+            const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
+            
+            // Préférer hs_codes_full (avec descriptions) sinon fallback sur mentioned_hs_codes
+            const hsCodes = hsCodesFull.length > 0 
+              ? hsCodesFull 
+              : hsCodesRaw.map((code: string) => ({
+                  code: code,
+                  code_clean: code.replace(/[^0-9]/g, ""),
+                  description: "",
+                  level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
+                }));
+            
             analysisData = {
               summary: recoveryCheck.summary,
               key_points: recoveryCheck.key_points || [],
               tariff_lines: tariffChanges,
-              hs_codes: hsCodesRaw.map((code: string) => ({
-                code: code,
-                code_clean: code.replace(/[^0-9]/g, ""),
-                description: "",
-                level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
-              })),
+              hs_codes: hsCodes,
+              hs_codes_full: hsCodesFull,
               chapter_info: extractedData.chapter_info,
               document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
               trade_agreements: extractedData.trade_agreements || [],
@@ -317,6 +335,7 @@ export default function AdminUpload() {
                   key_points: pollCheck.key_points || [],
                   tariff_lines: tariffChanges,
                   hs_codes: hsCodes,
+                  hs_codes_full: hsCodesFull,
                   chapter_info: extractedData.chapter_info,
                   document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
                   trade_agreements: extractedData.trade_agreements || [],
@@ -371,6 +390,7 @@ export default function AdminUpload() {
             key_points: finalCheck.key_points || [],
             tariff_lines: tariffChanges,
             hs_codes: hsCodes,
+            hs_codes_full: hsCodesFull,
             chapter_info: extractedData.chapter_info,
             document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
             trade_agreements: extractedData.trade_agreements || [],
@@ -398,6 +418,7 @@ export default function AdminUpload() {
           summary: analysisData?.summary || "",
           key_points: analysisData?.key_points || [],
           hs_codes: analysisData?.hs_codes || [],
+          hs_codes_full: analysisData?.hs_codes_full || [],
           tariff_lines: analysisData?.tariff_lines || [],
           chapter_info: analysisData?.chapter_info,
           pdfId: pdfDoc.id,
@@ -615,16 +636,25 @@ export default function AdminUpload() {
             const hsCodesRaw = extraction.mentioned_hs_codes as string[] || [];
             const extractedData = extraction.extracted_data as any || {};
             
+            // Utiliser hs_codes_full depuis extracted_data (avec descriptions)
+            const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
+            
+            // Préférer hs_codes_full (avec descriptions) sinon fallback sur mentioned_hs_codes
+            const hsCodes = hsCodesFull.length > 0 
+              ? hsCodesFull 
+              : hsCodesRaw.map((code: string) => ({
+                  code: code,
+                  code_clean: code.replace(/[^0-9]/g, ""),
+                  description: "",
+                  level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
+                }));
+            
             analysisData = {
               summary: extraction.summary,
               key_points: extraction.key_points || [],
               tariff_lines: tariffChanges,
-              hs_codes: hsCodesRaw.map((code: string) => ({
-                code: code,
-                code_clean: code.replace(/[^0-9]/g, ""),
-                description: "",
-                level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
-              })),
+              hs_codes: hsCodes,
+              hs_codes_full: hsCodesFull,
               chapter_info: extractedData.chapter_info,
               document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
               trade_agreements: extractedData.trade_agreements || [],
@@ -644,6 +674,7 @@ export default function AdminUpload() {
           summary: analysisData.summary || "",
           key_points: analysisData.key_points || [],
           hs_codes: analysisData.hs_codes || [],
+          hs_codes_full: analysisData.hs_codes_full || [],
           tariff_lines: analysisData.tariff_lines || [],
           chapter_info: analysisData.chapter_info,
           pdfId: file.pdfId,
