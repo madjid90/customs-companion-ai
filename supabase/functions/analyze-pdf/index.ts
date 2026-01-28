@@ -565,36 +565,35 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
       // Compter combien de colonnes numériques on a
       const numericColCount = [hasCol2, hasCol3, hasCol4].filter(Boolean).length;
       
-      // CAS SPECIAL 1: En-tête intermédiaire avec 1 colonne, sans taux (ex: "20 – – – matières premières...")
+      // CAS SPECIAL 1: En-tête intermédiaire sans taux (ex: "20", "80" → matières premières, autre)
       // Établit un nouveau lastCol2 hérité par les sous-lignes
-      const isIntermediateHeader1Col = !line.duty_rate && numericColCount === 1 && hasCol2;
+      // On détecte via: pas de taux ET au moins une colonne numérique
+      const hasDutyRate = line.duty_rate && line.duty_rate.toString().trim() !== "";
+      const isIntermediateHeader = !hasDutyRate && numericColCount >= 1 && hasCol2;
       
-      if (isIntermediateHeader1Col) {
+      if (isIntermediateHeader) {
+        // Cette ligne établit le nouveau segment 7e-8e chiffre
         lastCol2 = col2.padStart(2, "0");
+        // Réinitialiser lastCol3 pour les sous-lignes
         lastCol3 = "00";
-        console.log(`Intermediate header (1 col): col2="${col2}" → setting lastCol2="${lastCol2}"`);
-        continue;
+        console.log(`Intermediate header detected: col2="${col2}" → setting lastCol2="${lastCol2}" for inheritance`);
+        continue; // Ne pas créer de ligne tarifaire
       }
       
-      // CAS SPECIAL 2: En-tête intermédiaire avec 2 colonnes, sans taux (ex: "80 – autre:")
-      // Pour les lignes comme "80" suivi de sous-lignes "10", "90"
-      const isIntermediateHeader2Col = !line.duty_rate && numericColCount === 1 && hasCol2 && !hasCol3 && !hasCol4;
-      // NB: Déjà géré au-dessus, mais on doit aussi gérer "80" seul comme en-tête
-
-      // CAS SPECIAL 3: Ligne avec 2 colonnes numériques ET un taux (ex: "40 00 ... 2,5")
+      // CAS 2: Ligne avec 2 colonnes numériques ET un taux (ex: "40 00 ... 2,5")
       // C'est une ligne tarifaire complète: col2=7e-8e, col3=9e-10e
-      if (line.duty_rate && hasCol2 && hasCol3) {
+      if (hasDutyRate && hasCol2 && hasCol3) {
         lastCol2 = col2.padStart(2, "0");
         lastCol3 = col3.padStart(2, "0");
         console.log(`Full line with 2 cols: col2="${col2}", col3="${col3}" → code segment ${lastCol2}${lastCol3}`);
       }
-      // CAS SPECIAL 4: Ligne avec 1 colonne numérique ET un taux → extension 9e-10e
-      else if (line.duty_rate && numericColCount === 1 && hasCol2) {
+      // CAS 3: Ligne avec 1 colonne numérique ET un taux → extension 9e-10e
+      else if (hasDutyRate && numericColCount === 1 && hasCol2) {
         // col2 = 9e-10e chiffre, on garde lastCol2 hérité
         lastCol3 = col2.padStart(2, "0");
         console.log(`Extension line: col2="${col2}" → 9th-10th digit, keeping lastCol2="${lastCol2}"`);
       }
-      // CAS: col2 vide → chercher dans col3 ou col4
+      // CAS 4: col2 vide → chercher dans col3 ou col4
       else if (!hasCol2) {
         if (hasCol3) {
           lastCol3 = col3.padStart(2, "0");
