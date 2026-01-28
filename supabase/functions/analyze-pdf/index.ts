@@ -555,29 +555,43 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
       let baseCode = lastPosition + (lastSubheading || "00");
       
       // Détecter quel format de colonnes est utilisé pour cette ligne
-      // Format A: col2 + col3 contiennent les extensions (ex: "00" + "10")
-      // Format B: col2 vide, col3 ou col4 contient l'extension (ex: "" + "10" ou "" + "" + "10")
+      // IMPORTANT: Claude peut compacter les colonnes vides, donc "10" peut arriver dans col2
+      // même si dans le PDF original il était dans la 4e colonne (9e-10e chiffre)
       
       const hasCol2 = col2 && /^\d+$/.test(col2);
       const hasCol3 = col3 && /^\d+$/.test(col3);
       const hasCol4 = col4 && /^\d+$/.test(col4);
       
-      // Si col2 est présent, utiliser le format standard
-      if (hasCol2) {
+      // Compter combien de colonnes numériques on a
+      const numericColCount = [hasCol2, hasCol3, hasCol4].filter(Boolean).length;
+      
+      // CAS SPECIAL: Une seule colonne numérique présente (ex: col2="10", col3 et col4 vides)
+      // Cela signifie que Claude a compacté et le "10" est l'extension 9e-10e chiffre
+      // On doit le mettre dans lastCol3, pas lastCol2
+      if (numericColCount === 1 && hasCol2 && !hasCol3 && !hasCol4) {
+        // col2 contient l'extension 9e-10e → garder lastCol2 hérité, mettre col2 dans lastCol3
+        lastCol3 = col2.padStart(2, "0");
+        console.log(`Compacted column detected: col2="${col2}" → treating as 9th-10th digit extension`);
+      }
+      // CAS STANDARD: Deux colonnes ou plus → format normal col2=7e-8e, col3=9e-10e
+      else if (hasCol2 && hasCol3) {
+        lastCol2 = col2.padStart(2, "0");
+        lastCol3 = col3.padStart(2, "0");
+      }
+      // CAS: col2 présent seul avec col3 ou col4 vide mais on a plusieurs colonnes
+      else if (hasCol2 && numericColCount >= 2) {
         lastCol2 = col2.padStart(2, "0");
         if (hasCol3) {
           lastCol3 = col3.padStart(2, "0");
+        } else if (hasCol4) {
+          lastCol3 = col4.padStart(2, "0");
         }
-      } else {
-        // col2 vide → l'extension peut être dans col3 ou col4
-        // On doit chercher la première valeur numérique disponible
+      }
+      // CAS: col2 vide → chercher dans col3 ou col4
+      else if (!hasCol2) {
         if (hasCol3) {
-          // col3 contient l'extension des 2 derniers chiffres (8e+9e position)
-          // Garder lastCol2 (hérité) et mettre col3 dans lastCol3
           lastCol3 = col3.padStart(2, "0");
         } else if (hasCol4) {
-          // col4 contient l'extension → c'est le 9e-10e chiffre
-          // On garde lastCol2 hérité et on met col4 dans lastCol3
           lastCol3 = col4.padStart(2, "0");
         }
       }
