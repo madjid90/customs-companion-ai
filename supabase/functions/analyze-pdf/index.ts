@@ -760,26 +760,47 @@ function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[]): HS
   const seen = new Set<string>();
   const results: HSCodeEntry[] = [];
   
-  // D'abord depuis les lignes tarifaires
-  for (const line of tariffLines) {
-    const code6 = line.hs_code_6;
-    // Validation stricte : 6 chiffres uniquement
-    if (code6 && isValidCleanCode(code6) && !seen.has(code6)) {
-      seen.add(code6);
-      results.push({
-        code: `${code6.slice(0, 4)}.${code6.slice(4, 6)}`,
-        code_clean: code6,
-        description: line.description,
-        level: "subheading",
-      });
-    }
-  }
+  // Map pour stocker les descriptions de heading depuis rawLines
+  const headingDescriptions = new Map<string, string>();
   
-  // Ensuite depuis les lignes brutes (pour capter les codes sans taux)
+  // ÉTAPE 1: D'abord parcourir les rawLines pour extraire les descriptions de HEADING
+  // (lignes avec code SH mais sans taux = ce sont les en-têtes avec la vraie description)
   for (const line of rawLines) {
     const col1 = (line.col1 || "").trim();
     
     // IGNORER les codes réservés entre crochets [XX.XX]
+    if (isReservedCode(col1)) {
+      continue;
+    }
+    
+    if (col1.includes(".") && col1 !== "1") {
+      const clean = cleanCode(col1);
+      const desc = (line.description || "").replace(/^[–\-\s]+/, "").trim();
+      
+      // Les lignes SANS taux sont les headings/subheadings avec la vraie description
+      if (!line.duty_rate && desc && desc.length > 3) {
+        if (clean.length >= 6 && isValidCleanCode(clean.slice(0, 6))) {
+          const code6 = clean.slice(0, 6);
+          // Garder la première description non-vide trouvée pour chaque code
+          if (!headingDescriptions.has(code6)) {
+            headingDescriptions.set(code6, desc);
+            console.log(`Found heading description for ${code6}: "${desc.substring(0, 50)}..."`);
+          }
+        } else if (clean.length === 4 && /^\d{4}$/.test(clean)) {
+          const code6 = clean.padEnd(6, "0");
+          if (!headingDescriptions.has(code6)) {
+            headingDescriptions.set(code6, desc);
+            console.log(`Found position description for ${code6}: "${desc.substring(0, 50)}..."`);
+          }
+        }
+      }
+    }
+  }
+  
+  // ÉTAPE 2: Maintenant extraire les codes SH depuis les rawLines (pour les headings)
+  for (const line of rawLines) {
+    const col1 = (line.col1 || "").trim();
+    
     if (isReservedCode(col1)) {
       console.log(`Ignoring reserved/empty code in extractHSCodes: "${col1}"`);
       continue;
@@ -795,30 +816,50 @@ function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[]): HS
       }
       
       if (clean.length >= 6 && isValidCleanCode(clean.slice(0, 6))) {
-        // Sous-position à 6 chiffres (XXXX.XX)
         const code6 = clean.slice(0, 6);
         if (!seen.has(code6)) {
           seen.add(code6);
+          // Utiliser la description de heading si disponible, sinon celle de la ligne
+          const desc = headingDescriptions.get(code6) || 
+                       (line.description || "").replace(/^[–\-\s]+/, "").trim();
           results.push({
             code: `${code6.slice(0, 4)}.${code6.slice(4, 6)}`,
             code_clean: code6,
-            description: (line.description || "").replace(/^[–\-\s]+/, "").trim(),
+            description: desc,
             level: "subheading",
           });
         }
       } else if (clean.length === 4 && /^\d{4}$/.test(clean)) {
-        // Position à 4 chiffres (XX.XX) → convertir en 6 chiffres
         const code6 = clean.padEnd(6, "0");
         if (!seen.has(code6)) {
           seen.add(code6);
+          const desc = headingDescriptions.get(code6) || 
+                       (line.description || "").replace(/^[–\-\s]+/, "").trim();
           results.push({
             code: `${clean.slice(0, 2)}.${clean.slice(2, 4)}`,
             code_clean: code6,
-            description: (line.description || "").replace(/^[–\-\s]+/, "").trim(),
+            description: desc,
             level: "heading",
           });
         }
       }
+    }
+  }
+  
+  // ÉTAPE 3: Ensuite depuis les lignes tarifaires (pour les codes manquants)
+  for (const line of tariffLines) {
+    const code6 = line.hs_code_6;
+    // Validation stricte : 6 chiffres uniquement
+    if (code6 && isValidCleanCode(code6) && !seen.has(code6)) {
+      seen.add(code6);
+      // Utiliser la description de heading si disponible, sinon celle de la ligne tarifaire
+      const desc = headingDescriptions.get(code6) || line.description;
+      results.push({
+        code: `${code6.slice(0, 4)}.${code6.slice(4, 6)}`,
+        code_clean: code6,
+        description: desc,
+        level: "subheading",
+      });
     }
   }
   
