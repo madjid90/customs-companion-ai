@@ -565,13 +565,26 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
       // Compter combien de colonnes numériques on a
       const numericColCount = [hasCol2, hasCol3, hasCol4].filter(Boolean).length;
       
+      // CAS SPECIAL: Ligne intermédiaire sans taux (ex: "20 – – – matières premières...")
+      // Cette ligne établit un nouveau lastCol2 qui sera hérité par les sous-lignes suivantes
+      // La ligne elle-même n'est PAS une ligne tarifaire si elle n'a pas de taux
+      const isIntermediateHeader = !line.duty_rate && numericColCount === 1 && hasCol2;
+      
+      if (isIntermediateHeader) {
+        // Établir le nouveau lastCol2 pour les lignes suivantes
+        lastCol2 = col2.padStart(2, "0");
+        // Réinitialiser lastCol3 car les sous-lignes fourniront leur propre extension
+        lastCol3 = "00";
+        console.log(`Intermediate header detected: col2="${col2}" → setting lastCol2="${lastCol2}" for inheritance`);
+        continue; // Ne pas créer de ligne tarifaire pour cette ligne intermédiaire
+      }
+      
       // CAS SPECIAL: Une seule colonne numérique présente (ex: col2="10", col3 et col4 vides)
-      // Cela signifie que Claude a compacté et le "10" est l'extension 9e-10e chiffre
-      // On doit le mettre dans lastCol3, pas lastCol2
+      // ET la ligne A un taux → c'est l'extension 9e-10e chiffre
       if (numericColCount === 1 && hasCol2 && !hasCol3 && !hasCol4) {
         // col2 contient l'extension 9e-10e → garder lastCol2 hérité, mettre col2 dans lastCol3
         lastCol3 = col2.padStart(2, "0");
-        console.log(`Compacted column detected: col2="${col2}" → treating as 9th-10th digit extension`);
+        console.log(`Compacted column detected: col2="${col2}" → treating as 9th-10th digit extension (inheriting lastCol2="${lastCol2}")`);
       }
       // CAS STANDARD: Deux colonnes ou plus → format normal col2=7e-8e, col3=9e-10e
       else if (hasCol2 && hasCol3) {
