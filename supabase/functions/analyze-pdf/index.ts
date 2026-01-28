@@ -13,11 +13,11 @@ import { validateAnalyzePdfRequest } from "../_shared/validation.ts";
 import { createLogger } from "../_shared/logger.ts";
 
 // =============================================================================
-// CONFIGURATION - ANTHROPIC CLAUDE (Native PDF Support)
+// CONFIGURATION - OPENAI GPT-4o (Vision for PDF Analysis)
 // =============================================================================
 
-const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_MODEL = "claude-sonnet-4-20250514"; // Best for PDF + complex reasoning with native support
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_MODEL = "gpt-4o"; // Best for vision/document analysis
 
 // =============================================================================
 // INTERFACES
@@ -727,10 +727,10 @@ function delay(ms: number): Promise<void> {
 }
 
 // =============================================================================
-// APPEL ANTHROPIC CLAUDE API (Native PDF Support)
+// APPEL OPENAI GPT-4o API (Vision for PDF Analysis)
 // =============================================================================
 
-async function analyzeWithClaude(
+async function analyzeWithOpenAI(
   base64Pdf: string,
   title: string,
   category: string,
@@ -743,24 +743,26 @@ async function analyzeWithClaude(
   
   const prompt = getAnalysisPrompt(title, category);
 
-  console.log("Calling Anthropic Claude with model:", ANTHROPIC_MODEL);
+  console.log("Calling OpenAI with model:", OPENAI_MODEL);
   console.log("PDF base64 size:", base64Pdf.length, "chars");
 
-  // Anthropic Claude API - Native PDF support with anthropic-beta header
+  // OpenAI API - Using image_url with base64 PDF (GPT-4o can process documents via vision)
   const requestBody = {
-    model: ANTHROPIC_MODEL,
-    max_tokens: 64000,
-    system: "Tu es un expert en tarifs douaniers et nomenclature du Système Harmonisé (SH). Analyse les documents PDF de manière exhaustive et retourne les données structurées en JSON.",
+    model: OPENAI_MODEL,
+    max_tokens: 16384,
     messages: [
+      {
+        role: "system",
+        content: "Tu es un expert en tarifs douaniers et nomenclature du Système Harmonisé (SH). Analyse les documents PDF de manière exhaustive et retourne les données structurées en JSON."
+      },
       {
         role: "user",
         content: [
           {
-            type: "document",
-            source: {
-              type: "base64",
-              media_type: "application/pdf",
-              data: base64Pdf,
+            type: "image_url",
+            image_url: {
+              url: `data:application/pdf;base64,${base64Pdf}`,
+              detail: "high"
             }
           },
           { type: "text", text: prompt }
@@ -769,20 +771,18 @@ async function analyzeWithClaude(
     ],
   };
 
-  console.log("Sending request to Anthropic Claude API...");
+  console.log("Sending request to OpenAI API...");
   
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
   
   let aiResponse: Response;
   try {
-    aiResponse = await fetch(ANTHROPIC_API_URL, {
+    aiResponse = await fetch(OPENAI_API_URL, {
       method: "POST",
       headers: {
-        "x-api-key": apiKey,
+        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "pdfs-2024-09-25",
       },
       body: JSON.stringify(requestBody),
       signal: controller.signal,
@@ -797,16 +797,16 @@ async function analyzeWithClaude(
   }
   
   clearTimeout(timeoutId);
-  console.log("Anthropic Claude response status:", aiResponse.status);
+  console.log("OpenAI response status:", aiResponse.status);
 
-  // Handle rate limiting (429) and overloaded (529)
-  if (aiResponse.status === 429 || aiResponse.status === 529) {
+  // Handle rate limiting (429)
+  if (aiResponse.status === 429) {
     if (retryCount < MAX_RETRIES) {
       const retryAfter = aiResponse.headers.get("Retry-After");
       const delayMs = retryAfter ? parseInt(retryAfter) * 1000 : BASE_DELAY * Math.pow(2, retryCount);
       console.log(`Rate limited (${aiResponse.status}). Retry ${retryCount + 1}/${MAX_RETRIES} after ${delayMs}ms...`);
       await delay(delayMs);
-      return analyzeWithClaude(base64Pdf, title, category, apiKey, retryCount + 1);
+      return analyzeWithOpenAI(base64Pdf, title, category, apiKey, retryCount + 1);
     } else {
       console.error("Max retries reached for rate limiting");
       return { result: null, truncated: false, rateLimited: true };
@@ -815,20 +815,20 @@ async function analyzeWithClaude(
 
   if (!aiResponse.ok) {
     const errorText = await aiResponse.text();
-    console.error("Anthropic Claude error:", aiResponse.status, errorText);
-    throw new Error(`Anthropic Claude error: ${aiResponse.status} - ${errorText}`);
+    console.error("OpenAI error:", aiResponse.status, errorText);
+    throw new Error(`OpenAI error: ${aiResponse.status} - ${errorText}`);
   }
 
   const aiData = await aiResponse.json();
   
-  // Anthropic format: stop_reason
-  const stopReason = aiData.stop_reason;
-  const truncated = stopReason === "max_tokens";
+  // OpenAI format: finish_reason
+  const finishReason = aiData.choices?.[0]?.finish_reason;
+  const truncated = finishReason === "length";
   
-  console.log("Anthropic Claude response - stop_reason:", stopReason, "truncated:", truncated);
+  console.log("OpenAI response - finish_reason:", finishReason, "truncated:", truncated);
   
-  // Anthropic format: content[0].text
-  const responseText = aiData.content?.[0]?.text || "{}";
+  // OpenAI format: choices[0].message.content
+  const responseText = aiData.choices?.[0]?.message?.content || "{}";
   
   // Parse JSON
   let cleanedResponse = responseText.trim();
@@ -1323,12 +1323,12 @@ serve(async (req) => {
       return errorResponse(req, "filePath is required", 400);
     }
 
-    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!ANTHROPIC_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY is not configured");
+    if (!OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY is not configured");
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
@@ -1388,11 +1388,11 @@ serve(async (req) => {
     const category = pdfDoc?.category || "tarif";
     const countryCode = pdfDoc?.country_code || "MA";
 
-    // Analyze with Anthropic Claude - extraction complète sans limite
+    // Analyze with OpenAI GPT-4o - extraction complète sans limite
     console.log(`Attempting full document analysis (no line limit)...`);
     
-    const { result, truncated, rateLimited } = await analyzeWithClaude(
-      base64Pdf, title, category, ANTHROPIC_API_KEY
+    const { result, truncated, rateLimited } = await analyzeWithOpenAI(
+      base64Pdf, title, category, OPENAI_API_KEY
     );
     
     let analysisResult: AnalysisResult | null = result;
@@ -1459,7 +1459,7 @@ serve(async (req) => {
           legal_references: analysisResult.legal_references || [],
           document_type: isRegulatoryDoc ? "regulatory" : "tariff",
         },
-        extraction_model: ANTHROPIC_MODEL,
+        extraction_model: OPENAI_MODEL,
         extraction_confidence: 0.92,
       });
       
@@ -1488,7 +1488,7 @@ serve(async (req) => {
           legal_references: analysisResult.legal_references || [],
           document_type: isRegulatoryDoc ? "regulatory" : "tariff",
         },
-        extraction_model: ANTHROPIC_MODEL,
+        extraction_model: OPENAI_MODEL,
         extraction_confidence: 0.92,
         extracted_at: new Date().toISOString(),
       }).eq("id", existingExtraction.id);
