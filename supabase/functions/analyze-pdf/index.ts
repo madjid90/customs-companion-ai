@@ -746,20 +746,23 @@ async function analyzeWithLovableAI(
   console.log("Calling Lovable AI Gateway with model:", LOVABLE_AI_MODEL);
   console.log("PDF base64 size:", base64Pdf.length, "chars");
 
-  // Lovable AI Gateway - Use the inline_data format for PDF (Gemini native format)
-  // Reference: https://ai.google.dev/gemini-api/docs/document-processing
+  // Lovable AI Gateway - OpenAI-compatible format with inline base64 PDF
+  // Using image_url format which is the standard for multimodal content
   const requestBody = {
     model: LOVABLE_AI_MODEL,
     max_tokens: 64000,
     messages: [
       {
+        role: "system",
+        content: "Tu es un expert en tarifs douaniers et nomenclature du Système Harmonisé (SH). Analyse les documents PDF de manière exhaustive et retourne les données structurées en JSON."
+      },
+      {
         role: "user",
         content: [
           {
-            type: "file",
-            file: {
-              filename: `${title.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`,
-              file_data: `data:application/pdf;base64,${base64Pdf}`,
+            type: "image_url",
+            image_url: {
+              url: `data:application/pdf;base64,${base64Pdf}`,
             }
           },
           { type: "text", text: prompt }
