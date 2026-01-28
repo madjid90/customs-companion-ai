@@ -101,110 +101,205 @@ export default function AdminUpload() {
         filePath: filePath,
       });
 
-      // 3. Call AI analysis edge function with AbortController timeout and retry
+      // 3. Call AI analysis edge function - nouvelle architecture asynchrone
       let analysisData = null;
       let analysisError = null;
-      const MAX_RETRIES = 3;
-      const TIMEOUT_MS = 300000; // 5 minutes timeout for large PDFs
+      const INITIAL_TIMEOUT_MS = 30000; // 30s pour la réponse initiale (processing marker)
+      const MAX_POLL_TIME_MS = 600000; // 10 minutes max de polling
+      const POLL_INTERVAL_MS = 5000; // Vérifier toutes les 5 secondes
       
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        try {
-          // Create AbortController for timeout
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      try {
+        // Appel initial - devrait répondre rapidement avec status: "processing"
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), INITIAL_TIMEOUT_MS);
+        
+        updateFileStatus(fileId, { 
+          progress: 65,
+          error: undefined
+        });
+        
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-pdf`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+              "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            },
+            body: JSON.stringify({ 
+              pdfId: pdfDoc.id,
+              filePath: filePath,
+              previewOnly: true
+            }),
+            signal: controller.signal,
+          }
+        );
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          if (response.status === 429 || response.status === 503) {
+            throw new Error("Service occupé, réessayez dans quelques instants");
+          }
+          throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
+        }
+        
+        const initialResponse = await response.json();
+        
+        // Si on a déjà les données complètes (cache), les utiliser directement
+        if (initialResponse.summary && initialResponse.summary !== "__PROCESSING__" && !initialResponse.status) {
+          console.log("✅ Immediate response with cached data");
+          analysisData = initialResponse;
+        } 
+        // Si le traitement est asynchrone (status: "processing"), commencer le polling
+        else if (initialResponse.status === "processing") {
+          console.log("📡 Background processing started, polling for results...");
           
           updateFileStatus(fileId, { 
-            progress: 65 + attempt * 5,
-            error: attempt > 0 ? `Tentative ${attempt + 1}/${MAX_RETRIES + 1}...` : undefined
+            progress: 70,
+            error: "Analyse IA en cours (peut prendre 1-3 min pour les gros PDFs)..."
           });
           
-          // Use fetch directly with AbortSignal for better timeout control
-          const response = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-pdf`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-                "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-              },
-              body: JSON.stringify({ 
-                pdfId: pdfDoc.id,
-                filePath: filePath,
-                previewOnly: true
-              }),
-              signal: controller.signal,
-            }
-          );
+          // Polling jusqu'à ce que l'extraction soit complète
+          const pollStartTime = Date.now();
+          let pollCount = 0;
           
-          clearTimeout(timeoutId);
-          
-          if (!response.ok) {
-            const errorText = await response.text();
-            // Check if it's a rate limit error
-            if (response.status === 429 || response.status === 503) {
-              if (attempt < MAX_RETRIES) {
-                const waitTime = 10000 * (attempt + 1);
-                console.log(`Rate limited, retry ${attempt + 1}/${MAX_RETRIES} in ${waitTime/1000}s...`);
-                updateFileStatus(fileId, { 
-                  progress: 70 + attempt * 5,
-                  error: `Service occupé, nouvelle tentative dans ${waitTime/1000}s...`
-                });
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-                continue;
-              }
-            }
-            throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
-          }
-          
-          analysisData = await response.json();
-          break;
-          
-        } catch (err: any) {
-          // Handle abort/timeout or network errors
-          const isTimeout = err.name === "AbortError";
-          const isNetworkError = err.message?.includes("Failed to fetch") || 
-                                  err.message?.includes("NetworkError") ||
-                                  err.message?.includes("network");
-          
-          if (isTimeout || isNetworkError) {
-            // Le serveur peut encore être en train de traiter - polling avec patience
+          while (Date.now() - pollStartTime < MAX_POLL_TIME_MS) {
+            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+            pollCount++;
+            
+            const elapsedSec = Math.round((Date.now() - pollStartTime) / 1000);
             updateFileStatus(fileId, { 
-              progress: 75,
-              error: `Connexion perdue, vérification en cours...`
+              progress: 70 + Math.min(pollCount * 2, 25),
+              error: `Analyse IA en cours... (${elapsedSec}s)`
             });
             
-            // Polling ÉTENDU: vérifier toutes les 10 secondes pendant 5 minutes max
-            // (PDFs volumineux peuvent prendre 2-3 minutes avec Claude)
-            const MAX_POLLS = 30;  // 5 minutes max
-            const POLL_INTERVAL = 10000;
+            // Vérifier si l'extraction est complète
+            const { data: extraction } = await supabase
+              .from("pdf_extractions")
+              .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text, extracted_data")
+              .eq("pdf_id", pdfDoc.id)
+              .maybeSingle();
             
-            for (let poll = 0; poll < MAX_POLLS; poll++) {
+            if (extraction && extraction.summary && extraction.summary !== "__PROCESSING__") {
+              // Vérifier si c'est une erreur
+              if (extraction.summary.startsWith("Erreur:")) {
+                throw new Error(extraction.summary);
+              }
+              
+              console.log(`✅ Extraction complete after ${elapsedSec}s`);
+              
+              const tariffChanges = extraction.detected_tariff_changes as any[] || [];
+              const hsCodesRaw = extraction.mentioned_hs_codes as string[] || [];
+              const extractedData = extraction.extracted_data as any || {};
+              
+              analysisData = {
+                summary: extraction.summary,
+                key_points: extraction.key_points || [],
+                tariff_lines: tariffChanges,
+                hs_codes: hsCodesRaw.map((code: string) => ({
+                  code: code,
+                  code_clean: code.replace(/[^0-9]/g, ""),
+                  description: "",
+                  level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
+                })),
+                chapter_info: extractedData.chapter_info,
+                document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
+                trade_agreements: extractedData.trade_agreements || [],
+                full_text: extraction.extracted_text || "",
+              };
+              break;
+            } else {
+              console.log(`⏳ Still processing... (poll ${pollCount}, ${elapsedSec}s elapsed)`);
+            }
+          }
+          
+          if (!analysisData) {
+            throw new Error("Timeout: L'analyse a pris trop de temps. Le PDF est peut-être trop volumineux.");
+          }
+        } else {
+          // Réponse inattendue
+          console.warn("Unexpected response format:", initialResponse);
+          throw new Error("Réponse inattendue du serveur");
+        }
+        
+      } catch (err: any) {
+        // Gérer les erreurs de timeout/réseau en vérifiant la base
+        const isTimeout = err.name === "AbortError";
+        const isNetworkError = err.message?.includes("Failed to fetch") || 
+                                err.message?.includes("NetworkError");
+        
+        if (isTimeout || isNetworkError) {
+          updateFileStatus(fileId, { 
+            progress: 75,
+            error: "Connexion perdue, vérification en cours..."
+          });
+          
+          // Attendre un peu puis vérifier si le serveur a terminé
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          
+          const { data: recoveryCheck } = await supabase
+            .from("pdf_extractions")
+            .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text, extracted_data")
+            .eq("pdf_id", pdfDoc.id)
+            .maybeSingle();
+          
+          if (recoveryCheck && recoveryCheck.summary && 
+              recoveryCheck.summary !== "__PROCESSING__" && 
+              !recoveryCheck.summary.startsWith("Erreur:")) {
+            console.log("✅ Recovery: extraction found after network error");
+            
+            const tariffChanges = recoveryCheck.detected_tariff_changes as any[] || [];
+            const hsCodesRaw = recoveryCheck.mentioned_hs_codes as string[] || [];
+            const extractedData = recoveryCheck.extracted_data as any || {};
+            
+            analysisData = {
+              summary: recoveryCheck.summary,
+              key_points: recoveryCheck.key_points || [],
+              tariff_lines: tariffChanges,
+              hs_codes: hsCodesRaw.map((code: string) => ({
+                code: code,
+                code_clean: code.replace(/[^0-9]/g, ""),
+                description: "",
+                level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
+              })),
+              chapter_info: extractedData.chapter_info,
+              document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
+              trade_agreements: extractedData.trade_agreements || [],
+              full_text: recoveryCheck.extracted_text || "",
+            };
+          } else if (recoveryCheck?.summary === "__PROCESSING__") {
+            // Commencer un polling étendu
+            const EXTENDED_POLL_TIME = 300000; // 5 minutes
+            const pollStartTime = Date.now();
+            
+            while (Date.now() - pollStartTime < EXTENDED_POLL_TIME) {
+              await new Promise(resolve => setTimeout(resolve, 10000));
+              
+              const elapsedSec = Math.round((Date.now() - pollStartTime) / 1000);
               updateFileStatus(fileId, { 
-                progress: 75 + Math.min(poll, 15),
-                error: `Analyse en cours... (${poll * 10}s/${MAX_POLLS * 10}s)`
+                progress: 80,
+                error: `Analyse en cours... (${elapsedSec}s)`
               });
               
-              await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-              
-              // Vérifier si l'extraction existe déjà en base
-              const { data: existingExtraction } = await supabase
+              const { data: pollCheck } = await supabase
                 .from("pdf_extractions")
-                .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text")
+                .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text, extracted_data")
                 .eq("pdf_id", pdfDoc.id)
                 .maybeSingle();
               
-              // Vérifier si c'est une extraction COMPLÈTE (pas juste le marqueur PROCESSING)
-              if (existingExtraction && existingExtraction.summary && existingExtraction.summary !== "__PROCESSING__") {
-                // L'extraction existe! Récupérer les données depuis la base
-                console.log(`✅ Extraction found in database after ${(poll + 1) * 10}s polling`);
-                
-                const tariffChanges = existingExtraction.detected_tariff_changes as any[] || [];
-                const hsCodesRaw = existingExtraction.mentioned_hs_codes as string[] || [];
+              if (pollCheck && pollCheck.summary && 
+                  pollCheck.summary !== "__PROCESSING__" && 
+                  !pollCheck.summary.startsWith("Erreur:")) {
+                const tariffChanges = pollCheck.detected_tariff_changes as any[] || [];
+                const hsCodesRaw = pollCheck.mentioned_hs_codes as string[] || [];
+                const extractedData = pollCheck.extracted_data as any || {};
                 
                 analysisData = {
-                  summary: existingExtraction.summary,
-                  key_points: existingExtraction.key_points || [],
+                  summary: pollCheck.summary,
+                  key_points: pollCheck.key_points || [],
                   tariff_lines: tariffChanges,
                   hs_codes: hsCodesRaw.map((code: string) => ({
                     code: code,
@@ -212,34 +307,18 @@ export default function AdminUpload() {
                     description: "",
                     level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
                   })),
-                  document_type: tariffChanges.length > 0 ? "tariff" : "regulatory",
-                  full_text: existingExtraction.extracted_text || "",
+                  chapter_info: extractedData.chapter_info,
+                  document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
+                  trade_agreements: extractedData.trade_agreements || [],
+                  full_text: pollCheck.extracted_text || "",
                 };
                 break;
-              } else if (existingExtraction?.summary === "__PROCESSING__") {
-                // Le serveur traite encore - continuer à attendre
-                console.log(`⏳ Server still processing PDF... (poll ${poll + 1})`);
               }
             }
-            
-            // Si trouvé via polling, sortir de la boucle retry
-            if (analysisData) {
-              break;
-            }
-            
-            // Si pas trouvé et qu'il reste des tentatives, réessayer l'appel
-            if (attempt < MAX_RETRIES) {
-              const waitTime = 5000;
-              console.log(`${isTimeout ? "Timeout" : "Network error"}, retry ${attempt + 1}/${MAX_RETRIES}...`);
-              updateFileStatus(fileId, { 
-                progress: 70,
-                error: `Réessai ${attempt + 1}/${MAX_RETRIES}...`
-              });
-              await new Promise(resolve => setTimeout(resolve, waitTime));
-              continue;
-            }
           }
-          
+        }
+        
+        if (!analysisData) {
           analysisError = err;
         }
       }
@@ -443,10 +522,13 @@ export default function AdminUpload() {
       description: "Analyse IA en cours...",
     });
 
-    // Relancer l'analyse
+    const MAX_POLL_TIME_MS = 600000; // 10 minutes max
+    const POLL_INTERVAL_MS = 5000;
+
     try {
+      // Appel initial - devrait répondre rapidement
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000);
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-pdf`,
@@ -472,61 +554,83 @@ export default function AdminUpload() {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const analysisData = await response.json();
+      const initialResponse = await response.json();
+      let analysisData = null;
 
-      const extractionData: ExtractionData = {
-        summary: analysisData?.summary || "",
-        key_points: analysisData?.key_points || [],
-        hs_codes: analysisData?.hs_codes || [],
-        tariff_lines: analysisData?.tariff_lines || [],
-        chapter_info: analysisData?.chapter_info,
-        pdfId: file.pdfId,
-        pdfTitle: file.name,
-        countryCode: "MA",
-        document_type: analysisData?.document_type || "tariff",
-        trade_agreements: analysisData?.trade_agreements || [],
-        full_text_length: analysisData?.full_text?.length || 0,
-      };
+      // Si données complètes retournées directement
+      if (initialResponse.summary && initialResponse.summary !== "__PROCESSING__" && !initialResponse.status) {
+        analysisData = initialResponse;
+      }
+      // Si traitement asynchrone
+      else if (initialResponse.status === "processing") {
+        updateFileStatus(file.id, { 
+          progress: 70,
+          error: "Analyse IA en cours..."
+        });
 
-      updateFileStatus(file.id, {
-        status: "preview",
-        progress: 100,
-        analysis: extractionData,
-        error: undefined,
-      });
+        const pollStartTime = Date.now();
+        
+        while (Date.now() - pollStartTime < MAX_POLL_TIME_MS) {
+          await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+          
+          const elapsedSec = Math.round((Date.now() - pollStartTime) / 1000);
+          updateFileStatus(file.id, { 
+            progress: 70 + Math.min(Math.floor(elapsedSec / 10), 25),
+            error: `Analyse en cours... (${elapsedSec}s)`
+          });
+          
+          const { data: extraction } = await supabase
+            .from("pdf_extractions")
+            .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text, extracted_data")
+            .eq("pdf_id", file.pdfId)
+            .maybeSingle();
+          
+          if (extraction && extraction.summary && extraction.summary !== "__PROCESSING__") {
+            if (extraction.summary.startsWith("Erreur:")) {
+              throw new Error(extraction.summary);
+            }
+            
+            const tariffChanges = extraction.detected_tariff_changes as any[] || [];
+            const hsCodesRaw = extraction.mentioned_hs_codes as string[] || [];
+            const extractedData = extraction.extracted_data as any || {};
+            
+            analysisData = {
+              summary: extraction.summary,
+              key_points: extraction.key_points || [],
+              tariff_lines: tariffChanges,
+              hs_codes: hsCodesRaw.map((code: string) => ({
+                code: code,
+                code_clean: code.replace(/[^0-9]/g, ""),
+                description: "",
+                level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
+              })),
+              chapter_info: extractedData.chapter_info,
+              document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
+              trade_agreements: extractedData.trade_agreements || [],
+              full_text: extraction.extracted_text || "",
+            };
+            break;
+          }
+        }
+        
+        if (!analysisData) {
+          throw new Error("Timeout: L'analyse a pris trop de temps");
+        }
+      }
 
-      toast({
-        title: "✅ Analyse terminée",
-        description: `${extractionData.hs_codes?.length || 0} codes SH et ${extractionData.tariff_lines?.length || 0} lignes détectées`,
-      });
-
-    } catch (err: any) {
-      // Vérifier si l'extraction a été créée malgré l'erreur réseau
-      const { data: extraction } = await supabase
-        .from("pdf_extractions")
-        .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text")
-        .eq("pdf_id", file.pdfId)
-        .maybeSingle();
-
-      if (extraction && extraction.summary && extraction.summary !== "__PROCESSING__") {
-        const tariffChanges = extraction.detected_tariff_changes as any[] || [];
-        const hsCodesRaw = extraction.mentioned_hs_codes as string[] || [];
-
+      if (analysisData) {
         const extractionData: ExtractionData = {
-          summary: extraction.summary,
-          key_points: extraction.key_points as string[] || [],
-          hs_codes: hsCodesRaw.map((code: string) => ({
-            code: code,
-            code_clean: code.replace(/[^0-9]/g, ""),
-            description: "",
-            level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
-          })),
-          tariff_lines: tariffChanges,
+          summary: analysisData.summary || "",
+          key_points: analysisData.key_points || [],
+          hs_codes: analysisData.hs_codes || [],
+          tariff_lines: analysisData.tariff_lines || [],
+          chapter_info: analysisData.chapter_info,
           pdfId: file.pdfId,
           pdfTitle: file.name,
           countryCode: "MA",
-          document_type: tariffChanges.length > 0 ? "tariff" : "regulatory",
-          full_text_length: extraction.extracted_text?.length || 0,
+          document_type: analysisData.document_type || "tariff",
+          trade_agreements: analysisData.trade_agreements || [],
+          full_text_length: analysisData.full_text?.length || 0,
         };
 
         updateFileStatus(file.id, {
@@ -537,22 +641,23 @@ export default function AdminUpload() {
         });
 
         toast({
-          title: "✅ Extraction récupérée",
-          description: "L'analyse a réussi côté serveur",
-        });
-      } else {
-        updateFileStatus(file.id, {
-          status: "error",
-          progress: 100,
-          error: err.message || "Erreur d'analyse",
-        });
-
-        toast({
-          title: "Erreur",
-          description: err.message || "Impossible d'analyser le fichier",
-          variant: "destructive",
+          title: "✅ Analyse terminée",
+          description: `${extractionData.hs_codes?.length || 0} codes SH et ${extractionData.tariff_lines?.length || 0} lignes détectées`,
         });
       }
+
+    } catch (err: any) {
+      updateFileStatus(file.id, {
+        status: "error",
+        progress: 100,
+        error: err.message || "Erreur d'analyse",
+      });
+
+      toast({
+        title: "Erreur",
+        description: err.message || "Impossible d'analyser le fichier",
+        variant: "destructive",
+      });
     }
   };
 
