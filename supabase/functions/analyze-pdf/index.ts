@@ -727,7 +727,7 @@ function delay(ms: number): Promise<void> {
 }
 
 // =============================================================================
-// APPEL LOVABLE AI GATEWAY (Gemini) - Vision PDF via image
+// APPEL LOVABLE AI GATEWAY (Gemini) - Vision PDF via native file input
 // =============================================================================
 
 async function analyzeWithLovableAI(
@@ -743,32 +743,58 @@ async function analyzeWithLovableAI(
   
   const prompt = getAnalysisPrompt(title, category);
 
-  // Lovable AI Gateway (OpenAI-compatible format)
-  const aiResponse = await fetch(LOVABLE_AI_URL, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: LOVABLE_AI_MODEL,
-      max_tokens: 64000,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:application/pdf;base64,${base64Pdf}`,
-              }
-            },
-            { type: "text", text: prompt }
-          ]
-        }
-      ],
-    }),
-  });
+  console.log("Calling Lovable AI Gateway with model:", LOVABLE_AI_MODEL);
+  console.log("PDF base64 size:", base64Pdf.length, "chars");
+
+  // Lovable AI Gateway - Use the inline_data format for PDF (Gemini native format)
+  // Reference: https://ai.google.dev/gemini-api/docs/document-processing
+  const requestBody = {
+    model: LOVABLE_AI_MODEL,
+    max_tokens: 64000,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "file",
+            file: {
+              filename: `${title.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`,
+              file_data: `data:application/pdf;base64,${base64Pdf}`,
+            }
+          },
+          { type: "text", text: prompt }
+        ]
+      }
+    ],
+  };
+
+  console.log("Sending request to Lovable AI Gateway...");
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
+  
+  let aiResponse: Response;
+  try {
+    aiResponse = await fetch(LOVABLE_AI_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
+  } catch (fetchError: any) {
+    clearTimeout(timeoutId);
+    if (fetchError.name === 'AbortError') {
+      console.error("Request timed out after 5 minutes");
+      throw new Error("Request timeout - le PDF est peut-être trop volumineux");
+    }
+    throw fetchError;
+  }
+  
+  clearTimeout(timeoutId);
+  console.log("Lovable AI Gateway response status:", aiResponse.status);
 
   // Handle rate limiting (429) and payment required (402)
   if (aiResponse.status === 429 || aiResponse.status === 402) {
