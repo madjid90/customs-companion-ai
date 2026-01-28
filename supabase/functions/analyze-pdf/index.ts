@@ -545,8 +545,10 @@ function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
         nationalCode = lastPosition.padEnd(10, "0");
       }
       
-    // CAS 2: Col1 = "1" ou col1 est vide/tiret → HÉRITAGE du niveau précédent
-    } else if (col1Clean === "1" || col1Clean === "" || col1Raw === "–" || col1Raw === "-") {
+    // CAS 2: Col1 = chiffre catégorie (1, 2, 3...) ou col1 vide/tiret → HÉRITAGE du niveau précédent
+    // Dans le tarif marocain, col1 peut contenir la catégorie tarifaire (1, 2, 3, etc.)
+    // Ces lignes héritent du code HS de la position/sous-position précédente
+    } else if (/^[1-9]$/.test(col1Clean) || col1Clean === "" || col1Raw === "–" || col1Raw === "-") {
       isInherited = true;
       
       // La base est toujours position + sous-position (6 chiffres)
