@@ -124,12 +124,27 @@ Quand tu vois : "9701.21 00 00" ou "9705.31 00 00"
 → Retire les espaces et le point : 9701210000, 9705310000
 → C'est déjà le code national à 10 chiffres !
 
-FORMAT 2 - COLONNES SÉPARÉES (ex: chapitre 26)
-Quand tu vois la position "9701.29" PUIS sur une autre ligne "10 00"
+FORMAT 2 - COLONNES SÉPARÉES (ex: chapitres 26, 97)
+Quand tu vois la position "9701.29" PUIS sur une autre ligne deux colonnes "10" et "00"
 → Position 6 chiffres: 970129
-→ Le "10" est le numéro de sous-ligne
-→ Le "00" est juste du remplissage
-→ Code final: 970129 + 00 + 10 = 9701290010
+→ La PREMIÈRE colonne (5/8 ou col gauche) = numéro de sous-ligne = va en POSITIONS 9-10
+→ La DEUXIÈME colonne (6/9 ou col droite) = remplissage = va en POSITIONS 7-8
+→ FORMULE: Position_6_digits + Colonne2 + Colonne1 = Code_10_digits
+→ Exemple: 970129 + "00" + "10" = 9701290010
+
+REGARDE BIEN L'IMAGE DU TABLEAU:
+Colonne Position | Col 5/8 | Col 6/9 | Description
+9701.29          |         |         | -- Autres
+                 | 10      | 00      | --- en liège
+                 | 90      | 00      | --- autres
+
+Pour la ligne "10 | 00 | en liège":
+→ Position parent = 9701.29 = 970129
+→ Col 5/8 = 10 (C'EST LE NUMÉRO DE SOUS-LIGNE)
+→ Col 6/9 = 00 (C'EST DU PADDING)
+→ Code = 970129 + 00 + 10 = 9701290010 ✓
+
+JAMAIS 9701291000 ← C'EST L'ERREUR À ÉVITER!
 
 ⚠️⚠️⚠️ ERREUR À ÉVITER ABSOLUMENT ⚠️⚠️⚠️
 
