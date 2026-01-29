@@ -527,50 +527,211 @@ Tu dois extraire les informations juridiques et réglementaires pertinentes avec
 RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
 
 // =============================================================================
-// SÉLECTION DU PROMPT APPROPRIÉ
+// SÉLECTION DU PROMPT APPROPRIÉ - DÉTECTION AUTOMATIQUE INTELLIGENTE
 // =============================================================================
 
 const TARIFF_CATEGORIES = ["tarif", "chapitre", "chapter", "nomenclature", "sh_code", "hs_code"];
 const REGULATORY_CATEGORIES = ["circulaire", "accord", "note", "instruction", "reglement", "règlement", "convention", "loi", "decret", "décret", "arrete", "arrêté"];
 
-function getAnalysisPrompt(title: string, category: string): string {
+// Document type detected by content analysis
+type DocumentType = "tariff" | "regulatory";
+
+interface DocumentClassification {
+  type: DocumentType;
+  confidence: number;
+  reason: string;
+}
+
+// Prompt de classification rapide - utilise peu de tokens
+const CLASSIFICATION_PROMPT = `Tu es un expert en classification de documents douaniers.
+
+Analyse les PREMIÈRES PAGES de ce PDF et détermine SON TYPE :
+
+TYPE "tariff" si le document contient :
+- Un TABLEAU de nomenclature douanière avec des colonnes (Position, Description, Taux, Unité)
+- Des codes SH/HS à 6, 8 ou 10 chiffres organisés hiérarchiquement
+- Des taux de droits de douane en pourcentage (ex: 2,5%, 17,5%, 40%)
+- Des unités de mesure (kg, L, U, m², etc.)
+- Un titre comme "Chapitre XX" ou une référence au Système Harmonisé
+
+TYPE "regulatory" si le document contient :
+- Un texte juridique/réglementaire (circulaire, note, décret, arrêté, accord)
+- Des paragraphes de texte législatif avec articles numérotés
+- Des références à d'autres textes de loi
+- Un en-tête officiel d'une administration (Douanes, Ministère, etc.)
+- Pas de tableau tarifaire structuré avec codes et taux
+
+RÉPONDS UNIQUEMENT avec ce JSON :
+{
+  "type": "tariff" ou "regulatory",
+  "confidence": 0.0 à 1.0,
+  "reason": "Explication courte en 1 phrase"
+}`;
+
+/**
+ * Classifie automatiquement le document en analysant son contenu
+ * Utilise une requête légère à Claude pour détecter le type
+ */
+async function classifyDocument(
+  base64Pdf: string,
+  title: string,
+  category: string,
+  apiKey: string
+): Promise<DocumentClassification> {
+  console.log(`[Classification] Starting auto-classification for: "${title}"`);
+  
+  // ÉTAPE 1: Classification heuristique par métadonnées (rapide, sans API call)
+  const heuristicResult = classifyByHeuristics(title, category);
+  if (heuristicResult.confidence >= 0.9) {
+    console.log(`[Classification] High-confidence heuristic match: ${heuristicResult.type} (${heuristicResult.confidence})`);
+    return heuristicResult;
+  }
+  
+  // ÉTAPE 2: Si pas assez confiant, utiliser Claude pour analyse du contenu
+  console.log(`[Classification] Heuristic confidence low (${heuristicResult.confidence}), using AI content analysis...`);
+  
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout pour classification
+    
+    const response = await fetch(ANTHROPIC_API_URL, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "pdfs-2024-09-25",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 500,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "document",
+                source: {
+                  type: "base64",
+                  media_type: "application/pdf",
+                  data: base64Pdf
+                }
+              },
+              { type: "text", text: CLASSIFICATION_PROMPT }
+            ]
+          }
+        ]
+      }),
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      console.warn(`[Classification] AI classification failed with status ${response.status}, falling back to heuristics`);
+      return heuristicResult;
+    }
+    
+    const data = await response.json();
+    const responseText = data.content?.[0]?.text || "";
+    
+    // Parse JSON response
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const classification = JSON.parse(jsonMatch[0]);
+      console.log(`[Classification] AI classification: ${classification.type} (confidence: ${classification.confidence}) - ${classification.reason}`);
+      return {
+        type: classification.type === "tariff" ? "tariff" : "regulatory",
+        confidence: Math.min(1, Math.max(0, classification.confidence || 0.8)),
+        reason: classification.reason || "Classified by AI content analysis"
+      };
+    }
+    
+    console.warn(`[Classification] Could not parse AI response, falling back to heuristics`);
+    return heuristicResult;
+    
+  } catch (error) {
+    console.warn(`[Classification] AI classification error: ${error}, falling back to heuristics`);
+    return heuristicResult;
+  }
+}
+
+/**
+ * Classification rapide par heuristiques (sans appel API)
+ */
+function classifyByHeuristics(title: string, category: string): DocumentClassification {
   const categoryLower = category.toLowerCase();
   const titleLower = title.toLowerCase();
   
-  // Vérifier si c'est un document tarifaire (PRIORITAIRE)
-  // "SH CODE" dans le titre = TOUJOURS tarifaire
-  const isTariff = TARIFF_CATEGORIES.some(t => categoryLower.includes(t) || titleLower.includes(t)) ||
-                   titleLower.includes("chapitre") ||
-                   /sh\s*code/i.test(titleLower) ||
-                   /hs\s*code/i.test(titleLower);
+  // Mots-clés forts pour tarif (confiance élevée)
+  const strongTariffKeywords = [
+    /sh\s*code/i, /hs\s*code/i, /chapitre\s*\d+/i, /chapter\s*\d+/i,
+    /tarif\s*douanier/i, /nomenclature/i, /système\s*harmonisé/i
+  ];
   
-  // Si c'est un document tarifaire, utiliser le prompt tarifaire (PRIORITÉ)
-  if (isTariff) {
-    console.log(`Using TARIFF prompt for: "${title}" (category: ${category}) - detected as tariff document`);
-    return getTariffPrompt(title, category);
+  for (const regex of strongTariffKeywords) {
+    if (regex.test(titleLower) || regex.test(categoryLower)) {
+      return {
+        type: "tariff",
+        confidence: 0.95,
+        reason: `Mot-clé tarif fort détecté: ${regex.source}`
+      };
+    }
   }
   
-  // Vérifier si c'est un document réglementaire
-  const isRegulatory = REGULATORY_CATEGORIES.some(r => categoryLower.includes(r) || titleLower.includes(r));
+  // Mots-clés forts pour réglementaire (confiance élevée)
+  const strongRegulatoryKeywords = [
+    /circulaire\s*n[°o]?/i, /décret\s*n[°o]?/i, /arrêté/i,
+    /accord\s*(commercial|de\s*libre)/i, /convention/i, /note\s*technique/i
+  ];
   
-  // Si explicitement réglementaire
-  if (isRegulatory) {
+  for (const regex of strongRegulatoryKeywords) {
+    if (regex.test(titleLower) || regex.test(categoryLower)) {
+      return {
+        type: "regulatory",
+        confidence: 0.95,
+        reason: `Mot-clé réglementaire fort détecté: ${regex.source}`
+      };
+    }
+  }
+  
+  // Vérification par catégories simples
+  const isTariffCategory = TARIFF_CATEGORIES.some(t => categoryLower.includes(t) || titleLower.includes(t));
+  const isRegulatoryCategory = REGULATORY_CATEGORIES.some(r => categoryLower.includes(r) || titleLower.includes(r));
+  
+  if (isTariffCategory && !isRegulatoryCategory) {
+    return { type: "tariff", confidence: 0.8, reason: "Catégorie tarifaire détectée" };
+  }
+  
+  if (isRegulatoryCategory && !isTariffCategory) {
+    return { type: "regulatory", confidence: 0.8, reason: "Catégorie réglementaire détectée" };
+  }
+  
+  // Pas assez de signaux - confiance basse, nécessite analyse IA
+  return {
+    type: "tariff", // Par défaut
+    confidence: 0.4,
+    reason: "Pas assez de signaux pour classification automatique"
+  };
+}
+
+/**
+ * Sélectionne le prompt approprié basé sur le type de document
+ */
+function getAnalysisPrompt(title: string, category: string, documentType: DocumentType = "tariff"): string {
+  if (documentType === "regulatory") {
     console.log(`Using REGULATORY prompt for: "${title}" (category: ${category})`);
     return getRegulatoryPrompt(title, category);
   }
   
-  // Par défaut, utiliser le prompt tarifaire
-  console.log(`Using TARIFF prompt for: "${title}" (category: ${category}) - default`);
+  console.log(`Using TARIFF prompt for: "${title}" (category: ${category})`);
   return getTariffPrompt(title, category);
 }
 
-// Fonction utilitaire pour vérifier le type de document
+// Fonction utilitaire pour vérifier le type de document (legacy compatibility)
 function isRegulatoryDocument(category: string, title: string): boolean {
-  const categoryLower = category.toLowerCase();
-  const titleLower = title.toLowerCase();
-  
-  return REGULATORY_CATEGORIES.some(r => categoryLower.includes(r) || titleLower.includes(r)) &&
-         !TARIFF_CATEGORIES.some(t => categoryLower.includes(t) || titleLower.includes(t));
+  const result = classifyByHeuristics(title, category);
+  return result.type === "regulatory" && result.confidence >= 0.7;
 }
 
 // =============================================================================
@@ -887,16 +1048,19 @@ async function analyzeWithClaude(
   title: string,
   category: string,
   apiKey: string,
+  documentType: DocumentType = "tariff",  // Type de document pré-classifié
   retryCount = 0
-): Promise<{ result: AnalysisResult | null; truncated: boolean; rateLimited: boolean }> {
+): Promise<{ result: AnalysisResult | null; truncated: boolean; rateLimited: boolean; documentType: DocumentType }> {
   
   const MAX_RETRIES = 5;
   const BASE_DELAY = 5000;
   
-  const prompt = getAnalysisPrompt(title, category);
+  // Utiliser le prompt approprié basé sur le type détecté
+  const prompt = getAnalysisPrompt(title, category, documentType);
 
   // All PDFs use Sonnet - it's the only model that supports native PDF input
   console.log(`PDF base64 size: ${base64Pdf.length} chars`);
+  console.log(`Document type: ${documentType}`);
   console.log("Using model:", CLAUDE_MODEL);
 
   // Claude API with native PDF support
@@ -962,10 +1126,10 @@ async function analyzeWithClaude(
       const delayMs = retryAfter ? parseInt(retryAfter) * 1000 : BASE_DELAY * Math.pow(2, retryCount);
       console.log(`Rate limited (${aiResponse.status}). Retry ${retryCount + 1}/${MAX_RETRIES} after ${delayMs}ms...`);
       await delay(delayMs);
-      return analyzeWithClaude(base64Pdf, title, category, apiKey, retryCount + 1);
+      return analyzeWithClaude(base64Pdf, title, category, apiKey, documentType, retryCount + 1);
     } else {
       console.error("Max retries reached for rate limiting");
-      return { result: null, truncated: false, rateLimited: true };
+      return { result: null, truncated: false, rateLimited: true, documentType };
     }
   }
 
@@ -1337,7 +1501,8 @@ async function analyzeWithClaude(
         tariff_lines: [],
       }, 
       truncated, 
-      rateLimited: false 
+      rateLimited: false,
+      documentType
     };
   }
   
@@ -1428,7 +1593,7 @@ async function analyzeWithClaude(
     isRegulatory ? "" : `inherited: ${result.tariff_lines.filter(l => l.is_inherited).length}`
   );
   
-  return { result, truncated, rateLimited: false };
+  return { result, truncated, rateLimited: false, documentType };
 }
 
 // =============================================================================
@@ -1632,8 +1797,14 @@ serve(async (req) => {
       try {
         console.log(`[Background] Starting analysis for PDF: ${pdfId}`);
         
-        const { result, truncated, rateLimited } = await analyzeWithClaude(
-          base64Pdf, title, category, ANTHROPIC_API_KEY
+        // ÉTAPE 1: Classification automatique du document
+        console.log(`[Background] Classifying document: ${title}`);
+        const classification = await classifyDocument(base64Pdf, title, category, ANTHROPIC_API_KEY);
+        console.log(`[Background] Document classified as: ${classification.type} (confidence: ${classification.confidence}) - ${classification.reason}`);
+        
+        // ÉTAPE 2: Analyse avec le prompt approprié
+        const { result, truncated, rateLimited, documentType } = await analyzeWithClaude(
+          base64Pdf, title, category, ANTHROPIC_API_KEY, classification.type
         );
         
         let analysisResult: AnalysisResult | null = result;
@@ -1660,11 +1831,12 @@ serve(async (req) => {
           return;
         }
 
-        // Déterminer si c'est un document réglementaire
-        const isRegulatoryDoc = isRegulatoryDocument(category, title);
+        // Utiliser le type détecté par la classification IA
+        const isRegulatoryDoc = documentType === "regulatory";
         
         console.log("[Background] Analysis complete for PDF:", pdfId,
-          "Document type:", isRegulatoryDoc ? "regulatory" : "tariff",
+          "Document type:", documentType,
+          "Classification confidence:", classification.confidence,
           "HS codes:", analysisResult.hs_codes?.length || 0,
           "Tariff lines:", analysisResult.tariff_lines?.length || 0,
           "Trade agreements:", analysisResult.trade_agreements?.length || 0
