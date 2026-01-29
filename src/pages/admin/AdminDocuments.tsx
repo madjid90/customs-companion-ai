@@ -798,39 +798,41 @@ export default function AdminDocuments() {
         <DialogContent className="max-w-5xl w-[95vw] h-[90vh] flex flex-col p-0 gap-0">
           <DialogHeader className="px-6 py-4 border-b shrink-0">
             <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-red-500" />
+              <FileText className="h-5 w-5 text-destructive" />
               {pdfPreviewTitle}
             </DialogTitle>
-            <DialogDescription className="flex items-center gap-2">
+            <DialogDescription className="flex items-center gap-2 flex-wrap">
               Aperçu du document
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => pdfPreviewUrl && window.open(pdfPreviewUrl, "_blank")}
-                className="ml-auto"
-              >
-                <ExternalLink className="h-4 w-4 mr-2" />
-                Ouvrir dans un nouvel onglet
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                asChild
-              >
-                <a href={pdfPreviewUrl || "#"} download>
-                  <Download className="h-4 w-4 mr-2" />
-                  Télécharger
-                </a>
-              </Button>
+              <div className="flex gap-2 ml-auto">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => pdfPreviewUrl && window.open(pdfPreviewUrl, "_blank")}
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Nouvel onglet
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  asChild
+                >
+                  <a href={pdfPreviewUrl || "#"} download>
+                    <Download className="h-4 w-4 mr-2" />
+                    Télécharger
+                  </a>
+                </Button>
+              </div>
             </DialogDescription>
           </DialogHeader>
           
-          <div className="flex-1 min-h-0 bg-muted/30">
+          <div className="flex-1 min-h-0 bg-muted/30 relative">
             {pdfPreviewUrl && (
               <iframe
-                src={pdfPreviewUrl}
+                src={`https://docs.google.com/viewer?url=${encodeURIComponent(pdfPreviewUrl)}&embedded=true`}
                 className="w-full h-full border-0"
                 title="Aperçu PDF"
+                sandbox="allow-scripts allow-same-origin allow-popups"
               />
             )}
           </div>
