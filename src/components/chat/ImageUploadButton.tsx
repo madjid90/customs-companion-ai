@@ -97,38 +97,51 @@ export function ImageUploadButton({
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
-            variant="ghost"
+            variant="outline"
             size="icon"
             className={cn(
-              "h-10 w-10",
-              uploadedFiles.length > 0 && "text-accent"
+              "h-11 w-11 rounded-xl border-border/50 bg-background hover:bg-accent/10 hover:border-accent/50 transition-all duration-200 shadow-sm hover:shadow-md",
+              uploadedFiles.length > 0 && "border-accent/50 bg-accent/5 text-accent"
             )}
             disabled={disabled || isUploading}
           >
             {isUploading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
+              <Loader2 className="h-5 w-5 animate-spin text-accent" />
             ) : (
-              <ImagePlus className="h-5 w-5" />
+              <ImagePlus className="h-5 w-5 text-muted-foreground group-hover:text-accent transition-colors" />
             )}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-56 p-2" align="start" side="top">
+        <PopoverContent className="w-64 p-3 rounded-xl shadow-lg border-border/50" align="start" side="top">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 px-1">
+            Ajouter un fichier
+          </p>
           <div className="flex flex-col gap-1">
             <Button
               variant="ghost"
-              className="justify-start gap-2"
+              className="justify-start gap-3 h-11 rounded-lg hover:bg-accent/10 hover:text-accent transition-colors"
               onClick={() => imageInputRef.current?.click()}
             >
-              <ImagePlus className="h-4 w-4" />
-              Photo du produit
+              <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
+                <ImagePlus className="h-4 w-4 text-accent" />
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-medium">Photo du produit</p>
+                <p className="text-xs text-muted-foreground">JPG, PNG, WEBP</p>
+              </div>
             </Button>
             <Button
               variant="ghost"
-              className="justify-start gap-2"
+              className="justify-start gap-3 h-11 rounded-lg hover:bg-accent/10 hover:text-accent transition-colors"
               onClick={() => docInputRef.current?.click()}
             >
-              <FileText className="h-4 w-4" />
-              Facture / Fiche technique
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <FileText className="h-4 w-4 text-primary" />
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-medium">Document</p>
+                <p className="text-xs text-muted-foreground">PDF, Facture, Fiche technique</p>
+              </div>
             </Button>
           </div>
         </PopoverContent>
