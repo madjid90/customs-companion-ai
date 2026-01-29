@@ -678,7 +678,7 @@ export default function AdminHSCodes() {
                                 placeholder="8471300010"
                               />
                             </div>
-                            <div className="col-span-4 space-y-1">
+                            <div className="col-span-3 space-y-1">
                               <Label className="text-xs">Description locale</Label>
                               <Input
                                 value={tariff.description_local}
@@ -688,10 +688,11 @@ export default function AdminHSCodes() {
                                 placeholder="Description..."
                               />
                             </div>
-                            <div className="col-span-1 space-y-1">
+                            <div className="col-span-2 space-y-1">
                               <Label className="text-xs">DD %</Label>
                               <Input
                                 type="number"
+                                step="0.01"
                                 value={tariff.duty_rate}
                                 onChange={(e) =>
                                   updateTariffLine(tariff.id, "duty_rate", e.target.value)
@@ -699,10 +700,11 @@ export default function AdminHSCodes() {
                                 className="text-sm"
                               />
                             </div>
-                            <div className="col-span-1 space-y-1">
+                            <div className="col-span-2 space-y-1">
                               <Label className="text-xs">TVA %</Label>
                               <Input
                                 type="number"
+                                step="0.01"
                                 value={tariff.vat_rate}
                                 onChange={(e) =>
                                   updateTariffLine(tariff.id, "vat_rate", e.target.value)
@@ -710,7 +712,7 @@ export default function AdminHSCodes() {
                                 className="text-sm"
                               />
                             </div>
-                            <div className="col-span-2 space-y-1">
+                            <div className="col-span-1 space-y-1">
                               <Label className="text-xs">Unité</Label>
                               <Input
                                 value={tariff.unit_code}
@@ -720,7 +722,7 @@ export default function AdminHSCodes() {
                                 placeholder="KG"
                               />
                             </div>
-                            <div className="col-span-1">
+                            <div className="col-span-1 flex justify-center">
                               <Button
                                 variant="ghost"
                                 size="icon"
