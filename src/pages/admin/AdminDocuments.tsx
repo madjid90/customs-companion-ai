@@ -31,7 +31,8 @@ import {
   ExternalLink,
   Loader2,
   Sparkles,
-  AlertCircle
+  AlertCircle,
+  FileSearch
 } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -635,7 +636,7 @@ export default function AdminDocuments() {
                               onClick={() => viewDetails(doc)}
                               title="Voir les détails"
                             >
-                              <Eye className="h-4 w-4" />
+                              <FileSearch className="h-4 w-4" />
                             </Button>
                             <Button
                               variant="ghost"
