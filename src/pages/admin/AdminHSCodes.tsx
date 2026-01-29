@@ -24,7 +24,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Search, Edit, Trash2, Package } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Loader2, Plus, Search, Edit, Trash2, Package, ChevronDown, ChevronUp } from "lucide-react";
 
 interface HSCode {
   id: string;
@@ -38,8 +39,21 @@ interface HSCode {
   is_active: boolean;
 }
 
+interface TariffLine {
+  id: string;
+  country_code: string;
+  hs_code_6: string;
+  national_code: string;
+  description_local: string | null;
+  duty_rate: number | null;
+  vat_rate: number | null;
+  unit_code: string | null;
+  is_active: boolean;
+}
+
 interface HSCodeForm {
   code: string;
+  code_clean: string;
   description_fr: string;
   description_en: string;
   chapter_number: string;
@@ -49,8 +63,19 @@ interface HSCodeForm {
   explanatory_notes: string;
 }
 
+interface TariffLineForm {
+  id: string;
+  national_code: string;
+  description_local: string;
+  duty_rate: string;
+  vat_rate: string;
+  unit_code: string;
+  isNew?: boolean;
+}
+
 const initialFormState: HSCodeForm = {
   code: "",
+  code_clean: "",
   description_fr: "",
   description_en: "",
   chapter_number: "",
@@ -67,9 +92,12 @@ export default function AdminHSCodes() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<HSCodeForm>(initialFormState);
+  const [tariffLines, setTariffLines] = useState<TariffLineForm[]>([]);
+  const [loadingTariffs, setLoadingTariffs] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(0);
+  const [activeTab, setActiveTab] = useState("hs");
   const pageSize = 50;
   const { toast } = useToast();
 
@@ -112,25 +140,58 @@ export default function AdminHSCodes() {
     setPage(0);
   };
 
+  const loadTariffLines = async (hsCodeClean: string) => {
+    setLoadingTariffs(true);
+    try {
+      const { data, error } = await supabase
+        .from("country_tariffs")
+        .select("*")
+        .eq("hs_code_6", hsCodeClean)
+        .order("national_code");
+
+      if (error) throw error;
+
+      setTariffLines(
+        (data || []).map((t) => ({
+          id: t.id,
+          national_code: t.national_code,
+          description_local: t.description_local || "",
+          duty_rate: t.duty_rate?.toString() || "0",
+          vat_rate: t.vat_rate?.toString() || "20",
+          unit_code: t.unit_code || "",
+          isNew: false,
+        }))
+      );
+    } catch (error) {
+      console.error("Error loading tariff lines:", error);
+    } finally {
+      setLoadingTariffs(false);
+    }
+  };
+
   const openCreateDialog = () => {
     setEditingId(null);
     setForm(initialFormState);
+    setTariffLines([]);
+    setActiveTab("hs");
     setIsDialogOpen(true);
   };
 
   const openEditDialog = async (hsCode: HSCode) => {
     setEditingId(hsCode.id);
-    
+    setActiveTab("hs");
+
     // Load full details
     const { data } = await supabase
       .from("hs_codes")
       .select("*")
       .eq("id", hsCode.id)
       .single();
-    
+
     if (data) {
       setForm({
         code: data.code,
+        code_clean: data.code_clean,
         description_fr: data.description_fr,
         description_en: data.description_en || "",
         chapter_number: data.chapter_number?.toString() || "",
@@ -139,8 +200,39 @@ export default function AdminHSCodes() {
         legal_notes: data.legal_notes || "",
         explanatory_notes: data.explanatory_notes || "",
       });
+
+      // Load associated tariff lines
+      await loadTariffLines(data.code_clean);
     }
     setIsDialogOpen(true);
+  };
+
+  const handleCodeChange = (value: string) => {
+    const cleanCode = value.replace(/\./g, "");
+    setForm({ ...form, code: value, code_clean: cleanCode });
+  };
+
+  const addTariffLine = () => {
+    const newLine: TariffLineForm = {
+      id: `new-${Date.now()}`,
+      national_code: form.code_clean + "0000",
+      description_local: "",
+      duty_rate: "0",
+      vat_rate: "20",
+      unit_code: "",
+      isNew: true,
+    };
+    setTariffLines([...tariffLines, newLine]);
+  };
+
+  const updateTariffLine = (id: string, field: keyof TariffLineForm, value: string) => {
+    setTariffLines(
+      tariffLines.map((t) => (t.id === id ? { ...t, [field]: value } : t))
+    );
+  };
+
+  const removeTariffLine = (id: string) => {
+    setTariffLines(tariffLines.filter((t) => t.id !== id));
   };
 
   const handleSave = async () => {
@@ -175,12 +267,58 @@ export default function AdminHSCodes() {
           .update(payload)
           .eq("id", editingId);
         if (error) throw error;
-        toast({ title: "Succès", description: "Code SH mis à jour" });
+
+        // Save tariff lines
+        for (const tariff of tariffLines) {
+          const tariffPayload = {
+            country_code: "MA",
+            hs_code_6: codeClean,
+            national_code: tariff.national_code,
+            description_local: tariff.description_local || null,
+            duty_rate: parseFloat(tariff.duty_rate) || 0,
+            vat_rate: parseFloat(tariff.vat_rate) || 20,
+            unit_code: tariff.unit_code || null,
+            is_active: true,
+          };
+
+          if (tariff.isNew) {
+            const { error: insertError } = await supabase
+              .from("country_tariffs")
+              .insert(tariffPayload);
+            if (insertError) throw insertError;
+          } else {
+            const { error: updateError } = await supabase
+              .from("country_tariffs")
+              .update(tariffPayload)
+              .eq("id", tariff.id);
+            if (updateError) throw updateError;
+          }
+        }
+
+        toast({ title: "Succès", description: "Code SH et lignes tarifaires mis à jour" });
       } else {
-        const { error } = await supabase
-          .from("hs_codes")
-          .insert(payload);
+        const { error } = await supabase.from("hs_codes").insert(payload);
         if (error) throw error;
+
+        // Insert new tariff lines
+        if (tariffLines.length > 0) {
+          const tariffPayloads = tariffLines.map((t) => ({
+            country_code: "MA",
+            hs_code_6: codeClean,
+            national_code: t.national_code,
+            description_local: t.description_local || null,
+            duty_rate: parseFloat(t.duty_rate) || 0,
+            vat_rate: parseFloat(t.vat_rate) || 20,
+            unit_code: t.unit_code || null,
+            is_active: true,
+          }));
+
+          const { error: tariffError } = await supabase
+            .from("country_tariffs")
+            .insert(tariffPayloads);
+          if (tariffError) throw tariffError;
+        }
+
         toast({ title: "Succès", description: "Code SH créé" });
       }
 
@@ -206,7 +344,7 @@ export default function AdminHSCodes() {
         .from("hs_codes")
         .update({ is_active: false })
         .eq("id", id);
-      
+
       if (error) throw error;
       toast({ title: "Succès", description: "Code SH désactivé" });
       loadHSCodes();
@@ -215,6 +353,33 @@ export default function AdminHSCodes() {
       toast({
         title: "Erreur",
         description: "Impossible de supprimer",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteTariffLine = async (tariffId: string, isNew: boolean) => {
+    if (isNew) {
+      removeTariffLine(tariffId);
+      return;
+    }
+
+    if (!confirm("Supprimer cette ligne tarifaire ?")) return;
+
+    try {
+      const { error } = await supabase
+        .from("country_tariffs")
+        .delete()
+        .eq("id", tariffId);
+
+      if (error) throw error;
+      removeTariffLine(tariffId);
+      toast({ title: "Succès", description: "Ligne tarifaire supprimée" });
+    } catch (error) {
+      console.error("Delete tariff error:", error);
+      toast({
+        title: "Erreur",
+        description: "Impossible de supprimer la ligne tarifaire",
         variant: "destructive",
       });
     }
@@ -350,113 +515,236 @@ export default function AdminHSCodes() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingId ? "Modifier le code SH" : "Nouveau code SH"}
             </DialogTitle>
             <DialogDescription>
               {editingId
-                ? "Modifiez les informations du code SH"
+                ? "Modifiez les informations du code SH et ses lignes tarifaires"
                 : "Ajoutez un nouveau code à la nomenclature"}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="hs">Code SH</TabsTrigger>
+              <TabsTrigger value="tariffs">
+                Lignes tarifaires ({tariffLines.length})
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="hs" className="space-y-4 mt-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="code">Code SH (formaté) *</Label>
+                  <Input
+                    id="code"
+                    placeholder="84.71.30"
+                    value={form.code}
+                    onChange={(e) => handleCodeChange(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="code_clean">Code nettoyé</Label>
+                  <Input
+                    id="code_clean"
+                    placeholder="847130"
+                    value={form.code_clean}
+                    onChange={(e) => setForm({ ...form, code_clean: e.target.value })}
+                    className="font-mono"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="level">Niveau</Label>
+                  <select
+                    id="level"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={form.level}
+                    onChange={(e) => setForm({ ...form, level: e.target.value })}
+                  >
+                    <option value="chapter">Chapitre</option>
+                    <option value="heading">Position</option>
+                    <option value="subheading">Sous-position</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="chapter">Numéro de chapitre</Label>
+                  <Input
+                    id="chapter"
+                    type="number"
+                    placeholder="84"
+                    value={form.chapter_number}
+                    onChange={(e) => setForm({ ...form, chapter_number: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="section">Numéro de section</Label>
+                  <Input
+                    id="section"
+                    type="number"
+                    placeholder="16"
+                    value={form.section_number}
+                    onChange={(e) => setForm({ ...form, section_number: e.target.value })}
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
-                <Label htmlFor="code">Code SH *</Label>
-                <Input
-                  id="code"
-                  placeholder="84.71.30"
-                  value={form.code}
-                  onChange={(e) => setForm({ ...form, code: e.target.value })}
+                <Label htmlFor="description_fr">Description (FR) *</Label>
+                <Textarea
+                  id="description_fr"
+                  placeholder="Machines automatiques de traitement de l'information..."
+                  value={form.description_fr}
+                  onChange={(e) => setForm({ ...form, description_fr: e.target.value })}
+                  rows={3}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="level">Niveau</Label>
-                <select
-                  id="level"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={form.level}
-                  onChange={(e) => setForm({ ...form, level: e.target.value })}
-                >
-                  <option value="chapter">Chapitre</option>
-                  <option value="heading">Position</option>
-                  <option value="subheading">Sous-position</option>
-                </select>
-              </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="chapter">Numéro de chapitre</Label>
-                <Input
-                  id="chapter"
-                  type="number"
-                  placeholder="84"
-                  value={form.chapter_number}
-                  onChange={(e) => setForm({ ...form, chapter_number: e.target.value })}
+                <Label htmlFor="description_en">Description (EN)</Label>
+                <Textarea
+                  id="description_en"
+                  placeholder="Automatic data processing machines..."
+                  value={form.description_en}
+                  onChange={(e) => setForm({ ...form, description_en: e.target.value })}
+                  rows={2}
                 />
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="section">Numéro de section</Label>
-                <Input
-                  id="section"
-                  type="number"
-                  placeholder="16"
-                  value={form.section_number}
-                  onChange={(e) => setForm({ ...form, section_number: e.target.value })}
+                <Label htmlFor="legal_notes">Notes légales</Label>
+                <Textarea
+                  id="legal_notes"
+                  placeholder="Notes de chapitre, règles générales..."
+                  value={form.legal_notes}
+                  onChange={(e) => setForm({ ...form, legal_notes: e.target.value })}
+                  rows={2}
                 />
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="description_fr">Description (FR) *</Label>
-              <Textarea
-                id="description_fr"
-                placeholder="Machines automatiques de traitement de l'information..."
-                value={form.description_fr}
-                onChange={(e) => setForm({ ...form, description_fr: e.target.value })}
-                rows={3}
-              />
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor="explanatory_notes">Notes explicatives</Label>
+                <Textarea
+                  id="explanatory_notes"
+                  placeholder="Notes explicatives du SH..."
+                  value={form.explanatory_notes}
+                  onChange={(e) => setForm({ ...form, explanatory_notes: e.target.value })}
+                  rows={2}
+                />
+              </div>
+            </TabsContent>
 
-            <div className="space-y-2">
-              <Label htmlFor="description_en">Description (EN)</Label>
-              <Textarea
-                id="description_en"
-                placeholder="Automatic data processing machines..."
-                value={form.description_en}
-                onChange={(e) => setForm({ ...form, description_en: e.target.value })}
-                rows={2}
-              />
-            </div>
+            <TabsContent value="tariffs" className="space-y-4 mt-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Lignes tarifaires associées au code SH {form.code || "..."}
+                </p>
+                <Button variant="outline" size="sm" onClick={addTariffLine}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Ajouter une ligne
+                </Button>
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="legal_notes">Notes légales</Label>
-              <Textarea
-                id="legal_notes"
-                placeholder="Notes de chapitre, règles générales..."
-                value={form.legal_notes}
-                onChange={(e) => setForm({ ...form, legal_notes: e.target.value })}
-                rows={2}
-              />
-            </div>
+              {loadingTariffs ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : tariffLines.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>Aucune ligne tarifaire</p>
+                  <p className="text-xs">Cliquez sur "Ajouter une ligne" pour en créer</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[300px]">
+                  <div className="space-y-3">
+                    {tariffLines.map((tariff, index) => (
+                      <Card key={tariff.id} className={tariff.isNew ? "border-accent" : ""}>
+                        <CardContent className="p-4">
+                          <div className="grid grid-cols-12 gap-3 items-end">
+                            <div className="col-span-3 space-y-1">
+                              <Label className="text-xs">Code national (10 chiffres)</Label>
+                              <Input
+                                value={tariff.national_code}
+                                onChange={(e) =>
+                                  updateTariffLine(tariff.id, "national_code", e.target.value)
+                                }
+                                className="font-mono text-sm"
+                                placeholder="8471300010"
+                              />
+                            </div>
+                            <div className="col-span-4 space-y-1">
+                              <Label className="text-xs">Description locale</Label>
+                              <Input
+                                value={tariff.description_local}
+                                onChange={(e) =>
+                                  updateTariffLine(tariff.id, "description_local", e.target.value)
+                                }
+                                placeholder="Description..."
+                              />
+                            </div>
+                            <div className="col-span-1 space-y-1">
+                              <Label className="text-xs">DD %</Label>
+                              <Input
+                                type="number"
+                                value={tariff.duty_rate}
+                                onChange={(e) =>
+                                  updateTariffLine(tariff.id, "duty_rate", e.target.value)
+                                }
+                                className="text-sm"
+                              />
+                            </div>
+                            <div className="col-span-1 space-y-1">
+                              <Label className="text-xs">TVA %</Label>
+                              <Input
+                                type="number"
+                                value={tariff.vat_rate}
+                                onChange={(e) =>
+                                  updateTariffLine(tariff.id, "vat_rate", e.target.value)
+                                }
+                                className="text-sm"
+                              />
+                            </div>
+                            <div className="col-span-2 space-y-1">
+                              <Label className="text-xs">Unité</Label>
+                              <Input
+                                value={tariff.unit_code}
+                                onChange={(e) =>
+                                  updateTariffLine(tariff.id, "unit_code", e.target.value)
+                                }
+                                placeholder="KG"
+                              />
+                            </div>
+                            <div className="col-span-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteTariffLine(tariff.id, !!tariff.isNew)}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
+                          </div>
+                          {tariff.isNew && (
+                            <Badge variant="outline" className="mt-2 text-xs">
+                              Nouvelle ligne
+                            </Badge>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </TabsContent>
+          </Tabs>
 
-            <div className="space-y-2">
-              <Label htmlFor="explanatory_notes">Notes explicatives</Label>
-              <Textarea
-                id="explanatory_notes"
-                placeholder="Notes explicatives du SH..."
-                value={form.explanatory_notes}
-                onChange={(e) => setForm({ ...form, explanatory_notes: e.target.value })}
-                rows={2}
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
+          <DialogFooter className="mt-4">
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               Annuler
             </Button>
