@@ -574,6 +574,56 @@ export type Database = {
           },
         ]
       }
+      legal_references: {
+        Row: {
+          context: string | null
+          country_code: string | null
+          created_at: string
+          id: string
+          is_active: boolean | null
+          pdf_id: string
+          reference_date: string | null
+          reference_number: string
+          reference_type: string
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          context?: string | null
+          country_code?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          pdf_id: string
+          reference_date?: string | null
+          reference_number: string
+          reference_type: string
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          context?: string | null
+          country_code?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          pdf_id?: string
+          reference_date?: string | null
+          reference_number?: string
+          reference_type?: string
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "legal_references_pdf_id_fkey"
+            columns: ["pdf_id"]
+            isOneToOne: false
+            referencedRelation: "pdf_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       origin_rules: {
         Row: {
           agreement_code: string
@@ -651,6 +701,8 @@ export type Database = {
           country_code: string | null
           created_at: string
           description: string | null
+          document_reference: string | null
+          document_type: string | null
           effective_date: string | null
           expiry_date: string | null
           file_name: string
@@ -659,6 +711,7 @@ export type Database = {
           id: string
           is_active: boolean | null
           is_verified: boolean | null
+          issuing_authority: string | null
           keywords: string | null
           language: string | null
           mime_type: string | null
@@ -678,6 +731,8 @@ export type Database = {
           country_code?: string | null
           created_at?: string
           description?: string | null
+          document_reference?: string | null
+          document_type?: string | null
           effective_date?: string | null
           expiry_date?: string | null
           file_name: string
@@ -686,6 +741,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           is_verified?: boolean | null
+          issuing_authority?: string | null
           keywords?: string | null
           language?: string | null
           mime_type?: string | null
@@ -705,6 +761,8 @@ export type Database = {
           country_code?: string | null
           created_at?: string
           description?: string | null
+          document_reference?: string | null
+          document_type?: string | null
           effective_date?: string | null
           expiry_date?: string | null
           file_name?: string
@@ -713,6 +771,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           is_verified?: boolean | null
+          issuing_authority?: string | null
           keywords?: string | null
           language?: string | null
           mime_type?: string | null
@@ -849,6 +908,97 @@ export type Database = {
           window_start?: string | null
         }
         Relationships: []
+      }
+      regulatory_dates: {
+        Row: {
+          country_code: string | null
+          created_at: string
+          date_type: string
+          date_value: string
+          description: string | null
+          id: string
+          is_active: boolean | null
+          pdf_id: string
+        }
+        Insert: {
+          country_code?: string | null
+          created_at?: string
+          date_type: string
+          date_value: string
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          pdf_id: string
+        }
+        Update: {
+          country_code?: string | null
+          created_at?: string
+          date_type?: string
+          date_value?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          pdf_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regulatory_dates_pdf_id_fkey"
+            columns: ["pdf_id"]
+            isOneToOne: false
+            referencedRelation: "pdf_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      regulatory_procedures: {
+        Row: {
+          authority: string | null
+          country_code: string | null
+          created_at: string
+          deadlines: string | null
+          id: string
+          is_active: boolean | null
+          pdf_id: string
+          penalties: string | null
+          procedure_name: string
+          required_documents: Json | null
+          updated_at: string
+        }
+        Insert: {
+          authority?: string | null
+          country_code?: string | null
+          created_at?: string
+          deadlines?: string | null
+          id?: string
+          is_active?: boolean | null
+          pdf_id: string
+          penalties?: string | null
+          procedure_name: string
+          required_documents?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          authority?: string | null
+          country_code?: string | null
+          created_at?: string
+          deadlines?: string | null
+          id?: string
+          is_active?: boolean | null
+          pdf_id?: string
+          penalties?: string | null
+          procedure_name?: string
+          required_documents?: Json | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regulatory_procedures_pdf_id_fkey"
+            columns: ["pdf_id"]
+            isOneToOne: false
+            referencedRelation: "pdf_documents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       statistics: {
         Row: {
@@ -1383,6 +1533,20 @@ export type Database = {
           title: string
         }[]
       }
+      search_legal_references: {
+        Args: { limit_count?: number; search_term: string }
+        Returns: {
+          context: string
+          id: string
+          pdf_category: string
+          pdf_id: string
+          pdf_title: string
+          reference_date: string
+          reference_number: string
+          reference_type: string
+          title: string
+        }[]
+      }
       search_pdf_extractions_semantic: {
         Args: {
           match_count?: number
@@ -1396,6 +1560,19 @@ export type Database = {
           pdf_id: string
           similarity: number
           summary: string
+        }[]
+      }
+      search_regulatory_procedures: {
+        Args: { limit_count?: number; search_term: string }
+        Returns: {
+          authority: string
+          deadlines: string
+          id: string
+          pdf_id: string
+          pdf_title: string
+          penalties: string
+          procedure_name: string
+          required_documents: Json
         }[]
       }
       search_veille_documents_semantic: {
