@@ -35,9 +35,8 @@ const confidenceConfig = {
   low: { icon: "🔴", label: "Confiance faible", className: "text-destructive" },
 };
 
-// Remove confidence indicators from AI response content (they're shown separately in the UI)
+// Remove confidence indicators and decorative icons from AI response content
 const cleanConfidenceFromContent = (content: string): string => {
-  // Remove emoji confidence indicators and any following text on the same line
   let cleaned = content
     // Remove lines starting with confidence emoji followed by text
     .replace(/^[🟢🟡🔴]\s*\*?\*?Confiance[^]*?\n/gim, '')
@@ -45,7 +44,11 @@ const cleanConfidenceFromContent = (content: string): string => {
     .replace(/[🟢🟡🔴]\s*\*?\*?Confiance\s*(haute|moyenne|faible|élevée)[^]*?(?=\n\n|\n##|\n\*\*|$)/gim, '')
     // Remove standalone confidence lines
     .replace(/^\*?\*?Niveau de confiance\s*:\s*(élevé|moyen|faible)[^\n]*\n?/gim, '')
-    .replace(/^\*?\*?Confiance\s*:\s*(haute|moyenne|faible|élevée)[^\n]*\n?/gim, '');
+    .replace(/^\*?\*?Confiance\s*:\s*(haute|moyenne|faible|élevée)[^\n]*\n?/gim, '')
+    // Remove standalone question mark or info icons on their own line
+    .replace(/^[❓❔ℹ️🔍]\s*$/gm, '')
+    // Remove question mark icons that appear alone after lists
+    .replace(/\n[❓❔]\s*\n/g, '\n');
   
   // Clean up any resulting double newlines
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
