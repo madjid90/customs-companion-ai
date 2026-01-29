@@ -372,7 +372,7 @@ export default function Chat() {
                     {/* Interactive questions - only show for the last assistant message */}
                     {messages[messages.length - 1]?.id === message.id && (
                       <InteractiveQuestions
-                        questions={parseQuestionsFromResponse(message.content)}
+                        questions={parseQuestionsFromResponse(cleanConfidenceFromContent(message.content))}
                         onAnswer={(questionId, answer) => {
                           handleSend(answer);
                         }}
