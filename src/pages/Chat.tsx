@@ -56,6 +56,70 @@ const cleanConfidenceFromContent = (content: string): string => {
   return cleaned;
 };
 
+// Remove interactive question options from content (they're shown as buttons)
+const removeInteractiveQuestions = (content: string): string => {
+  const lines = content.split('\n');
+  const resultLines: string[] = [];
+  
+  let skipUntilNextSection = false;
+  let lastQuestionLineIndex = -1;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const originalLine = lines[i];
+    
+    // Detect question pattern: **Question text**
+    const isQuestionLine = /^\*\*([^*]+)\*\*\s*[-–]?\s*.*$/.test(line);
+    
+    // Check if this question has options following it
+    if (isQuestionLine) {
+      let hasOptions = false;
+      for (let j = i + 1; j < lines.length && j < i + 10; j++) {
+        const nextLine = lines[j].trim();
+        if (nextLine.startsWith('- ') || nextLine.startsWith('• ')) {
+          hasOptions = true;
+        } else if (nextLine === '') {
+          continue;
+        } else if (hasOptions) {
+          break;
+        }
+      }
+      
+      if (hasOptions) {
+        skipUntilNextSection = true;
+        lastQuestionLineIndex = i;
+        continue; // Skip the question line itself
+      }
+    }
+    
+    // Skip option lines (starting with - or •)
+    if (skipUntilNextSection && (line.startsWith('- ') || line.startsWith('• '))) {
+      continue;
+    }
+    
+    // Stop skipping on empty line followed by non-option content
+    if (skipUntilNextSection && line === '') {
+      // Look ahead to see if next non-empty line is not an option
+      let nextContentLine = '';
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j].trim() !== '') {
+          nextContentLine = lines[j].trim();
+          break;
+        }
+      }
+      if (!nextContentLine.startsWith('- ') && !nextContentLine.startsWith('• ')) {
+        skipUntilNextSection = false;
+      }
+    }
+    
+    if (!skipUntilNextSection) {
+      resultLines.push(originalLine);
+    }
+  }
+  
+  return resultLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+};
+
 // Convert file to base64
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -369,7 +433,7 @@ export default function Chat() {
                         td: ({ children }) => <td className="border border-border px-2 py-1">{children}</td>,
                       }}
                     >
-                      {cleanConfidenceFromContent(message.content)}
+                      {removeInteractiveQuestions(cleanConfidenceFromContent(message.content))}
                     </ReactMarkdown>
                     
                     {/* Interactive questions - only show for the last assistant message */}
