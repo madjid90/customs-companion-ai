@@ -268,6 +268,40 @@ RÈGLE UNIVERSELLE:
 3. TROUVE la Col3 (toujours de cette ligne car c'est le niveau le plus bas)
 4. CONCATÈNE: Position + Col2 + Col3 = Code 10 chiffres
 
+EXEMPLE 3 - CHAPITRE 45 - POSITION 4502.00 (Liège):
+
+PDF:
+Position | Col2 | Col3 | Description                           | Taux
+---------|------|------|---------------------------------------|------
+4502.00  |      |      | Liège naturel, écroûté...             | (PARENT)
+         | 10   | 00   | --- plaques                           | 2,5   ← LIGNE TARIFAIRE
+         | 20   | 00   | --- feuilles, doublées ou non         | 2,5   ← LIGNE TARIFAIRE
+         | 30   | 00   | --- cubes ou carrés                   | 2,5   ← LIGNE TARIFAIRE
+         | 90   | 00   | --- autres                            | 2,5   ← LIGNE TARIFAIRE
+
+⚠️ ATTENTION: Dans ce chapitre, la valeur (10, 20, 30...) est dans COLONNE 2, pas Colonne 3!
+La Colonne 3 est explicitement "00".
+
+EXTRACTION CORRECTE:
+
+Pour "| 10 | 00 | plaques | 2,5":
+→ Position héritée = 4502.00 = 450200
+→ Col2 de cette ligne = 10 → positions 7-8
+→ Col3 de cette ligne = 00 → positions 9-10
+→ CODE = 450200 + 10 + 00 = 4502001000 ✓
+
+⚠️⚠️⚠️ CODES INTERDITS - LISTE NOIRE CHAPITRE 45 ⚠️⚠️⚠️
+Ces codes sont FAUX car ils inversent Col2 et Col3:
+❌ 4502000010 → CORRECT: 4502001000 (plaques)
+❌ 4502000020 → CORRECT: 4502002000 (feuilles)
+❌ 4502000030 → CORRECT: 4502003000 (cubes)
+❌ 4502000090 → CORRECT: 4502009000 (autres)
+
+⚠️ RÈGLE VISUELLE POUR CHAPITRE 45:
+Si tu vois "10" ou "20" comme SEUL chiffre après la position, vérifie:
+- Est-il aligné sous l'en-tête "Col2" ? → C'est Col2, Col3 est "00"
+- CODE = Position + valeur + 00
+
 RAPPEL: Seules les lignes AVEC UN TAUX sont des lignes tarifaires.
 Les lignes SANS TAUX sont des en-têtes/parents qui définissent le contexte.
 
