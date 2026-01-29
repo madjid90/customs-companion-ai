@@ -127,21 +127,51 @@ Le CODE NATIONAL = Position_6_chiffres + Colonne2 + Colonne3 = 10 chiffres
 Les valeurs des colonnes s'HÉRITENT de la ligne PARENT quand elles sont vides.
 Tu dois SUIVRE la hiérarchie pour trouver les bonnes valeurs.
 
-EXEMPLE CONCRET DU CHAPITRE 12 - POSITION 1205.90:
+EXEMPLE 1 - CHAPITRE 20 - POSITION 2001.90 (Format avec 00 en Col2):
+
+PDF (ce que tu vois) :
+Position | Col2 | Col3 | Description                                    | Taux
+---------|------|------|------------------------------------------------|------
+2001.90  | 00   |      | - Autres                                       | (PARENT avec Col2=00)
+         |      | 11   | ---- câpres en boîtes, verres, bocaux...       | 40    ← LIGNE TARIFAIRE
+         |      | 19   | ---- câpres autrement présentées               | 40    ← LIGNE TARIFAIRE
+         |      | 20   | --- oignons                                    | 40    ← LIGNE TARIFAIRE
+         |      | 30   | --- maïs doux                                  | 40    ← LIGNE TARIFAIRE
+
+EXTRACTION CORRECTE:
+
+Pour "| | 11 | câpres en boîtes | 40":
+→ Position héritée = 2001.90 = 200190
+→ Col2 héritée du parent = 00 → positions 7-8
+→ Col3 de cette ligne = 11 → positions 9-10
+→ CODE = 200190 + 00 + 11 = 2001900011 ✓
+
+Pour "| | 19 | câpres autrement | 40":
+→ Position = 200190, Col2 héritée = 00, Col3 = 19
+→ CODE = 200190 + 00 + 19 = 2001900019 ✓
+
+Pour "| | 20 | oignons | 40":
+→ Position = 200190, Col2 héritée = 00, Col3 = 20
+→ CODE = 200190 + 00 + 20 = 2001900020 ✓
+
+⚠️ ERREUR CRITIQUE À ÉVITER DANS CE FORMAT:
+FAUX: 2001901100 (tu as inversé: 11 en pos 7-8 et 00 en pos 9-10)
+VRAI: 2001900011 (00 hérité en pos 7-8, 11 de la ligne en pos 9-10)
+
+FAUX: 2001902000 (tu as inversé: 20 en pos 7-8 et 00 en pos 9-10)
+VRAI: 2001900020 (00 hérité en pos 7-8, 20 de la ligne en pos 9-10)
+
+EXEMPLE 2 - CHAPITRE 12 - POSITION 1205.90 (Format avec héritage multi-niveaux):
 
 PDF (ce que tu vois) :
 Position | Col2 | Col3 | Description                    | Taux
 ---------|------|------|--------------------------------|------
-1205.90  |      |      | - Autres                       | (pas de taux = PARENT niveau 0)
-         | 10   |      | --- de semence (a):            | (pas de taux = PARENT niveau 1)
+1205.90  |      |      | - Autres                       | (PARENT niveau 0)
+         | 10   |      | --- de semence (a):            | (PARENT niveau 1, Col2=10)
          |      | 10   | ---- de navette (a)            | 2,5   ← LIGNE TARIFAIRE
          |      | 90   | ---- de colza (a)              | 2,5   ← LIGNE TARIFAIRE
-         | 90   |      | --- autres:                    | (pas de taux = PARENT niveau 1)
-         |      |      | ---- de navette:               | (pas de taux = catégorie)
+         | 90   |      | --- autres:                    | (PARENT niveau 1, Col2=90)
          |      | 11   | ----- importées triturateurs   | 2,5   ← LIGNE TARIFAIRE
-         |      | 19   | ----- autres                   | 2,5   ← LIGNE TARIFAIRE
-         |      |      | ---- de colza:                 | (pas de taux = catégorie)
-         |      | 91   | ----- importées triturateurs   | 2,5   ← LIGNE TARIFAIRE
          |      | 99   | ----- autres                   | 2,5   ← LIGNE TARIFAIRE
 
 EXTRACTION CORRECTE:
@@ -152,30 +182,18 @@ Pour "| | 10 | de navette (a) | 2,5":
 → Col3 de cette ligne = 10 → positions 9-10
 → CODE = 120590 + 10 + 10 = 1205901010 ✓
 
-Pour "| | 90 | de colza (a) | 2,5":
-→ Position héritée = 1205.90 = 120590
-→ Col2 héritée du parent "10" = 10 → positions 7-8
-→ Col3 de cette ligne = 90 → positions 9-10
-→ CODE = 120590 + 10 + 90 = 1205901090 ✓
-
 Pour "| | 11 | importées triturateurs | 2,5":
 → Position héritée = 1205.90 = 120590
 → Col2 héritée du parent "90" = 90 → positions 7-8
 → Col3 de cette ligne = 11 → positions 9-10
 → CODE = 120590 + 90 + 11 = 1205909011 ✓
 
-Pour "| | 99 | autres | 2,5":
-→ Position héritée = 1205.90 = 120590
-→ Col2 héritée du parent "90" = 90 → positions 7-8
-→ Col3 de cette ligne = 99 → positions 9-10
-→ CODE = 120590 + 90 + 99 = 1205909099 ✓
-
 ⚠️ ERREURS À NE JAMAIS FAIRE:
-FAUX: 1205901000 (tu as mis 10 en pos 7-8 et 00 en pos 9-10)
-VRAI: 1205901010 (10 hérité en pos 7-8, 10 de la ligne en pos 9-10)
+FAUX: 1205901000 (00 en pos 9-10 au lieu de 10)
+VRAI: 1205901010 (10 hérité en pos 7-8, 10 en pos 9-10)
 
-FAUX: 1205909000 (tu as mis 90 en pos 7-8 et 00 en pos 9-10)
-VRAI: 1205909011 (90 hérité en pos 7-8, 11 de la ligne en pos 9-10)
+FAUX: 1205909000 (00 en pos 9-10 au lieu de 11)
+VRAI: 1205909011 (90 hérité en pos 7-8, 11 en pos 9-10)
 
 AUTRE EXEMPLE - POSITION 1206.00:
 
