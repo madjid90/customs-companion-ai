@@ -16,117 +16,82 @@ interface InteractiveQuestionsProps {
 // Parse AI response to extract questions with options
 export function parseQuestionsFromResponse(content: string): Question[] {
   const questions: Question[] = [];
+  
+  // Split content into lines
   const lines = content.split('\n');
   
+  let currentQuestion: { label: string; options: string[] } | null = null;
   let questionIndex = 0;
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     
-    // Pattern 1: Question ending with ? followed by bold options
-    // e.g., "Pourriez-vous me donner plus de détails ?" followed by "**Option 1**"
-    if (line.endsWith('?') && !line.startsWith('-') && !line.startsWith('•') && !line.startsWith('**')) {
-      const options: string[] = [];
-      
-      // Look for bold options in next lines
-      for (let j = i + 1; j < lines.length && j < i + 15; j++) {
-        const nextLine = lines[j].trim();
-        
-        // Match bold text: **Option text**
-        const boldMatch = nextLine.match(/^\*\*([^*]+)\*\*$/);
-        if (boldMatch) {
-          const optionText = boldMatch[1].trim();
-          if (optionText.length > 0 && optionText.length < 80) {
-            options.push(optionText);
-          }
-        }
-        // Match bullet points: - Option or • Option
-        else if (nextLine.startsWith('- ') || nextLine.startsWith('• ')) {
-          const optionText = nextLine.slice(2).replace(/\*\*/g, '').trim();
-          if (optionText.length > 0 && optionText.length < 80) {
-            options.push(optionText);
-          }
-        }
-        // Match numbered options: 1. Option
-        else if (/^\d+\.\s+/.test(nextLine)) {
-          const optionText = nextLine.replace(/^\d+\.\s+/, '').replace(/\*\*/g, '').trim();
-          if (optionText.length > 0 && optionText.length < 80) {
-            options.push(optionText);
-          }
-        }
-        // Stop if we hit empty line after collecting options, or non-option content
-        else if (nextLine === '') {
-          if (options.length > 0) continue;
-        } else if (options.length >= 2) {
-          break;
-        }
-      }
-      
-      if (options.length >= 2) {
-        questions.push({
-          id: `q${questionIndex}`,
-          label: line.replace(/\?$/, '').trim(),
-          options: options.slice(0, 6), // Max 6 options
-        });
-        questionIndex++;
-      }
-    }
-    
-    // Pattern 2: **Question text** followed by options
-    const questionMatch = line.match(/^\*\*([^*]+)\*\*\s*[-–:]?\s*$/);
+    // Detect question line (starts with ** and ends with ** or ?)
+    // Pattern: **Question text** or **Question text ?**
+    const questionMatch = line.match(/^\*\*([^*]+)\*\*\s*[-–]?\s*.*$/);
     if (questionMatch) {
-      const options: string[] = [];
-      
-      for (let j = i + 1; j < lines.length && j < i + 15; j++) {
+      // Check if next lines have options (starting with -)
+      const nextLinesAreOptions = [];
+      for (let j = i + 1; j < lines.length && j < i + 10; j++) {
         const nextLine = lines[j].trim();
-        
         if (nextLine.startsWith('- ') || nextLine.startsWith('• ')) {
-          const optionText = nextLine.slice(2).replace(/\*\*/g, '').trim();
-          if (optionText.length > 0 && optionText.length < 80) {
-            options.push(optionText);
-          }
-        } else if (/^\d+\.\s+/.test(nextLine)) {
-          const optionText = nextLine.replace(/^\d+\.\s+/, '').replace(/\*\*/g, '').trim();
-          if (optionText.length > 0 && optionText.length < 80) {
-            options.push(optionText);
-          }
-        } else if (nextLine === '') {
-          if (options.length > 0) continue;
-        } else if (options.length >= 2) {
-          break;
+          nextLinesAreOptions.push(nextLine.slice(2).trim());
+        } else if (nextLine === '' || nextLine.startsWith('>')) {
+          continue; // Skip empty lines or quote continuations
+        } else if (nextLinesAreOptions.length > 0) {
+          break; // Stop if we have options and hit non-option line
         }
       }
       
-      if (options.length >= 2) {
-        questions.push({
-          id: `q${questionIndex}`,
+      if (nextLinesAreOptions.length >= 2) {
+        // Save previous question if exists
+        if (currentQuestion && currentQuestion.options.length >= 2) {
+          questions.push({
+            id: `q${questionIndex}`,
+            label: currentQuestion.label,
+            options: currentQuestion.options.filter(opt => opt.length > 0 && opt.length < 60),
+          });
+          questionIndex++;
+        }
+        
+        currentQuestion = {
           label: questionMatch[1].replace(/\?$/, '').trim(),
-          options: options.slice(0, 6),
-        });
-        questionIndex++;
+          options: nextLinesAreOptions,
+        };
       }
     }
   }
   
-  // Fallback: inline options pattern
+  // Add last question if exists
+  if (currentQuestion && currentQuestion.options.length >= 2) {
+    questions.push({
+      id: `q${questionIndex}`,
+      label: currentQuestion.label,
+      options: currentQuestion.options.filter(opt => opt.length > 0 && opt.length < 60),
+    });
+  }
+  
+  // Fallback: Pattern for inline options after dash
+  // e.g., "1. **Type spécifique** - Smartphone, téléphone basique, téléphone satellite ?"
   if (questions.length === 0) {
-    const inlinePattern = /([^.?!]+\?)\s*\n+((?:\*\*[^*]+\*\*\s*\n?)+)/g;
+    const numberedPattern = /(\d+)\.\s*\*?\*?([^*\n-]+)\*?\*?\s*[-–:]\s*([^?\n]+)\?/g;
     let match;
     
-    while ((match = inlinePattern.exec(content)) !== null) {
-      const question = match[1].trim();
-      const optionsBlock = match[2];
-      const options = [...optionsBlock.matchAll(/\*\*([^*]+)\*\*/g)]
-        .map(m => m[1].trim())
-        .filter(opt => opt.length > 0 && opt.length < 80);
+    while ((match = numberedPattern.exec(content)) !== null) {
+      const label = match[2].trim();
+      const optionsText = match[3].trim();
+      
+      const options = optionsText
+        .split(/,|(?:\s+ou\s+)/)
+        .map(opt => opt.trim())
+        .filter(opt => opt.length > 0 && opt.length < 60);
       
       if (options.length >= 2) {
         questions.push({
-          id: `q${questionIndex}`,
-          label: question.replace(/\?$/, '').trim(),
-          options: options.slice(0, 6),
+          id: `q${match[1]}`,
+          label,
+          options,
         });
-        questionIndex++;
       }
     }
   }
