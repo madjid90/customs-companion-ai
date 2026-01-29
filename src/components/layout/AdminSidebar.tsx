@@ -5,7 +5,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import {
-  LayoutDashboard,
   Upload,
   Globe,
   Search,
@@ -23,7 +22,6 @@ type MenuItem =
   | { type: "separator" };
 
 const menuItems: MenuItem[] = [
-  { type: "link", icon: LayoutDashboard, label: "Dashboard", href: "/admin" },
   { type: "link", icon: Upload, label: "Upload fichiers", href: "/admin/upload" },
   { type: "link", icon: Globe, label: "Scraping WCO", href: "/admin/scraping" },
   { type: "link", icon: Search, label: "Veille web", href: "/admin/veille" },

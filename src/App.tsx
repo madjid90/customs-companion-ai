@@ -15,7 +15,7 @@ import Chat from "@/pages/Chat";
 
 // Admin pages
 import AdminLogin from "@/pages/admin/AdminLogin";
-import AdminDashboard from "@/pages/admin/AdminDashboard";
+
 import AdminHSCodes from "@/pages/admin/AdminHSCodes";
 import AdminUpload from "@/pages/admin/AdminUpload";
 import AdminScraping from "@/pages/admin/AdminScraping";
