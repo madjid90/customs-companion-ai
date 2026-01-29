@@ -32,8 +32,19 @@ import {
   Loader2,
   Sparkles,
   AlertCircle,
-  FileSearch
+  FileSearch,
+  Trash2
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
@@ -81,6 +92,9 @@ export default function AdminDocuments() {
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, success: 0, failed: 0 });
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfPreviewTitle, setPdfPreviewTitle] = useState<string>("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [docToDelete, setDocToDelete] = useState<PdfDocument | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -168,6 +182,71 @@ export default function AdminDocuments() {
   const viewDetails = (doc: PdfDocument) => {
     setSelectedDoc(doc);
     setSelectedExtraction(getExtraction(doc.id) || null);
+  };
+
+  const confirmDelete = (doc: PdfDocument) => {
+    setDocToDelete(doc);
+    setDeleteDialogOpen(true);
+  };
+
+  const deleteDocument = async () => {
+    if (!docToDelete) return;
+    
+    setIsDeleting(true);
+    
+    try {
+      // 1. Delete extraction data first (if exists)
+      const { error: extractionError } = await supabase
+        .from("pdf_extractions")
+        .delete()
+        .eq("pdf_id", docToDelete.id);
+      
+      if (extractionError) {
+        console.warn("Extraction delete warning:", extractionError);
+      }
+
+      // 2. Delete the file from storage
+      const { error: storageError } = await supabase.storage
+        .from("pdf-documents")
+        .remove([docToDelete.file_path]);
+      
+      if (storageError) {
+        console.warn("Storage delete warning:", storageError);
+      }
+
+      // 3. Delete the document record
+      const { error: docError } = await supabase
+        .from("pdf_documents")
+        .delete()
+        .eq("id", docToDelete.id);
+      
+      if (docError) throw docError;
+
+      toast({
+        title: "✅ Document supprimé",
+        description: `"${docToDelete.title}" et ses données ont été supprimés`,
+      });
+
+      // Refresh data
+      queryClient.invalidateQueries({ queryKey: ["pdf-documents"] });
+      queryClient.invalidateQueries({ queryKey: ["pdf-extractions"] });
+      
+      // Close dialogs
+      setDeleteDialogOpen(false);
+      setDocToDelete(null);
+      if (selectedDoc?.id === docToDelete.id) {
+        setSelectedDoc(null);
+      }
+    } catch (error: any) {
+      console.error("Delete error:", error);
+      toast({
+        title: "❌ Erreur de suppression",
+        description: error.message || "Impossible de supprimer le document",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const analyzeDocument = async (doc: PdfDocument) => {
@@ -646,6 +725,15 @@ export default function AdminDocuments() {
                             >
                               <Eye className="h-4 w-4 text-primary" />
                             </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => confirmDelete(doc)}
+                              title="Supprimer le document"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -839,6 +927,54 @@ export default function AdminDocuments() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-destructive" />
+              Confirmer la suppression
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                Êtes-vous sûr de vouloir supprimer le document <strong>"{docToDelete?.title}"</strong> ?
+              </p>
+              <p className="text-destructive font-medium">
+                Cette action supprimera également :
+              </p>
+              <ul className="list-disc list-inside text-sm text-muted-foreground">
+                <li>Le fichier PDF du stockage</li>
+                <li>Les données extraites (codes SH, lignes tarifaires, résumé)</li>
+                <li>Toutes les métadonnées associées</li>
+              </ul>
+              <p className="text-destructive font-medium mt-2">
+                Cette action est irréversible.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={deleteDocument}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Suppression...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Supprimer
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
