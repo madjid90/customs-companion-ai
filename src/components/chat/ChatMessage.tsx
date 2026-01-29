@@ -1,10 +1,9 @@
-import { Bot, User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle } from "lucide-react";
+import { ThumbsUp, ThumbsDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { InteractiveQuestions, parseQuestionsFromResponse } from "./InteractiveQuestions";
-
 interface MessageContext {
   hs_codes_found: number;
   tariffs_found: number;
@@ -58,11 +57,6 @@ export function ChatMessage({
         isUser ? "justify-end" : "justify-start"
       )}
     >
-      {!isUser && (
-        <div className="flex-shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-accent/20 to-accent/5 flex items-center justify-center shadow-sm border border-accent/10">
-          <Bot className="h-4 w-4 md:h-5 md:w-5 text-accent" />
-        </div>
-      )}
 
       <div
         className={cn(
@@ -127,26 +121,22 @@ export function ChatMessage({
             {message.context && (message.context.hs_codes_found > 0 || message.context.tariffs_found > 0 || message.context.controlled_found > 0) && (
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {message.context.hs_codes_found > 0 && (
-                  <span className="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-1 rounded-full font-medium">
-                    <Database className="h-3 w-3" />
+                  <span className="inline-flex items-center text-xs bg-primary/10 text-primary px-2 py-1 rounded-full font-medium">
                     {message.context.hs_codes_found} codes SH
                   </span>
                 )}
                 {message.context.tariffs_found > 0 && (
-                  <span className="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-1 rounded-full font-medium">
-                    <Database className="h-3 w-3" />
+                  <span className="inline-flex items-center text-xs bg-primary/10 text-primary px-2 py-1 rounded-full font-medium">
                     {message.context.tariffs_found} tarifs
                   </span>
                 )}
                 {message.context.controlled_found > 0 && (
-                  <span className="inline-flex items-center gap-1 text-xs bg-warning/20 text-warning px-2 py-1 rounded-full font-medium">
-                    <AlertTriangle className="h-3 w-3" />
+                  <span className="inline-flex items-center text-xs bg-warning/20 text-warning px-2 py-1 rounded-full font-medium">
                     {message.context.controlled_found} contrôles
                   </span>
                 )}
                 {message.context.pdfs_used > 0 && (
-                  <span className="inline-flex items-center gap-1 text-xs bg-accent/10 text-accent px-2 py-1 rounded-full font-medium">
-                    <FileText className="h-3 w-3" />
+                  <span className="inline-flex items-center text-xs bg-accent/10 text-accent px-2 py-1 rounded-full font-medium">
                     {message.context.pdfs_used} PDFs
                   </span>
                 )}
@@ -196,11 +186,6 @@ export function ChatMessage({
         )}
       </div>
 
-      {isUser && (
-        <div className="flex-shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-md">
-          <User className="h-4 w-4 md:h-5 md:w-5 text-primary-foreground" />
-        </div>
-      )}
     </div>
   );
 }
@@ -208,9 +193,6 @@ export function ChatMessage({
 export function ChatTypingIndicator() {
   return (
     <div className="flex gap-3 md:gap-4 animate-fade-in">
-      <div className="flex-shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-accent/20 to-accent/5 flex items-center justify-center shadow-sm border border-accent/10">
-        <Bot className="h-4 w-4 md:h-5 md:w-5 text-accent" />
-      </div>
       <div className="bg-chat-ai text-chat-ai-foreground chat-message-ai rounded-2xl px-5 py-4">
         <div className="flex items-center gap-3">
           <div className="typing-indicator flex gap-1.5">
