@@ -35,6 +35,24 @@ const confidenceConfig = {
   low: { icon: "🔴", label: "Confiance faible", className: "text-destructive" },
 };
 
+// Remove confidence indicators from AI response content (they're shown separately in the UI)
+const cleanConfidenceFromContent = (content: string): string => {
+  // Remove emoji confidence indicators and any following text on the same line
+  let cleaned = content
+    // Remove lines starting with confidence emoji followed by text
+    .replace(/^[🟢🟡🔴]\s*\*?\*?Confiance[^]*?\n/gim, '')
+    // Remove inline confidence mentions like "🟡 Confiance moyenne - En attente de précision..."
+    .replace(/[🟢🟡🔴]\s*\*?\*?Confiance\s*(haute|moyenne|faible|élevée)[^]*?(?=\n\n|\n##|\n\*\*|$)/gim, '')
+    // Remove standalone confidence lines
+    .replace(/^\*?\*?Niveau de confiance\s*:\s*(élevé|moyen|faible)[^\n]*\n?/gim, '')
+    .replace(/^\*?\*?Confiance\s*:\s*(haute|moyenne|faible|élevée)[^\n]*\n?/gim, '');
+  
+  // Clean up any resulting double newlines
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+  
+  return cleaned;
+};
+
 // Convert file to base64
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -348,7 +366,7 @@ export default function Chat() {
                         td: ({ children }) => <td className="border border-border px-2 py-1">{children}</td>,
                       }}
                     >
-                      {message.content}
+                      {cleanConfidenceFromContent(message.content)}
                     </ReactMarkdown>
                     
                     {/* Interactive questions - only show for the last assistant message */}
