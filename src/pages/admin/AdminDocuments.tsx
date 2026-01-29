@@ -360,11 +360,22 @@ export default function AdminDocuments() {
 
   const pendingCount = documents?.filter(d => !getExtraction(d.id)).length || 0;
 
-  const totalHsCodes = extractions?.reduce((acc, ext) => {
-    return acc + (ext.mentioned_hs_codes?.length || 0);
-  }, 0) || 0;
+  // Utiliser le nombre de documents avec extractions
+  const analyzedCount = documents?.filter(d => getExtraction(d.id)).length || 0;
 
-  const verifiedCount = documents?.filter((d) => d.is_verified).length || 0;
+  // Query pour les stats réelles des codes SH actifs dans la base
+  const { data: hsCodesStats } = useQuery({
+    queryKey: ["hs-codes-count"],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("hs_codes")
+        .select("*", { count: "exact", head: true })
+        .eq("is_active", true);
+      
+      if (error) throw error;
+      return count || 0;
+    },
+  });
 
   return (
     <div className="space-y-6">
@@ -443,7 +454,7 @@ export default function AdminDocuments() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold">{verifiedCount}</p>
+                <p className="text-2xl font-bold">{analyzedCount}</p>
                 <p className="text-sm text-muted-foreground">Analysés</p>
               </div>
               <CheckCircle className="h-8 w-8 text-green-600/50" />
@@ -454,7 +465,7 @@ export default function AdminDocuments() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold">{totalHsCodes}</p>
+                <p className="text-2xl font-bold">{hsCodesStats || 0}</p>
                 <p className="text-sm text-muted-foreground">Codes SH extraits</p>
               </div>
               <Badge variant="outline" className="text-lg px-3">SH</Badge>
