@@ -1,9 +1,11 @@
-import { Bot, User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle } from "lucide-react";
+import { useState } from "react";
+import { Bot, User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { InteractiveQuestions, parseQuestionsFromResponse } from "./InteractiveQuestions";
+import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 
 interface MessageContext {
   hs_codes_found: number;
@@ -48,8 +50,32 @@ export function ChatMessage({
   cleanContent,
   removeQuestions,
 }: ChatMessageProps) {
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; title: string } | null>(null);
+  
   const isUser = message.role === "user";
   const isError = message.content.startsWith("⚠️");
+
+  // Check if a URL is a document (PDF, etc.)
+  const isDocumentUrl = (url: string) => {
+    return url.includes('.pdf') || 
+           url.includes('/storage/') || 
+           url.includes('pdf-documents') ||
+           url.includes('supabase.co/storage');
+  };
+
+  // Extract title from URL or link text
+  const extractDocTitle = (url: string, linkText?: string) => {
+    if (linkText && linkText.length > 3) {
+      return linkText.replace(/[\[\]📥📄]/g, '').trim();
+    }
+    try {
+      const urlParts = url.split('/');
+      const filename = urlParts[urlParts.length - 1];
+      return decodeURIComponent(filename.replace(/_/g, ' ').replace(/\d{13}_/, ''));
+    } catch {
+      return "Document";
+    }
+  };
 
   return (
     <div
@@ -102,6 +128,37 @@ export function ChatMessage({
                 ),
                 th: ({ children }) => <th className="border-b border-border px-3 py-2 bg-muted/30 font-medium text-left text-xs uppercase tracking-wide">{children}</th>,
                 td: ({ children }) => <td className="border-b border-border/50 px-3 py-2">{children}</td>,
+                a: ({ href, children }) => {
+                  const url = href || '';
+                  const linkText = typeof children === 'string' ? children : '';
+                  
+                  if (isDocumentUrl(url)) {
+                    return (
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setPreviewDoc({ url, title: extractDocTitle(url, linkText) });
+                        }}
+                        className="inline-flex items-center gap-1.5 text-primary hover:text-primary/80 underline underline-offset-2 transition-colors font-medium cursor-pointer"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                        {children || "Voir le document"}
+                        <ExternalLink className="h-3 w-3" />
+                      </button>
+                    );
+                  }
+                  
+                  return (
+                    <a 
+                      href={url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
+                    >
+                      {children}
+                    </a>
+                  );
+                },
               }}
             >
               {removeQuestions(cleanContent(message.content))}
@@ -112,6 +169,16 @@ export function ChatMessage({
                 questions={parseQuestionsFromResponse(cleanContent(message.content))}
                 onAnswer={(questionId, answer) => onAnswer(answer)}
                 disabled={isLoading}
+              />
+            )}
+            
+            {/* Document Preview Dialog */}
+            {previewDoc && (
+              <DocumentPreviewDialog
+                open={!!previewDoc}
+                onOpenChange={(open) => !open && setPreviewDoc(null)}
+                url={previewDoc.url}
+                title={previewDoc.title}
               />
             )}
           </div>
