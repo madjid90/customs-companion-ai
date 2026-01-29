@@ -102,7 +102,7 @@ Catégorie : ${category}
 === TA MISSION ===
 
 Extraire TOUTES les lignes tarifaires avec le CODE NATIONAL COMPLET À 10 CHIFFRES.
-Le tarif marocain utilise un système de codification en 5 colonnes qui forment ensemble le code national.
+Le tarif marocain utilise un système de codification qui forme le code national.
 
 ⚠️⚠️⚠️ RÈGLE LA PLUS IMPORTANTE ⚠️⚠️⚠️
 Tu DOIS analyser TOUTES LES PAGES du PDF, de la première à la dernière.
@@ -113,42 +113,53 @@ CHAQUE ligne tarifaire de CHAQUE page doit être extraite, y compris:
 
 === STRUCTURE DU TARIF MAROCAIN ===
 
-Les codes nationaux ont TOUJOURS 10 chiffres, construits ainsi:
-- Chiffres 1-4 : Position (ex: 3201)
-- Chiffres 5-6 : Sous-position (ex: 90)
-- Chiffres 7-8 : Extension nationale 1 - GÉNÉRALEMENT 00
-- Chiffres 9-10 : Extension nationale 2 - LE VRAI DÉTAIL (10, 20, 30, 80, 90, etc.)
+Les codes nationaux ont TOUJOURS 10 chiffres.
 
-⚠️⚠️⚠️ RÈGLE CRITIQUE DE CONSTRUCTION ⚠️⚠️⚠️
-Les chiffres 7-8 sont TOUJOURS "00" dans le tarif marocain standard !
-Le numéro de sous-ligne (10, 20, 30, 80, 90, etc.) va TOUJOURS aux positions 9-10 !
+⚠️⚠️⚠️ RÈGLE CRITIQUE : COMMENT LIRE LE PDF ⚠️⚠️⚠️
 
-FORMULE UNIQUE ET DÉFINITIVE:
-Code_10_chiffres = Position_6_chiffres + "00" + Sous_ligne_2_chiffres
+DEUX FORMATS POSSIBLES DANS LE PDF:
 
-EXEMPLES CORRECTS:
-Si tu vois "2617.90" avec des sous-lignes "10", "80", etc.:
-- Sous-ligne "10" pour "minerais de beryllium"  → 2617900010 (261790 + 00 + 10)
-- Sous-ligne "80" pour "autres"                 → 2617900080 (261790 + 00 + 80)
+FORMAT 1 - CODE COMPLET AVEC ESPACES (ex: chapitre 97)
+Quand tu vois : "9701.21 00 00" ou "9705.31 00 00"
+→ Retire les espaces et le point : 9701210000, 9705310000
+→ C'est déjà le code national à 10 chiffres !
 
-Si tu vois "2621.90" avec des sous-lignes:
-- Sous-ligne "10" pour "cendres de varech"      → 2621900010 (262190 + 00 + 10)
-- Sous-ligne "20" pour "salins de betteraves"   → 2621900020 (262190 + 00 + 20)
-- Sous-ligne "30" pour "autres salins"          → 2621900030 (262190 + 00 + 30)
-- Sous-ligne "90" pour "autres"                 → 2621900090 (262190 + 00 + 90)
+FORMAT 2 - COLONNES SÉPARÉES (ex: chapitre 26)
+Quand tu vois la position "9701.29" PUIS sur une autre ligne "10 00"
+→ Position 6 chiffres: 970129
+→ Le "10" est le numéro de sous-ligne
+→ Le "00" est juste du remplissage
+→ Code final: 970129 + 00 + 10 = 9701290010
 
-⚠️ ATTENTION PIÈGE FRÉQUENT ⚠️
-Dans le PDF, tu peux voir "10 00" sur deux colonnes séparées.
-- Le "10" est le numéro de sous-ligne → va en position 9-10
-- Le "00" est juste un remplissage → positions 7-8
+⚠️⚠️⚠️ ERREUR À ÉVITER ABSOLUMENT ⚠️⚠️⚠️
 
-DONC: "10 00" dans le tableau = Code 6 chiffres + "00" + "10" = XXXXXX0010
-PAS: "10 00" = XXXXXX1000 ← C'EST FAUX !
+MAUVAIS: Lire "10 00" et construire "...1000" 
+BON: Lire "10 00" et construire "...0010"
+
+Le numéro significatif (10, 20, 30, 80, 90...) va TOUJOURS aux deux DERNIÈRES positions (9-10) !
+
+EXEMPLES CONCRETS DU CHAPITRE 97:
+
+Dans le PDF tu vois | Code à extraire
+--------------------|------------------
+9701.21 00 00       | 9701210000
+9701.22 00 00       | 9701220000
+9701.29 puis 10 00  | 9701290010 (PAS 9701291000!)
+9701.29 puis 90 00  | 9701290090 (PAS 9701299000!)
+9701.91 00 00       | 9701910000
+9701.99 puis 10 00  | 9701990010 (PAS 9701991000!)
+9701.99 puis 90 00  | 9701990090 (PAS 9701999000!)
+
+FORMULE UNIVERSELLE:
+Position_6_chiffres + "00" + Sous_ligne_2_chiffres = Code_10_chiffres
+
+Si pas de sous-ligne (ligne complète "XX.XX.XX 00 00"):
+Position_4_chiffres + SousPos_2_chiffres + "0000" = Code_10_chiffres
 
 === CE QUE TU DOIS EXTRAIRE ===
 
 Pour CHAQUE ligne tarifaire avec un taux de droit (duty_rate):
-1. Reconstruire le CODE NATIONAL COMPLET À 10 CHIFFRES
+1. Reconstruire le CODE NATIONAL COMPLET À 10 CHIFFRES selon les règles ci-dessus
 2. Les 6 premiers chiffres forment le code SH (hs_code_6)
 3. La description exacte
 4. Le taux de droit (avec notes si présentes, ex: "2,5(a)")
@@ -165,24 +176,21 @@ Pour CHAQUE ligne tarifaire avec un taux de droit (duty_rate):
 {
   "summary": "Résumé du chapitre",
   "key_points": ["Note importante 1", "Note 2"],
-  "chapter_info": {"number": 32, "title": "EXTRAITS TANNANTS"},
+  "chapter_info": {"number": 97, "title": "OBJETS D'ART, DE COLLECTION OU D'ANTIQUITE"},
   "notes": {
     "legal": ["1. Le présent chapitre ne comprend pas..."],
     "subposition": [],
     "complementary": []
   },
-  "footnotes": {
-    "a": "Aux conditions fixées par la réglementation en vigueur.",
-    "b": "Autre note..."
-  },
+  "footnotes": {},
 "raw_lines": [
-    {"national_code": "2617900010", "hs_code_6": "261790", "description": "minerais de beryllium", "duty_rate": "2,5", "unit": "kg"},
-    {"national_code": "2617900080", "hs_code_6": "261790", "description": "autres", "duty_rate": "2,5", "unit": "kg"},
-    {"national_code": "2621900010", "hs_code_6": "262190", "description": "cendres de varech", "duty_rate": "2,5", "unit": "kg"},
-    {"national_code": "2621900090", "hs_code_6": "262190", "description": "autres", "duty_rate": "2,5", "unit": "kg"}
+    {"national_code": "9701210000", "hs_code_6": "970121", "description": "Tableaux, peintures et dessins ayant plus de 100 ans d'âge", "duty_rate": "2,5", "unit": "u"},
+    {"national_code": "9701290010", "hs_code_6": "970129", "description": "Autres en liège ayant plus de 100 ans d'âge", "duty_rate": "2,5", "unit": "kg"},
+    {"national_code": "9701290090", "hs_code_6": "970129", "description": "Autres ayant plus de 100 ans d'âge", "duty_rate": "2,5", "unit": "kg"}
   ],
   "hs_codes": [
-    {"code": "2621.90", "code_clean": "262190", "description": "Autres scories et cendres", "level": "subheading"}
+    {"code": "9701.21", "code_clean": "970121", "description": "Tableaux, peintures et dessins ayant plus de 100 ans d'âge", "level": "subheading"},
+    {"code": "9701.29", "code_clean": "970129", "description": "Autres ayant plus de 100 ans d'âge", "level": "subheading"}
   ],
   "trade_agreements": [],
   "preferential_rates": [],
@@ -200,8 +208,10 @@ Pour CHAQUE ligne tarifaire avec un taux de droit (duty_rate):
 ✓ full_text doit contenir le TEXTE INTÉGRAL (jusqu'à 50000 caractères)
 
 ⚠️⚠️⚠️ VÉRIFICATION FINALE ⚠️⚠️⚠️
-Avant de répondre, vérifie que tu as bien parcouru TOUTES les pages du PDF.
-Les dernières lignes du chapitre sont souvent sur la dernière page - NE LES OUBLIE PAS!
+Avant de répondre, vérifie:
+1. Tu as parcouru TOUTES les pages du PDF
+2. Les codes qui finissent par "0010" ou "0090" sont corrects (pas "1000" ou "9000")
+3. Les dernières lignes du chapitre sont incluses
 
 **NE JAMAIS TRONQUER - EXTRAIRE 100% DES LIGNES TARIFAIRES DE TOUTES LES PAGES !**
 
