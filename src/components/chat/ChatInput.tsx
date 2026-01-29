@@ -100,11 +100,6 @@ export function ChatInput({
             </Button>
           </div>
         </div>
-        
-        {/* Footer hint */}
-        <p className="text-xs text-muted-foreground text-center mt-3 opacity-70">
-          Appuyez sur Entrée pour envoyer • Shift+Entrée pour un saut de ligne
-        </p>
       </div>
     </div>
   );
