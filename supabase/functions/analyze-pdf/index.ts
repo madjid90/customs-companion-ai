@@ -117,66 +117,90 @@ Les codes nationaux ont TOUJOURS 10 chiffres.
 
 ⚠️⚠️⚠️ RÈGLE CRITIQUE : COMMENT LIRE LE PDF ⚠️⚠️⚠️
 
-TROIS FORMATS POSSIBLES DANS LE PDF:
+STRUCTURE DU TABLEAU PDF:
+Colonne 1 (Position) | Colonne 2 | Colonne 3 | Description | Taux | Unité
 
-FORMAT 1 - CODE COMPLET SUR UNE SEULE LIGNE
-Quand tu vois : "9701.21 00 00" ou "1201.10 00 00"
-→ Retire les espaces et le point : 9701210000, 1201100000
-→ C'est déjà le code national à 10 chiffres !
+Le CODE NATIONAL = Position_6_chiffres + Colonne2 + Colonne3 = 10 chiffres
 
-FORMAT 2 - SOUS-LIGNES AVEC DEUX COLONNES (chapitres type 97)
-Position parent avec sous-lignes qui ont DEUX valeurs numériques:
-Ex: Position "9701.29" puis sous-ligne "10 | 00"
-→ Position 6 chiffres: 970129
-→ CONCATÈNE dans l'ordre de lecture: 970129 + 10 + 00 = 9701291000
+⚠️ RÈGLE D'HÉRITAGE MULTI-NIVEAUX ⚠️
 
-FORMAT 3 - SOUS-LIGNES AVEC UNE SEULE VALEUR (chapitres type 12)
-Position parent avec "00" puis sous-lignes qui n'ont QU'UN seul chiffre:
-Ex: Position "1201.90 | 00" puis sous-ligne "| | 10"
-→ La ligne parent "1201.90 00" établit le préfixe = 120190 + 00 = 12019000
-→ La sous-ligne n'a que "10" dans la 3ème colonne
-→ Code = 12019000 + 10 = 1201900010 ✓
+Les valeurs des colonnes s'HÉRITENT de la ligne PARENT quand elles sont vides.
+Tu dois SUIVRE la hiérarchie pour trouver les bonnes valeurs.
 
-⚠️ ATTENTION AU FORMAT 3 - STRUCTURE DU CHAPITRE 12:
-Colonne Position | Col 2 | Col 3 | Description
-1201.10          | 00    | 00    | - De semence → 1201100000
-1201.90          | 00    |       | - Autres (PARENT, pas de taux)
-                 |       | 10    | --- importés par les triturateurs → 1201900010
-                 |       | 90    | --- autres → 1201900090
+EXEMPLE CONCRET DU CHAPITRE 12 - POSITION 1205.90:
 
-Pour "1201.90 | 00 | [vide] | Autres" (ligne parent):
-→ C'est un EN-TÊTE sans taux, il définit le préfixe 12019000
+PDF (ce que tu vois) :
+Position | Col2 | Col3 | Description                    | Taux
+---------|------|------|--------------------------------|------
+1205.90  |      |      | - Autres                       | (pas de taux = PARENT niveau 0)
+         | 10   |      | --- de semence (a):            | (pas de taux = PARENT niveau 1)
+         |      | 10   | ---- de navette (a)            | 2,5   ← LIGNE TARIFAIRE
+         |      | 90   | ---- de colza (a)              | 2,5   ← LIGNE TARIFAIRE
+         | 90   |      | --- autres:                    | (pas de taux = PARENT niveau 1)
+         |      |      | ---- de navette:               | (pas de taux = catégorie)
+         |      | 11   | ----- importées triturateurs   | 2,5   ← LIGNE TARIFAIRE
+         |      | 19   | ----- autres                   | 2,5   ← LIGNE TARIFAIRE
+         |      |      | ---- de colza:                 | (pas de taux = catégorie)
+         |      | 91   | ----- importées triturateurs   | 2,5   ← LIGNE TARIFAIRE
+         |      | 99   | ----- autres                   | 2,5   ← LIGNE TARIFAIRE
 
-Pour "| | 10 | importés par les triturateurs":
-→ Position héritée = 1201.90 = 120190
-→ Col 2 héritée = 00 → positions 7-8
-→ Col 3 de cette ligne = 10 → positions 9-10
-→ Code = 120190 + 00 + 10 = 1201900010 ✓
+EXTRACTION CORRECTE:
 
-Pour "| | 90 | autres":
-→ Code = 120190 + 00 + 90 = 1201900090 ✓
+Pour "| | 10 | de navette (a) | 2,5":
+→ Position héritée = 1205.90 = 120590
+→ Col2 héritée du parent "10" = 10 → positions 7-8
+→ Col3 de cette ligne = 10 → positions 9-10
+→ CODE = 120590 + 10 + 10 = 1205901010 ✓
 
-RÈGLE CLÉ: Quand la sous-ligne n'a qu'UNE valeur (10, 90...), elle va en positions 9-10, et "00" héritée reste en positions 7-8.
+Pour "| | 90 | de colza (a) | 2,5":
+→ Position héritée = 1205.90 = 120590
+→ Col2 héritée du parent "10" = 10 → positions 7-8
+→ Col3 de cette ligne = 90 → positions 9-10
+→ CODE = 120590 + 10 + 90 = 1205901090 ✓
 
-EXEMPLES COMPARATIFS:
+Pour "| | 11 | importées triturateurs | 2,5":
+→ Position héritée = 1205.90 = 120590
+→ Col2 héritée du parent "90" = 90 → positions 7-8
+→ Col3 de cette ligne = 11 → positions 9-10
+→ CODE = 120590 + 90 + 11 = 1205909011 ✓
 
-Chapitre 12 (Format 3):
-PDF                    | Code correct
------------------------|---------------
-1201.10 00 00          | 1201100000
-1201.90 00 puis 10     | 1201900010 (00 en 7-8, 10 en 9-10)
-1201.90 00 puis 90     | 1201900090 (00 en 7-8, 90 en 9-10)
+Pour "| | 99 | autres | 2,5":
+→ Position héritée = 1205.90 = 120590
+→ Col2 héritée du parent "90" = 90 → positions 7-8
+→ Col3 de cette ligne = 99 → positions 9-10
+→ CODE = 120590 + 90 + 99 = 1205909099 ✓
 
-Chapitre 97 (Format 2):
-PDF                    | Code correct  
------------------------|---------------
-9701.21 00 00          | 9701210000
-9701.29 puis 10 00     | 9701291000 (10 en 7-8, 00 en 9-10)
-9701.29 puis 90 00     | 9701299000 (90 en 7-8, 00 en 9-10)
+⚠️ ERREURS À NE JAMAIS FAIRE:
+FAUX: 1205901000 (tu as mis 10 en pos 7-8 et 00 en pos 9-10)
+VRAI: 1205901010 (10 hérité en pos 7-8, 10 de la ligne en pos 9-10)
 
-FORMULE UNIVERSELLE:
-Position_6_chiffres + Valeur_Col2 + Valeur_Col3 = Code_10_chiffres
-(hérite des valeurs parentes si colonnes vides)
+FAUX: 1205909000 (tu as mis 90 en pos 7-8 et 00 en pos 9-10)
+VRAI: 1205909011 (90 hérité en pos 7-8, 11 de la ligne en pos 9-10)
+
+AUTRE EXEMPLE - POSITION 1206.00:
+
+PDF:
+Position | Col2 | Col3 | Description                    | Taux
+---------|------|------|--------------------------------|------
+1206.00  |      |      | Graines de tournesol           | (PARENT)
+         | 10   | 00   | --- de semence                 | 2,5   ← LIGNE TARIFAIRE
+         | 81   | 00   | --- importées triturateurs     | 2,5   ← LIGNE TARIFAIRE
+         | 89   | 00   | --- autres                     | 2,5   ← LIGNE TARIFAIRE
+
+Pour "| 10 | 00 | de semence | 2,5":
+→ Position héritée = 1206.00 = 120600
+→ Col2 de cette ligne = 10 → positions 7-8
+→ Col3 de cette ligne = 00 → positions 9-10
+→ CODE = 120600 + 10 + 00 = 1206001000 ✓
+
+RÈGLE UNIVERSELLE:
+1. TROUVE la Position 6 chiffres (héritée ou de la ligne)
+2. TROUVE la Col2 (héritée de la ligne parent OU de cette ligne si présente)
+3. TROUVE la Col3 (toujours de cette ligne car c'est le niveau le plus bas)
+4. CONCATÈNE: Position + Col2 + Col3 = Code 10 chiffres
+
+RAPPEL: Seules les lignes AVEC UN TAUX sont des lignes tarifaires.
+Les lignes SANS TAUX sont des en-têtes/parents qui définissent le contexte.
 
 === CE QUE TU DOIS EXTRAIRE ===
 
