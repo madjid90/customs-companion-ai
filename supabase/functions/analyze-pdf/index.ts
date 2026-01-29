@@ -122,55 +122,58 @@ Colonne 1 (Position) | Colonne 2 | Colonne 3 | Description | Taux | Unité
 
 Le CODE NATIONAL = Position_6_chiffres + Colonne2 + Colonne3 = 10 chiffres
 
-⚠️ RÈGLE D'HÉRITAGE MULTI-NIVEAUX ⚠️
+⚠️⚠️⚠️ RÈGLE D'OR - ALGORITHME OBLIGATOIRE ⚠️⚠️⚠️
 
-Les valeurs des colonnes s'HÉRITENT de la ligne PARENT quand elles sont vides.
-Tu dois SUIVRE la hiérarchie pour trouver les bonnes valeurs.
+Pour CHAQUE ligne tarifaire, tu DOIS suivre cet algorithme EXACTEMENT:
 
-⚠️⚠️⚠️ RÈGLE ABSOLUE D'ORDRE - NE JAMAIS INVERSER ⚠️⚠️⚠️
+ÉTAPE 1: Identifier la Position à 6 chiffres (ex: 2009.90 → 200990)
+ÉTAPE 2: Lire la valeur ACTUELLE de Colonne 2 sur cette ligne (ou hériter du parent si vide)
+ÉTAPE 3: Lire la valeur ACTUELLE de Colonne 3 sur cette ligne (ou hériter du parent si vide)
+ÉTAPE 4: Construire le code: Position + Col2 + Col3 (DANS CET ORDRE EXACT)
 
-CODE = Position_6_digits + COLONNE_2 (pos 7-8) + COLONNE_3 (pos 9-10)
+⚠️⚠️⚠️ RÈGLE DE POSITION ABSOLUE - NE JAMAIS INTERVERTIR ⚠️⚠️⚠️
 
-La COLONNE 2 vient TOUJOURS AVANT la COLONNE 3 dans le code final.
-Si Col2 = 00 et Col3 = 11 → le code finit par "0011" PAS "1100"
-Si Col2 = 00 et Col3 = 10 → le code finit par "0010" PAS "1000"
+Le code 10 chiffres = [Position 6 chiffres] + [Col2 = positions 7-8] + [Col3 = positions 9-10]
 
-EXEMPLE 1 - CHAPITRE 20 - POSITION 2009.90 (Format avec 00 en Col2):
+POSITION 7-8 = Toujours la valeur de COLONNE 2
+POSITION 9-10 = Toujours la valeur de COLONNE 3
 
-PDF (ce que tu vois) :
-Position | Col2 | Col3 | Description                                    | Taux
----------|------|------|------------------------------------------------|------
-2009.90  | 00   |      | - Mélanges de jus                              | (PARENT avec Col2=00)
-         |      | 11   | ---- avec addition de sucre                    | 40    ← LIGNE TARIFAIRE
-         |      | 19   | ---- sans addition de sucre                    | 40    ← LIGNE TARIFAIRE
-         |      | 21   | ---- avec addition de sucre                    | 40    ← LIGNE TARIFAIRE
-         |      | 29   | ---- sans addition de sucre                    | 40    ← LIGNE TARIFAIRE
+⚠️ CAS CRITIQUE CHAPITRE 20 - POSITIONS 2009.xx avec Col2=00 ⚠️
 
-EXTRACTION CORRECTE - ORDRE: Col2 (pos 7-8) puis Col3 (pos 9-10):
+Quand tu vois ce format dans le PDF:
+Position | Col2 | Col3 | Description | Taux
+2009.90  | 00   |      | Mélanges    | (parent)
+         |      | 11   | avec sucre  | 40
+         |      | 19   | sans sucre  | 40
 
-Pour "| | 11 | avec addition de sucre | 40":
-→ Position = 2009.90 = 200990
-→ Col2 héritée = 00 → POSITIONS 7-8 (vient EN PREMIER)
-→ Col3 = 11 → POSITIONS 9-10 (vient EN SECOND)
-→ CODE = 200990 + 00 + 11 = 2009900011 ✓
+Le parent définit Col2=00. Les enfants ont Col3=11, 19, etc.
 
-Pour "| | 19 | sans addition de sucre | 40":
-→ CODE = 200990 + 00 + 19 = 2009900019 ✓
+ALGORITHME pour "| | 11 | avec sucre | 40":
+- Position héritée = 200990 (6 chiffres)
+- Col2 = 00 (héritée du parent - POS 7-8)
+- Col3 = 11 (de cette ligne - POS 9-10)
+- CODE = 200990 + 00 + 11 = 2009900011
 
-Pour "| | 21 | avec addition de sucre | 40":
-→ CODE = 200990 + 00 + 21 = 2009900021 ✓
+⚠️⚠️⚠️ VALIDATION OBLIGATOIRE AVANT DE PRODUIRE UN CODE ⚠️⚠️⚠️
 
-⚠️⚠️⚠️ ERREURS CRITIQUES À ÉVITER - INVERSIONS ⚠️⚠️⚠️
-FAUX: 2009901100 (tu as inversé: 11 en pos 7-8, 00 en pos 9-10)
-VRAI: 2009900011 (00 en pos 7-8, 11 en pos 9-10)
+Pour chaque code généré, vérifie:
+- Les caractères 7-8 correspondent-ils à la valeur de Col2 ? (00 → code...00...)
+- Les caractères 9-10 correspondent-ils à la valeur de Col3 ? (11 → code...11)
 
-FAUX: 2009902100 (tu as inversé: 21 en pos 7-8, 00 en pos 9-10)
-VRAI: 2009900021 (00 en pos 7-8, 21 en pos 9-10)
+EXEMPLES DE VALIDATION:
+Code 2009900011: pos 7-8 = "00" ✓ (Col2=00), pos 9-10 = "11" ✓ (Col3=11) → VALIDE
+Code 2009901100: pos 7-8 = "11" ✗ (Col2 devrait être 00!), pos 9-10 = "00" ✗ → INVALIDE (INVERSÉ!)
 
-AUTRE EXEMPLE - POSITION 2009.81 et 2009.89:
-2009.81 | 00 | 10 → 200981 + 00 + 10 = 2009810010 ✓ (PAS 2009811000)
-2009.89 | 00 | 10 → 200989 + 00 + 10 = 2009890010 ✓ (PAS 2009891000)
-2009.89 | 00 | 22 → 200989 + 00 + 22 = 2009890022 ✓ (PAS 2009892200)
+LISTE NOIRE - CES CODES SONT FAUX (inversés):
+❌ 2009901100 → Le bon code est 2009900011
+❌ 2009901900 → Le bon code est 2009900019
+❌ 2009902100 → Le bon code est 2009900021
+❌ 2009902900 → Le bon code est 2009900029
+❌ 2009909100 → Le bon code est 2009900091
+❌ 2009909900 → Le bon code est 2009900099
+❌ 2009811000 → Le bon code est 2009810010
+❌ 2009891000 → Le bon code est 2009890010
+❌ 2009892200 → Le bon code est 2009890022
 
 EXEMPLE 2 - CHAPITRE 12 - POSITION 1205.90 (Format avec héritage multi-niveaux):
 
