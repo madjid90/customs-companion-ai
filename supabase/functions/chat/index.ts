@@ -985,37 +985,128 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       veilleDocuments = [...new Map(veilleDocuments.map(d => [d.title, d])).values()].slice(0, 8);
     }
 
-    // 8. NOUVEAU: Recherche des références légales structurées
-    if (analysis.keywords.length > 0) {
-      const legalSearchTerm = escapeSearchTerm(analysis.keywords.slice(0, 2).join(' '));
+    // 8. AMÉLIORATION: Recherche étendue des références légales (circulaires, lois, décrets, articles)
+    // Toujours rechercher les références légales, pas seulement pour certains intents
+    const shouldSearchLegal = analysis.keywords.length > 0 || 
+                              analysis.intent === 'procedure' || 
+                              analysis.intent === 'control' ||
+                              analysis.intent === 'origin' ||
+                              context.hs_codes.length > 0;
+    
+    if (shouldSearchLegal) {
+      // Recherche multi-critères dans les références légales
+      const legalSearchTerms = analysis.keywords.slice(0, 3).map(k => escapeSearchTerm(k));
       
-      // Recherche par mots-clés dans les références légales
-      const { data: legalRefs } = await supabase
-        .from('legal_references')
+      // Recherche par mots-clés
+      for (const searchTerm of legalSearchTerms) {
+        const { data: legalRefs } = await supabase
+          .from('legal_references')
+          .select(`
+            id,
+            reference_type,
+            reference_number,
+            title,
+            reference_date,
+            context,
+            pdf_id,
+            pdf_documents!inner(id, title, category, file_path, document_reference, issuing_authority)
+          `)
+          .or(`reference_number.ilike.%${searchTerm}%,title.ilike.%${searchTerm}%,context.ilike.%${searchTerm}%`)
+          .eq('is_active', true)
+          .order('reference_date', { ascending: false })
+          .limit(10);
+        
+        if (legalRefs) {
+          const newRefs = legalRefs.map((ref: any) => ({
+            ...ref,
+            pdf_title: ref.pdf_documents?.title,
+            pdf_file_path: ref.pdf_documents?.file_path,
+            issuing_authority: ref.pdf_documents?.issuing_authority,
+            document_reference: ref.pdf_documents?.document_reference,
+            download_url: ref.pdf_documents?.file_path 
+              ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${ref.pdf_documents.file_path}`
+              : null,
+          }));
+          context.legal_references.push(...newRefs);
+        }
+      }
+      
+      // Recherche par type de référence pertinent selon l'intent
+      const relevantTypes = analysis.intent === 'origin' ? ['accord', 'convention', 'protocole'] :
+                           analysis.intent === 'control' ? ['circulaire', 'note', 'décision'] :
+                           analysis.intent === 'procedure' ? ['loi', 'décret', 'arrêté', 'circulaire'] :
+                           ['loi', 'décret', 'circulaire', 'note'];
+      
+      for (const refType of relevantTypes) {
+        const { data: typeRefs } = await supabase
+          .from('legal_references')
+          .select(`
+            id,
+            reference_type,
+            reference_number,
+            title,
+            reference_date,
+            context,
+            pdf_id,
+            pdf_documents!inner(id, title, category, file_path, document_reference, issuing_authority)
+          `)
+          .ilike('reference_type', `%${refType}%`)
+          .eq('is_active', true)
+          .order('reference_date', { ascending: false })
+          .limit(5);
+        
+        if (typeRefs) {
+          const newTypeRefs = typeRefs.map((ref: any) => ({
+            ...ref,
+            pdf_title: ref.pdf_documents?.title,
+            pdf_file_path: ref.pdf_documents?.file_path,
+            issuing_authority: ref.pdf_documents?.issuing_authority,
+            document_reference: ref.pdf_documents?.document_reference,
+            download_url: ref.pdf_documents?.file_path 
+              ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${ref.pdf_documents.file_path}`
+              : null,
+          }));
+          context.legal_references.push(...newTypeRefs);
+        }
+      }
+      
+      // Dédupliquer les références légales
+      context.legal_references = [...new Map(
+        context.legal_references.map((ref: any) => [ref.reference_number, ref])
+      ).values()].slice(0, 20);
+    }
+    
+    // 8b. NOUVEAU: Récupérer le texte intégral des PDFs sources pour les citations
+    const legalPdfIds = [...new Set(context.legal_references.map((ref: any) => ref.pdf_id).filter(Boolean))];
+    const legalPdfTexts: Record<string, { text: string; title: string; download_url: string }> = {};
+    
+    if (legalPdfIds.length > 0) {
+      const { data: pdfExtracts } = await supabase
+        .from('pdf_extractions')
         .select(`
-          id,
-          reference_type,
-          reference_number,
-          title,
-          reference_date,
-          context,
-          pdf_documents!inner(id, title, category, file_path)
+          pdf_id,
+          extracted_text,
+          summary,
+          key_points,
+          pdf_documents!inner(title, file_path)
         `)
-        .or(`reference_number.ilike.%${legalSearchTerm}%,title.ilike.%${legalSearchTerm}%`)
-        .eq('is_active', true)
-        .order('reference_date', { ascending: false })
-        .limit(10);
+        .in('pdf_id', legalPdfIds.slice(0, 10));
       
-      if (legalRefs) {
-        context.legal_references = legalRefs.map((ref: any) => ({
-          ...ref,
-          pdf_title: ref.pdf_documents?.title,
-          pdf_file_path: ref.pdf_documents?.file_path,
-        }));
+      if (pdfExtracts) {
+        for (const extract of pdfExtracts as any[]) {
+          const pdfDoc = extract.pdf_documents as any;
+          legalPdfTexts[extract.pdf_id] = {
+            text: extract.extracted_text || extract.summary || '',
+            title: pdfDoc?.title || 'Document',
+            download_url: pdfDoc?.file_path 
+              ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${pdfDoc.file_path}`
+              : '',
+          };
+        }
       }
     }
 
-    // 9. NOUVEAU: Recherche des procédures réglementaires
+    // 9. Recherche des procédures réglementaires
     if (analysis.keywords.length > 0) {
       const procSearchTerm = escapeSearchTerm(analysis.keywords[0] || '');
       
@@ -1379,36 +1470,82 @@ ${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
   return content;
 }).join('\n---\n') : "Aucun document de veille pertinent"}
 
-### Références légales structurées (circulaires, lois, décrets)
-${context.legal_references.length > 0 ? context.legal_references.map((ref: any) => {
-  let content = `📜 **${ref.reference_type?.toUpperCase() || 'RÉFÉRENCE'}:** ${ref.reference_number}\n`;
-  if (ref.title) content += `**Intitulé:** ${ref.title}\n`;
-  if (ref.reference_date) content += `**Date:** ${ref.reference_date}\n`;
-  if (ref.context) content += `**Contexte:** ${ref.context}\n`;
-  if (ref.pdf_title) content += `**Source:** ${ref.pdf_title}\n`;
-  return content;
-}).join('\n') : "Aucune référence légale structurée trouvée"}
+### 📜 RÉFÉRENCES LÉGALES STRUCTURÉES (PRIORITÉ HAUTE POUR CITATIONS)
 
-### Procédures réglementaires
+**INSTRUCTION CRITIQUE**: Utilise ces références pour citer précisément les articles de loi, circulaires et décrets.
+Quand tu cites une référence, tu DOIS inclure:
+1. Le numéro de référence exact (ex: "Circulaire n°5234/222")
+2. L'article ou paragraphe pertinent
+3. Un extrait textuel entre guillemets
+4. Le lien de téléchargement
+
+${context.legal_references.length > 0 ? context.legal_references.map((ref: any) => {
+  let content = `---\n📜 **${(ref.reference_type || 'RÉFÉRENCE').toUpperCase()}** : ${ref.reference_number}\n`;
+  if (ref.title) content += `**Intitulé complet:** ${ref.title}\n`;
+  if (ref.reference_date) content += `**Date de publication:** ${ref.reference_date}\n`;
+  if (ref.issuing_authority) content += `**Autorité émettrice:** ${ref.issuing_authority}\n`;
+  if (ref.context) content += `**Contexte d'application:** ${ref.context}\n`;
+  if (ref.document_reference) content += `**Référence document:** ${ref.document_reference}\n`;
+  if (ref.pdf_title) content += `**Document source:** ${ref.pdf_title}\n`;
+  if (ref.download_url) content += `**🔗 URL téléchargement:** ${ref.download_url}\n`;
+  
+  // Ajouter le texte intégral si disponible pour permettre les citations exactes
+  const pdfText = ref.pdf_id && legalPdfTexts[ref.pdf_id];
+  if (pdfText && pdfText.text) {
+    // Extraire les passages contenant des articles numérotés
+    const articleMatches = pdfText.text.match(/(?:Article|Art\.?)\s*\d+[^\n]{0,500}/gi);
+    if (articleMatches && articleMatches.length > 0) {
+      content += `\n**📝 ARTICLES EXTRAITS (pour citations exactes):**\n`;
+      articleMatches.slice(0, 10).forEach((article: string) => {
+        content += `> ${article.trim()}\n`;
+      });
+    }
+    // Limiter le texte complet mais inclure assez pour les citations
+    content += `\n**📄 TEXTE INTÉGRAL (premiers 8000 caractères):**\n\`\`\`\n${pdfText.text.substring(0, 8000)}${pdfText.text.length > 8000 ? '\n...[suite tronquée]' : ''}\n\`\`\`\n`;
+  }
+  return content;
+}).join('\n') : "⚠️ Aucune référence légale structurée trouvée dans la base. Recommande à l'utilisateur de consulter www.douane.gov.ma"}
+
+### 📋 PROCÉDURES RÉGLEMENTAIRES DÉTAILLÉES
+
 ${context.regulatory_procedures.length > 0 ? context.regulatory_procedures.map((proc: any) => {
-  let content = `📋 **Procédure:** ${proc.procedure_name}\n`;
+  let content = `---\n📋 **Procédure:** ${proc.procedure_name}\n`;
   if (proc.authority) content += `**Autorité compétente:** ${proc.authority}\n`;
-  if (proc.required_documents && proc.required_documents.length > 0) {
+  if (proc.required_documents && Array.isArray(proc.required_documents) && proc.required_documents.length > 0) {
     content += `**Documents requis:**\n${proc.required_documents.map((d: string) => `- ${d}`).join('\n')}\n`;
   }
-  if (proc.deadlines) content += `**Délais:** ${proc.deadlines}\n`;
-  if (proc.penalties) content += `**Sanctions:** ${proc.penalties}\n`;
-  if (proc.pdf_title) content += `**Source:** ${proc.pdf_title}\n`;
+  if (proc.deadlines) content += `**Délais réglementaires:** ${proc.deadlines}\n`;
+  if (proc.penalties) content += `**Sanctions en cas de non-conformité:** ${proc.penalties}\n`;
+  if (proc.pdf_title) content += `**Source documentaire:** ${proc.pdf_title}\n`;
   return content;
-}).join('\n---\n') : "Aucune procédure réglementaire trouvée"}
+}).join('\n') : "Aucune procédure réglementaire spécifique trouvée"}
 
 ---
-⚠️ RAPPELS CRITIQUES:
-1. POSE **UNE SEULE QUESTION** par message
-2. Utilise le format avec tirets pour les options (elles seront transformées en boutons cliquables)
-3. **CITE TOUJOURS tes sources** avec des extraits EXACTS des documents fournis ci-dessus quand tu donnes une réponse finale
-4. Le format de citation est: 📄 **Source:** [Titre] suivi de > "[extrait exact]"
-5. **INCLUS LE LIEN DE TÉLÉCHARGEMENT** du document source quand tu cites. Format: [📥 Télécharger le document](URL)`;
+## ⚠️ RAPPELS CRITIQUES POUR TES RÉPONSES:
+
+1. **UNE SEULE QUESTION** par message (format avec tirets = boutons cliquables)
+
+2. **CITATIONS OBLIGATOIRES** - Format requis:
+   \`\`\`
+   📜 **Base légale:** [Type] n°[Numéro] du [Date]
+   > "**Article X:** [Texte exact de l'article cité]"
+   > 
+   > [📥 Télécharger le document officiel](URL)
+   \`\`\`
+
+3. **ARTICLES DE LOI** - Quand tu cites un article:
+   - Cite le numéro d'article exact (Article 1, Article 45, etc.)
+   - Reproduis le texte tel qu'il apparaît dans le document
+   - Indique la référence complète du texte juridique
+
+4. **CIRCULAIRES** - Format de citation:
+   - Circulaire n°XXXX/XXX du JJ/MM/AAAA
+   - Objet de la circulaire
+   - Point ou paragraphe pertinent
+
+5. **VALIDATION CROISÉE** - Si plusieurs textes traitent du même sujet, cite-les tous avec leurs dates pour montrer l'évolution réglementaire
+
+6. **LIEN TÉLÉCHARGEMENT** - Toujours inclure [📥 Télécharger](URL) quand disponible`;
 
     // Build messages array with conversation history
     const claudeMessages: { role: "user" | "assistant"; content: string }[] = [];
