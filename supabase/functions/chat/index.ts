@@ -1253,13 +1253,55 @@ ${imageAnalysis.questions.length > 0 ? `**Questions de clarification suggérées
     }
 
     // Build list of available source documents with URLs for citations
+    // IMPORTANT: Filtrer par pertinence du chapitre pour éviter les incohérences
+    const relevantChapters: Set<string> = new Set();
+    
+    // Extraire les chapitres (2 premiers chiffres) des codes SH trouvés
+    context.hs_codes.forEach((hs: any) => {
+      const code = hs.code || hs.code_clean || '';
+      const chapter = cleanHSCode(code).substring(0, 2);
+      if (chapter) relevantChapters.add(chapter);
+    });
+    context.tariffs_with_inheritance.forEach((t: any) => {
+      const chapter = t.code_clean?.substring(0, 2);
+      if (chapter) relevantChapters.add(chapter);
+    });
+    
+    console.log("Relevant chapters for source filtering:", Array.from(relevantChapters));
+    
     const availableSources: string[] = [];
     
-    // Add PDF sources
+    // Add PDF sources - FILTER BY RELEVANT CHAPTERS
     if (context.pdf_summaries.length > 0) {
       context.pdf_summaries.forEach((pdf: any) => {
         if (pdf.title && pdf.download_url) {
-          availableSources.push(`📄 **${pdf.title}** (${pdf.category || 'document'})\n   URL: ${pdf.download_url}`);
+          // Vérifier si le PDF contient des codes SH pertinents
+          const pdfMentionedCodes = pdf.extracted_data?.mentioned_hs_codes || [];
+          let isRelevant = relevantChapters.size === 0; // Si pas de chapitre détecté, accepter tout
+          
+          // Vérifier si un des codes mentionnés dans le PDF correspond à nos chapitres
+          if (!isRelevant && Array.isArray(pdfMentionedCodes)) {
+            isRelevant = pdfMentionedCodes.some((code: string) => {
+              const codeChapter = cleanHSCode(code).substring(0, 2);
+              return relevantChapters.has(codeChapter);
+            });
+          }
+          
+          // Vérifier aussi le titre du PDF (ex: "SH CODE 83" pour chapitre 83)
+          if (!isRelevant && pdf.title) {
+            const titleMatch = pdf.title.match(/(?:SH\s*CODE|CHAPITRE)\s*(\d{1,2})/i);
+            if (titleMatch) {
+              const titleChapter = titleMatch[1].padStart(2, '0');
+              isRelevant = relevantChapters.has(titleChapter);
+            }
+          }
+          
+          if (isRelevant) {
+            const chaptersInPdf = Array.isArray(pdfMentionedCodes) 
+              ? [...new Set(pdfMentionedCodes.map((c: string) => cleanHSCode(c).substring(0, 2)))].slice(0, 3).join(', ')
+              : 'N/A';
+            availableSources.push(`📄 **${pdf.title}** (${pdf.category || 'document'}) - Chapitres: ${chaptersInPdf}\n   URL: ${pdf.download_url}`);
+          }
         }
       });
     }
@@ -1274,8 +1316,8 @@ ${imageAnalysis.questions.length > 0 ? `**Questions de clarification suggérées
     }
     
     const sourcesListForPrompt = availableSources.length > 0 
-      ? `\n## 📚 DOCUMENTS SOURCES DISPONIBLES POUR TES CITATIONS\n\n${availableSources.slice(0, 15).join('\n\n')}\n\n**⚠️ UTILISE CES URLS EXACTES dans tes liens de téléchargement !**\n`
-      : '\n⚠️ Aucun document source disponible - recommande www.douane.gov.ma\n';
+      ? `\n## 📚 DOCUMENTS SOURCES DISPONIBLES POUR TES CITATIONS\n\nCes sources sont PRÉ-FILTRÉES pour correspondre aux chapitres ${Array.from(relevantChapters).join(', ') || 'recherchés'}:\n\n${availableSources.slice(0, 15).join('\n\n')}\n\n**⚠️ UTILISE UNIQUEMENT CES SOURCES PERTINENTES !**\n`
+      : '\n⚠️ Aucun document source pertinent trouvé - recommande www.douane.gov.ma\n';
 
     // Build system prompt with interactive questioning - ONE question at a time
     const systemPrompt = `Tu es **DouaneAI**, un assistant expert en douane et commerce international, spécialisé dans la réglementation ${analysis.country === 'MA' ? 'marocaine' : 'africaine'}.
@@ -1346,6 +1388,14 @@ Tu dois mener une **conversation naturelle** avec l'utilisateur en posant **UNE 
 - Ne donne JAMAIS une réponse finale SANS justification documentée (soit avec source, soit avec avertissement)
 - N'OUBLIE JAMAIS l'émoji de confiance à la fin
 - N'INVENTE JAMAIS de liens - utilise UNIQUEMENT les URLs fournies dans le contexte
+- **NE CITE JAMAIS UN DOCUMENT D'UN CHAPITRE DIFFÉRENT** - Ex: si tu parles du code 8301 (chapitre 83), ne cite JAMAIS un document du chapitre 26!
+- **VÉRIFIE TOUJOURS LA COHÉRENCE** entre le code SH de ta réponse et le chapitre du document source
+
+### 🚨 RÈGLE DE COHÉRENCE CHAPITRE
+Avant de citer une source, VÉRIFIE que le chapitre du document correspond au chapitre du code SH:
+- Code SH 8301.30 = Chapitre 83 → Cite seulement des sources du Chapitre 83
+- Code SH 2601.11 = Chapitre 26 → Cite seulement des sources du Chapitre 26
+Si aucune source du bon chapitre n'est disponible, utilise l'avertissement "Aucun justificatif trouvé".
 
 ### ✅ CE QUE TU DOIS FAIRE
 1. **ANALYSE** ce que tu sais déjà grâce à la conversation
@@ -1353,7 +1403,8 @@ Tu dois mener une **conversation naturelle** avec l'utilisateur en posant **UNE 
 3. **POSE UNE SEULE QUESTION** claire et précise avec des options cliquables
 4. **TERMINE** par l'émoji de confiance approprié (🟢, 🟡 ou 🔴)
 5. **ATTENDS** la réponse avant de continuer
-6. **CITE TES SOURCES** avec les URLs EXACTES fournies quand tu donnes une réponse finale
+6. **VÉRIFIE LA COHÉRENCE** entre le code SH et le chapitre du document source
+7. **CITE TES SOURCES** avec les URLs EXACTES fournies quand tu donnes une réponse finale
 
 ## 🔄 PROCESSUS DE CONVERSATION
 
