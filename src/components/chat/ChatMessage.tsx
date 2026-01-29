@@ -164,13 +164,20 @@ export function ChatMessage({
               {removeQuestions(cleanContent(message.content))}
             </ReactMarkdown>
             
-            {isLastMessage && (
-              <InteractiveQuestions
-                questions={parseQuestionsFromResponse(cleanContent(message.content))}
-                onAnswer={(questionId, answer) => onAnswer(answer)}
-                disabled={isLoading}
-              />
-            )}
+            {/* Always show interactive questions if they exist */}
+            {(() => {
+              const questions = parseQuestionsFromResponse(cleanContent(message.content));
+              if (questions.length > 0) {
+                return (
+                  <InteractiveQuestions
+                    questions={questions}
+                    onAnswer={(questionId, answer) => onAnswer(answer)}
+                    disabled={isLoading || !isLastMessage}
+                  />
+                );
+              }
+              return null;
+            })()}
             
             {/* Document Preview Dialog */}
             {previewDoc && (
