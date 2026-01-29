@@ -127,11 +127,6 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
         Autres suggestions
       </button>
 
-      {/* Hint */}
-      <p className="mt-6 text-xs text-muted-foreground flex items-center justify-center gap-2">
-        <FileImage className="h-4 w-4" />
-        Uploadez une photo de produit pour une classification automatique
-      </p>
     </div>
   );
 }
