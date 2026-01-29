@@ -77,6 +77,19 @@ export function ChatMessage({
     }
   };
 
+  // Fix broken markdown links (URLs with spaces)
+  const fixMarkdownLinks = (content: string): string => {
+    // Fix markdown links with spaces in URLs: [text](url with spaces)
+    return content.replace(
+      /\[([^\]]+)\]\(([^)]+)\)/g,
+      (match, text, url) => {
+        // Encode spaces and other problematic characters in the URL
+        const fixedUrl = url.replace(/ /g, '%20');
+        return `[${text}](${fixedUrl})`;
+      }
+    );
+  };
+
   return (
     <div
       className={cn(
@@ -162,7 +175,7 @@ export function ChatMessage({
                 },
               }}
             >
-              {removeQuestions(cleanContent(message.content))}
+              {fixMarkdownLinks(removeQuestions(cleanContent(message.content)))}
             </ReactMarkdown>
             
             {/* Always show interactive questions if they exist */}
