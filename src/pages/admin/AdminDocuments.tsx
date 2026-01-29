@@ -133,11 +133,35 @@ export default function AdminDocuments() {
   };
 
   const openDocument = async (filePath: string) => {
-    const { data } = supabase.storage
-      .from("pdf-documents")
-      .getPublicUrl(filePath);
-    
-    window.open(data.publicUrl, "_blank");
+    try {
+      // Construire l'URL manuellement pour éviter les problèmes d'encodage
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const bucketName = "pdf-documents";
+      
+      // Encoder correctement le chemin du fichier
+      const encodedPath = filePath.split('/').map(part => encodeURIComponent(part)).join('/');
+      const publicUrl = `${supabaseUrl}/storage/v1/object/public/${bucketName}/${encodedPath}`;
+      
+      console.log("Opening PDF:", publicUrl);
+      
+      // Ouvrir dans un nouvel onglet
+      const newWindow = window.open(publicUrl, "_blank");
+      
+      if (!newWindow) {
+        toast({
+          title: "⚠️ Popup bloqué",
+          description: "Veuillez autoriser les popups pour ouvrir le PDF",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error opening document:", error);
+      toast({
+        title: "❌ Erreur",
+        description: "Impossible d'ouvrir le document",
+        variant: "destructive",
+      });
+    }
   };
 
   const viewDetails = (doc: PdfDocument) => {
