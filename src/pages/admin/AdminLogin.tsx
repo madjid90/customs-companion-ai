@@ -25,7 +25,7 @@ export default function AdminLogin() {
   // Redirect if already authenticated and admin
   useEffect(() => {
     if (!authLoading && user && isAdmin) {
-      const from = location.state?.from?.pathname || "/admin";
+      const from = location.state?.from?.pathname || "/admin/upload";
       navigate(from, { replace: true });
     }
   }, [user, isAdmin, authLoading, navigate, location]);
