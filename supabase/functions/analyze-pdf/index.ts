@@ -828,6 +828,56 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/**
+ * Parse flexible date formats to YYYY-MM-DD or null
+ * Supports: "YYYY-MM-DD", "DD/MM/YYYY", "DD-MM-YYYY", "1er janvier 2024", etc.
+ */
+function parseFlexibleDate(dateStr: string | null | undefined): string | null {
+  if (!dateStr) return null;
+  
+  const str = dateStr.trim();
+  
+  // Already in ISO format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return str;
+  }
+  
+  // Format DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmyMatch) {
+    const [, day, month, year] = dmyMatch;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+  
+  // French text format: "1er janvier 2024" or "15 mars 2023"
+  const frenchMonths: Record<string, string> = {
+    'janvier': '01', 'février': '02', 'mars': '03', 'avril': '04',
+    'mai': '05', 'juin': '06', 'juillet': '07', 'août': '08',
+    'septembre': '09', 'octobre': '10', 'novembre': '11', 'décembre': '12',
+  };
+  
+  const frenchMatch = str.match(/(\d{1,2})(?:er)?\s+(\w+)\s+(\d{4})/i);
+  if (frenchMatch) {
+    const [, day, monthName, year] = frenchMatch;
+    const month = frenchMonths[monthName.toLowerCase()];
+    if (month) {
+      return `${year}-${month}-${day.padStart(2, '0')}`;
+    }
+  }
+  
+  // Try standard Date parsing as fallback
+  try {
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().split('T')[0];
+    }
+  } catch {
+    // Ignore parsing errors
+  }
+  
+  return null;
+}
+
 // =============================================================================
 // APPEL ANTHROPIC CLAUDE API (Native PDF Support)
 // =============================================================================
@@ -1707,13 +1757,117 @@ serve(async (req) => {
           }
         }
 
-        // Update PDF document
+        // Update PDF document with enriched metadata
         await supabase.from("pdf_documents").update({
           is_verified: true,
           verified_at: new Date().toISOString(),
           related_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
           keywords: analysisResult.chapter_info?.number ? `Chapitre ${analysisResult.chapter_info.number}` : null,
+          document_reference: analysisResult.document_reference || null,
+          issuing_authority: analysisResult.issuing_authority?.name || null,
+          document_type: isRegulatoryDoc ? "regulatory" : "tariff",
         }).eq("id", pdfId);
+        
+        // ================================================================
+        // NOUVEAU: Sauvegarder les données structurées pour documents réglementaires
+        // ================================================================
+        if (isRegulatoryDoc) {
+          console.log("[Background] Saving regulatory data for PDF:", pdfId);
+          
+          // 1. Sauvegarder les références légales
+          if (analysisResult.legal_references && Array.isArray(analysisResult.legal_references) && analysisResult.legal_references.length > 0) {
+            // Supprimer les anciennes références
+            await supabase.from("legal_references").delete().eq("pdf_id", pdfId);
+            
+            const legalRefRows = analysisResult.legal_references
+              .filter((ref: any) => ref && (typeof ref === 'object' ? ref.reference : ref))
+              .map((ref: any) => {
+                // Support ancien format (string[]) et nouveau format (LegalReference[])
+                if (typeof ref === 'string') {
+                  return {
+                    pdf_id: pdfId,
+                    reference_type: 'reference',
+                    reference_number: ref,
+                    country_code: countryCode,
+                  };
+                }
+                return {
+                  pdf_id: pdfId,
+                  reference_type: ref.type || 'reference',
+                  reference_number: ref.reference || ref.reference_number || '',
+                  title: ref.title || null,
+                  reference_date: ref.date ? parseFlexibleDate(ref.date) : null,
+                  context: ref.context || null,
+                  country_code: countryCode,
+                };
+              })
+              .filter((r: any) => r.reference_number);
+            
+            if (legalRefRows.length > 0) {
+              const { error: legalError } = await supabase.from("legal_references").insert(legalRefRows);
+              if (legalError) {
+                console.error("[Background] Legal references insert error:", legalError);
+              } else {
+                console.log(`[Background] ✅ Inserted ${legalRefRows.length} legal references`);
+              }
+            }
+          }
+          
+          // 2. Sauvegarder les dates importantes
+          if (analysisResult.important_dates && Array.isArray(analysisResult.important_dates) && analysisResult.important_dates.length > 0) {
+            // Supprimer les anciennes dates
+            await supabase.from("regulatory_dates").delete().eq("pdf_id", pdfId);
+            
+            const dateRows = analysisResult.important_dates
+              .filter((d: any) => d && d.date)
+              .map((d: any) => ({
+                pdf_id: pdfId,
+                date_value: parseFlexibleDate(d.date),
+                date_type: d.type || 'référence',
+                description: d.description || null,
+                country_code: countryCode,
+              }))
+              .filter((d: any) => d.date_value);
+            
+            if (dateRows.length > 0) {
+              const { error: dateError } = await supabase.from("regulatory_dates").insert(dateRows);
+              if (dateError) {
+                console.error("[Background] Regulatory dates insert error:", dateError);
+              } else {
+                console.log(`[Background] ✅ Inserted ${dateRows.length} regulatory dates`);
+              }
+            }
+          }
+          
+          // 3. Sauvegarder les procédures
+          if (analysisResult.procedures && Array.isArray(analysisResult.procedures) && analysisResult.procedures.length > 0) {
+            // Supprimer les anciennes procédures
+            await supabase.from("regulatory_procedures").delete().eq("pdf_id", pdfId);
+            
+            const procRows = analysisResult.procedures
+              .filter((p: any) => p && p.name)
+              .map((p: any) => ({
+                pdf_id: pdfId,
+                procedure_name: p.name,
+                required_documents: p.required_documents || [],
+                deadlines: p.deadlines || null,
+                penalties: p.penalties || null,
+                authority: p.authority || analysisResult.issuing_authority?.name || null,
+                country_code: countryCode,
+              }));
+            
+            if (procRows.length > 0) {
+              const { error: procError } = await supabase.from("regulatory_procedures").insert(procRows);
+              if (procError) {
+                console.error("[Background] Procedures insert error:", procError);
+              } else {
+                console.log(`[Background] ✅ Inserted ${procRows.length} procedures`);
+              }
+            }
+          }
+          
+          console.log("[Background] ✅ Regulatory data saved for PDF:", pdfId);
+        }
         
         console.log("[Background] ✅ PDF processing complete:", pdfId);
         

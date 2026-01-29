@@ -774,6 +774,8 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       controlled_products: any[];
       knowledge_documents: any[];
       pdf_summaries: any[];
+      legal_references: any[];
+      regulatory_procedures: any[];
     } = {
       tariffs_with_inheritance: [],
       hs_codes: [],
@@ -781,6 +783,8 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       controlled_products: [],
       knowledge_documents: [],
       pdf_summaries: [],
+      legal_references: [],
+      regulatory_procedures: [],
     };
 
     // 1. NOUVEAU: Recherche avec héritage pour les codes détectés
@@ -981,6 +985,64 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       veilleDocuments = [...new Map(veilleDocuments.map(d => [d.title, d])).values()].slice(0, 8);
     }
 
+    // 8. NOUVEAU: Recherche des références légales structurées
+    if (analysis.keywords.length > 0) {
+      const legalSearchTerm = escapeSearchTerm(analysis.keywords.slice(0, 2).join(' '));
+      
+      // Recherche par mots-clés dans les références légales
+      const { data: legalRefs } = await supabase
+        .from('legal_references')
+        .select(`
+          id,
+          reference_type,
+          reference_number,
+          title,
+          reference_date,
+          context,
+          pdf_documents!inner(id, title, category, file_path)
+        `)
+        .or(`reference_number.ilike.%${legalSearchTerm}%,title.ilike.%${legalSearchTerm}%`)
+        .eq('is_active', true)
+        .order('reference_date', { ascending: false })
+        .limit(10);
+      
+      if (legalRefs) {
+        context.legal_references = legalRefs.map((ref: any) => ({
+          ...ref,
+          pdf_title: ref.pdf_documents?.title,
+          pdf_file_path: ref.pdf_documents?.file_path,
+        }));
+      }
+    }
+
+    // 9. NOUVEAU: Recherche des procédures réglementaires
+    if (analysis.keywords.length > 0) {
+      const procSearchTerm = escapeSearchTerm(analysis.keywords[0] || '');
+      
+      const { data: procedures } = await supabase
+        .from('regulatory_procedures')
+        .select(`
+          id,
+          procedure_name,
+          required_documents,
+          deadlines,
+          penalties,
+          authority,
+          pdf_documents!inner(id, title, category, file_path)
+        `)
+        .or(`procedure_name.ilike.%${procSearchTerm}%,authority.ilike.%${procSearchTerm}%`)
+        .eq('is_active', true)
+        .limit(5);
+      
+      if (procedures) {
+        context.regulatory_procedures = procedures.map((proc: any) => ({
+          ...proc,
+          pdf_title: proc.pdf_documents?.title,
+          pdf_file_path: proc.pdf_documents?.file_path,
+        }));
+      }
+    }
+
     // ============================================================================
     // PHASE 3: SEMANTIC SEARCH ENHANCEMENT
     // ============================================================================
@@ -1074,6 +1136,8 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       documents: context.knowledge_documents.length,
       pdfs: context.pdf_summaries.length,
       veille: veilleDocuments.length,
+      legal_references: context.legal_references.length,
+      procedures: context.regulatory_procedures.length,
     });
 
     // Build context with inheritance for RAG
@@ -1314,6 +1378,29 @@ ${veilleDocuments.length > 0 ? veilleDocuments.map(v => {
   if (v.mentioned_hs_codes?.length > 0) content += `**Codes HS mentionnés:** ${v.mentioned_hs_codes.join(', ')}\n`;
   return content;
 }).join('\n---\n') : "Aucun document de veille pertinent"}
+
+### Références légales structurées (circulaires, lois, décrets)
+${context.legal_references.length > 0 ? context.legal_references.map((ref: any) => {
+  let content = `📜 **${ref.reference_type?.toUpperCase() || 'RÉFÉRENCE'}:** ${ref.reference_number}\n`;
+  if (ref.title) content += `**Intitulé:** ${ref.title}\n`;
+  if (ref.reference_date) content += `**Date:** ${ref.reference_date}\n`;
+  if (ref.context) content += `**Contexte:** ${ref.context}\n`;
+  if (ref.pdf_title) content += `**Source:** ${ref.pdf_title}\n`;
+  return content;
+}).join('\n') : "Aucune référence légale structurée trouvée"}
+
+### Procédures réglementaires
+${context.regulatory_procedures.length > 0 ? context.regulatory_procedures.map((proc: any) => {
+  let content = `📋 **Procédure:** ${proc.procedure_name}\n`;
+  if (proc.authority) content += `**Autorité compétente:** ${proc.authority}\n`;
+  if (proc.required_documents && proc.required_documents.length > 0) {
+    content += `**Documents requis:**\n${proc.required_documents.map((d: string) => `- ${d}`).join('\n')}\n`;
+  }
+  if (proc.deadlines) content += `**Délais:** ${proc.deadlines}\n`;
+  if (proc.penalties) content += `**Sanctions:** ${proc.penalties}\n`;
+  if (proc.pdf_title) content += `**Source:** ${proc.pdf_title}\n`;
+  return content;
+}).join('\n---\n') : "Aucune procédure réglementaire trouvée"}
 
 ---
 ⚠️ RAPPELS CRITIQUES:
