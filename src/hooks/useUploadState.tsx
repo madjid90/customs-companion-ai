@@ -23,6 +23,26 @@ export interface TradeAgreement {
   mentioned_benefits?: string[];
 }
 
+export interface LegalReference {
+  type: string;
+  reference: string;
+  title?: string;
+  date?: string;
+  context?: string;
+}
+
+export interface ImportantDate {
+  date: string;
+  type: string;
+  description: string;
+}
+
+export interface IssuingAuthority {
+  name: string;
+  department?: string;
+  signatory?: string;
+}
+
 export interface ExtractionData {
   summary: string;
   key_points: string[];
@@ -36,6 +56,17 @@ export interface ExtractionData {
   document_type?: "tariff" | "regulatory";
   trade_agreements?: TradeAgreement[];
   full_text_length?: number;
+  // Champs enrichis pour documents réglementaires
+  document_reference?: string;
+  publication_date?: string;
+  effective_date?: string;
+  expiry_date?: string;
+  legal_references?: LegalReference[];
+  important_dates?: ImportantDate[];
+  issuing_authority?: IssuingAuthority;
+  recipients?: string[];
+  abrogates?: string[];
+  modifies?: string[];
 }
 
 export interface UploadedFile {
