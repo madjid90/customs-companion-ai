@@ -20,55 +20,64 @@ export function parseQuestionsFromResponse(content: string): Question[] {
   // Split content into lines
   const lines = content.split('\n');
   
-  let currentQuestion: { label: string; options: string[] } | null = null;
   let questionIndex = 0;
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     
-    // Detect question line (starts with ** and ends with ** or ?)
-    // Pattern: **Question text** or **Question text ?**
-    const questionMatch = line.match(/^\*\*([^*]+)\*\*\s*[-–]?\s*.*$/);
-    if (questionMatch) {
-      // Check if next lines have options (starting with -)
-      const nextLinesAreOptions = [];
-      for (let j = i + 1; j < lines.length && j < i + 10; j++) {
-        const nextLine = lines[j].trim();
-        if (nextLine.startsWith('- ') || nextLine.startsWith('• ')) {
-          nextLinesAreOptions.push(nextLine.slice(2).trim());
-        } else if (nextLine === '' || nextLine.startsWith('>')) {
-          continue; // Skip empty lines or quote continuations
-        } else if (nextLinesAreOptions.length > 0) {
-          break; // Stop if we have options and hit non-option line
+    // Skip empty lines
+    if (!line) continue;
+    
+    // Check if this line is followed by a list of options (lines starting with -)
+    const options: string[] = [];
+    for (let j = i + 1; j < lines.length; j++) {
+      const nextLine = lines[j].trim();
+      if (nextLine.startsWith('- ') || nextLine.startsWith('• ')) {
+        const optionText = nextLine.slice(2).trim();
+        // Filter out very long options or empty ones
+        if (optionText.length > 0 && optionText.length < 80) {
+          options.push(optionText);
         }
-      }
-      
-      if (nextLinesAreOptions.length >= 2) {
-        // Save previous question if exists
-        if (currentQuestion && currentQuestion.options.length >= 2) {
-          questions.push({
-            id: `q${questionIndex}`,
-            label: currentQuestion.label,
-            options: currentQuestion.options.filter(opt => opt.length > 0 && opt.length < 60),
-          });
-          questionIndex++;
-        }
-        
-        currentQuestion = {
-          label: questionMatch[1].replace(/\?$/, '').trim(),
-          options: nextLinesAreOptions,
-        };
+      } else if (nextLine === '') {
+        continue; // Skip empty lines between options
+      } else {
+        break; // Stop when we hit a non-option line
       }
     }
-  }
-  
-  // Add last question if exists
-  if (currentQuestion && currentQuestion.options.length >= 2) {
-    questions.push({
-      id: `q${questionIndex}`,
-      label: currentQuestion.label,
-      options: currentQuestion.options.filter(opt => opt.length > 0 && opt.length < 60),
-    });
+    
+    // If we found at least 2 options and the current line looks like a question
+    if (options.length >= 2) {
+      // Check various question patterns:
+      // 1. Line ends with ?
+      // 2. Line is in bold: **Question**
+      // 3. Line contains a colon before options
+      const isQuestion = 
+        line.endsWith('?') || 
+        line.match(/^\*\*[^*]+\*\*/) ||
+        (line.includes(':') && !line.startsWith('-'));
+      
+      if (isQuestion) {
+        // Extract clean question label
+        let label = line
+          .replace(/^\*\*|\*\*$/g, '') // Remove bold markers
+          .replace(/\?$/, '') // Remove trailing ?
+          .replace(/:$/, '') // Remove trailing :
+          .trim();
+        
+        // Don't add if label is too short or too long
+        if (label.length > 5 && label.length < 200) {
+          questions.push({
+            id: `q${questionIndex}`,
+            label,
+            options: options.slice(0, 6), // Max 6 options
+          });
+          questionIndex++;
+          
+          // Skip past the options we just processed
+          i = i + options.length;
+        }
+      }
+    }
   }
   
   // Fallback: Pattern for inline options after dash
