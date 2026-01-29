@@ -78,6 +78,8 @@ export default function AdminDocuments() {
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set());
   const [batchAnalyzing, setBatchAnalyzing] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, success: 0, failed: 0 });
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewTitle, setPdfPreviewTitle] = useState<string>("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -132,7 +134,7 @@ export default function AdminDocuments() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const openDocument = async (filePath: string) => {
+  const openDocument = (filePath: string, title?: string) => {
     try {
       // Construire l'URL manuellement pour éviter les problèmes d'encodage
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -142,18 +144,11 @@ export default function AdminDocuments() {
       const encodedPath = filePath.split('/').map(part => encodeURIComponent(part)).join('/');
       const publicUrl = `${supabaseUrl}/storage/v1/object/public/${bucketName}/${encodedPath}`;
       
-      console.log("Opening PDF:", publicUrl);
+      console.log("Opening PDF in dialog:", publicUrl);
       
-      // Ouvrir dans un nouvel onglet
-      const newWindow = window.open(publicUrl, "_blank");
-      
-      if (!newWindow) {
-        toast({
-          title: "⚠️ Popup bloqué",
-          description: "Veuillez autoriser les popups pour ouvrir le PDF",
-          variant: "destructive",
-        });
-      }
+      // Ouvrir dans le dialogue intégré
+      setPdfPreviewUrl(publicUrl);
+      setPdfPreviewTitle(title || filePath.split('/').pop() || "Document PDF");
     } catch (error) {
       console.error("Error opening document:", error);
       toast({
@@ -162,6 +157,11 @@ export default function AdminDocuments() {
         variant: "destructive",
       });
     }
+  };
+
+  const closePdfPreview = () => {
+    setPdfPreviewUrl(null);
+    setPdfPreviewTitle("");
   };
 
   const viewDetails = (doc: PdfDocument) => {
@@ -640,10 +640,10 @@ export default function AdminDocuments() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => openDocument(doc.file_path)}
-                              title="Ouvrir le PDF"
+                              onClick={() => openDocument(doc.file_path, doc.title)}
+                              title="Aperçu du PDF"
                             >
-                              <ExternalLink className="h-4 w-4" />
+                              <Eye className="h-4 w-4 text-primary" />
                             </Button>
                           </div>
                         </TableCell>
@@ -782,14 +782,58 @@ export default function AdminDocuments() {
               <div className="flex gap-2 pt-4 border-t">
                 <Button
                   variant="outline"
-                  onClick={() => selectedDoc && openDocument(selectedDoc.file_path)}
+                  onClick={() => selectedDoc && openDocument(selectedDoc.file_path, selectedDoc.title)}
                 >
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Ouvrir le PDF
+                  <Eye className="h-4 w-4 mr-2" />
+                  Aperçu du PDF
                 </Button>
               </div>
             </div>
           </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* PDF Preview Dialog */}
+      <Dialog open={!!pdfPreviewUrl} onOpenChange={closePdfPreview}>
+        <DialogContent className="max-w-5xl w-[95vw] h-[90vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-6 py-4 border-b shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-red-500" />
+              {pdfPreviewTitle}
+            </DialogTitle>
+            <DialogDescription className="flex items-center gap-2">
+              Aperçu du document
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => pdfPreviewUrl && window.open(pdfPreviewUrl, "_blank")}
+                className="ml-auto"
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Ouvrir dans un nouvel onglet
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                asChild
+              >
+                <a href={pdfPreviewUrl || "#"} download>
+                  <Download className="h-4 w-4 mr-2" />
+                  Télécharger
+                </a>
+              </Button>
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex-1 min-h-0 bg-muted/30">
+            {pdfPreviewUrl && (
+              <iframe
+                src={pdfPreviewUrl}
+                className="w-full h-full border-0"
+                title="Aperçu PDF"
+              />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
