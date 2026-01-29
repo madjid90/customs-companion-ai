@@ -1,11 +1,12 @@
-import { Bot, Sparkles, FileImage, Search, Scale } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Bot, Sparkles, FileImage, Search, Scale, Package, FileCheck, Globe, Truck, ShieldCheck, Calculator, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface ChatWelcomeProps {
   onQuestionClick: (question: string) => void;
 }
 
-const suggestedQuestions = [
+const allQuestions = [
   {
     icon: FileImage,
     question: "Quels documents sont requis pour importer des produits alimentaires ?",
@@ -22,9 +23,61 @@ const suggestedQuestions = [
     icon: Sparkles,
     question: "Mon produit nécessite-t-il une licence d'importation ?",
   },
+  {
+    icon: Package,
+    question: "Comment classifier un produit électronique dans le système harmonisé ?",
+  },
+  {
+    icon: FileCheck,
+    question: "Quels sont les droits de douane pour les textiles importés de Chine ?",
+  },
+  {
+    icon: Globe,
+    question: "Quels accords de libre-échange le Maroc a-t-il signés ?",
+  },
+  {
+    icon: Truck,
+    question: "Quelles sont les formalités pour l'exportation de produits agricoles ?",
+  },
+  {
+    icon: ShieldCheck,
+    question: "Mon produit est-il soumis à des contrôles sanitaires ?",
+  },
+  {
+    icon: Calculator,
+    question: "Comment calculer les droits et taxes à l'importation ?",
+  },
+  {
+    icon: BookOpen,
+    question: "Où trouver le code SH d'un produit cosmétique ?",
+  },
+  {
+    icon: Scale,
+    question: "Quelles sont les pénalités en cas de fausse déclaration douanière ?",
+  },
 ];
 
+// Shuffle and pick random questions
+const getRandomQuestions = (count: number) => {
+  const shuffled = [...allQuestions].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+};
+
 export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
+  const [suggestedQuestions, setSuggestedQuestions] = useState(() => getRandomQuestions(4));
+
+  // Refresh questions every 30 seconds while on screen
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSuggestedQuestions(getRandomQuestions(4));
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const refreshQuestions = () => {
+    setSuggestedQuestions(getRandomQuestions(4));
+  };
+
   return (
     <div className="text-center py-8 md:py-12 animate-fade-in px-4">
       {/* Logo/Icon */}
@@ -48,7 +101,7 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl mx-auto">
         {suggestedQuestions.map((item, i) => (
           <Button
-            key={i}
+            key={`${item.question}-${i}`}
             variant="outline"
             className="group relative text-left h-auto py-4 px-4 justify-start whitespace-normal border-border/50 hover:border-accent/50 hover:bg-accent/5 transition-all duration-300 rounded-xl shadow-sm hover:shadow-md"
             onClick={() => onQuestionClick(item.question)}
@@ -65,8 +118,17 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
         ))}
       </div>
 
+      {/* Refresh button */}
+      <button
+        onClick={refreshQuestions}
+        className="mt-4 text-xs text-muted-foreground hover:text-accent transition-colors flex items-center justify-center gap-1.5 mx-auto"
+      >
+        <Sparkles className="h-3 w-3" />
+        Autres suggestions
+      </button>
+
       {/* Hint */}
-      <p className="mt-8 text-xs text-muted-foreground flex items-center justify-center gap-2">
+      <p className="mt-6 text-xs text-muted-foreground flex items-center justify-center gap-2">
         <FileImage className="h-4 w-4" />
         Uploadez une photo de produit pour une classification automatique
       </p>
