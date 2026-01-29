@@ -103,9 +103,9 @@ export function InteractiveQuestions({ questions, onAnswer, disabled }: Interact
   if (questions.length === 0) return null;
   
   return (
-    <div className="mt-4 pt-3 border-t border-border/30 space-y-3">
-      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-        Cliquez pour répondre
+    <div className="mt-4 pt-4 border-t border-border/20 space-y-3">
+      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+        Sélectionnez une option
       </p>
       {questions.map((question) => (
         <div key={question.id} className="space-y-2">
@@ -118,11 +118,11 @@ export function InteractiveQuestions({ questions, onAnswer, disabled }: Interact
                 disabled={disabled}
                 onClick={() => onAnswer(question.id, option)}
                 className={cn(
-                  "h-auto py-2.5 px-4 text-sm whitespace-normal text-left",
-                  "bg-background hover:bg-accent hover:text-accent-foreground",
-                  "border-primary/20 hover:border-primary",
-                  "transition-all duration-200 hover:scale-[1.02]",
-                  "shadow-sm hover:shadow-md"
+                  "h-auto py-2.5 px-4 text-sm whitespace-normal text-left rounded-xl",
+                  "bg-background/50 hover:bg-accent/10 hover:text-accent-foreground",
+                  "border-border/50 hover:border-accent/50",
+                  "transition-all duration-200 hover:scale-[1.02] hover:shadow-sm",
+                  "font-medium"
                 )}
               >
                 {option}
