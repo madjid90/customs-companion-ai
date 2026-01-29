@@ -127,31 +127,27 @@ Quand tu vois : "9701.21 00 00" ou "9705.31 00 00"
 FORMAT 2 - COLONNES SÉPARÉES (ex: chapitres 26, 97)
 Quand tu vois la position "9701.29" PUIS sur une autre ligne deux colonnes "10" et "00"
 → Position 6 chiffres: 970129
-→ La PREMIÈRE colonne (5/8 ou col gauche) = numéro de sous-ligne = va en POSITIONS 9-10
-→ La DEUXIÈME colonne (6/9 ou col droite) = remplissage = va en POSITIONS 7-8
-→ FORMULE: Position_6_digits + Colonne2 + Colonne1 = Code_10_digits
-→ Exemple: 970129 + "00" + "10" = 9701290010
+→ COLONNE GAUCHE (10) = va en POSITIONS 7-8
+→ COLONNE DROITE (00) = va en POSITIONS 9-10
+→ FORMULE: Position_6_digits + ColonneGauche + ColonneDroite = Code_10_digits
+→ Exemple: 970129 + "10" + "00" = 9701291000
 
 REGARDE BIEN L'IMAGE DU TABLEAU:
-Colonne Position | Col 5/8 | Col 6/9 | Description
-9701.29          |         |         | -- Autres
-                 | 10      | 00      | --- en liège
-                 | 90      | 00      | --- autres
+Colonne Position | Col Gauche | Col Droite | Description
+9701.29          |            |            | -- Autres
+                 | 10         | 00         | --- en liège
+                 | 90         | 00         | --- autres
 
 Pour la ligne "10 | 00 | en liège":
 → Position parent = 9701.29 = 970129
-→ Col 5/8 = 10 (C'EST LE NUMÉRO DE SOUS-LIGNE)
-→ Col 6/9 = 00 (C'EST DU PADDING)
-→ Code = 970129 + 00 + 10 = 9701290010 ✓
+→ Col Gauche = 10 → positions 7-8
+→ Col Droite = 00 → positions 9-10
+→ Code = 970129 + 10 + 00 = 9701291000 ✓
 
-JAMAIS 9701291000 ← C'EST L'ERREUR À ÉVITER!
+Pour la ligne "90 | 00 | autres":
+→ Code = 970129 + 90 + 00 = 9701299000 ✓
 
-⚠️⚠️⚠️ ERREUR À ÉVITER ABSOLUMENT ⚠️⚠️⚠️
-
-MAUVAIS: Lire "10 00" et construire "...1000" 
-BON: Lire "10 00" et construire "...0010"
-
-Le numéro significatif (10, 20, 30, 80, 90...) va TOUJOURS aux deux DERNIÈRES positions (9-10) !
+LIS LES COLONNES DE GAUCHE À DROITE, DANS L'ORDRE NATUREL !
 
 EXEMPLES CONCRETS DU CHAPITRE 97:
 
@@ -159,14 +155,14 @@ Dans le PDF tu vois | Code à extraire
 --------------------|------------------
 9701.21 00 00       | 9701210000
 9701.22 00 00       | 9701220000
-9701.29 puis 10 00  | 9701290010 (PAS 9701291000!)
-9701.29 puis 90 00  | 9701290090 (PAS 9701299000!)
+9701.29 puis 10 00  | 9701291000 (10 en pos 7-8, 00 en pos 9-10)
+9701.29 puis 90 00  | 9701299000 (90 en pos 7-8, 00 en pos 9-10)
 9701.91 00 00       | 9701910000
-9701.99 puis 10 00  | 9701990010 (PAS 9701991000!)
-9701.99 puis 90 00  | 9701990090 (PAS 9701999000!)
+9701.99 puis 10 00  | 9701991000
+9701.99 puis 90 00  | 9701999000
 
 FORMULE UNIVERSELLE:
-Position_6_chiffres + "00" + Sous_ligne_2_chiffres = Code_10_chiffres
+Position_6_chiffres + Col_Gauche + Col_Droite = Code_10_chiffres
 
 Si pas de sous-ligne (ligne complète "XX.XX.XX 00 00"):
 Position_4_chiffres + SousPos_2_chiffres + "0000" = Code_10_chiffres
