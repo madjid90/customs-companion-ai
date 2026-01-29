@@ -68,6 +68,34 @@ interface TradeAgreementMention {
   mentioned_benefits?: string[];
 }
 
+// Nouvelles interfaces pour les documents réglementaires enrichis
+interface LegalReference {
+  type: string;  // circulaire, loi, décret, arrêté, article, note, convention, bo
+  reference: string;
+  title?: string;
+  date?: string;
+  context?: string;  // abroge, modifie, complète, etc.
+}
+
+interface ImportantDate {
+  date: string;
+  type: string;  // publication, application, expiration, limite, référence
+  description: string;
+}
+
+interface IssuingAuthority {
+  name: string;
+  department?: string;
+  signatory?: string;
+}
+
+interface Procedure {
+  name: string;
+  required_documents?: string[];
+  deadlines?: string;
+  penalties?: string;
+}
+
 interface AnalysisResult {
   summary: string;
   key_points: string[];
@@ -85,9 +113,20 @@ interface AnalysisResult {
   preferential_rates?: PreferentialRate[];
   raw_lines?: RawTarifLine[];  // Pour debug
   document_type?: string;  // "tariff" ou "regulatory"
+  
+  // Champs enrichis pour documents réglementaires
+  document_reference?: string;  // Numéro/référence officielle
+  publication_date?: string;
   effective_date?: string;
-  legal_references?: string[];
-  full_text?: string;  // Texte intégral du document pour recherche RAG
+  expiry_date?: string;
+  legal_references?: LegalReference[] | string[];  // Support ancien et nouveau format
+  important_dates?: ImportantDate[];
+  issuing_authority?: IssuingAuthority;
+  recipients?: string[];
+  procedures?: Procedure[];
+  abrogates?: string[];  // Textes abrogés
+  modifies?: string[];   // Textes modifiés
+  full_text?: string;    // Texte intégral du document pour recherche RAG
 }
 
 // =============================================================================
@@ -341,9 +380,9 @@ Document : ${title}
 Type : ${category}
 
 === CONTEXTE ===
-Ce document est un texte RÉGLEMENTAIRE/JURIDIQUE (circulaire, accord commercial, note, instruction, convention). 
+Ce document est un texte RÉGLEMENTAIRE/JURIDIQUE (circulaire, accord commercial, note technique, instruction, convention). 
 Il NE CONTIENT PAS de tableau tarifaire avec des codes SH à extraire.
-Tu dois extraire les informations juridiques et réglementaires pertinentes.
+Tu dois extraire les informations juridiques et réglementaires pertinentes avec une attention particulière aux RÉFÉRENCES LÉGALES et DATES.
 
 === INFORMATIONS À EXTRAIRE ===
 
@@ -351,27 +390,52 @@ Tu dois extraire les informations juridiques et réglementaires pertinentes.
 
 2. POINTS CLÉS : Les dispositions, règles ou obligations principales
 
-3. ACCORDS COMMERCIAUX (si applicable) :
+3. RÉFÉRENCES LÉGALES (CRITIQUE - extraire TOUTES les références) :
+   - Numéros de circulaires (ex: "Circulaire n° 4091/223")
+   - Références de lois (ex: "Dahir n° 1-77-339", "Loi n° 01-02")
+   - Décrets (ex: "Décret n° 2-77-862")
+   - Arrêtés ministériels
+   - Articles spécifiques cités (ex: "Article 15 du Code des Douanes")
+   - Notes techniques et instructions
+   - Références aux Bulletins Officiels (ex: "BO n° 3590 du 15/01/2023")
+   - Conventions internationales citées
+
+4. DATES IMPORTANTES (extraire TOUTES les dates avec leur contexte) :
+   - Date de publication/signature du document
+   - Date d'entrée en vigueur/application
+   - Date d'expiration (si applicable)
+   - Dates de périodes transitoires
+   - Dates limites mentionnées
+   - Dates de référence citées
+
+5. AUTORITÉS ET SIGNATAIRES :
+   - Autorité émettrice (ex: "Direction Générale des Douanes")
+   - Signataires nommés
+   - Services destinataires
+   - Ministères concernés
+
+6. ACCORDS COMMERCIAUX (si applicable) :
    - Nom de l'accord
    - Type (bilatéral, multilatéral, régional, transport, etc.)
    - Parties/Pays concernés
    - Date de signature et d'entrée en vigueur
    - Principales dispositions et avantages
 
-4. TAUX PRÉFÉRENTIELS (si mentionnés) :
+7. TAUX PRÉFÉRENTIELS (si mentionnés) :
    - Code accord
    - Taux préférentiel
    - Conditions d'application
    - Pays d'origine concernés
 
-5. CODES SH MENTIONNÉS (si le document fait référence à des codes spécifiques) :
+8. CODES SH MENTIONNÉS (si le document fait référence à des codes spécifiques) :
    - Code au format XXXX.XX
    - Description associée
 
-6. INFORMATIONS COMPLÉMENTAIRES :
-   - Autorités compétentes citées
-   - Dates importantes (application, expiration)
-   - Références à d'autres textes
+9. PROCÉDURES ET OBLIGATIONS :
+   - Formalités requises
+   - Documents à fournir
+   - Délais à respecter
+   - Sanctions en cas de non-conformité
 
 === FORMAT JSON DE SORTIE ===
 
@@ -384,15 +448,45 @@ Tu dois extraire les informations juridiques et réglementaires pertinentes.
   ],
   "chapter_info": {"number": null, "title": "Titre du document ou de l'accord"},
   "document_type": "${category}",
+  "document_reference": "Numéro/référence officielle du document (ex: Circulaire n° 4091/223)",
+  "publication_date": "Date de publication/signature (format YYYY-MM-DD si possible)",
+  "effective_date": "Date d'entrée en vigueur (format YYYY-MM-DD si possible)",
+  "expiry_date": "Date d'expiration si applicable (format YYYY-MM-DD si possible)",
+  "legal_references": [
+    {
+      "type": "circulaire|loi|décret|arrêté|article|note|convention|bo",
+      "reference": "Numéro/référence complète",
+      "title": "Intitulé si disponible",
+      "date": "Date si mentionnée",
+      "context": "Pourquoi ce texte est cité (abroge, modifie, complète, etc.)"
+    }
+  ],
+  "important_dates": [
+    {
+      "date": "YYYY-MM-DD ou format trouvé",
+      "type": "publication|application|expiration|limite|référence",
+      "description": "Contexte de cette date"
+    }
+  ],
+  "issuing_authority": {
+    "name": "Nom de l'autorité émettrice",
+    "department": "Service/Direction",
+    "signatory": "Nom du signataire si mentionné"
+  },
+  "recipients": ["Direction régionale X", "Services concernés"],
   "raw_lines": [],
-  "hs_codes": [],
+  "hs_codes": [
+    {"code": "XXXX.XX", "code_clean": "XXXXXX", "description": "Description", "level": "reference"}
+  ],
   "trade_agreements": [
     {
       "code": "CODE_ACCORD",
       "name": "Nom complet de l'accord",
       "type": "Type d'accord (bilatéral, transport, association, etc.)",
       "countries": ["Pays 1", "Pays 2"],
-      "mentioned_benefits": ["Avantage 1", "Exemption X"]
+      "mentioned_benefits": ["Avantage 1", "Exemption X"],
+      "signature_date": "Date de signature",
+      "entry_into_force": "Date d'entrée en vigueur"
     }
   ],
   "preferential_rates": [
@@ -405,9 +499,17 @@ Tu dois extraire les informations juridiques et réglementaires pertinentes.
       "origin_countries": ["Pays d'origine"]
     }
   ],
+  "procedures": [
+    {
+      "name": "Nom de la procédure",
+      "required_documents": ["Document 1", "Document 2"],
+      "deadlines": "Délais applicables",
+      "penalties": "Sanctions en cas de non-respect"
+    }
+  ],
   "authorities": ["Autorité compétente 1", "Ministère X"],
-  "effective_date": "Date d'entrée en vigueur si mentionnée",
-  "legal_references": ["Référence à d'autres textes"],
+  "abrogates": ["Références des textes abrogés par ce document"],
+  "modifies": ["Références des textes modifiés par ce document"],
   "full_text": "TEXTE INTÉGRAL DU DOCUMENT - Copie ici TOUT le contenu textuel visible du PDF, incluant les articles, paragraphes, conditions, dispositions, annexes. Ce texte sera utilisé pour répondre aux questions précises."
 }
 
@@ -415,9 +517,12 @@ Tu dois extraire les informations juridiques et réglementaires pertinentes.
 ✓ raw_lines DOIT être un tableau VIDE [] car ce n'est pas un document tarifaire
 ✓ hs_codes peut contenir des codes SI le document y fait explicitement référence
 ✓ Concentre-toi sur le contenu juridique et réglementaire
-✓ Extraire tous les accords commerciaux mentionnés avec leurs détails
+✓ Extraire TOUTES les références légales avec leur type et contexte
+✓ Extraire TOUTES les dates importantes avec leur signification
+✓ Identifier les textes abrogés ou modifiés par ce document
 ✓ Si le document est un accord de transport, identifier les parties et conditions
 ✓ CRITIQUE: full_text doit contenir le TEXTE INTÉGRAL du document (jusqu'à 50000 caractères) pour permettre la recherche précise
+✓ Les formats de date doivent être normalisés en YYYY-MM-DD quand possible
 
 RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
 
