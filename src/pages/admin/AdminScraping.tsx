@@ -43,7 +43,7 @@ import {
   XCircle,
   FileText,
 } from "lucide-react";
-import { WcoHtmlImportDialog } from "@/components/admin/WcoHtmlImportDialog";
+
 
 type VeilleSite = {
   id: string;
@@ -76,7 +76,7 @@ export default function AdminScraping() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isWcoImportOpen, setIsWcoImportOpen] = useState(false);
+  
   const [editingSite, setEditingSite] = useState<VeilleSite | null>(null);
   const [formData, setFormData] = useState({
     name: "",
@@ -378,14 +378,6 @@ export default function AdminScraping() {
           >
             <Globe className={`w-4 h-4 mr-2 ${scrapeWcoMutation.isPending ? 'animate-spin' : ''}`} />
             {scrapeWcoMutation.isPending ? "Scraping WCO..." : "Scraping WCO"}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setIsWcoImportOpen(true)}
-            className="border-amber-500 text-amber-600 hover:bg-amber-50"
-          >
-            <FileText className="w-4 h-4 mr-2" />
-            Import WCO (manuel)
           </Button>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
@@ -723,10 +715,6 @@ export default function AdminScraping() {
         </CardContent>
       </Card>
 
-      <WcoHtmlImportDialog 
-        open={isWcoImportOpen} 
-        onOpenChange={setIsWcoImportOpen} 
-      />
     </div>
   );
 }
