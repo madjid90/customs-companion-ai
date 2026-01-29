@@ -105,11 +105,12 @@ export function ChatMessage({
                 ...defaultSchema,
                 tagNames: [
                   ...(defaultSchema.tagNames || []),
-                  'table', 'thead', 'tbody', 'tr', 'th', 'td'
+                  'table', 'thead', 'tbody', 'tr', 'th', 'td', 'a'
                 ],
                 attributes: {
                   ...defaultSchema.attributes,
                   '*': ['className'],
+                  'a': ['href', 'target', 'rel'],
                 },
               }]]}
               components={{
