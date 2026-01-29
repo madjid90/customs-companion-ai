@@ -117,55 +117,66 @@ Les codes nationaux ont TOUJOURS 10 chiffres.
 
 ⚠️⚠️⚠️ RÈGLE CRITIQUE : COMMENT LIRE LE PDF ⚠️⚠️⚠️
 
-DEUX FORMATS POSSIBLES DANS LE PDF:
+TROIS FORMATS POSSIBLES DANS LE PDF:
 
-FORMAT 1 - CODE COMPLET AVEC ESPACES (ex: chapitre 97)
-Quand tu vois : "9701.21 00 00" ou "9705.31 00 00"
-→ Retire les espaces et le point : 9701210000, 9705310000
+FORMAT 1 - CODE COMPLET SUR UNE SEULE LIGNE
+Quand tu vois : "9701.21 00 00" ou "1201.10 00 00"
+→ Retire les espaces et le point : 9701210000, 1201100000
 → C'est déjà le code national à 10 chiffres !
 
-FORMAT 2 - COLONNES SÉPARÉES (ex: chapitres 26, 97)
-Quand tu vois la position "9701.29" PUIS sur une autre ligne deux colonnes "10" et "00"
+FORMAT 2 - SOUS-LIGNES AVEC DEUX COLONNES (chapitres type 97)
+Position parent avec sous-lignes qui ont DEUX valeurs numériques:
+Ex: Position "9701.29" puis sous-ligne "10 | 00"
 → Position 6 chiffres: 970129
-→ COLONNE GAUCHE (10) = va en POSITIONS 7-8
-→ COLONNE DROITE (00) = va en POSITIONS 9-10
-→ FORMULE: Position_6_digits + ColonneGauche + ColonneDroite = Code_10_digits
-→ Exemple: 970129 + "10" + "00" = 9701291000
+→ CONCATÈNE dans l'ordre de lecture: 970129 + 10 + 00 = 9701291000
 
-REGARDE BIEN L'IMAGE DU TABLEAU:
-Colonne Position | Col Gauche | Col Droite | Description
-9701.29          |            |            | -- Autres
-                 | 10         | 00         | --- en liège
-                 | 90         | 00         | --- autres
+FORMAT 3 - SOUS-LIGNES AVEC UNE SEULE VALEUR (chapitres type 12)
+Position parent avec "00" puis sous-lignes qui n'ont QU'UN seul chiffre:
+Ex: Position "1201.90 | 00" puis sous-ligne "| | 10"
+→ La ligne parent "1201.90 00" établit le préfixe = 120190 + 00 = 12019000
+→ La sous-ligne n'a que "10" dans la 3ème colonne
+→ Code = 12019000 + 10 = 1201900010 ✓
 
-Pour la ligne "10 | 00 | en liège":
-→ Position parent = 9701.29 = 970129
-→ Col Gauche = 10 → positions 7-8
-→ Col Droite = 00 → positions 9-10
-→ Code = 970129 + 10 + 00 = 9701291000 ✓
+⚠️ ATTENTION AU FORMAT 3 - STRUCTURE DU CHAPITRE 12:
+Colonne Position | Col 2 | Col 3 | Description
+1201.10          | 00    | 00    | - De semence → 1201100000
+1201.90          | 00    |       | - Autres (PARENT, pas de taux)
+                 |       | 10    | --- importés par les triturateurs → 1201900010
+                 |       | 90    | --- autres → 1201900090
 
-Pour la ligne "90 | 00 | autres":
-→ Code = 970129 + 90 + 00 = 9701299000 ✓
+Pour "1201.90 | 00 | [vide] | Autres" (ligne parent):
+→ C'est un EN-TÊTE sans taux, il définit le préfixe 12019000
 
-LIS LES COLONNES DE GAUCHE À DROITE, DANS L'ORDRE NATUREL !
+Pour "| | 10 | importés par les triturateurs":
+→ Position héritée = 1201.90 = 120190
+→ Col 2 héritée = 00 → positions 7-8
+→ Col 3 de cette ligne = 10 → positions 9-10
+→ Code = 120190 + 00 + 10 = 1201900010 ✓
 
-EXEMPLES CONCRETS DU CHAPITRE 97:
+Pour "| | 90 | autres":
+→ Code = 120190 + 00 + 90 = 1201900090 ✓
 
-Dans le PDF tu vois | Code à extraire
---------------------|------------------
-9701.21 00 00       | 9701210000
-9701.22 00 00       | 9701220000
-9701.29 puis 10 00  | 9701291000 (10 en pos 7-8, 00 en pos 9-10)
-9701.29 puis 90 00  | 9701299000 (90 en pos 7-8, 00 en pos 9-10)
-9701.91 00 00       | 9701910000
-9701.99 puis 10 00  | 9701991000
-9701.99 puis 90 00  | 9701999000
+RÈGLE CLÉ: Quand la sous-ligne n'a qu'UNE valeur (10, 90...), elle va en positions 9-10, et "00" héritée reste en positions 7-8.
+
+EXEMPLES COMPARATIFS:
+
+Chapitre 12 (Format 3):
+PDF                    | Code correct
+-----------------------|---------------
+1201.10 00 00          | 1201100000
+1201.90 00 puis 10     | 1201900010 (00 en 7-8, 10 en 9-10)
+1201.90 00 puis 90     | 1201900090 (00 en 7-8, 90 en 9-10)
+
+Chapitre 97 (Format 2):
+PDF                    | Code correct  
+-----------------------|---------------
+9701.21 00 00          | 9701210000
+9701.29 puis 10 00     | 9701291000 (10 en 7-8, 00 en 9-10)
+9701.29 puis 90 00     | 9701299000 (90 en 7-8, 00 en 9-10)
 
 FORMULE UNIVERSELLE:
-Position_6_chiffres + Col_Gauche + Col_Droite = Code_10_chiffres
-
-Si pas de sous-ligne (ligne complète "XX.XX.XX 00 00"):
-Position_4_chiffres + SousPos_2_chiffres + "0000" = Code_10_chiffres
+Position_6_chiffres + Valeur_Col2 + Valeur_Col3 = Code_10_chiffres
+(hérite des valeurs parentes si colonnes vides)
 
 === CE QUE TU DOIS EXTRAIRE ===
 
