@@ -104,8 +104,8 @@ export function InteractiveQuestions({ questions, onAnswer, disabled }: Interact
   
   return (
     <div className="mt-4 pt-3 border-t border-border/30 space-y-3">
-      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide flex items-center gap-1">
-        <span>👆</span> Cliquez pour répondre
+      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+        Cliquez pour répondre
       </p>
       {questions.map((question) => (
         <div key={question.id} className="space-y-2">
