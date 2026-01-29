@@ -372,6 +372,15 @@ export default function AdminScraping() {
           </Button>
           <Button
             variant="outline"
+            onClick={() => scrapeWcoMutation.mutate()}
+            disabled={scrapeWcoMutation.isPending || scrapeAllMutation.isPending || scrapeSiteMutation.isPending}
+            className="border-blue-500 text-blue-600 hover:bg-blue-50"
+          >
+            <Globe className={`w-4 h-4 mr-2 ${scrapeWcoMutation.isPending ? 'animate-spin' : ''}`} />
+            {scrapeWcoMutation.isPending ? "Scraping WCO..." : "Scraping WCO"}
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => setIsWcoImportOpen(true)}
             className="border-amber-500 text-amber-600 hover:bg-amber-50"
           >
