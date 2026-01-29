@@ -127,39 +127,50 @@ Le CODE NATIONAL = Position_6_chiffres + Colonne2 + Colonne3 = 10 chiffres
 Les valeurs des colonnes s'HÉRITENT de la ligne PARENT quand elles sont vides.
 Tu dois SUIVRE la hiérarchie pour trouver les bonnes valeurs.
 
-EXEMPLE 1 - CHAPITRE 20 - POSITION 2001.90 (Format avec 00 en Col2):
+⚠️⚠️⚠️ RÈGLE ABSOLUE D'ORDRE - NE JAMAIS INVERSER ⚠️⚠️⚠️
+
+CODE = Position_6_digits + COLONNE_2 (pos 7-8) + COLONNE_3 (pos 9-10)
+
+La COLONNE 2 vient TOUJOURS AVANT la COLONNE 3 dans le code final.
+Si Col2 = 00 et Col3 = 11 → le code finit par "0011" PAS "1100"
+Si Col2 = 00 et Col3 = 10 → le code finit par "0010" PAS "1000"
+
+EXEMPLE 1 - CHAPITRE 20 - POSITION 2009.90 (Format avec 00 en Col2):
 
 PDF (ce que tu vois) :
 Position | Col2 | Col3 | Description                                    | Taux
 ---------|------|------|------------------------------------------------|------
-2001.90  | 00   |      | - Autres                                       | (PARENT avec Col2=00)
-         |      | 11   | ---- câpres en boîtes, verres, bocaux...       | 40    ← LIGNE TARIFAIRE
-         |      | 19   | ---- câpres autrement présentées               | 40    ← LIGNE TARIFAIRE
-         |      | 20   | --- oignons                                    | 40    ← LIGNE TARIFAIRE
-         |      | 30   | --- maïs doux                                  | 40    ← LIGNE TARIFAIRE
+2009.90  | 00   |      | - Mélanges de jus                              | (PARENT avec Col2=00)
+         |      | 11   | ---- avec addition de sucre                    | 40    ← LIGNE TARIFAIRE
+         |      | 19   | ---- sans addition de sucre                    | 40    ← LIGNE TARIFAIRE
+         |      | 21   | ---- avec addition de sucre                    | 40    ← LIGNE TARIFAIRE
+         |      | 29   | ---- sans addition de sucre                    | 40    ← LIGNE TARIFAIRE
 
-EXTRACTION CORRECTE:
+EXTRACTION CORRECTE - ORDRE: Col2 (pos 7-8) puis Col3 (pos 9-10):
 
-Pour "| | 11 | câpres en boîtes | 40":
-→ Position héritée = 2001.90 = 200190
-→ Col2 héritée du parent = 00 → positions 7-8
-→ Col3 de cette ligne = 11 → positions 9-10
-→ CODE = 200190 + 00 + 11 = 2001900011 ✓
+Pour "| | 11 | avec addition de sucre | 40":
+→ Position = 2009.90 = 200990
+→ Col2 héritée = 00 → POSITIONS 7-8 (vient EN PREMIER)
+→ Col3 = 11 → POSITIONS 9-10 (vient EN SECOND)
+→ CODE = 200990 + 00 + 11 = 2009900011 ✓
 
-Pour "| | 19 | câpres autrement | 40":
-→ Position = 200190, Col2 héritée = 00, Col3 = 19
-→ CODE = 200190 + 00 + 19 = 2001900019 ✓
+Pour "| | 19 | sans addition de sucre | 40":
+→ CODE = 200990 + 00 + 19 = 2009900019 ✓
 
-Pour "| | 20 | oignons | 40":
-→ Position = 200190, Col2 héritée = 00, Col3 = 20
-→ CODE = 200190 + 00 + 20 = 2001900020 ✓
+Pour "| | 21 | avec addition de sucre | 40":
+→ CODE = 200990 + 00 + 21 = 2009900021 ✓
 
-⚠️ ERREUR CRITIQUE À ÉVITER DANS CE FORMAT:
-FAUX: 2001901100 (tu as inversé: 11 en pos 7-8 et 00 en pos 9-10)
-VRAI: 2001900011 (00 hérité en pos 7-8, 11 de la ligne en pos 9-10)
+⚠️⚠️⚠️ ERREURS CRITIQUES À ÉVITER - INVERSIONS ⚠️⚠️⚠️
+FAUX: 2009901100 (tu as inversé: 11 en pos 7-8, 00 en pos 9-10)
+VRAI: 2009900011 (00 en pos 7-8, 11 en pos 9-10)
 
-FAUX: 2001902000 (tu as inversé: 20 en pos 7-8 et 00 en pos 9-10)
-VRAI: 2001900020 (00 hérité en pos 7-8, 20 de la ligne en pos 9-10)
+FAUX: 2009902100 (tu as inversé: 21 en pos 7-8, 00 en pos 9-10)
+VRAI: 2009900021 (00 en pos 7-8, 21 en pos 9-10)
+
+AUTRE EXEMPLE - POSITION 2009.81 et 2009.89:
+2009.81 | 00 | 10 → 200981 + 00 + 10 = 2009810010 ✓ (PAS 2009811000)
+2009.89 | 00 | 10 → 200989 + 00 + 10 = 2009890010 ✓ (PAS 2009891000)
+2009.89 | 00 | 22 → 200989 + 00 + 22 = 2009890022 ✓ (PAS 2009892200)
 
 EXEMPLE 2 - CHAPITRE 12 - POSITION 1205.90 (Format avec héritage multi-niveaux):
 
