@@ -427,6 +427,17 @@ export default function AdminUpload() {
           document_type: analysisData?.document_type || "tariff",
           trade_agreements: analysisData?.trade_agreements || [],
           full_text_length: analysisData?.full_text?.length || 0,
+          // Champs enrichis pour documents réglementaires
+          document_reference: analysisData?.document_reference,
+          publication_date: analysisData?.publication_date,
+          effective_date: analysisData?.effective_date,
+          expiry_date: analysisData?.expiry_date,
+          legal_references: analysisData?.legal_references || [],
+          important_dates: analysisData?.important_dates || [],
+          issuing_authority: analysisData?.issuing_authority,
+          recipients: analysisData?.recipients || [],
+          abrogates: analysisData?.abrogates || [],
+          modifies: analysisData?.modifies || [],
         };
 
         const isRegulatoryDoc = extractionData.document_type === "regulatory";
@@ -979,19 +990,29 @@ export default function AdminUpload() {
                           <div className="flex items-center justify-between">
                             <div className="flex gap-2 flex-wrap">
                               {/* Affichage adapté selon le type de document */}
-                              {file.analysis.document_type === "regulatory" ? (
+                                  {file.analysis.document_type === "regulatory" ? (
                                 <>
                                   <Badge variant="outline" className="text-xs bg-accent/10">
                                     📋 Réglementaire
                                   </Badge>
+                                  {file.analysis.document_reference && (
+                                    <Badge variant="outline" className="text-xs">
+                                      {file.analysis.document_reference}
+                                    </Badge>
+                                  )}
+                                  {(file.analysis.legal_references?.length || 0) > 0 && (
+                                    <Badge variant="outline" className="text-xs bg-primary/10 text-primary">
+                                      ⚖️ {file.analysis.legal_references?.length} réf. légales
+                                    </Badge>
+                                  )}
+                                  {file.analysis.effective_date && (
+                                    <Badge variant="outline" className="text-xs bg-success/10 text-success">
+                                      📅 {file.analysis.effective_date}
+                                    </Badge>
+                                  )}
                                   {(file.analysis.trade_agreements?.length || 0) > 0 && (
                                     <Badge variant="outline" className="text-xs">
                                       {file.analysis.trade_agreements?.length} accord(s)
-                                    </Badge>
-                                  )}
-                                  {(file.analysis.full_text_length || 0) > 0 && (
-                                    <Badge variant="outline" className="text-xs bg-success/10 text-success">
-                                      ✓ Texte extrait
                                     </Badge>
                                   )}
                                 </>
@@ -1019,7 +1040,7 @@ export default function AdminUpload() {
                       )}
 
                       {file.status === "success" && file.analysis && (
-                        <div className="pt-2 border-t">
+                        <div className="pt-2 border-t space-y-2">
                           <p className="text-xs text-success flex items-center gap-1">
                             <CheckCircle2 className="h-4 w-4" />
                             {file.analysis.document_type === "regulatory" 
@@ -1027,6 +1048,26 @@ export default function AdminUpload() {
                               : `${file.analysis.hs_codes?.length || 0} codes SH et ${file.analysis.tariff_lines?.length || 0} lignes tarifaires insérés`
                             }
                           </p>
+                          {/* Affichage enrichi pour documents réglementaires */}
+                          {file.analysis.document_type === "regulatory" && (
+                            <div className="text-xs space-y-1 text-muted-foreground bg-muted/50 p-2 rounded">
+                              {file.analysis.document_reference && (
+                                <p><strong>📄 Réf:</strong> {file.analysis.document_reference}</p>
+                              )}
+                              {file.analysis.issuing_authority?.name && (
+                                <p><strong>🏛️ Émetteur:</strong> {file.analysis.issuing_authority.name}</p>
+                              )}
+                              {file.analysis.effective_date && (
+                                <p><strong>📅 Application:</strong> {file.analysis.effective_date}</p>
+                              )}
+                              {(file.analysis.legal_references?.length || 0) > 0 && (
+                                <p><strong>⚖️ Réf. légales:</strong> {file.analysis.legal_references?.length} référence(s)</p>
+                              )}
+                              {(file.analysis.important_dates?.length || 0) > 0 && (
+                                <p><strong>📆 Dates clés:</strong> {file.analysis.important_dates?.length} date(s)</p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

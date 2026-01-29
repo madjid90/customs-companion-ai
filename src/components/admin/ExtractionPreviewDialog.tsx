@@ -18,7 +18,11 @@ import {
   Download,
   Upload,
   Handshake,
-  Percent
+  Percent,
+  Scale,
+  Calendar,
+  Building2,
+  FileText
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -55,6 +59,26 @@ interface TradeAgreementMention {
   mentioned_benefits?: string[];
 }
 
+interface LegalReference {
+  type: string;
+  reference: string;
+  title?: string;
+  date?: string;
+  context?: string;
+}
+
+interface ImportantDate {
+  date: string;
+  type: string;
+  description: string;
+}
+
+interface IssuingAuthority {
+  name: string;
+  department?: string;
+  signatory?: string;
+}
+
 interface ExtractionData {
   summary: string;
   key_points: string[];
@@ -64,6 +88,18 @@ interface ExtractionData {
   chapter_info?: { number: number; title: string };
   trade_agreements?: TradeAgreementMention[];
   preferential_rates?: PreferentialRate[];
+  // Champs enrichis pour documents réglementaires
+  document_type?: "tariff" | "regulatory";
+  document_reference?: string;
+  publication_date?: string;
+  effective_date?: string;
+  expiry_date?: string;
+  legal_references?: LegalReference[];
+  important_dates?: ImportantDate[];
+  issuing_authority?: IssuingAuthority;
+  recipients?: string[];
+  abrogates?: string[];
+  modifies?: string[];
 }
 
 interface ExtractionPreviewDialogProps {
@@ -460,6 +496,19 @@ export default function ExtractionPreviewDialog({
                   </Badge>
                 </TabsTrigger>
               )}
+              {/* Onglet Références légales pour documents réglementaires */}
+              {((extractionData?.legal_references?.length || 0) > 0 || 
+                (extractionData?.important_dates?.length || 0) > 0 ||
+                extractionData?.issuing_authority ||
+                extractionData?.document_reference) && (
+                <TabsTrigger value="regulatory" className="flex items-center gap-2">
+                  <Scale className="h-4 w-4" />
+                  Réglementaire
+                  <Badge className="text-xs bg-primary/20 text-primary">
+                    {(extractionData?.legal_references?.length || 0) + (extractionData?.important_dates?.length || 0)}
+                  </Badge>
+                </TabsTrigger>
+              )}
             </TabsList>
             
             <div className="flex gap-2">
@@ -794,6 +843,184 @@ export default function ExtractionPreviewDialog({
                   )}
                 </TableBody>
               </Table>
+            </ScrollArea>
+          </TabsContent>
+
+          {/* Regulatory Info Tab */}
+          <TabsContent value="regulatory" className="flex-1 overflow-hidden mt-4">
+            <ScrollArea className="h-[400px]">
+              <div className="space-y-6 pr-4">
+                {/* En-tête du document */}
+                {(extractionData?.document_reference || extractionData?.issuing_authority) && (
+                  <div className="p-4 border rounded-lg bg-muted/30 space-y-3">
+                    <h4 className="font-medium flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      Informations du document
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      {extractionData?.document_reference && (
+                        <div>
+                          <span className="text-muted-foreground">Référence:</span>
+                          <p className="font-medium">{extractionData.document_reference}</p>
+                        </div>
+                      )}
+                      {extractionData?.issuing_authority?.name && (
+                        <div>
+                          <span className="text-muted-foreground">Autorité émettrice:</span>
+                          <p className="font-medium flex items-center gap-1">
+                            <Building2 className="h-3 w-3" />
+                            {extractionData.issuing_authority.name}
+                          </p>
+                          {extractionData.issuing_authority.department && (
+                            <p className="text-xs text-muted-foreground">{extractionData.issuing_authority.department}</p>
+                          )}
+                        </div>
+                      )}
+                      {extractionData?.publication_date && (
+                        <div>
+                          <span className="text-muted-foreground">Date de publication:</span>
+                          <p className="font-medium">{extractionData.publication_date}</p>
+                        </div>
+                      )}
+                      {extractionData?.effective_date && (
+                        <div>
+                          <span className="text-muted-foreground">Date d'application:</span>
+                          <p className="font-medium text-success">{extractionData.effective_date}</p>
+                        </div>
+                      )}
+                      {extractionData?.expiry_date && (
+                        <div>
+                          <span className="text-muted-foreground">Date d'expiration:</span>
+                          <p className="font-medium text-destructive">{extractionData.expiry_date}</p>
+                        </div>
+                      )}
+                    </div>
+                    {(extractionData?.recipients?.length || 0) > 0 && (
+                      <div className="text-sm">
+                        <span className="text-muted-foreground">Destinataires:</span>
+                        <p className="font-medium">{extractionData?.recipients?.join(", ")}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Références légales */}
+                {(extractionData?.legal_references?.length || 0) > 0 && (
+                  <div className="space-y-3">
+                    <h4 className="font-medium flex items-center gap-2">
+                      <Scale className="h-4 w-4" />
+                      Références légales ({extractionData?.legal_references?.length})
+                    </h4>
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader className="bg-muted/50">
+                          <TableRow>
+                            <TableHead className="w-[100px]">Type</TableHead>
+                            <TableHead>Référence</TableHead>
+                            <TableHead>Titre</TableHead>
+                            <TableHead className="w-[100px]">Contexte</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {extractionData?.legal_references?.map((ref, index) => (
+                            <TableRow key={index}>
+                              <TableCell>
+                                <Badge variant="outline" className="text-xs capitalize">
+                                  {ref.type}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {ref.reference}
+                                {ref.date && (
+                                  <span className="text-muted-foreground ml-2">({ref.date})</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {ref.title || "-"}
+                              </TableCell>
+                              <TableCell>
+                                {ref.context && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    {ref.context}
+                                  </Badge>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Dates importantes */}
+                {(extractionData?.important_dates?.length || 0) > 0 && (
+                  <div className="space-y-3">
+                    <h4 className="font-medium flex items-center gap-2">
+                      <Calendar className="h-4 w-4" />
+                      Dates importantes ({extractionData?.important_dates?.length})
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {extractionData?.important_dates?.map((d, index) => (
+                        <div key={index} className="p-3 border rounded-lg bg-card">
+                          <div className="flex items-center justify-between mb-1">
+                            <Badge variant={
+                              d.type === "application" ? "default" :
+                              d.type === "expiration" ? "destructive" :
+                              d.type === "limite" ? "secondary" :
+                              "outline"
+                            } className="text-xs capitalize">
+                              {d.type}
+                            </Badge>
+                            <span className="font-mono text-sm font-medium">{d.date}</span>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{d.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Modifications et abrogations */}
+                {((extractionData?.abrogates?.length || 0) > 0 || (extractionData?.modifies?.length || 0) > 0) && (
+                  <div className="space-y-3">
+                    <h4 className="font-medium">Relations avec d'autres textes</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      {(extractionData?.abrogates?.length || 0) > 0 && (
+                        <div className="p-3 border border-destructive/30 rounded-lg bg-destructive/5">
+                          <p className="text-xs text-destructive font-medium mb-2">Abroge:</p>
+                          <ul className="space-y-1">
+                            {extractionData?.abrogates?.map((ref, i) => (
+                              <li key={i} className="text-sm">{ref}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {(extractionData?.modifies?.length || 0) > 0 && (
+                        <div className="p-3 border border-warning/30 rounded-lg bg-warning/5">
+                          <p className="text-xs text-warning font-medium mb-2">Modifie:</p>
+                          <ul className="space-y-1">
+                            {extractionData?.modifies?.map((ref, i) => (
+                              <li key={i} className="text-sm">{ref}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Message vide si pas de données */}
+                {!extractionData?.document_reference && 
+                 !extractionData?.issuing_authority &&
+                 (extractionData?.legal_references?.length || 0) === 0 &&
+                 (extractionData?.important_dates?.length || 0) === 0 && (
+                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                    <Scale className="h-12 w-12 mb-4 opacity-30" />
+                    <p>Aucune information réglementaire détectée</p>
+                  </div>
+                )}
+              </div>
             </ScrollArea>
           </TabsContent>
         </Tabs>
