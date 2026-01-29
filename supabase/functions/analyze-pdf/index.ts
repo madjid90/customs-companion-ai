@@ -138,42 +138,79 @@ Le code 10 chiffres = [Position 6 chiffres] + [Col2 = positions 7-8] + [Col3 = p
 POSITION 7-8 = Toujours la valeur de COLONNE 2
 POSITION 9-10 = Toujours la valeur de COLONNE 3
 
-⚠️ CAS CRITIQUE CHAPITRE 20 - POSITIONS 2009.xx avec Col2=00 ⚠️
+⚠️⚠️⚠️ RÈGLE VISUELLE CRITIQUE - IDENTIFICATION DES COLONNES ⚠️⚠️⚠️
 
-Quand tu vois ce format dans le PDF:
-Position | Col2 | Col3 | Description | Taux
-2009.90  | 00   |      | Mélanges    | (parent)
-         |      | 11   | avec sucre  | 40
-         |      | 19   | sans sucre  | 40
+ATTENTION: Dans le PDF, les colonnes sont physiquement séparées.
+- La PREMIÈRE petite colonne après Position = COLONNE 2 (positions 7-8)
+- La DEUXIÈME petite colonne = COLONNE 3 (positions 9-10)
 
-Le parent définit Col2=00. Les enfants ont Col3=11, 19, etc.
+MÊME si une seule valeur apparaît sur une ligne, tu dois déterminer si c'est en Col2 ou Col3:
+- Si la valeur est ALIGNÉE AVEC Col2 du parent → c'est Col2
+- Si la valeur est ALIGNÉE AVEC Col3 du parent → c'est Col3 (et Col2 est héritée)
 
-ALGORITHME pour "| | 11 | avec sucre | 40":
-- Position héritée = 200990 (6 chiffres)
-- Col2 = 00 (héritée du parent - POS 7-8)
-- Col3 = 11 (de cette ligne - POS 9-10)
-- CODE = 200990 + 00 + 11 = 2009900011
+⚠️ EXEMPLE CHAPITRE 20 - POSITION 2001.90 ⚠️
 
-⚠️⚠️⚠️ VALIDATION OBLIGATOIRE AVANT DE PRODUIRE UN CODE ⚠️⚠️⚠️
+Ce que tu vois dans le PDF:
+Position | Col2 | Col3 | Description                                                      | Taux
+---------|------|------|------------------------------------------------------------------|------
+2001.90  | 00   |      | - Autres                                                         | (parent)
+         |      | 11   | ---- en boîtes, verres, bocaux et récipients hermétiquement...   | 40
+         |      | 19   | ---- autrement présentées (en fûts, cuveaux, etc)                | 40
+         |      | 20   | --- oignons                                                      | 40
+         |      | 30   | --- maïs doux en grains ou épis précuits...                      | 40
 
-Pour chaque code généré, vérifie:
-- Les caractères 7-8 correspondent-ils à la valeur de Col2 ? (00 → code...00...)
-- Les caractères 9-10 correspondent-ils à la valeur de Col3 ? (11 → code...11)
+ANALYSE:
+- La ligne "2001.90 | 00 | | - Autres" définit Position=200190, Col2=00, Col3=vide
+- Les lignes suivantes ont Col2=VIDE (donc héritée=00) et Col3=11, 19, 20, 30...
 
-EXEMPLES DE VALIDATION:
-Code 2009900011: pos 7-8 = "00" ✓ (Col2=00), pos 9-10 = "11" ✓ (Col3=11) → VALIDE
-Code 2009901100: pos 7-8 = "11" ✗ (Col2 devrait être 00!), pos 9-10 = "00" ✗ → INVALIDE (INVERSÉ!)
+CONSTRUCTION DES CODES:
+Pour "| | 11 | en boîtes...":
+- Position = 200190 (héritée)
+- Col2 = 00 (héritée du parent) → POSITIONS 7-8
+- Col3 = 11 (de cette ligne) → POSITIONS 9-10
+- CODE = 200190 + 00 + 11 = 2001900011 ✓
 
-LISTE NOIRE - CES CODES SONT FAUX (inversés):
-❌ 2009901100 → Le bon code est 2009900011
-❌ 2009901900 → Le bon code est 2009900019
-❌ 2009902100 → Le bon code est 2009900021
-❌ 2009902900 → Le bon code est 2009900029
-❌ 2009909100 → Le bon code est 2009900091
-❌ 2009909900 → Le bon code est 2009900099
-❌ 2009811000 → Le bon code est 2009810010
-❌ 2009891000 → Le bon code est 2009890010
-❌ 2009892200 → Le bon code est 2009890022
+Pour "| | 19 | autrement présentées...":
+- CODE = 200190 + 00 + 19 = 2001900019 ✓
+
+Pour "| | 20 | oignons":
+- CODE = 200190 + 00 + 20 = 2001900020 ✓
+
+⚠️⚠️⚠️ CODES INTERDITS - LISTE NOIRE CHAPITRE 20 ⚠️⚠️⚠️
+
+Ces codes sont FAUX car ils inversent Col2 et Col3:
+❌ 2001901100 → CORRECT: 2001900011 (câpres en boîtes)
+❌ 2001901900 → CORRECT: 2001900019 (câpres autrement)
+❌ 2001902000 → CORRECT: 2001900020 (oignons)
+❌ 2001903000 → CORRECT: 2001900030 (maïs doux)
+❌ 2001904000 → CORRECT: 2001900040 (variantes)
+❌ 2001909000 → CORRECT: 2001900090 (autres)
+❌ 2002901000 → CORRECT: 2002900010 (simplement cuites)
+❌ 2002901100 → CORRECT: 2002900011 (purées en boîtes)
+❌ 2002901900 → CORRECT: 2002900019 (purées autrement)
+❌ 2002909100 → CORRECT: 2002900091 (autres conserves boîtes)
+❌ 2002909900 → CORRECT: 2002900099 (autres conserves)
+❌ 2009901100 → CORRECT: 2009900011
+❌ 2009901900 → CORRECT: 2009900019
+❌ 2009902100 → CORRECT: 2009900021
+❌ 2009902900 → CORRECT: 2009900029
+❌ 2009909100 → CORRECT: 2009900091
+❌ 2009909900 → CORRECT: 2009900099
+❌ 2009811000 → CORRECT: 2009810010
+❌ 2009891000 → CORRECT: 2009890010
+❌ 2009892200 → CORRECT: 2009890022
+
+⚠️⚠️⚠️ VALIDATION AUTO-DIAGNOSTIC ⚠️⚠️⚠️
+
+Pour chaque code généré pour 2001.90, 2002.90, 2009.xx:
+1. Extrais les caractères 7-8 du code
+2. Compare avec la valeur Col2 du parent (souvent 00)
+3. Si caractères 7-8 ≠ valeur Col2 → LE CODE EST INVERSÉ → CORRIGE-LE!
+
+EXEMPLE DE DIAGNOSTIC:
+- Tu génères 2001901100 pour "câpres en boîtes"
+- Caractères 7-8 = "11" mais Col2 parent = "00"
+- 11 ≠ 00 → ERREUR DÉTECTÉE → Le bon code est 2001900011
 
 EXEMPLE 2 - CHAPITRE 12 - POSITION 1205.90 (Format avec héritage multi-niveaux):
 
