@@ -769,6 +769,20 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       ).catch((err) => console.error("Cache save error:", err));
     }
 
+    // Prepare cited circulars for frontend display
+    const citedCirculars = context.legal_references
+      .filter((ref: any) => ref.reference_number || ref.title)
+      .map((ref: any) => ({
+        id: ref.id,
+        reference_type: ref.reference_type || "Document",
+        reference_number: ref.reference_number || "",
+        title: ref.title || ref.pdf_title || "",
+        reference_date: ref.reference_date || null,
+        download_url: ref.download_url || null,
+        pdf_title: ref.pdf_title || null,
+      }))
+      .slice(0, 10);
+
     return new Response(
       JSON.stringify({
         response: responseText,
@@ -782,7 +796,9 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           documents_found: context.knowledge_documents.length,
           pdfs_used: context.pdf_summaries.length,
           veille_docs: veilleDocuments.length,
+          legal_references_found: context.legal_references.length,
         },
+        cited_circulars: citedCirculars,
         metadata: {
           intent: analysis.intent,
           country: analysis.country,
