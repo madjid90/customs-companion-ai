@@ -1484,29 +1484,17 @@ export type Database = {
     Functions: {
       cleanup_expired_cache: { Args: never; Returns: number }
       cleanup_old_rate_limits: { Args: never; Returns: number }
-      find_cached_response:
-        | {
-            Args: { query_embedding: string; similarity_threshold?: number }
-            Returns: {
-              confidence_level: string
-              context_used: Json
-              id: string
-              question_text: string
-              response_text: string
-              similarity: number
-            }[]
-          }
-        | {
-            Args: { query_embedding: string; similarity_threshold?: number }
-            Returns: {
-              confidence_level: string
-              context_used: Json
-              id: string
-              question_text: string
-              response_text: string
-              similarity: number
-            }[]
-          }
+      find_cached_response: {
+        Args: { query_embedding: string; similarity_threshold?: number }
+        Returns: {
+          confidence_level: string
+          context_used: Json
+          id: string
+          question_text: string
+          response_text: string
+          similarity: number
+        }[]
+      }
       get_dashboard_stats: {
         Args: never
         Returns: {
@@ -1543,35 +1531,20 @@ export type Database = {
         }
         Returns: boolean
       }
-      search_all_semantic:
-        | {
-            Args: {
-              match_count?: number
-              match_threshold?: number
-              query_embedding: string
-            }
-            Returns: {
-              content_preview: string
-              similarity: number
-              source_id: string
-              source_table: string
-              title: string
-            }[]
-          }
-        | {
-            Args: {
-              match_count?: number
-              match_threshold?: number
-              query_embedding: string
-            }
-            Returns: {
-              content_preview: string
-              similarity: number
-              source_id: string
-              source_table: string
-              title: string
-            }[]
-          }
+      search_all_semantic: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          content_preview: string
+          similarity: number
+          source_id: string
+          source_table: string
+          title: string
+        }[]
+      }
       search_hs_codes: {
         Args: { limit_count?: number; search_term: string }
         Returns: {
@@ -1581,74 +1554,39 @@ export type Database = {
           id: string
         }[]
       }
-      search_hs_codes_semantic:
-        | {
-            Args: {
-              match_count?: number
-              match_threshold?: number
-              query_embedding: string
-            }
-            Returns: {
-              chapter_number: number
-              code: string
-              description_en: string
-              description_fr: string
-              id: string
-              level: string
-              section_number: number
-              similarity: number
-            }[]
-          }
-        | {
-            Args: {
-              match_count?: number
-              match_threshold?: number
-              query_embedding: string
-            }
-            Returns: {
-              chapter_number: number
-              code: string
-              description_en: string
-              description_fr: string
-              id: string
-              level: string
-              section_number: number
-              similarity: number
-            }[]
-          }
-      search_knowledge_documents_semantic:
-        | {
-            Args: {
-              match_count?: number
-              match_threshold?: number
-              query_embedding: string
-            }
-            Returns: {
-              category: string
-              content: string
-              country_code: string
-              id: string
-              similarity: number
-              summary: string
-              title: string
-            }[]
-          }
-        | {
-            Args: {
-              match_count?: number
-              match_threshold?: number
-              query_embedding: string
-            }
-            Returns: {
-              category: string
-              content: string
-              country_code: string
-              id: string
-              similarity: number
-              summary: string
-              title: string
-            }[]
-          }
+      search_hs_codes_semantic: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          chapter_number: number
+          code: string
+          description_en: string
+          description_fr: string
+          id: string
+          level: string
+          section_number: number
+          similarity: number
+        }[]
+      }
+      search_knowledge_documents_semantic: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          category: string
+          content: string
+          country_code: string
+          id: string
+          similarity: number
+          summary: string
+          title: string
+        }[]
+      }
       search_legal_references: {
         Args: { limit_count?: number; search_term: string }
         Returns: {
@@ -1663,37 +1601,21 @@ export type Database = {
           title: string
         }[]
       }
-      search_pdf_extractions_semantic:
-        | {
-            Args: {
-              match_count?: number
-              match_threshold?: number
-              query_embedding: string
-            }
-            Returns: {
-              extracted_text: string
-              id: string
-              key_points: Json
-              pdf_id: string
-              similarity: number
-              summary: string
-            }[]
-          }
-        | {
-            Args: {
-              match_count?: number
-              match_threshold?: number
-              query_embedding: string
-            }
-            Returns: {
-              extracted_text: string
-              id: string
-              key_points: Json
-              pdf_id: string
-              similarity: number
-              summary: string
-            }[]
-          }
+      search_pdf_extractions_semantic: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          extracted_text: string
+          id: string
+          key_points: Json
+          pdf_id: string
+          similarity: number
+          summary: string
+        }[]
+      }
       search_regulatory_procedures: {
         Args: { limit_count?: number; search_term: string }
         Returns: {
@@ -1707,41 +1629,23 @@ export type Database = {
           required_documents: Json
         }[]
       }
-      search_veille_documents_semantic:
-        | {
-            Args: {
-              match_count?: number
-              match_threshold?: number
-              query_embedding: string
-            }
-            Returns: {
-              category: string
-              content: string
-              country_code: string
-              id: string
-              importance: string
-              similarity: number
-              summary: string
-              title: string
-            }[]
-          }
-        | {
-            Args: {
-              match_count?: number
-              match_threshold?: number
-              query_embedding: string
-            }
-            Returns: {
-              category: string
-              content: string
-              country_code: string
-              id: string
-              importance: string
-              similarity: number
-              summary: string
-              title: string
-            }[]
-          }
+      search_veille_documents_semantic: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          category: string
+          content: string
+          country_code: string
+          id: string
+          importance: string
+          similarity: number
+          summary: string
+          title: string
+        }[]
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       update_cache_hit: { Args: { cache_id: string }; Returns: undefined }
