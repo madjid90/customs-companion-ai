@@ -66,12 +66,12 @@ serve(async (req) => {
     return handleCorsPreFlight(req);
   }
 
-  // Rate limiting distribué (2 requests per minute - admin function)
+  // Rate limiting distribué (10 requests per minute for batch processing)
   const clientId = getClientId(req);
   const rateLimit = await checkRateLimitDistributed(clientId, {
-    maxRequests: 2,
+    maxRequests: 10,
     windowMs: 60000,
-    blockDurationMs: 600000,
+    blockDurationMs: 60000,
   });
 
   if (!rateLimit.allowed) {
@@ -91,7 +91,7 @@ serve(async (req) => {
       return errorResponse(req, validation.error!, 400);
     }
 
-    const { table, limit = 100, forceUpdate = false } = validation.data!;
+    const { table, limit = 500, forceUpdate = false } = validation.data!;
     logger.info("Starting embeddings generation", { table, limit, forceUpdate });
 
     // Validate table parameter to prevent injection
