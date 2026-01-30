@@ -40,56 +40,79 @@ export function CitedCirculars({ circulars, onDocumentClick, isSearchingDoc }: C
         </span>
       </div>
       <div className="space-y-2">
-        {uniqueCirculars.slice(0, 5).map((circular, index) => (
-          <div
-            key={`${circular.id}-${index}`}
-            className="flex items-start gap-3 p-2.5 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors group"
-          >
-            <div className="flex-shrink-0 w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center">
-              <FileText className="h-4 w-4 text-primary" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-medium bg-accent/15 text-accent px-1.5 py-0.5 rounded">
-                  {circular.reference_type || "Circulaire"}
-                </span>
-                <span className="text-sm font-semibold text-foreground">
-                  {circular.reference_number}
-                </span>
-                {circular.reference_date && (
-                  <span className="text-xs text-muted-foreground">
-                    ({new Date(circular.reference_date).toLocaleDateString("fr-FR", {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric"
-                    })})
+        {uniqueCirculars.slice(0, 5).map((circular, index) => {
+          const hasValidUrl = circular.download_url && circular.download_url.startsWith('http');
+          const displayTitle = circular.title || circular.reference_number || "Document";
+          const displayRef = circular.reference_number || (circular.reference_type === "Tarif" ? "" : circular.pdf_title);
+          
+          return (
+            <div
+              key={`${circular.id}-${index}`}
+              className={cn(
+                "flex items-start gap-3 p-2.5 rounded-lg bg-muted/30 transition-colors group",
+                hasValidUrl && "hover:bg-muted/50 cursor-pointer"
+              )}
+              onClick={() => hasValidUrl && onDocumentClick(circular.download_url!, displayTitle)}
+              role={hasValidUrl ? "button" : undefined}
+              tabIndex={hasValidUrl ? 0 : undefined}
+              onKeyDown={(e) => {
+                if (hasValidUrl && (e.key === 'Enter' || e.key === ' ')) {
+                  e.preventDefault();
+                  onDocumentClick(circular.download_url!, displayTitle);
+                }
+              }}
+            >
+              <div className="flex-shrink-0 w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center">
+                <FileText className="h-4 w-4 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={cn(
+                    "text-xs font-medium px-1.5 py-0.5 rounded",
+                    circular.reference_type === "Tarif" 
+                      ? "bg-primary/15 text-primary" 
+                      : "bg-accent/15 text-accent"
+                  )}>
+                    {circular.reference_type || "Document"}
                   </span>
+                  {displayRef && (
+                    <span className="text-sm font-semibold text-foreground">
+                      {displayRef}
+                    </span>
+                  )}
+                  {circular.reference_date && (
+                    <span className="text-xs text-muted-foreground">
+                      ({new Date(circular.reference_date).toLocaleDateString("fr-FR", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric"
+                      })})
+                    </span>
+                  )}
+                </div>
+                {displayTitle && displayTitle !== displayRef && (
+                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                    {displayTitle}
+                  </p>
                 )}
               </div>
-              {circular.title && (
-                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                  {circular.title}
-                </p>
+              {hasValidUrl && (
+                <div
+                  className={cn(
+                    "flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md",
+                    "text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20",
+                    "transition-colors",
+                    "opacity-0 group-hover:opacity-100 focus:opacity-100",
+                    isSearchingDoc && "opacity-50"
+                  )}
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  <span>Consulter</span>
+                </div>
               )}
             </div>
-            {circular.download_url && (
-              <button
-                onClick={() => onDocumentClick(circular.download_url!, circular.title || circular.reference_number)}
-                disabled={isSearchingDoc}
-                className={cn(
-                  "flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md",
-                  "text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20",
-                  "transition-colors cursor-pointer",
-                  "opacity-0 group-hover:opacity-100 focus:opacity-100",
-                  isSearchingDoc && "opacity-50 cursor-wait"
-                )}
-              >
-                <ExternalLink className="h-3 w-3" />
-                <span>Consulter</span>
-              </button>
-            )}
-          </div>
-        ))}
+          );
+        })}
         {uniqueCirculars.length > 5 && (
           <p className="text-xs text-muted-foreground text-center py-1">
             + {uniqueCirculars.length - 5} autre(s) référence(s)
