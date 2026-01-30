@@ -76,14 +76,34 @@ const fixMarkdownLinks = (content: string): string => {
   );
 };
 
-// Transform source patterns into clickable links
+// Extract HS code chapter from message content
+const extractChapterFromContent = (content: string): string | null => {
+  // Look for HS codes like 8301.30, 8301300000, etc.
+  const hsCodeMatch = content.match(/\b(\d{2})\d{2}[.\s]?\d{0,6}\b/);
+  if (hsCodeMatch) {
+    return hsCodeMatch[1]; // Return first 2 digits (chapter)
+  }
+  // Also try to find "Code SH : XXXX" or "**Code SH :** XXXX" patterns
+  const codeSHMatch = content.match(/Code\s*SH\s*[:\s]*\*?\*?\s*(\d{2})/i);
+  if (codeSHMatch) {
+    return codeSHMatch[1];
+  }
+  return null;
+};
+
+// Transform source patterns into clickable links with chapter info
 const transformSourcePatterns = (content: string): string => {
+  // Extract chapter from the content for use in links
+  const chapter = extractChapterFromContent(content);
+  
   // Pattern: "📁 Source officielle:" or "📄 **Source officielle:**" followed by text
   return content.replace(
     /((?:📁|📄)\s*\*?\*?Source\s*officielle\s*:?\*?\*?\s*)([^\n]+)/gi,
     (match, prefix, title) => {
       const cleanTitle = title.trim().replace(/\*+/g, '');
-      return `[${prefix}${cleanTitle}](source://lookup?title=${encodeURIComponent(cleanTitle)})`;
+      // Include chapter in URL if found
+      const chapterParam = chapter ? `&chapter=${chapter}` : '';
+      return `[${prefix}${cleanTitle}](source://lookup?title=${encodeURIComponent(cleanTitle)}${chapterParam})`;
     }
   );
 };
@@ -103,14 +123,32 @@ export function ChatMessage({
   const isUser = message.role === "user";
   const isError = message.content.startsWith("⚠️");
 
-  // Search for PDF document by chapter/title mentioned in response
-  const searchAndOpenDocument = useCallback(async (sourceTitle: string) => {
+  // Search for PDF document by chapter number
+  const searchAndOpenDocument = useCallback(async (sourceTitle: string, chapterFromUrl?: string) => {
     setIsSearchingDoc(true);
     
     try {
-      // Extract chapter number from source title (e.g., "Chapitre 83" -> "83")
-      const chapterMatch = sourceTitle.match(/Chapitre\s*(?:SH\s*)?(\d{1,2})/i);
-      const chapter = chapterMatch ? chapterMatch[1].padStart(2, '0') : null;
+      // Priority 1: Use chapter from URL parameter
+      // Priority 2: Extract from source title "Chapitre XX"
+      // Priority 3: Extract from title containing chapter number
+      let chapter = chapterFromUrl;
+      
+      if (!chapter) {
+        const chapterMatch = sourceTitle.match(/Chapitre\s*(?:SH\s*)?(\d{1,2})/i);
+        if (chapterMatch) {
+          chapter = chapterMatch[1].padStart(2, '0');
+        }
+      }
+      
+      if (!chapter) {
+        // Try to extract from title like "SH CODE 83" or similar
+        const codeMatch = sourceTitle.match(/(\d{2})/);
+        if (codeMatch) {
+          chapter = codeMatch[1];
+        }
+      }
+
+      console.log("Searching for document, chapter:", chapter, "title:", sourceTitle);
 
       let query = supabase
         .from("pdf_documents")
@@ -118,18 +156,15 @@ export function ChatMessage({
         .eq("is_active", true)
         .eq("category", "tarif");
 
-      // If we found a chapter number, search by it
+      // Search by chapter number in title (format: "Chapitre SH XX")
       if (chapter) {
-        query = query.or(`file_name.ilike.%${chapter}%,title.ilike.%${chapter}%`);
-      } else {
-        // Otherwise search by title keywords
-        const keywords = sourceTitle.split(' ').filter(w => w.length > 3).slice(0, 3);
-        if (keywords.length > 0) {
-          query = query.or(keywords.map(k => `title.ilike.%${k}%`).join(','));
-        }
+        const paddedChapter = chapter.padStart(2, '0');
+        query = query.or(`title.ilike.%${paddedChapter}%,file_name.ilike.%${paddedChapter}%`);
       }
 
       const { data: docs, error } = await query.limit(1);
+
+      console.log("Document search results:", docs, error);
 
       if (error) {
         console.error("Error searching document:", error);
@@ -143,6 +178,8 @@ export function ChatMessage({
           .from("pdf-documents")
           .getPublicUrl(doc.file_path);
 
+        console.log("Document found:", doc.title, "URL:", urlData?.publicUrl);
+
         if (urlData?.publicUrl) {
           setPreviewDoc({
             url: urlData.publicUrl,
@@ -151,11 +188,10 @@ export function ChatMessage({
         }
       } else {
         // Document not found - show a fallback message
-        console.log("Document not found for:", sourceTitle);
-        // Try to open generic source anyway
+        console.log("Document not found for chapter:", chapter, "title:", sourceTitle);
         setPreviewDoc({
           url: '',
-          title: `Document non trouvé: ${sourceTitle}`
+          title: `Document non trouvé: Chapitre ${chapter || 'inconnu'}`
         });
       }
     } catch (err) {
@@ -168,10 +204,11 @@ export function ChatMessage({
   // Handle link clicks including source:// protocol
   const handleLinkClick = useCallback((url: string, linkText: string) => {
     if (url.startsWith('source://')) {
-      // Extract title from URL
+      // Extract title and chapter from URL
       const params = new URLSearchParams(url.split('?')[1] || '');
       const title = params.get('title') || linkText;
-      searchAndOpenDocument(decodeURIComponent(title));
+      const chapter = params.get('chapter') || undefined;
+      searchAndOpenDocument(decodeURIComponent(title), chapter);
     } else if (isDocumentUrl(url)) {
       setPreviewDoc({ url, title: extractDocTitle(url, linkText) });
     }
