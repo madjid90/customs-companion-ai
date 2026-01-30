@@ -4,7 +4,6 @@
 
 import { RAGContext, TariffWithInheritance, formatTariffForRAG } from "./context-builder.ts";
 import { ImageAnalysisResult, PdfAnalysisResult } from "./analysis.ts";
-import { cleanHSCode } from "./hs-utils.ts";
 import { extractTopPassages, formatPassagesForPrompt } from "./passage-scorer.ts";
 
 // ============================================================================
@@ -195,15 +194,21 @@ ${context.legal_references.length > 0 ? context.legal_references.map((ref: any) 
   if (ref.download_url) content += `**URL:** ${ref.download_url}\n`;
   
   const pdfText = legalPdfTexts[ref.pdf_id];
-  if (pdfText) {
-    const articleMatches = pdfText.text.match(/(?:Article|Art\.?)\s*\d+[^\n]{0,500}/gi);
-    if (articleMatches && articleMatches.length > 0) {
-      content += `\n**ARTICLES EXTRAITS:**\n`;
-      articleMatches.slice(0, 10).forEach((article: string) => {
-        content += `> ${article.trim()}\n`;
-      });
+  if (pdfText && pdfText.text) {
+    // Use passage scoring for legal references too
+    const topPassages = extractTopPassages(pdfText.text, detectedCodes, keywords, 5, 2500);
+    if (topPassages.length > 0) {
+      content += formatPassagesForPrompt(topPassages, pdfText.title || 'Document légal');
+    } else {
+      // Fallback: extract articles if no scored passages
+      const articleMatches = pdfText.text.match(/(?:Article|Art\.?)\s*\d+[^\n]{0,500}/gi);
+      if (articleMatches && articleMatches.length > 0) {
+        content += `\n**ARTICLES EXTRAITS:**\n`;
+        articleMatches.slice(0, 8).forEach((article: string) => {
+          content += `> ${article.trim()}\n`;
+        });
+      }
     }
-    content += `\n**TEXTE INTÉGRAL (premiers 8000 caractères):**\n\`\`\`\n${pdfText.text.substring(0, 8000)}${pdfText.text.length > 8000 ? '\n...[suite tronquée]' : ''}\n\`\`\`\n`;
   }
   return content;
 }).join('\n') : "Aucune référence légale trouvée - recommande www.douane.gov.ma"}
