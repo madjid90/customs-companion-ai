@@ -1,10 +1,57 @@
 // Edge Function to rename files in storage to match their actual chapter content
+// Utilise les mentioned_hs_codes des extractions pour déterminer le vrai chapitre
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+interface PDFWithExtraction {
+  id: string;
+  title: string;
+  file_name: string;
+  file_path: string;
+  category: string;
+  pdf_extractions: {
+    mentioned_hs_codes: string[] | null;
+  }[] | null;
+}
+
+// Déterminer le chapitre à partir des codes HS mentionnés
+function detectChapterFromHSCodes(hsCodes: string[] | null): number | null {
+  if (!hsCodes || hsCodes.length === 0) return null;
+  
+  // Compter les occurrences de chaque préfixe de 2 chiffres
+  const chapterCounts: Record<string, number> = {};
+  
+  for (const code of hsCodes) {
+    // Nettoyer le code: enlever points, espaces, garder que les chiffres
+    const cleanCode = code.replace(/[^0-9]/g, "");
+    if (cleanCode.length >= 2) {
+      const prefix = cleanCode.substring(0, 2);
+      const chapter = parseInt(prefix, 10);
+      if (chapter >= 1 && chapter <= 99) {
+        const key = String(chapter);
+        chapterCounts[key] = (chapterCounts[key] || 0) + 1;
+      }
+    }
+  }
+  
+  // Trouver le chapitre le plus fréquent
+  let maxCount = 0;
+  let dominantChapter: number | null = null;
+  
+  for (const [chapter, count] of Object.entries(chapterCounts)) {
+    if (count > maxCount) {
+      maxCount = count;
+      dominantChapter = parseInt(chapter, 10);
+    }
+  }
+  
+  // Exiger au moins 3 codes du même chapitre pour être sûr
+  return maxCount >= 3 ? dominantChapter : null;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -20,55 +67,111 @@ Deno.serve(async (req) => {
 
     console.log(`Starting file rename operation (dryRun: ${dryRun})`);
 
-    // Get all unique PDF documents (latest version of each chapter)
+    // Récupérer tous les PDFs tarifaires avec leurs extractions
     const { data: pdfs, error: fetchError } = await supabase
       .from("pdf_documents")
-      .select("id, title, file_name, file_path, category")
+      .select(`
+        id, 
+        title, 
+        file_name, 
+        file_path, 
+        category,
+        pdf_extractions (
+          mentioned_hs_codes
+        )
+      `)
       .eq("is_active", true)
       .eq("category", "tarif")
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }) as { data: PDFWithExtraction[] | null; error: any };
 
     if (fetchError) throw fetchError;
 
-    const results: { id: string; title: string; oldPath: string; newPath: string; status: string }[] = [];
-    const processedChapters = new Set<string>();
+    const results: { 
+      id: string; 
+      title: string; 
+      oldPath: string; 
+      newPath: string; 
+      detectedChapter: number | null;
+      hsCodesCount: number;
+      status: string;
+    }[] = [];
+    
+    const processedChapters = new Set<number>();
 
     for (const pdf of pdfs || []) {
-      // Skip if we already processed this chapter (keep only latest)
-      if (processedChapters.has(pdf.title)) {
-        continue;
+      // Récupérer les codes HS de l'extraction
+      const extraction = pdf.pdf_extractions?.[0];
+      const hsCodes = extraction?.mentioned_hs_codes || [];
+      
+      // Détecter le chapitre à partir des codes HS réels
+      const chapterNum = detectChapterFromHSCodes(hsCodes);
+      
+      if (!chapterNum) {
+        // Fallback: essayer d'extraire du titre
+        const titleMatch = pdf.title.match(/(?:Chapitre\s+)?SH\s*(?:CODE\s+)?(\d+)/i);
+        const fallbackChapter = titleMatch ? parseInt(titleMatch[1], 10) : null;
+        
+        if (!fallbackChapter) {
+          results.push({
+            id: pdf.id,
+            title: pdf.title,
+            oldPath: pdf.file_path,
+            newPath: "",
+            detectedChapter: null,
+            hsCodesCount: hsCodes.length,
+            status: "skipped - impossible de détecter le chapitre",
+          });
+          continue;
+        }
       }
-      processedChapters.add(pdf.title);
-
-      // Extract chapter number from title (e.g., "Chapitre SH 83" -> "83")
-      const chapterMatch = pdf.title.match(/(?:Chapitre\s+)?SH\s*(?:CODE\s+)?(\d+)/i);
-      if (!chapterMatch) {
+      
+      const finalChapter = chapterNum || parseInt(pdf.title.match(/(\d+)/)?.[1] || "0", 10);
+      
+      if (!finalChapter || finalChapter < 1 || finalChapter > 99) {
         results.push({
           id: pdf.id,
           title: pdf.title,
           oldPath: pdf.file_path,
           newPath: "",
-          status: "skipped - no chapter number found",
+          detectedChapter: null,
+          hsCodesCount: hsCodes.length,
+          status: "skipped - numéro de chapitre invalide",
         });
         continue;
       }
-
-      const chapterNum = chapterMatch[1].padStart(2, "0");
-      const expectedFileName = `SH_CODE_${chapterNum}.pdf`;
       
-      // Check if file already has correct name
-      if (pdf.file_path.includes(expectedFileName) || pdf.file_path.endsWith(`SH CODE ${chapterNum}.pdf`)) {
+      // Skip si on a déjà traité ce chapitre (garder le plus récent)
+      if (processedChapters.has(finalChapter)) {
         results.push({
           id: pdf.id,
           title: pdf.title,
           oldPath: pdf.file_path,
-          newPath: pdf.file_path,
+          newPath: "",
+          detectedChapter: finalChapter,
+          hsCodesCount: hsCodes.length,
+          status: "skipped - doublon (version plus récente existe)",
+        });
+        continue;
+      }
+      processedChapters.add(finalChapter);
+
+      const paddedChapter = String(finalChapter).padStart(2, "0");
+      const expectedFileName = `SH_CODE_${paddedChapter}.pdf`;
+      const newPath = `tarifs/${expectedFileName}`;
+      
+      // Vérifier si le fichier a déjà le bon chemin
+      if (pdf.file_path === newPath) {
+        results.push({
+          id: pdf.id,
+          title: pdf.title,
+          oldPath: pdf.file_path,
+          newPath: newPath,
+          detectedChapter: finalChapter,
+          hsCodesCount: hsCodes.length,
           status: "already correct",
         });
         continue;
       }
-
-      const newPath = `tarifs/${expectedFileName}`;
 
       if (dryRun) {
         results.push({
@@ -76,11 +179,13 @@ Deno.serve(async (req) => {
           title: pdf.title,
           oldPath: pdf.file_path,
           newPath: newPath,
+          detectedChapter: finalChapter,
+          hsCodesCount: hsCodes.length,
           status: "would rename",
         });
       } else {
         try {
-          // Download the file from old location
+          // 1. Télécharger le fichier source
           const { data: fileData, error: downloadError } = await supabase.storage
             .from("pdf-documents")
             .download(pdf.file_path);
@@ -92,12 +197,14 @@ Deno.serve(async (req) => {
               title: pdf.title,
               oldPath: pdf.file_path,
               newPath: newPath,
+              detectedChapter: finalChapter,
+              hsCodesCount: hsCodes.length,
               status: `error downloading: ${downloadError.message}`,
             });
             continue;
           }
 
-          // Upload to new location
+          // 2. Uploader vers le nouveau chemin (écrase si existe)
           const { error: uploadError } = await supabase.storage
             .from("pdf-documents")
             .upload(newPath, fileData, {
@@ -112,17 +219,20 @@ Deno.serve(async (req) => {
               title: pdf.title,
               oldPath: pdf.file_path,
               newPath: newPath,
+              detectedChapter: finalChapter,
+              hsCodesCount: hsCodes.length,
               status: `error uploading: ${uploadError.message}`,
             });
             continue;
           }
 
-          // Update database record
+          // 3. Mettre à jour l'enregistrement en BDD
           const { error: updateError } = await supabase
             .from("pdf_documents")
             .update({
               file_path: newPath,
               file_name: expectedFileName,
+              title: `Chapitre SH ${paddedChapter}`,
             })
             .eq("id", pdf.id);
 
@@ -133,18 +243,22 @@ Deno.serve(async (req) => {
               title: pdf.title,
               oldPath: pdf.file_path,
               newPath: newPath,
+              detectedChapter: finalChapter,
+              hsCodesCount: hsCodes.length,
               status: `error updating db: ${updateError.message}`,
             });
             continue;
           }
 
-          // Delete old file
-          const { error: deleteError } = await supabase.storage
-            .from("pdf-documents")
-            .remove([pdf.file_path]);
+          // 4. Supprimer l'ancien fichier (si différent du nouveau)
+          if (pdf.file_path !== newPath) {
+            const { error: deleteError } = await supabase.storage
+              .from("pdf-documents")
+              .remove([pdf.file_path]);
 
-          if (deleteError) {
-            console.warn(`Warning: Could not delete old file ${pdf.file_path}:`, deleteError);
+            if (deleteError) {
+              console.warn(`Warning: Could not delete old file ${pdf.file_path}:`, deleteError);
+            }
           }
 
           results.push({
@@ -152,10 +266,12 @@ Deno.serve(async (req) => {
             title: pdf.title,
             oldPath: pdf.file_path,
             newPath: newPath,
+            detectedChapter: finalChapter,
+            hsCodesCount: hsCodes.length,
             status: "renamed successfully",
           });
 
-          console.log(`Renamed: ${pdf.file_path} -> ${newPath}`);
+          console.log(`✅ Renamed: ${pdf.file_path} -> ${newPath} (Chapter ${finalChapter})`);
         } catch (err: unknown) {
           const errorMessage = err instanceof Error ? err.message : String(err);
           results.push({
@@ -163,6 +279,8 @@ Deno.serve(async (req) => {
             title: pdf.title,
             oldPath: pdf.file_path,
             newPath: newPath,
+            detectedChapter: finalChapter,
+            hsCodesCount: hsCodes.length,
             status: `error: ${errorMessage}`,
           });
         }
