@@ -111,25 +111,29 @@ const extractChapterFromContent = (content: string): string | null => {
 };
 
 // Transform source patterns into clickable links with chapter info
+// IMPORTANT: Keep real HTTP URLs as-is, only transform text-based source references
 const transformSourcePatterns = (content: string): string => {
   // Extract chapter from the content for use in links
   const chapter = extractChapterFromContent(content);
   
-  // First, remove any invalid markdown links (non-URL destinations)
+  // Pattern 1: Handle [📥 Télécharger](URL) links
+  // If URL is valid HTTP, KEEP IT AS-IS (don't transform to source://)
+  // If URL is invalid (just text), remove the link
   let transformed = content.replace(
-    /\[📥[^\]]*\]\(([^)]+)\)/gi,
-    (match, url) => {
-      // Only transform if it's a real HTTP URL
+    /\[([📥📁📄][^\]]*)\]\(([^)]+)\)/gi,
+    (match, label, url) => {
+      // Real HTTP URLs - keep them as-is for direct preview
       if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
-        const chapterParam = chapter ? `&chapter=${chapter}` : '';
-        return `[📁 Voir le document source](source://lookup?url=${encodeURIComponent(url)}${chapterParam})`;
+        // Keep the original link, it will be handled by the 'a' component renderer
+        return match;
       }
-      // Remove invalid links (where URL is just text)
+      // Remove links with invalid URLs (non-http)
       return '';
     }
   );
   
-  // Pattern: "📁 Source officielle:" or "📄 **Source officielle:**" followed by text
+  // Pattern 2: "📁 Source officielle:" or "📄 **Source officielle:**" followed by text (not a link)
+  // Convert these text references to searchable source:// links
   transformed = transformed.replace(
     /((?:📁|📄)\s*\*?\*?Source\s*officielle\s*:?\*?\*?\s*)([^\n\[]+)/gi,
     (match, prefix, title) => {
