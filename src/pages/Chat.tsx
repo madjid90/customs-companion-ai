@@ -34,7 +34,7 @@ interface Message {
   };
 }
 
-// Remove confidence indicators, emojis, JSON blocks and decorative icons from AI response content
+// Remove confidence indicators, emojis, and decorative icons from AI response content
 const cleanConfidenceFromContent = (content: string): string => {
   let cleaned = content
     // Remove confidence indicators
@@ -46,14 +46,9 @@ const cleanConfidenceFromContent = (content: string): string => {
     .replace(/\n[❓❔]\s*\n/g, '\n')
     // Remove ALL emojis from the response
     .replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2300}-\u{23FF}]|[\u{2B50}]|[\u{203C}\u{2049}]|[\u{20E3}]|[\u{FE00}-\u{FE0F}]|[\u{1F900}-\u{1F9FF}]|[✅✓✔️❌❎⚠️ℹ️📁📂📄📥📜🔗💡🎯🚨]/gu, '')
-    // Remove raw JSON code blocks completely
-    .replace(/```(?:json)?[\s\S]*?```/g, '')
-    // Remove inline code blocks with JSON-like content (hs_code, national_code, duty_rate, etc.)
-    .replace(/`[^`]*(?:hs_code|national_code|duty_rate|vat_rate|description_local|code_clean)[^`]*`/gi, '')
-    // Remove blocks that look like raw database output
-    .replace(/(?:^|\n)\s*(?:hs_code_6|national_code|description_local|duty_rate|vat_rate|code_clean)\s*:\s*["']?[^"\n]+["']?\s*(?:\n|$)/gim, '')
-    // Remove "Extrait:" followed by technical data
-    .replace(/Extrait\s*:\s*(?:\n|$)/gi, '')
+    // Remove raw JSON blocks that shouldn't be displayed
+    .replace(/```json[\s\S]*?```/g, '')
+    .replace(/"[a-z_]+"\s*:\s*(?:"[^"]*"|[0-9.]+|null|true|false)\s*,?/gi, '')
     // Clean up extra whitespace
     .replace(/\n{3,}/g, '\n\n');
   
