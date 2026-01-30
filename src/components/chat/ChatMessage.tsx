@@ -65,11 +65,30 @@ const extractDocTitle = (url: string, linkText?: string) => {
   }
 };
 
-// Fix broken markdown links (URLs with spaces)
+// Check if a string is a valid URL
+const isValidUrl = (str: string): boolean => {
+  if (!str) return false;
+  // Must start with http, https, or be a relative path starting with /
+  return str.startsWith('http://') || 
+         str.startsWith('https://') || 
+         str.startsWith('/') ||
+         str.startsWith('source://');
+};
+
+// Fix broken markdown links (URLs with spaces) and remove invalid links
 const fixMarkdownLinks = (content: string): string => {
   return content.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
     (match, text, url) => {
+      // If the URL is not valid (e.g., just text), remove the link syntax
+      if (!isValidUrl(url.trim())) {
+        // Remove fake download/source links entirely
+        if (text.includes('📥') || text.includes('Télécharger') || text.includes('Accès')) {
+          return ''; 
+        }
+        return text; // Keep the text but remove the broken link syntax
+      }
+      // Fix spaces in valid URLs
       const fixedUrl = url.replace(/ /g, '%20');
       return `[${text}](${fixedUrl})`;
     }
@@ -96,16 +115,17 @@ const transformSourcePatterns = (content: string): string => {
   // Extract chapter from the content for use in links
   const chapter = extractChapterFromContent(content);
   
-  // Also look for existing markdown download links and make them clickable source links
-  // Pattern: "[📥 Télécharger le justificatif](URL)" or "[📥 Télécharger](URL)"
+  // First, remove any invalid markdown links (non-URL destinations)
   let transformed = content.replace(
     /\[📥[^\]]*\]\(([^)]+)\)/gi,
     (match, url) => {
-      if (url && url.startsWith('http')) {
+      // Only transform if it's a real HTTP URL
+      if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
         const chapterParam = chapter ? `&chapter=${chapter}` : '';
         return `[📁 Voir le document source](source://lookup?url=${encodeURIComponent(url)}${chapterParam})`;
       }
-      return match;
+      // Remove invalid links (where URL is just text)
+      return '';
     }
   );
   
@@ -116,7 +136,8 @@ const transformSourcePatterns = (content: string): string => {
       // Skip if already a markdown link
       if (match.includes('[') || match.includes('](')) return match;
       const cleanTitle = title.trim().replace(/\*+/g, '');
-      if (!cleanTitle) return match;
+      // Skip generic/invalid titles
+      if (!cleanTitle || cleanTitle.length < 5 || cleanTitle.includes('intégré')) return match;
       // Include chapter in URL if found
       const chapterParam = chapter ? `&chapter=${chapter}` : '';
       return `[${prefix}${cleanTitle}](source://lookup?title=${encodeURIComponent(cleanTitle)}${chapterParam})`;
