@@ -333,7 +333,8 @@ export async function searchPDFsSemantic(
 export async function searchPDFsKeyword(
   supabase: any,
   searchQuery: string,
-  limit: number = 5
+  limit: number = 5,
+  supabaseUrl?: string
 ): Promise<any[]> {
   try {
     const { data, error } = await supabase.rpc("search_pdf_extractions_keyword", {
@@ -346,12 +347,32 @@ export async function searchPDFsKeyword(
       return [];
     }
 
-    // Normalize relevance score to similarity-like format (0-1)
-    return (data || []).map((doc: any) => ({
-      ...doc,
-      similarity: Math.min(doc.relevance_score / 10, 1), // Normalize FTS score
-      source: "keyword",
-    }));
+    if (!data || data.length === 0) return [];
+
+    // Enrich with pdf_documents metadata
+    const pdfIds = data.map((d: any) => d.pdf_id);
+    const { data: pdfDocs } = await supabase
+      .from("pdf_documents")
+      .select("id, title, category, file_path")
+      .in("id", pdfIds);
+
+    const pdfMap = new Map((pdfDocs || []).map((p: any) => [p.id, p]));
+    const baseUrl = supabaseUrl || Deno.env.get("SUPABASE_URL") || "";
+
+    return data.map((doc: any) => {
+      const pdfMeta = pdfMap.get(doc.pdf_id) as any;
+      return {
+        ...doc,
+        title: pdfMeta?.title || doc.summary?.slice(0, 50) || "Document PDF",
+        category: pdfMeta?.category || null,
+        download_url: pdfMeta?.file_path 
+          ? `${baseUrl}/storage/v1/object/public/pdf-documents/${pdfMeta.file_path}`
+          : null,
+        full_text: doc.extracted_text,
+        similarity: Math.min(doc.relevance_score / 10, 1),
+        source: "keyword",
+      };
+    });
   } catch (error) {
     console.error("Keyword PDF search failed:", error);
     return [];
