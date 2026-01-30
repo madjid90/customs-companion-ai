@@ -1,5 +1,8 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { Send, X } from "lucide-react";
 
 interface Question {
   id: string;
@@ -120,7 +123,33 @@ export function parseQuestionsFromResponse(content: string): Question[] {
 }
 
 export function InteractiveQuestions({ questions, onAnswer, disabled }: InteractiveQuestionsProps) {
+  const [customInputs, setCustomInputs] = useState<Record<string, boolean>>({});
+  const [customValues, setCustomValues] = useState<Record<string, string>>({});
+
   if (questions.length === 0) return null;
+
+  const toggleCustomInput = (questionId: string) => {
+    setCustomInputs(prev => ({
+      ...prev,
+      [questionId]: !prev[questionId]
+    }));
+  };
+
+  const handleCustomSubmit = (questionId: string) => {
+    const value = customValues[questionId]?.trim();
+    if (value) {
+      onAnswer(questionId, value);
+      setCustomInputs(prev => ({ ...prev, [questionId]: false }));
+      setCustomValues(prev => ({ ...prev, [questionId]: '' }));
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, questionId: string) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleCustomSubmit(questionId);
+    }
+  };
   
   return (
     <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-border/20 space-y-2 md:space-y-3">
@@ -148,7 +177,65 @@ export function InteractiveQuestions({ questions, onAnswer, disabled }: Interact
                 {cleanMarkdown(option)}
               </Button>
             ))}
+            
+            {/* Bouton Autre (précisez) */}
+            {!customInputs[question.id] && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={disabled}
+                onClick={() => toggleCustomInput(question.id)}
+                className={cn(
+                  "h-auto py-2 md:py-2.5 px-3 md:px-4 text-xs md:text-sm whitespace-normal text-left rounded-lg md:rounded-xl",
+                  "bg-muted/30 hover:bg-accent/10 hover:text-accent-foreground",
+                  "border-dashed border-border/50 hover:border-accent/50 active:scale-[0.98]",
+                  "transition-all duration-200 hover:scale-[1.02] hover:shadow-sm",
+                  "font-medium text-muted-foreground"
+                )}
+              >
+                Autre (précisez)
+              </Button>
+            )}
           </div>
+
+          {/* Champ texte libre */}
+          {customInputs[question.id] && (
+            <div className="flex items-center gap-2 mt-2 animate-fade-in">
+              <div className="relative flex-1">
+                <Input
+                  type="text"
+                  placeholder="Précisez votre réponse..."
+                  value={customValues[question.id] || ''}
+                  onChange={(e) => setCustomValues(prev => ({ 
+                    ...prev, 
+                    [question.id]: e.target.value 
+                  }))}
+                  onKeyDown={(e) => handleKeyDown(e, question.id)}
+                  disabled={disabled}
+                  className="pr-10 h-9 md:h-10 text-xs md:text-sm rounded-lg border-border/50 focus:border-accent/50"
+                  autoFocus
+                />
+              </div>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => handleCustomSubmit(question.id)}
+                disabled={disabled || !customValues[question.id]?.trim()}
+                className="h-9 w-9 md:h-10 md:w-10 rounded-lg bg-accent/10 hover:bg-accent/20 text-accent"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => toggleCustomInput(question.id)}
+                disabled={disabled}
+                className="h-9 w-9 md:h-10 md:w-10 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
       ))}
     </div>
