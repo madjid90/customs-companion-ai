@@ -388,29 +388,136 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       if (veille) veilleDocuments = veille;
     }
 
-    // 8. Get legal references
-    if (analysis.keywords.length > 0) {
-      const legalSearchTerm = escapeSearchTerm(analysis.keywords[0] || '');
-      const { data: refs } = await supabase
-        .from('legal_references')
-        .select(`
-          id, reference_type, reference_number, title, reference_date, context, pdf_id,
-          pdf_documents!inner(id, title, category, file_path, issuing_authority, document_reference)
-        `)
-        .or(`reference_number.ilike.%${legalSearchTerm}%,title.ilike.%${legalSearchTerm}%`)
-        .eq('is_active', true)
-        .limit(10);
+    // 8. Get legal references - ALWAYS search for relevant circulars
+    // Search by keywords AND by detected HS codes to ensure comprehensive coverage
+    const searchLegalReferences = async () => {
+      const allRefs: any[] = [];
+      const seenIds = new Set<string>();
       
-      if (refs) {
-        context.legal_references = refs.map((ref: any) => ({
-          ...ref,
-          pdf_title: ref.pdf_documents?.title,
-          download_url: ref.pdf_documents?.file_path 
-            ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${ref.pdf_documents.file_path}`
-            : null,
-        }));
+      // 8a. Search by keywords using FTS
+      if (analysis.keywords.length > 0) {
+        const legalSearchTerm = analysis.keywords.slice(0, 3).join(' ');
+        try {
+          const { data: ftsRefs } = await supabase
+            .rpc('search_legal_references_fts', { 
+              search_query: legalSearchTerm,
+              limit_count: 10 
+            });
+          
+          if (ftsRefs) {
+            for (const ref of ftsRefs) {
+              if (!seenIds.has(ref.id)) {
+                seenIds.add(ref.id);
+                allRefs.push({
+                  ...ref,
+                  download_url: ref.pdf_id 
+                    ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${ref.pdf_id}`
+                    : null,
+                  search_method: 'fts_keyword'
+                });
+              }
+            }
+          }
+        } catch (ftsError) {
+          console.log("FTS legal search fallback to ILIKE:", ftsError);
+          // Fallback to ILIKE search
+          const escapedTerm = escapeSearchTerm(analysis.keywords[0] || '');
+          const { data: refs } = await supabase
+            .from('legal_references')
+            .select(`id, reference_type, reference_number, title, reference_date, context, pdf_id`)
+            .or(`reference_number.ilike.%${escapedTerm}%,title.ilike.%${escapedTerm}%`)
+            .eq('is_active', true)
+            .limit(10);
+          
+          if (refs) {
+            for (const ref of refs) {
+              if (!seenIds.has(ref.id)) {
+                seenIds.add(ref.id);
+                allRefs.push({ ...ref, search_method: 'ilike_fallback' });
+              }
+            }
+          }
+        }
       }
-    }
+      
+      // 8b. ALWAYS search by detected HS codes - check if any circular mentions these codes
+      if (analysis.detectedCodes.length > 0 || context.hs_codes.length > 0) {
+        const codesToSearch = [
+          ...analysis.detectedCodes.map(c => cleanHSCode(c)),
+          ...context.hs_codes.map(c => cleanHSCode(c.code || c.code_clean))
+        ].slice(0, 10);
+        
+        const codePatterns = codesToSearch.map(c => `%${c.substring(0, 4)}%`);
+        
+        for (const pattern of [...new Set(codePatterns)].slice(0, 5)) {
+          const { data: codeRefs } = await supabase
+            .from('legal_references')
+            .select(`
+              id, reference_type, reference_number, title, reference_date, context, pdf_id,
+              pdf_documents!inner(id, title, category, file_path)
+            `)
+            .ilike('context', pattern)
+            .eq('is_active', true)
+            .limit(5);
+          
+          if (codeRefs) {
+            for (const ref of codeRefs) {
+              if (!seenIds.has(ref.id)) {
+                seenIds.add(ref.id);
+                allRefs.push({
+                  ...ref,
+                  pdf_title: (ref.pdf_documents as any)?.title,
+                  download_url: (ref.pdf_documents as any)?.file_path 
+                    ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${(ref.pdf_documents as any).file_path}`
+                    : null,
+                  search_method: 'hs_code_context'
+                });
+              }
+            }
+          }
+        }
+      }
+      
+      // 8c. Also check pdf_extractions for mentions of circulars
+      if (allRefs.length < 5 && analysis.keywords.length > 0) {
+        const searchTerm = escapeSearchTerm(analysis.keywords[0]);
+        const { data: pdfMentions } = await supabase
+          .from('pdf_extractions')
+          .select(`
+            pdf_id, summary, key_points,
+            pdf_documents!inner(id, title, category, file_path, document_reference)
+          `)
+          .or(`summary.ilike.%circulaire%,summary.ilike.%${searchTerm}%`)
+          .limit(5);
+        
+        if (pdfMentions) {
+          for (const mention of pdfMentions as any[]) {
+            const pdfDoc = mention.pdf_documents as any;
+            if (pdfDoc && !seenIds.has(mention.pdf_id)) {
+              seenIds.add(mention.pdf_id);
+              allRefs.push({
+                id: mention.pdf_id,
+                reference_type: 'Document',
+                reference_number: pdfDoc.document_reference || '',
+                title: pdfDoc.title,
+                pdf_id: mention.pdf_id,
+                pdf_title: pdfDoc.title,
+                context: mention.summary?.substring(0, 200),
+                download_url: pdfDoc.file_path 
+                  ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${pdfDoc.file_path}`
+                  : null,
+                search_method: 'pdf_extraction_mention'
+              });
+            }
+          }
+        }
+      }
+      
+      return allRefs.slice(0, 15);
+    };
+    
+    context.legal_references = await searchLegalReferences();
+    console.log(`Legal references found: ${context.legal_references.length} (methods: ${[...new Set(context.legal_references.map((r: any) => r.search_method))].join(', ')})`);
 
     // Get legal PDF texts for citations
     const legalPdfIds = [...new Set(context.legal_references.map((ref: any) => ref.pdf_id).filter(Boolean))];
