@@ -116,32 +116,39 @@ const transformSourcePatterns = (content: string): string => {
   // Extract chapter from the content for use in links
   const chapter = extractChapterFromContent(content);
   
-  // Pattern 1: Handle [Consulter](URL) or [Télécharger](URL) links
-  // If URL is valid HTTP, KEEP IT AS-IS (don't transform to source://)
-  // If URL is invalid (just text), remove the link
+  // Pattern 1: Clean up "Source: Chapitre SH XX - [Consulter](URL)" format
+  // Combine the source text with the link into a single clean link
   let transformed = content.replace(
-    /\[([^\]]*(?:Consulter|Télécharger)[^\]]*)\]\(([^)]+)\)/gi,
-    (match, label, url) => {
-      // Real HTTP URLs - keep them as-is for direct preview
+    /\*?\*?Source\s*:?\*?\*?\s*([^[\n]+?)\s*-?\s*\[Consulter\]\(([^)]+)\)/gi,
+    (match, sourceTitle, url) => {
+      const cleanTitle = sourceTitle.trim().replace(/\*+/g, '');
       if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
-        // Keep the original link, it will be handled by the 'a' component renderer
+        return `[Source: ${cleanTitle}](${url})`;
+      }
+      return match;
+    }
+  );
+  
+  // Pattern 2: Handle standalone [Consulter](URL) links - keep as-is if valid HTTP
+  transformed = transformed.replace(
+    /\[Consulter\]\(([^)]+)\)/gi,
+    (match, url) => {
+      if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
         return match;
       }
-      // Remove links with invalid URLs (non-http)
       return '';
     }
   );
   
-  // Pattern 2: "Source officielle:" or "**Source:**" followed by text (not a link)
-  // Convert these text references to searchable source:// links
+  // Pattern 3: "Source:" followed by text (not a link) - convert to searchable link
   transformed = transformed.replace(
-    /(\*?\*?Source\s*(?:officielle)?\s*:?\*?\*?\s*)([^\n\[]+)/gi,
-    (match, prefix, title) => {
-      // Skip if already a markdown link
-      if (match.includes('[') || match.includes('](')) return match;
-      const cleanTitle = title.trim().replace(/\*+/g, '');
+    /\*?\*?Source\s*:?\*?\*?\s*([^\n\[]+?)(?=\n|$)/gi,
+    (match, title) => {
+      // Skip if already processed or contains a link
+      if (match.includes('](') || match.includes('[')) return match;
+      const cleanTitle = title.trim().replace(/\*+/g, '').replace(/-\s*$/, '').trim();
       // Skip generic/invalid titles
-      if (!cleanTitle || cleanTitle.length < 5 || cleanTitle.includes('intégré')) return match;
+      if (!cleanTitle || cleanTitle.length < 5 || cleanTitle.includes('intégré') || cleanTitle.includes('officiel')) return match;
       // Include chapter in URL if found
       const chapterParam = chapter ? `&chapter=${chapter}` : '';
       return `[Source: ${cleanTitle}](source://lookup?title=${encodeURIComponent(cleanTitle)}${chapterParam})`;

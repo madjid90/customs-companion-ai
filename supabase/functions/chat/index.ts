@@ -1796,23 +1796,15 @@ ${context.regulatory_procedures.length > 0 ? context.regulatory_procedures.map((
     const hasRangeRate = context.tariffs_with_inheritance.some(t => t.rate_source === "range");
     const responseTextLower = responseText.toLowerCase();
     
-    // Priority 1: Check for emoji indicators (most reliable)
-    if (responseText.includes("🟢")) {
-      confidence = "high";
-    } else if (responseText.includes("🔴")) {
-      confidence = "low";
-    } else if (responseText.includes("🟡")) {
-      confidence = "medium";
-    }
-    // Priority 2: Check for explicit confidence text patterns (case-insensitive)
-    else if (responseTextLower.includes("confiance haute") || responseTextLower.includes("confiance élevée") || responseTextLower.includes("confiance elevee") || responseTextLower.includes("niveau de confiance : élevé") || responseTextLower.includes("confiance : haute") || responseTextLower.includes("confiance : élevée")) {
+    // Priority 1: Check for explicit confidence text patterns (case-insensitive)
+    if (responseTextLower.includes("confiance haute") || responseTextLower.includes("confiance élevée") || responseTextLower.includes("confiance elevee") || responseTextLower.includes("niveau de confiance : élevé") || responseTextLower.includes("confiance : haute") || responseTextLower.includes("confiance : élevée")) {
       confidence = "high";
     } else if (responseTextLower.includes("confiance faible") || responseTextLower.includes("confiance basse") || responseTextLower.includes("niveau de confiance : faible") || responseTextLower.includes("confiance : faible")) {
       confidence = "low";
     } else if (responseTextLower.includes("confiance moyenne") || responseTextLower.includes("confiance modérée") || responseTextLower.includes("niveau de confiance : moyen") || responseTextLower.includes("confiance : moyenne")) {
       confidence = "medium";
     }
-    // Priority 3: Check for percentage specifically linked to confidence (e.g., "confiance: 95%", "95% de confiance")
+    // Priority 2: Check for percentage specifically linked to confidence
     else {
       const confidencePercentMatch = responseText.match(/(?:confiance|fiabilité|certitude)[:\s]*(\d{1,3})\s*%/i) || 
                                       responseText.match(/(\d{1,3})\s*%\s*(?:de\s+)?(?:confiance|fiabilité|certitude)/i);
@@ -1829,11 +1821,10 @@ ${context.regulatory_procedures.length > 0 ? context.regulatory_procedures.map((
     }
     
     // Log for debugging
-    console.info(`Confidence detection: initial="${confidence}", hasEmoji=${responseText.includes("🟢") || responseText.includes("🟡") || responseText.includes("🔴")}, textLower contains "confiance élevée"=${responseTextLower.includes("confiance élevée")}, contains "haute"=${responseTextLower.includes("haute")}`);
+    console.info(`Confidence detection: initial="${confidence}", textLower contains "confiance élevée"=${responseTextLower.includes("confiance élevée")}, contains "haute"=${responseTextLower.includes("haute")}`);
     
     // Priority 4: Fallback to context-based confidence ONLY if no explicit confidence was found in text
-    const hasExplicitConfidence = responseText.includes("🟢") || responseText.includes("🟡") || responseText.includes("🔴") ||
-                                   responseTextLower.includes("confiance") || responseTextLower.includes("fiabilité");
+    const hasExplicitConfidence = responseTextLower.includes("confiance") || responseTextLower.includes("fiabilité");
     
     if (!hasExplicitConfidence) {
       // Only use context-based logic if the AI didn't explicitly state confidence
