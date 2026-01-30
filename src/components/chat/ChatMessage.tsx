@@ -394,11 +394,20 @@ export function ChatMessage({
                   // Handle source:// links (our custom protocol for source references)
                   if (url.startsWith('source://') || isDocumentUrl(url)) {
                     return (
-                      <a 
-                        href="#"
-                        data-source-url={url}
-                        data-source-title={linkText}
-                        data-source-link="true"
+                      <span 
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleLinkClick(url, linkText);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleLinkClick(url, linkText);
+                          }
+                        }}
                         className={cn(
                           "inline-flex items-center gap-1.5 text-primary hover:text-primary/80 underline underline-offset-2 transition-colors font-medium cursor-pointer",
                           isSearchingDoc && "opacity-50 cursor-wait pointer-events-none"
@@ -406,7 +415,7 @@ export function ChatMessage({
                       >
                         <span>{children || "Consulter"}</span>
                         <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                      </a>
+                      </span>
                     );
                   }
                   
