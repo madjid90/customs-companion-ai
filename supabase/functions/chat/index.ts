@@ -737,6 +737,45 @@ serve(async (req) => {
     let imageAnalysis: { productDescription: string; suggestedCodes: string[]; questions: string[] } | null = null;
     let enrichedQuestion = question || "";
     
+    // AMÉLIORATION CRITIQUE: Enrichir la question avec le contexte de l'historique
+    // pour que la recherche de PDFs et codes SH prenne en compte tout le contexte
+    let historyContext = "";
+    if (conversationHistory && Array.isArray(conversationHistory) && conversationHistory.length > 0) {
+      // Extraire les éléments clés des messages précédents (derniers 6 messages)
+      const recentHistory = conversationHistory.slice(-6);
+      const keyPhrases: string[] = [];
+      
+      for (const msg of recentHistory) {
+        if (msg.role === "user" && msg.content) {
+          // Extraire les mots-clés importants des questions précédentes
+          const content = msg.content.toLowerCase();
+          // Détecter les types de produits mentionnés
+          const productPatterns = [
+            /serrure[s]?/gi, /cadenas/gi, /verrou[s]?/gi, /clé[s]?/gi, /fermoir[s]?/gi,
+            /téléphone[s]?/gi, /smartphone[s]?/gi, /ordinateur[s]?/gi, /voiture[s]?/gi,
+            /machine[s]?/gi, /équipement[s]?/gi, /appareil[s]?/gi, /produit[s]?/gi,
+            /meuble[s]?/gi, /porte[s]?/gi, /fenêtre[s]?/gi, /véhicule[s]?/gi,
+            /métaux?\s*commun[s]?/gi, /acier/gi, /fer/gi, /cuivre/gi, /aluminium/gi,
+            /électrique[s]?/gi, /électronique[s]?/gi, /mécanique[s]?/gi,
+          ];
+          
+          for (const pattern of productPatterns) {
+            const matches = msg.content.match(pattern);
+            if (matches) {
+              keyPhrases.push(...matches);
+            }
+          }
+        }
+      }
+      
+      // Créer un contexte résumé pour enrichir la question
+      if (keyPhrases.length > 0) {
+        const uniquePhrases = [...new Set(keyPhrases.map(p => p.toLowerCase()))];
+        historyContext = `[CONTEXTE DE CONVERSATION: ${uniquePhrases.join(", ")}] `;
+        console.log("History context extracted:", historyContext);
+      }
+    }
+    
     if (images && images.length > 0) {
       console.log("Analyzing", images.length, "image(s) with Lovable AI Vision...");
       try {
@@ -756,8 +795,12 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       }
     }
 
-    // Analyze the question (enriched with image analysis if available)
-    const analysis = analyzeQuestion(enrichedQuestion);
+    // Enrichir avec le contexte de l'historique pour la recherche
+    const searchQuestion = historyContext + enrichedQuestion;
+    console.log("Search question with history context:", searchQuestion.substring(0, 200));
+
+    // Analyze the question (enriched with history context and image analysis)
+    const analysis = analyzeQuestion(searchQuestion);
     
     // Add suggested codes from image analysis
     if (imageAnalysis?.suggestedCodes.length) {
