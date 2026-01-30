@@ -91,28 +91,67 @@ export function analyzeQuestion(question: string): QuestionAnalysis {
 
 /**
  * Extrait le contexte de l'historique de conversation
+ * Inclut les codes SH, les mots-clés produits et autres infos pertinentes
  */
-export function extractHistoryContext(conversationHistory: Array<{ role: string; content: string }> | undefined): string {
+export function extractHistoryContext(conversationHistory: Array<{ role: string; content: string }> | undefined): { 
+  contextString: string; 
+  detectedCodes: string[];
+  keywords: string[];
+} {
+  const result = { contextString: "", detectedCodes: [] as string[], keywords: [] as string[] };
+  
   if (!conversationHistory || !Array.isArray(conversationHistory) || conversationHistory.length === 0) {
-    return "";
+    return result;
   }
   
-  const recentHistory = conversationHistory.slice(-6);
+  const recentHistory = conversationHistory.slice(-8);
   const keyPhrases: string[] = [];
+  const hsCodes: string[] = [];
   
   for (const msg of recentHistory) {
-    if (msg.role === "user" && msg.content) {
+    const content = msg.content || "";
+    
+    // Extract HS codes from ALL messages (user and assistant)
+    const hsPattern = /\b(\d{2}[\.\s]?\d{2}[\.\s]?\d{0,2}[\.\s]?\d{0,2})\b/g;
+    const codeMatches = [...content.matchAll(hsPattern)];
+    for (const match of codeMatches) {
+      const code = match[1].replace(/[\.\s]/g, '');
+      if (code.length >= 4) {
+        hsCodes.push(code);
+      }
+    }
+    
+    // Also look for formatted codes like "0702.00.00.00"
+    const formattedPattern = /\b(\d{4}\.\d{2}\.\d{2}\.\d{2})\b/g;
+    const formattedMatches = [...content.matchAll(formattedPattern)];
+    for (const match of formattedMatches) {
+      const code = match[1].replace(/\./g, '');
+      hsCodes.push(code);
+    }
+    
+    if (msg.role === "user") {
+      // Extended product patterns including food items
       const productPatterns = [
+        // Food items
+        /tomate[s]?/gi, /légume[s]?/gi, /fruit[s]?/gi, /pomme[s]?/gi, /orange[s]?/gi,
+        /viande[s]?/gi, /poisson[s]?/gi, /céréale[s]?/gi, /riz/gi, /blé/gi,
+        /lait/gi, /fromage[s]?/gi, /œuf[s]?|oeuf[s]?/gi, /huile[s]?/gi, /sucre/gi,
+        /café/gi, /thé/gi, /chocolat/gi, /biscuit[s]?/gi, /pain[s]?/gi,
+        // Industrial products
         /serrure[s]?/gi, /cadenas/gi, /verrou[s]?/gi, /clé[s]?/gi, /fermoir[s]?/gi,
         /téléphone[s]?/gi, /smartphone[s]?/gi, /ordinateur[s]?/gi, /voiture[s]?/gi,
-        /machine[s]?/gi, /équipement[s]?/gi, /appareil[s]?/gi, /produit[s]?/gi,
+        /machine[s]?/gi, /équipement[s]?/gi, /appareil[s]?/gi,
         /meuble[s]?/gi, /porte[s]?/gi, /fenêtre[s]?/gi, /véhicule[s]?/gi,
         /métaux?\s*commun[s]?/gi, /acier/gi, /fer/gi, /cuivre/gi, /aluminium/gi,
         /électrique[s]?/gi, /électronique[s]?/gi, /mécanique[s]?/gi,
+        // Textiles
+        /vêtement[s]?/gi, /tissu[s]?/gi, /textile[s]?/gi, /coton/gi, /laine/gi,
+        // Chemicals
+        /chimique[s]?/gi, /médicament[s]?/gi, /cosmétique[s]?/gi,
       ];
       
       for (const pattern of productPatterns) {
-        const matches = msg.content.match(pattern);
+        const matches = content.match(pattern);
         if (matches) {
           keyPhrases.push(...matches);
         }
@@ -120,13 +159,24 @@ export function extractHistoryContext(conversationHistory: Array<{ role: string;
     }
   }
   
-  if (keyPhrases.length > 0) {
-    const uniquePhrases = [...new Set(keyPhrases.map(p => p.toLowerCase()))];
-    console.log("History context extracted:", uniquePhrases.join(", "));
-    return `[CONTEXTE DE CONVERSATION: ${uniquePhrases.join(", ")}] `;
+  // Deduplicate and store results
+  result.detectedCodes = [...new Set(hsCodes)];
+  result.keywords = [...new Set(keyPhrases.map(p => p.toLowerCase()))];
+  
+  const contextParts: string[] = [];
+  if (result.detectedCodes.length > 0) {
+    contextParts.push(`CODES SH MENTIONNÉS: ${result.detectedCodes.slice(0, 5).join(", ")}`);
+  }
+  if (result.keywords.length > 0) {
+    contextParts.push(`PRODUITS: ${result.keywords.slice(0, 5).join(", ")}`);
   }
   
-  return "";
+  if (contextParts.length > 0) {
+    result.contextString = `[CONTEXTE DE CONVERSATION: ${contextParts.join(" | ")}] `;
+    console.log("History context extracted:", result.contextString, "codes:", result.detectedCodes);
+  }
+  
+  return result;
 }
 
 // ============================================================================

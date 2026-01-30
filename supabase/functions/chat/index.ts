@@ -152,6 +152,7 @@ serve(async (req) => {
     let enrichedQuestion = question || "";
     
     const historyContext = extractHistoryContext(conversationHistory);
+    const historyContextString = historyContext.contextString;
     
     // Analyse des images
     if (images && images.length > 0) {
@@ -205,8 +206,15 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     // =========================================================================
     // ANALYSE DE LA QUESTION
     // =========================================================================
-    const searchQuestion = historyContext + enrichedQuestion;
+    const searchQuestion = historyContextString + enrichedQuestion;
     const analysis = analyzeQuestion(searchQuestion);
+    
+    // Add codes detected from conversation history
+    if (historyContext.detectedCodes.length > 0) {
+      const cleanedHistoryCodes = historyContext.detectedCodes.map(c => cleanHSCode(c));
+      analysis.detectedCodes = [...new Set([...analysis.detectedCodes, ...cleanedHistoryCodes])];
+      console.log("Added codes from history:", cleanedHistoryCodes);
+    }
     
     if (imageAnalysis?.suggestedCodes.length) {
       const cleanedSuggested = imageAnalysis.suggestedCodes.map(c => cleanHSCode(c));
@@ -301,10 +309,13 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     }
 
     // 6. Get relevant PDF summaries - CONTENT-BASED MATCHING
-    // Extract unique chapter prefixes (2 digits) from detected HS codes
-    const hsCodePrefixes = context.hs_codes.length > 0 
-      ? [...new Set(context.hs_codes.map(c => {
-          const code = cleanHSCode(c.code || c.code_clean);
+    // Extract unique chapter prefixes (2 digits) from detected HS codes AND analysis codes
+    const allCodes = [
+      ...context.hs_codes.map(c => cleanHSCode(c.code || c.code_clean)),
+      ...analysis.detectedCodes.map(c => cleanHSCode(c))
+    ];
+    const hsCodePrefixes = allCodes.length > 0 
+      ? [...new Set(allCodes.map(code => {
           return code.substring(0, 2); // Get first 2 digits as string
         }).filter(prefix => prefix.length === 2 && /^\d{2}$/.test(prefix)))]
       : [];
