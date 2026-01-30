@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, forwardRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -122,7 +122,8 @@ export function parseQuestionsFromResponse(content: string): Question[] {
   return questions;
 }
 
-export function InteractiveQuestions({ questions, onAnswer, disabled }: InteractiveQuestionsProps) {
+export const InteractiveQuestions = forwardRef<HTMLDivElement, InteractiveQuestionsProps>(
+  function InteractiveQuestions({ questions, onAnswer, disabled }, ref) {
   const [customInputs, setCustomInputs] = useState<Record<string, boolean>>({});
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
 
@@ -152,7 +153,7 @@ export function InteractiveQuestions({ questions, onAnswer, disabled }: Interact
   };
   
   return (
-    <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-border/20 space-y-2 md:space-y-3">
+    <div ref={ref} className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-border/20 space-y-2 md:space-y-3">
       <p className="text-[10px] md:text-xs text-muted-foreground font-medium uppercase tracking-wider">
         Sélectionnez une option
       </p>
@@ -240,4 +241,4 @@ export function InteractiveQuestions({ questions, onAnswer, disabled }: Interact
       ))}
     </div>
   );
-}
+});
