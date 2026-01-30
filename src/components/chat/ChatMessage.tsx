@@ -342,21 +342,32 @@ export function ChatMessage({
         )}
       >
         {!isUser && !isError ? (
-          <div className="prose prose-sm dark:prose-invert max-w-none">
+          <div 
+            className="prose prose-sm dark:prose-invert max-w-none"
+            onClick={(e) => {
+              // Event delegation for source links - capture clicks on <a> elements
+              const target = e.target as HTMLElement;
+              const link = target.closest('a[data-source-url], a[href^="source://"]');
+              if (link) {
+                e.preventDefault();
+                e.stopPropagation();
+                const url = link.getAttribute('data-source-url') || link.getAttribute('href') || '';
+                const linkText = link.textContent || 'Document';
+                handleLinkClick(url, linkText);
+              }
+            }}
+          >
             <ReactMarkdown
               rehypePlugins={[[rehypeSanitize, {
                 ...defaultSchema,
                 tagNames: [
                   ...(defaultSchema.tagNames || []),
-                  'table', 'thead', 'tbody', 'tr', 'th', 'td', 'a', 'button', 'span', 'svg', 'path'
+                  'table', 'thead', 'tbody', 'tr', 'th', 'td', 'a', 'span'
                 ],
                 attributes: {
                   ...defaultSchema.attributes,
                   '*': ['className', 'style'],
-                  'a': ['href', 'target', 'rel'],
-                  'button': ['onClick', 'disabled', 'type', 'className'],
-                  'svg': ['className', 'viewBox', 'fill', 'stroke', 'strokeWidth', 'xmlns', 'width', 'height'],
-                  'path': ['d', 'fill', 'stroke', 'strokeWidth', 'strokeLinecap', 'strokeLinejoin'],
+                  'a': ['href', 'target', 'rel', 'data-source-url', 'data-source-title', 'data-source-link'],
                 },
               }]]}
               components={{
@@ -387,11 +398,7 @@ export function ChatMessage({
                         href="#"
                         data-source-url={url}
                         data-source-title={linkText}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleLinkClick(url, linkText);
-                        }}
+                        data-source-link="true"
                         className={cn(
                           "inline-flex items-center gap-1.5 text-primary hover:text-primary/80 underline underline-offset-2 transition-colors font-medium cursor-pointer",
                           isSearchingDoc && "opacity-50 cursor-wait pointer-events-none"
