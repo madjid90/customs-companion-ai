@@ -322,20 +322,20 @@ export function ChatMessage({
   return (
     <div
       className={cn(
-        "flex gap-2 md:gap-4 animate-slide-up",
+        "flex gap-2 md:gap-4 animate-slide-up px-2 md:px-0",
         isUser ? "justify-end" : "justify-start"
       )}
     >
       {/* Bot avatar - hidden on mobile for more space */}
       {!isUser && (
-        <div className="flex-shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-accent/20 to-accent/5 flex items-center justify-center shadow-sm border border-accent/10 hidden sm:flex">
+        <div className="flex-shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-accent/20 to-accent/5 flex items-center justify-center shadow-sm border border-accent/10 hidden md:flex">
           <Bot className="h-4 w-4 md:h-5 md:w-5 text-accent" />
         </div>
       )}
 
       <div
         className={cn(
-          "max-w-[92%] sm:max-w-[85%] md:max-w-[80%] rounded-2xl px-3 py-2.5 md:px-5 md:py-4 transition-all",
+          "max-w-[95%] md:max-w-[80%] rounded-2xl px-3 py-2.5 md:px-5 md:py-4 transition-all",
           isUser
             ? "bg-chat-user text-chat-user-foreground chat-message-user shadow-md"
             : "bg-chat-ai text-chat-ai-foreground chat-message-ai"
@@ -579,9 +579,9 @@ export function ChatMessage({
         )}
       </div>
 
-      {/* User avatar - smaller on mobile */}
+      {/* User avatar - hidden on mobile, visible on desktop */}
       {isUser && (
-        <div className="flex-shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-md">
+        <div className="flex-shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 items-center justify-center shadow-md hidden md:flex">
           <User className="h-3.5 w-3.5 md:h-5 md:w-5 text-primary-foreground" />
         </div>
       )}
