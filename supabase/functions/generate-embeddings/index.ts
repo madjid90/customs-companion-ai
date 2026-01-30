@@ -152,10 +152,12 @@ serve(async (req) => {
               const embeddings = await generateEmbeddingsBatch(texts, OPENAI_API_KEY);
 
               for (let j = 0; j < batch.length; j++) {
+                // Convert embedding array to pgvector string format "[...]"
+                const embeddingString = `[${embeddings[j].join(",")}]`;
                 const { error: updateError } = await supabase
                   .from("hs_codes")
                   .update({
-                    embedding: embeddings[j],
+                    embedding: embeddingString,
                     embedding_updated_at: new Date().toISOString(),
                   })
                   .eq("id", batch[j].id);
@@ -212,10 +214,12 @@ serve(async (req) => {
               const embeddings = await generateEmbeddingsBatch(texts, OPENAI_API_KEY);
 
               for (let j = 0; j < batch.length; j++) {
+                // Convert embedding array to pgvector string format "[...]"
+                const embeddingString = `[${embeddings[j].join(",")}]`;
                 const { error: updateError } = await supabase
                   .from("knowledge_documents")
                   .update({
-                    embedding: embeddings[j],
+                    embedding: embeddingString,
                     embedding_updated_at: new Date().toISOString(),
                   })
                   .eq("id", batch[j].id);
@@ -269,10 +273,12 @@ serve(async (req) => {
               const embeddings = await generateEmbeddingsBatch(texts, OPENAI_API_KEY);
 
               for (let j = 0; j < batch.length; j++) {
+                // Convert embedding array to pgvector string format "[...]"
+                const embeddingString = `[${embeddings[j].join(",")}]`;
                 const { error: updateError } = await supabase
                   .from("pdf_extractions")
                   .update({
-                    embedding: embeddings[j],
+                    embedding: embeddingString,
                     embedding_updated_at: new Date().toISOString(),
                   })
                   .eq("id", batch[j].id);
@@ -326,10 +332,12 @@ serve(async (req) => {
               const embeddings = await generateEmbeddingsBatch(texts, OPENAI_API_KEY);
 
               for (let j = 0; j < batch.length; j++) {
+                // Convert embedding array to pgvector string format "[...]"
+                const embeddingString = `[${embeddings[j].join(",")}]`;
                 const { error: updateError } = await supabase
                   .from("veille_documents")
                   .update({
-                    embedding: embeddings[j],
+                    embedding: embeddingString,
                     embedding_updated_at: new Date().toISOString(),
                   })
                   .eq("id", batch[j].id);
