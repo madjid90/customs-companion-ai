@@ -197,33 +197,41 @@ export function ChatMessage({
       // Priority 3: Extract from title containing chapter number
       let chapter = chapterFromUrl;
       
+      // If chapter from URL, ensure it's properly formatted
+      if (chapter) {
+        chapter = chapter.replace(/^0+/, '') || chapter; // Remove leading zeros for consistency
+      }
+      
       if (!chapter) {
-        // Match "Chapitre SH 83" or "Chapitre 83"
-        const chapterMatch = sourceTitle.match(/Chapitre\s*(?:SH\s*)?(\d{1,2})/i);
+        // Match "Chapitre SH 83" or "Chapitre 83" or "Chapitre SH 07"
+        const chapterMatch = sourceTitle.match(/Chapitre\s*(?:SH\s*)?0?(\d{1,2})/i);
         if (chapterMatch) {
-          chapter = chapterMatch[1].padStart(2, '0');
+          chapter = chapterMatch[1];
         }
       }
       
       if (!chapter) {
-        // Try to extract from title like "SH CODE 83" or "SH 83"
-        const codeMatch = sourceTitle.match(/SH\s*(?:CODE\s*)?(\d{1,2})/i);
+        // Try to extract from title like "SH CODE 83" or "SH 83" or "SH_CODE_07"
+        const codeMatch = sourceTitle.match(/SH[_\s]*(?:CODE[_\s]*)?0?(\d{1,2})/i);
         if (codeMatch) {
-          chapter = codeMatch[1].padStart(2, '0');
+          chapter = codeMatch[1];
         }
       }
 
       if (!chapter) {
-        // Last resort: any 2-digit number in the title
-        const numMatch = sourceTitle.match(/\b(\d{2})\b/);
+        // Last resort: any 1-2 digit number in the title
+        const numMatch = sourceTitle.match(/\b0?(\d{1,2})\b/);
         if (numMatch) {
           chapter = numMatch[1];
         }
       }
 
-      console.log("Searching for document, chapter:", chapter, "title:", sourceTitle);
+      // Always use padded format for file lookup (SH_CODE_07.pdf format)
+      const paddedChapter = chapter?.padStart(2, '0');
+      
+      console.log("Searching for document, raw chapter:", chapterFromUrl, "normalized:", chapter, "padded:", paddedChapter, "title:", sourceTitle);
 
-      if (!chapter) {
+      if (!paddedChapter) {
         console.log("No chapter found in title:", sourceTitle);
         setPreviewDoc({
           url: '',
@@ -232,18 +240,35 @@ export function ChatMessage({
         return;
       }
 
-      const paddedChapter = chapter.padStart(2, '0');
+      // Search using EXACT match for file_name pattern: SH_CODE_XX.pdf
+      const exactFileName = `SH_CODE_${paddedChapter}.pdf`;
+      console.log("Searching for exact file_name:", exactFileName);
       
-      // Search specifically for SH_CODE_XX format in file_name
       const { data: docs, error } = await supabase
         .from("pdf_documents")
         .select("id, file_name, file_path, title")
         .eq("is_active", true)
         .eq("category", "tarif")
-        .ilike("file_name", `%SH_CODE_${paddedChapter}%`)
+        .eq("file_name", exactFileName)
         .limit(1);
 
-      console.log("Document search results:", docs, error);
+      console.log("Document search results (exact):", docs, error);
+
+      // If exact match fails, try ilike with padding
+      let foundDocs = docs;
+      if ((!docs || docs.length === 0) && !error) {
+        console.log("Exact match failed, trying ilike pattern");
+        const { data: ilikeResults } = await supabase
+          .from("pdf_documents")
+          .select("id, file_name, file_path, title")
+          .eq("is_active", true)
+          .eq("category", "tarif")
+          .or(`file_name.ilike.%SH_CODE_${paddedChapter}.%,title.ilike.%Chapitre SH ${paddedChapter}%`)
+          .limit(1);
+        
+        console.log("ilike search results:", ilikeResults);
+        foundDocs = ilikeResults;
+      }
 
       if (error) {
         console.error("Error searching document:", error);
@@ -254,14 +279,14 @@ export function ChatMessage({
         return;
       }
 
-      if (docs && docs.length > 0) {
-        const doc = docs[0];
+      if (foundDocs && foundDocs.length > 0) {
+        const doc = foundDocs[0];
         // Get public URL from storage
         const { data: urlData } = supabase.storage
           .from("pdf-documents")
           .getPublicUrl(doc.file_path);
 
-        console.log("Document found:", doc.title, "URL:", urlData?.publicUrl);
+        console.log("Document found:", doc.title, "file:", doc.file_name, "URL:", urlData?.publicUrl);
 
         if (urlData?.publicUrl) {
           setPreviewDoc({
@@ -276,7 +301,7 @@ export function ChatMessage({
         }
       } else {
         // Document not found - show a fallback message
-        console.log("Document not found for chapter:", chapter, "title:", sourceTitle);
+        console.log("Document not found for chapter:", chapter, "padded:", paddedChapter, "title:", sourceTitle);
         setPreviewDoc({
           url: '',
           title: `Document non trouvé: Chapitre SH ${paddedChapter}`
