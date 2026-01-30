@@ -11,6 +11,7 @@ import {
 } from "../_shared/cors.ts";
 import { validateChatRequest } from "../_shared/validation.ts";
 import { createLogger } from "../_shared/logger.ts";
+import { fetchWithRetry, type RetryConfig } from "../_shared/retry.ts";
 
 // =============================================================================
 // CONFIGURATION LOVABLE AI
@@ -2056,58 +2057,60 @@ ${context.regulatory_procedures.length > 0 ? context.regulatory_procedures.map((
       content: enrichedQuestion || question || "Identifie ce produit",
     });
 
-    // Call Lovable AI (Gemini) with timeout
+    // Call Lovable AI (Gemini) with retry for transient errors
     const startTime = Date.now();
-    const AI_TIMEOUT_MS = 60000; // 60 seconds timeout
-
-    // Create AbortController for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+    
+    // Retry config for Lovable AI - handles 500, 502, 503, 504, 429
+    const lovableRetryConfig: RetryConfig = {
+      maxRetries: 3,
+      initialDelayMs: 2000,  // Start with 2s delay
+      maxDelayMs: 15000,     // Max 15s between retries
+      retryableStatuses: [429, 500, 502, 503, 504]
+    };
 
     let aiResponse: Response;
     try {
-      logger.info("Calling Lovable AI", { model: LOVABLE_AI_MODEL });
+      logger.info("Calling Lovable AI with retry", { model: LOVABLE_AI_MODEL, maxRetries: lovableRetryConfig.maxRetries });
       
-      aiResponse = await fetch(LOVABLE_AI_GATEWAY, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
+      aiResponse = await fetchWithRetry(
+        LOVABLE_AI_GATEWAY,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: LOVABLE_AI_MODEL,
+            max_tokens: 4096,
+            messages: [
+              { role: "system", content: systemPrompt },
+              ...claudeMessages,
+            ],
+          }),
         },
-        body: JSON.stringify({
-          model: LOVABLE_AI_MODEL,
-          max_tokens: 4096,
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...claudeMessages,
-          ],
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+        lovableRetryConfig
+      );
       
       logger.info("Lovable AI responded", { status: aiResponse.status });
       
     } catch (fetchError: any) {
-      clearTimeout(timeoutId);
-      if (fetchError.name === 'AbortError') {
-        logger.error("Lovable AI timeout", fetchError, { timeoutMs: AI_TIMEOUT_MS });
-        return errorResponse(req, "La requête a pris trop de temps. Veuillez réessayer.", 504);
-      }
-      logger.error("Lovable AI error", fetchError);
-      return errorResponse(req, "Service temporairement indisponible.", 503);
+      logger.error("Lovable AI fetch error after retries", fetchError);
+      return errorResponse(req, "Service temporairement indisponible. Veuillez réessayer.", 503);
     }
 
     if (!aiResponse.ok) {
+      const errorText = await aiResponse.text();
+      logger.error("Lovable AI non-OK response", new Error(errorText), { status: aiResponse.status });
+      
       if (aiResponse.status === 429) {
         return errorResponse(req, "Trop de requêtes. Veuillez réessayer dans quelques instants.", 429);
       }
       if (aiResponse.status === 402) {
         return errorResponse(req, "Crédits Lovable AI épuisés. Rechargez dans Settings > Workspace > Usage.", 402);
       }
-      const errorText = await aiResponse.text();
-      console.error("Lovable AI error:", aiResponse.status, errorText);
-      throw new Error("Lovable AI error");
+      // For other errors after all retries failed, return a user-friendly message
+      return errorResponse(req, "Service temporairement indisponible. Veuillez réessayer dans quelques instants.", 503);
     }
 
     const aiData = await aiResponse.json();
