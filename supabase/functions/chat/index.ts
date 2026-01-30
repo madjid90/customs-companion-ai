@@ -300,73 +300,86 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       context.knowledge_documents = [...new Map(context.knowledge_documents.map(d => [d.title, d])).values()].slice(0, 10);
     }
 
-    // 6. Get relevant PDF summaries - PRECISE CHAPTER MATCHING
-    // Extract unique chapter numbers from detected HS codes
-    const chaptersForPdf = context.hs_codes.length > 0 
+    // 6. Get relevant PDF summaries - CONTENT-BASED MATCHING
+    // Extract unique chapter prefixes (2 digits) from detected HS codes
+    const hsCodePrefixes = context.hs_codes.length > 0 
       ? [...new Set(context.hs_codes.map(c => {
           const code = cleanHSCode(c.code || c.code_clean);
-          return parseInt(code.substring(0, 2));
-        }).filter(ch => !isNaN(ch) && ch > 0 && ch <= 99))]
+          return code.substring(0, 2); // Get first 2 digits as string
+        }).filter(prefix => prefix.length === 2 && /^\d{2}$/.test(prefix)))]
       : [];
     
-    if (chaptersForPdf.length > 0) {
-      // Build exact file_path matches for each chapter
-      const exactPaths = chaptersForPdf.slice(0, 10).map(chNum => 
-        `tarifs/SH_CODE_${chNum.toString().padStart(2, '0')}.pdf`
-      );
+    if (hsCodePrefixes.length > 0) {
+      console.log(`PDF lookup: searching for HS prefixes: ${hsCodePrefixes.join(', ')}`);
       
-      console.log(`PDF lookup: searching for chapters ${chaptersForPdf.join(', ')} → paths: ${exactPaths.join(', ')}`);
+      // Search PDFs by CONTENT (mentioned_hs_codes) not by file name
+      // Find all tariff PDFs with their extractions
+      const { data: pdfWithExtractions } = await supabase
+        .from('pdf_extractions')
+        .select(`
+          id,
+          summary,
+          key_points,
+          mentioned_hs_codes,
+          extracted_text,
+          extracted_data,
+          pdf_id,
+          pdf_documents!inner(id, title, category, file_path, is_active)
+        `)
+        .eq('pdf_documents.category', 'tarif')
+        .eq('pdf_documents.is_active', true)
+        .not('mentioned_hs_codes', 'is', null);
       
-      const { data: pdfDocs } = await supabase
-        .from('pdf_documents')
-        .select('id, title, category, file_path')
-        .eq('is_active', true)
-        .eq('category', 'tarif')
-        .in('file_path', exactPaths);
-      
-      if (pdfDocs && pdfDocs.length > 0) {
-        console.log(`PDF lookup: found ${pdfDocs.length} matching PDFs: ${pdfDocs.map((d: any) => d.title).join(', ')}`);
+      if (pdfWithExtractions && pdfWithExtractions.length > 0) {
+        // Filter PDFs by actual content - check if mentioned_hs_codes contain matching prefixes
+        const matchingPdfs = pdfWithExtractions.filter((ext: any) => {
+          const mentionedCodes = ext.mentioned_hs_codes || [];
+          // Check if any mentioned code starts with one of our prefixes
+          return mentionedCodes.some((code: string) => {
+            const codeStr = String(code).replace(/\D/g, '');
+            return hsCodePrefixes.some(prefix => codeStr.startsWith(prefix));
+          });
+        });
         
-        const pdfIds = pdfDocs.map((d: any) => d.id);
-        const { data: extractions } = await supabase
-          .from('pdf_extractions')
-          .select('summary, key_points, mentioned_hs_codes, extracted_text, extracted_data, pdf_id')
-          .in('pdf_id', pdfIds);
+        console.log(`PDF lookup: found ${matchingPdfs.length} PDFs matching content for prefixes ${hsCodePrefixes.join(', ')}`);
         
-        if (extractions) {
-          const pdfMap = new Map(pdfDocs.map((d: any) => [d.id, d]));
-          
-          // Create a chapter-to-pdf mapping for verification
-          const chapterToPdf = new Map<number, any>();
-          for (const doc of pdfDocs as any[]) {
-            const match = doc.file_path?.match(/SH_CODE_(\d+)\.pdf/);
-            if (match) {
-              chapterToPdf.set(parseInt(match[1]), doc);
-            }
-          }
-          
-          context.pdf_summaries = extractions.map((ext: any) => {
-            const pdfDoc = pdfMap.get(ext.pdf_id) as any;
+        // Deduplicate by pdf_id and map to context format
+        const seenPdfIds = new Set<string>();
+        context.pdf_summaries = matchingPdfs
+          .filter((ext: any) => {
+            if (seenPdfIds.has(ext.pdf_id)) return false;
+            seenPdfIds.add(ext.pdf_id);
+            return true;
+          })
+          .slice(0, 10)
+          .map((ext: any) => {
+            const pdfDoc = ext.pdf_documents;
             const filePath = pdfDoc?.file_path;
             
-            // Extract chapter number from file path for validation
-            const chapterMatch = filePath?.match(/SH_CODE_(\d+)\.pdf/);
-            const pdfChapter = chapterMatch ? parseInt(chapterMatch[1]) : null;
+            // Determine actual chapter from content (first mentioned code)
+            const mentionedCodes = ext.mentioned_hs_codes || [];
+            let actualChapter: number | null = null;
+            if (mentionedCodes.length > 0) {
+              const firstCode = String(mentionedCodes[0]).replace(/\D/g, '');
+              actualChapter = parseInt(firstCode.substring(0, 2));
+              if (isNaN(actualChapter)) actualChapter = null;
+            }
             
             return {
               title: pdfDoc?.title,
               category: pdfDoc?.category,
-              chapter_number: pdfChapter,
+              chapter_number: actualChapter,
               summary: ext.summary,
               key_points: ext.key_points,
               full_text: ext.extracted_text,
-              mentioned_codes: ext.mentioned_hs_codes,
+              mentioned_codes: mentionedCodes,
               download_url: filePath ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${filePath}` : null,
             };
           });
-        }
+        
+        console.log(`PDF lookup: returning ${context.pdf_summaries.length} PDFs with chapters: ${context.pdf_summaries.map((p: any) => p.chapter_number).join(', ')}`);
       } else {
-        console.log(`PDF lookup: no matching PDFs found for paths: ${exactPaths.join(', ')}`);
+        console.log(`PDF lookup: no PDFs with extractions found`);
       }
     }
 
