@@ -1754,44 +1754,35 @@ FIN DE LA LISTE DES URLS - UTILISE UNIQUEMENT CES URLs EXACTES
 > [Source]
 
 **EXEMPLE - Question simple "Code SH pour café torréfié":**
-❌ MAUVAIS (trop long): "Le café torréfié est un produit alimentaire très populaire. En matière douanière, il est important de bien classifier les produits. Le café fait partie du chapitre 09 du système harmonisé qui couvre le café, thé et épices. Plus précisément, le café torréfié est classé..."
+❌ MAUVAIS (trop long): "Le café torréfié est un produit alimentaire très populaire. En matière douanière..."
 
 ✅ BON (concis): "**Code SH:** 0901.21 (café torréfié, non décaféiné)
-**Droit d'importation:** 2.5%
-**TVA:** 20%
+**Droit d'importation:** 2.5% | **TVA:** 20%
 
-Source: Tarif douanier marocain"
+[Consulter la source](source://lookup/09)"
 
 ${sourcesListForPrompt}
 
-## RÈGLE ABSOLUE - LIENS DE TÉLÉCHARGEMENT
+## RÈGLE ABSOLUE - LIENS DE SOURCE
 
-**QUAND TU CITES UN DOCUMENT DE LA LISTE CI-DESSUS:**
-1. Trouve le document dans la liste
-2. COPIE EXACTEMENT l'URL_TÉLÉCHARGEMENT correspondante
-3. Utilise ce format Markdown: [Consulter](URL_COPIÉE)
+**OBLIGATOIRE pour chaque réponse avec des données tarifaires:**
+- Utilise TOUJOURS ce format de lien: [Consulter la source](source://lookup/XX)
+- XX = les 2 premiers chiffres du code SH (le chapitre)
+- Exemple pour code 0702.00: [Consulter la source](source://lookup/07)
+- Exemple pour code 8517.12: [Consulter la source](source://lookup/85)
 
 **INTERDIT:**
-- Ne PAS écrire [Consulter](Données intégrées)
-- Ne PAS inventer des URLs
-- Ne PAS utiliser des URLs internes comme /chat ou localhost
-- Si un document n'est pas dans la liste, écris: "Consultez www.douane.gov.ma"
-- NE PAS UTILISER D'EMOJIS dans tes réponses (pas de 📁, 📥, 📄, ℹ️, etc. sauf 🟢🟡🔴 pour confiance)
-- **INTERDICTION ABSOLUE** d'afficher des données JSON brutes, des blocs de code avec hs_code, national_code, duty_rate, etc.
-- Ne JAMAIS afficher les données techniques internes - formate-les en texte lisible
+- Écrire "Consulter" sans lien cliquable
+- Inventer des URLs http://
+- Écrire juste "Source: Tarif douanier" sans lien
+- Afficher des données JSON brutes ou blocs de code techniques
 
-**EXEMPLE - Formatage des données:**
-❌ INTERDIT:
-\`\`\`
-hs_code_6: "830120"
-national_code: "8301200000"
-duty_rate: 10
-\`\`\`
+**FORMAT OBLIGATOIRE pour chaque réponse:**
+**Code SH:** XXXX.XX.XX.XX
+**Description:** [description courte]
+**Droit d'importation:** X% | **TVA:** X%
 
-✅ CORRECT:
-**Code SH:** 8301.20.00.00
-**Droit d'importation:** 10%
-**TVA:** 20%
+[Consulter la source](source://lookup/XX)
 
 ## MODE CONVERSATION INTERACTIVE
 
