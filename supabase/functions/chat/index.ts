@@ -308,7 +308,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       context.knowledge_documents = [...new Map(context.knowledge_documents.map(d => [d.title, d])).values()].slice(0, 10);
     }
 
-    // 6. Get relevant PDF summaries - CONTENT-BASED MATCHING
+    // 6. Get relevant PDF summaries - OPTIMIZED WITH RPC
     // Extract unique chapter prefixes (2 digits) from detected HS codes AND analysis codes
     const allCodes = [
       ...context.hs_codes.map(c => cleanHSCode(c.code || c.code_clean)),
@@ -321,76 +321,33 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       : [];
     
     if (hsCodePrefixes.length > 0) {
-      console.log(`PDF lookup: searching for HS prefixes: ${hsCodePrefixes.join(', ')}`);
+      console.log(`PDF lookup: searching for HS prefixes via RPC: ${hsCodePrefixes.join(', ')}`);
       
-      // Search PDFs by CONTENT (mentioned_hs_codes) not by file name
-      // Find all tariff PDFs with their extractions
-      const { data: pdfWithExtractions } = await supabase
-        .from('pdf_extractions')
-        .select(`
-          id,
-          summary,
-          key_points,
-          mentioned_hs_codes,
-          extracted_text,
-          extracted_data,
-          pdf_id,
-          pdf_documents!inner(id, title, category, file_path, is_active)
-        `)
-        .eq('pdf_documents.category', 'tarif')
-        .eq('pdf_documents.is_active', true)
-        .not('mentioned_hs_codes', 'is', null);
+      // Use optimized RPC that filters at DB level (much faster than JS filtering)
+      const { data: matchingPdfs, error: rpcError } = await supabase
+        .rpc('search_pdf_by_chapter_prefixes', { prefixes: hsCodePrefixes });
       
-      if (pdfWithExtractions && pdfWithExtractions.length > 0) {
-        // Filter PDFs by actual content - check if mentioned_hs_codes contain matching prefixes
-        const matchingPdfs = pdfWithExtractions.filter((ext: any) => {
-          const mentionedCodes = ext.mentioned_hs_codes || [];
-          // Check if any mentioned code starts with one of our prefixes
-          return mentionedCodes.some((code: string) => {
-            const codeStr = String(code).replace(/\D/g, '');
-            return hsCodePrefixes.some(prefix => codeStr.startsWith(prefix));
-          });
-        });
+      if (rpcError) {
+        console.error("PDF RPC search error:", rpcError.message);
+      } else if (matchingPdfs && matchingPdfs.length > 0) {
+        console.log(`PDF lookup: found ${matchingPdfs.length} PDFs matching prefixes ${hsCodePrefixes.join(', ')}`);
         
-        console.log(`PDF lookup: found ${matchingPdfs.length} PDFs matching content for prefixes ${hsCodePrefixes.join(', ')}`);
-        
-        // Deduplicate by pdf_id and map to context format
-        const seenPdfIds = new Set<string>();
-        context.pdf_summaries = matchingPdfs
-          .filter((ext: any) => {
-            if (seenPdfIds.has(ext.pdf_id)) return false;
-            seenPdfIds.add(ext.pdf_id);
-            return true;
-          })
-          .slice(0, 10)
-          .map((ext: any) => {
-            const pdfDoc = ext.pdf_documents;
-            const filePath = pdfDoc?.file_path;
-            
-            // Determine actual chapter from content (first mentioned code)
-            const mentionedCodes = ext.mentioned_hs_codes || [];
-            let actualChapter: number | null = null;
-            if (mentionedCodes.length > 0) {
-              const firstCode = String(mentionedCodes[0]).replace(/\D/g, '');
-              actualChapter = parseInt(firstCode.substring(0, 2));
-              if (isNaN(actualChapter)) actualChapter = null;
-            }
-            
-            return {
-              title: pdfDoc?.title,
-              category: pdfDoc?.category,
-              chapter_number: actualChapter,
-              summary: ext.summary,
-              key_points: ext.key_points,
-              full_text: ext.extracted_text,
-              mentioned_codes: mentionedCodes,
-              download_url: filePath ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${filePath}` : null,
-            };
-          });
+        context.pdf_summaries = matchingPdfs.slice(0, 10).map((pdf: any) => ({
+          title: pdf.pdf_title,
+          category: pdf.pdf_category,
+          chapter_number: pdf.chapter_number,
+          summary: pdf.summary,
+          key_points: pdf.key_points,
+          full_text: pdf.extracted_text,
+          mentioned_codes: pdf.mentioned_hs_codes || [],
+          download_url: pdf.pdf_file_path 
+            ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${pdf.pdf_file_path}` 
+            : null,
+        }));
         
         console.log(`PDF lookup: returning ${context.pdf_summaries.length} PDFs with chapters: ${context.pdf_summaries.map((p: any) => p.chapter_number).join(', ')}`);
       } else {
-        console.log(`PDF lookup: no PDFs with extractions found`);
+        console.log(`PDF lookup: no PDFs found for prefixes`);
       }
     }
 
