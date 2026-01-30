@@ -322,12 +322,15 @@ export function ChatMessage({
                 ...defaultSchema,
                 tagNames: [
                   ...(defaultSchema.tagNames || []),
-                  'table', 'thead', 'tbody', 'tr', 'th', 'td', 'a'
+                  'table', 'thead', 'tbody', 'tr', 'th', 'td', 'a', 'button', 'span', 'svg', 'path'
                 ],
                 attributes: {
                   ...defaultSchema.attributes,
-                  '*': ['className'],
+                  '*': ['className', 'style'],
                   'a': ['href', 'target', 'rel'],
+                  'button': ['onClick', 'disabled', 'type', 'className'],
+                  'svg': ['className', 'viewBox', 'fill', 'stroke', 'strokeWidth', 'xmlns', 'width', 'height'],
+                  'path': ['d', 'fill', 'stroke', 'strokeWidth', 'strokeLinecap', 'strokeLinejoin'],
                 },
               }]]}
               components={{
