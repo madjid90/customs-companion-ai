@@ -554,7 +554,7 @@ async function analyzePdfWithClaude(
   pdfDocuments: PdfInput[],
   question: string,
   apiKey: string
-): Promise<{ summary: string; extractedInfo: string; suggestedCodes: string[] }> {
+): Promise<{ summary: string; extractedInfo: string; suggestedCodes: string[]; fullContent: string }> {
   
   // Format content blocks for Claude's native PDF support
   const contentBlocks: any[] = [];
@@ -572,26 +572,42 @@ async function analyzePdfWithClaude(
   
   contentBlocks.push({
     type: "text",
-    text: `Tu es un expert en douane et commerce international. Analyse ce(s) document(s) PDF.
+    text: `Tu es un expert en douane et commerce international. Analyse ce(s) document(s) PDF en EXTRAYANT TOUTES LES INFORMATIONS DISPONIBLES.
 
 Question de l'utilisateur: "${question}"
 
+INSTRUCTION CRITIQUE: Tu dois extraire 100% du contenu pertinent du document, pas un résumé. Je veux TOUTES les données.
+
 Réponds en JSON avec ce format:
 {
-  "summary": "Résumé concis du document (max 200 mots)",
-  "extractedInfo": "Informations clés extraites: produits, valeurs, origines, quantités, etc.",
-  "suggestedCodes": ["8517.12", "8517.13"] // Codes SH identifiés dans le document ou suggérés
+  "summary": "Résumé structuré du document",
+  "fullContent": "EXTRACTION COMPLÈTE de toutes les informations: reproduis tout le contenu textuel important du document, ligne par ligne si nécessaire. Inclus TOUTES les données chiffrées, TOUS les noms, TOUTES les références, TOUS les tableaux sous forme textuelle. N'omets RIEN.",
+  "extractedInfo": "Synthèse structurée des informations clés:
+    - Type de document: [facture/certificat/déclaration/etc.]
+    - Références: [numéros, dates, etc.]
+    - Parties: [expéditeur, destinataire, etc. avec adresses complètes]
+    - Produits/Marchandises: [liste COMPLÈTE avec descriptions, quantités, poids, valeurs unitaires et totales]
+    - Codes douaniers: [tous les codes SH/HS mentionnés]
+    - Valeurs: [montants, devises, incoterms]
+    - Origines: [pays d'origine, certificats]
+    - Dates: [toutes les dates pertinentes]
+    - Obligations/Conditions: [si document réglementaire]
+    - Autres données: [toute autre information du document]",
+  "suggestedCodes": ["8517.12", "8517.13"]
 }
 
-IMPORTANT:
-- Si c'est une facture, extrais les produits, valeurs, origines
-- Si c'est une DUM (Déclaration Unique de Marchandises), extrais les codes douaniers et marchandises
-- Si c'est un document réglementaire, résume les obligations et références légales
-- Identifie tous les codes SH/HS mentionnés ou suggérés`,
+RÈGLES IMPÉRATIVES:
+1. EXHAUSTIVITÉ: Extrais CHAQUE produit, CHAQUE ligne, CHAQUE montant du document
+2. PRÉCISION: Conserve les valeurs exactes (chiffres, unités, devises)
+3. STRUCTURE: Si tableau, reproduis les données tabulaires en texte structuré
+4. AUCUNE TRONCATURE: Le champ fullContent peut être très long, c'est voulu
+5. Si facture: liste TOUTES les lignes produits avec prix unitaire et total
+6. Si DUM: extrais TOUS les articles avec codes, descriptions, valeurs
+7. Si certificat: reproduis TOUTES les mentions et références`,
   });
 
-  // PDF analysis with 120 second timeout (PDFs take longer)
-  const PDF_TIMEOUT_MS = 120000;
+  // PDF analysis with 180 second timeout (extraction complète prend plus de temps)
+  const PDF_TIMEOUT_MS = 180000;
   const pdfController = new AbortController();
   const pdfTimeoutId = setTimeout(() => pdfController.abort(), PDF_TIMEOUT_MS);
 
@@ -607,7 +623,7 @@ IMPORTANT:
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 4096,
+        max_tokens: 16384, // Augmenté pour extraction complète
         messages: [
           {
             role: "user",
@@ -643,6 +659,7 @@ IMPORTANT:
       return {
         summary: parsed.summary || "Document analysé",
         extractedInfo: parsed.extractedInfo || "",
+        fullContent: parsed.fullContent || "",
         suggestedCodes: Array.isArray(parsed.suggestedCodes) ? parsed.suggestedCodes : [],
       };
     }
@@ -652,7 +669,8 @@ IMPORTANT:
 
   return {
     summary: text.substring(0, 500),
-    extractedInfo: "",
+    extractedInfo: text,
+    fullContent: text,
     suggestedCodes: [],
   };
 }
@@ -915,29 +933,38 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
     }
 
     // If PDFs are provided, analyze them with Claude's native PDF support
-    let pdfAnalysis: { summary: string; extractedInfo: string; suggestedCodes: string[] } | null = null;
+    let pdfAnalysis: { summary: string; extractedInfo: string; suggestedCodes: string[]; fullContent: string } | null = null;
     
     if (pdfDocuments && pdfDocuments.length > 0) {
-      console.log("Analyzing", pdfDocuments.length, "PDF(s) with Claude Vision...");
+      console.log("Analyzing", pdfDocuments.length, "PDF(s) with Claude - EXTRACTION COMPLÈTE...");
       const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
       
       if (ANTHROPIC_API_KEY) {
         try {
           pdfAnalysis = await analyzePdfWithClaude(pdfDocuments, question || "Analyse ce document", ANTHROPIC_API_KEY);
-          console.log("PDF analysis result:", JSON.stringify(pdfAnalysis).substring(0, 500));
+          console.log("PDF analysis complete. Content length:", pdfAnalysis.fullContent?.length || 0);
           
-          // Enrich the question with PDF analysis
+          // Enrich the question with COMPLETE PDF content
           enrichedQuestion = `${question || "Analyse ce document et donne-moi les informations pertinentes"}
 
-[ANALYSE DU DOCUMENT PDF]
-Résumé: ${pdfAnalysis.summary}
-Informations extraites: ${pdfAnalysis.extractedInfo}
-${pdfAnalysis.suggestedCodes.length > 0 ? `Codes SH identifiés: ${pdfAnalysis.suggestedCodes.join(", ")}` : ""}`;
+[EXTRACTION COMPLÈTE DU DOCUMENT PDF]
+=== RÉSUMÉ ===
+${pdfAnalysis.summary}
+
+=== CONTENU INTÉGRAL EXTRAIT ===
+${pdfAnalysis.fullContent || "Non disponible"}
+
+=== INFORMATIONS STRUCTURÉES ===
+${pdfAnalysis.extractedInfo}
+
+${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAnalysis.suggestedCodes.join(", ")}` : ""}
+
+INSTRUCTION: Utilise TOUTES ces informations extraites du PDF pour répondre à la question de l'utilisateur de manière complète et précise.`;
         } catch (pdfError) {
           console.error("PDF analysis failed:", pdfError);
           // Continue with just the filename context
           const fileNames = pdfDocuments.map(p => p.fileName).join(", ");
-          enrichedQuestion = `${question || ""}\n\n[Documents uploadés: ${fileNames}]`;
+          enrichedQuestion = `${question || ""}\n\n[Documents uploadés: ${fileNames} - Erreur lors de l'analyse]`;
         }
       } else {
         console.warn("ANTHROPIC_API_KEY not configured, skipping PDF analysis");
