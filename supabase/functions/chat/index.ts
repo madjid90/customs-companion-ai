@@ -1777,6 +1777,21 @@ ${sourcesListForPrompt}
 - Ne PAS utiliser des URLs internes comme /chat ou localhost
 - Si un document n'est pas dans la liste, écris: "Consultez www.douane.gov.ma"
 - NE PAS UTILISER D'EMOJIS dans tes réponses (pas de 📁, 📥, 📄, ℹ️, etc. sauf 🟢🟡🔴 pour confiance)
+- **INTERDICTION ABSOLUE** d'afficher des données JSON brutes, des blocs de code avec hs_code, national_code, duty_rate, etc.
+- Ne JAMAIS afficher les données techniques internes - formate-les en texte lisible
+
+**EXEMPLE - Formatage des données:**
+❌ INTERDIT:
+\`\`\`
+hs_code_6: "830120"
+national_code: "8301200000"
+duty_rate: 10
+\`\`\`
+
+✅ CORRECT:
+**Code SH:** 8301.20.00.00
+**Droit d'importation:** 10%
+**TVA:** 20%
 
 ## MODE CONVERSATION INTERACTIVE
 
