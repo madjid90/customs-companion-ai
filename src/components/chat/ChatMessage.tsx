@@ -668,6 +668,16 @@ export function ChatMessage({
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Document Preview Dialog */}
+      {previewDoc && (
+        <DocumentPreviewDialog
+          open={!!previewDoc}
+          onOpenChange={(open) => !open && setPreviewDoc(null)}
+          url={previewDoc.url}
+          title={previewDoc.title}
+        />
+      )}
     </div>
   );
 }
