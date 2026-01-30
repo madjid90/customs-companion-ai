@@ -539,6 +539,125 @@ function analyzeQuestion(question: string) {
 }
 
 // ============================================================================
+// ANALYSE DE PDF AVEC CLAUDE (Native PDF Support)
+// ============================================================================
+
+interface PdfInput {
+  type: "pdf";
+  base64: string;
+  fileName: string;
+}
+
+const CLAUDE_PDF_API_URL = "https://api.anthropic.com/v1/messages";
+
+async function analyzePdfWithClaude(
+  pdfDocuments: PdfInput[],
+  question: string,
+  apiKey: string
+): Promise<{ summary: string; extractedInfo: string; suggestedCodes: string[] }> {
+  
+  // Format content blocks for Claude's native PDF support
+  const contentBlocks: any[] = [];
+  
+  for (const pdf of pdfDocuments) {
+    contentBlocks.push({
+      type: "document",
+      source: {
+        type: "base64",
+        media_type: "application/pdf",
+        data: pdf.base64,
+      },
+    });
+  }
+  
+  contentBlocks.push({
+    type: "text",
+    text: `Tu es un expert en douane et commerce international. Analyse ce(s) document(s) PDF.
+
+Question de l'utilisateur: "${question}"
+
+Réponds en JSON avec ce format:
+{
+  "summary": "Résumé concis du document (max 200 mots)",
+  "extractedInfo": "Informations clés extraites: produits, valeurs, origines, quantités, etc.",
+  "suggestedCodes": ["8517.12", "8517.13"] // Codes SH identifiés dans le document ou suggérés
+}
+
+IMPORTANT:
+- Si c'est une facture, extrais les produits, valeurs, origines
+- Si c'est une DUM (Déclaration Unique de Marchandises), extrais les codes douaniers et marchandises
+- Si c'est un document réglementaire, résume les obligations et références légales
+- Identifie tous les codes SH/HS mentionnés ou suggérés`,
+  });
+
+  // PDF analysis with 120 second timeout (PDFs take longer)
+  const PDF_TIMEOUT_MS = 120000;
+  const pdfController = new AbortController();
+  const pdfTimeoutId = setTimeout(() => pdfController.abort(), PDF_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(CLAUDE_PDF_API_URL, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "pdfs-2024-09-25",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        messages: [
+          {
+            role: "user",
+            content: contentBlocks,
+          },
+        ],
+      }),
+      signal: pdfController.signal,
+    });
+  } catch (fetchError: any) {
+    clearTimeout(pdfTimeoutId);
+    if (fetchError.name === "AbortError") {
+      console.error("PDF API timeout after", PDF_TIMEOUT_MS, "ms");
+      throw new Error("PDF API timeout");
+    }
+    throw fetchError;
+  }
+  clearTimeout(pdfTimeoutId);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Claude PDF API error:", response.status, errorText);
+    throw new Error(`Claude PDF API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const text = data.content?.[0]?.text || "{}";
+  
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        summary: parsed.summary || "Document analysé",
+        extractedInfo: parsed.extractedInfo || "",
+        suggestedCodes: Array.isArray(parsed.suggestedCodes) ? parsed.suggestedCodes : [],
+      };
+    }
+  } catch (e) {
+    console.error("Failed to parse PDF analysis response:", e);
+  }
+
+  return {
+    summary: text.substring(0, 500),
+    extractedInfo: "",
+    suggestedCodes: [],
+  };
+}
+
+// ============================================================================
 // ANALYSE D'IMAGE AVEC LOVABLE AI (Gemini Vision)
 // ============================================================================
 
@@ -683,11 +802,11 @@ serve(async (req) => {
       return errorResponse(req, validation.error!, 400);
     }
 
-    const { question, sessionId, images, conversationHistory } = validation.data!;
-    logger.info("Request validated", { sessionId, hasImages: !!images?.length });
+    const { question, sessionId, images, pdfDocuments, conversationHistory } = validation.data!;
+    logger.info("Request validated", { sessionId, hasImages: !!images?.length, hasPdfs: !!pdfDocuments?.length });
 
-    if (!question && (!images || images.length === 0)) {
-      return errorResponse(req, "Question or images required", 400);
+    if (!question && (!images || images.length === 0) && (!pdfDocuments || pdfDocuments.length === 0)) {
+      return errorResponse(req, "Question, images or PDF documents required", 400);
     }
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
@@ -792,6 +911,38 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       } catch (visionError) {
         console.error("Vision analysis failed:", visionError);
         // Continue without image analysis
+      }
+    }
+
+    // If PDFs are provided, analyze them with Claude's native PDF support
+    let pdfAnalysis: { summary: string; extractedInfo: string; suggestedCodes: string[] } | null = null;
+    
+    if (pdfDocuments && pdfDocuments.length > 0) {
+      console.log("Analyzing", pdfDocuments.length, "PDF(s) with Claude Vision...");
+      const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+      
+      if (ANTHROPIC_API_KEY) {
+        try {
+          pdfAnalysis = await analyzePdfWithClaude(pdfDocuments, question || "Analyse ce document", ANTHROPIC_API_KEY);
+          console.log("PDF analysis result:", JSON.stringify(pdfAnalysis).substring(0, 500));
+          
+          // Enrich the question with PDF analysis
+          enrichedQuestion = `${question || "Analyse ce document et donne-moi les informations pertinentes"}
+
+[ANALYSE DU DOCUMENT PDF]
+Résumé: ${pdfAnalysis.summary}
+Informations extraites: ${pdfAnalysis.extractedInfo}
+${pdfAnalysis.suggestedCodes.length > 0 ? `Codes SH identifiés: ${pdfAnalysis.suggestedCodes.join(", ")}` : ""}`;
+        } catch (pdfError) {
+          console.error("PDF analysis failed:", pdfError);
+          // Continue with just the filename context
+          const fileNames = pdfDocuments.map(p => p.fileName).join(", ");
+          enrichedQuestion = `${question || ""}\n\n[Documents uploadés: ${fileNames}]`;
+        }
+      } else {
+        console.warn("ANTHROPIC_API_KEY not configured, skipping PDF analysis");
+        const fileNames = pdfDocuments.map(p => p.fileName).join(", ");
+        enrichedQuestion = `${question || ""}\n\n[Documents uploadés: ${fileNames} - Analyse PDF non disponible]`;
       }
     }
 
