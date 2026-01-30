@@ -808,19 +808,82 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       ).catch((err) => console.error("Cache save error:", err));
     }
 
-    // Prepare cited circulars for frontend display
-    const citedCirculars = context.legal_references
-      .filter((ref: any) => ref.reference_number || ref.title)
-      .map((ref: any) => ({
+    // Prepare cited sources for frontend display
+    // Priority: real legal references, then tariff PDFs based on detected HS codes
+    const citedCirculars: Array<{
+      id: string;
+      reference_type: string;
+      reference_number: string;
+      title: string;
+      reference_date: string | null;
+      download_url: string | null;
+      pdf_title: string | null;
+    }> = [];
+    
+    // 1. Add real legal references (with actual reference numbers)
+    const realLegalRefs = context.legal_references.filter((ref: any) => 
+      ref.reference_number && ref.reference_number.trim() !== ''
+    );
+    for (const ref of realLegalRefs.slice(0, 5)) {
+      citedCirculars.push({
         id: ref.id,
-        reference_type: ref.reference_type || "Document",
-        reference_number: ref.reference_number || "",
+        reference_type: ref.reference_type || "Circulaire",
+        reference_number: ref.reference_number,
         title: ref.title || ref.pdf_title || "",
         reference_date: ref.reference_date || null,
         download_url: ref.download_url || null,
         pdf_title: ref.pdf_title || null,
-      }))
-      .slice(0, 10);
+      });
+    }
+    
+    // 2. Add tariff chapter PDFs based on detected HS codes
+    const detectedChapters = new Set<string>();
+    const codesForChapters = [
+      ...analysis.detectedCodes,
+      ...context.hs_codes.map((c: any) => c.code || c.code_clean),
+      ...context.tariffs_with_inheritance.map((t: any) => t.code_clean),
+    ];
+    
+    for (const code of codesForChapters) {
+      const cleanCode = String(code).replace(/\D/g, '');
+      if (cleanCode.length >= 2) {
+        const chapter = cleanCode.substring(0, 2).padStart(2, '0');
+        if (parseInt(chapter) > 0 && parseInt(chapter) <= 99) {
+          detectedChapters.add(chapter);
+        }
+      }
+    }
+    
+    // Fetch tariff PDFs for detected chapters
+    if (detectedChapters.size > 0 && citedCirculars.length < 5) {
+      const chapterPatterns = Array.from(detectedChapters).slice(0, 5);
+      for (const chapter of chapterPatterns) {
+        if (citedCirculars.length >= 5) break;
+        
+        const exactFileName = `SH_CODE_${chapter}.pdf`;
+        const { data: chapterPdf } = await supabase
+          .from('pdf_documents')
+          .select('id, title, file_path, file_name')
+          .eq('is_active', true)
+          .eq('category', 'tarif')
+          .eq('file_name', exactFileName)
+          .maybeSingle();
+        
+        if (chapterPdf && !citedCirculars.find(c => c.id === chapterPdf.id)) {
+          citedCirculars.push({
+            id: chapterPdf.id,
+            reference_type: "Tarif",
+            reference_number: `Chapitre ${parseInt(chapter)}`,
+            title: chapterPdf.title || `Nomenclature Chapitre ${parseInt(chapter)}`,
+            reference_date: null,
+            download_url: chapterPdf.file_path 
+              ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${chapterPdf.file_path}`
+              : null,
+            pdf_title: chapterPdf.title,
+          });
+        }
+      }
+    }
 
     return new Response(
       JSON.stringify({
