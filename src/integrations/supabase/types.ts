@@ -1601,6 +1601,21 @@ export type Database = {
           title: string
         }[]
       }
+      search_pdf_by_chapter_prefixes: {
+        Args: { prefixes: string[] }
+        Returns: {
+          chapter_number: number
+          extracted_text: string
+          extraction_id: string
+          key_points: Json
+          mentioned_hs_codes: Json
+          pdf_category: string
+          pdf_file_path: string
+          pdf_id: string
+          pdf_title: string
+          summary: string
+        }[]
+      }
       search_pdf_extractions_keyword: {
         Args: { match_count?: number; search_query: string }
         Returns: {
