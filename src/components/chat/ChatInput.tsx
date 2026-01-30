@@ -136,7 +136,7 @@ export function ChatInput({
                 onClick={onSend}
                 disabled={(!input.trim() && uploadedFiles.length === 0) || isLoading || isUploading}
                 size="icon"
-                className="absolute right-2 bottom-2 h-9 w-9 rounded-lg bg-accent hover:bg-accent/90 shadow-md transition-all hover:scale-105 disabled:hover:scale-100"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 w-8 md:h-9 md:w-9 rounded-lg bg-accent hover:bg-accent/90 shadow-md transition-all hover:scale-105 disabled:hover:scale-100"
               >
                 {isUploading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
