@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ExternalLink, Download, FileText, Loader2, AlertCircle } from "lucide-react";
+import { Download, Loader2, AlertCircle } from "lucide-react";
 
 interface DocumentPreviewDialogProps {
   open: boolean;
@@ -53,26 +53,18 @@ export function DocumentPreviewDialog({
           Prévisualisation du document PDF
         </DialogDescription>
         <div className="px-4 py-3 border-b flex-shrink-0">
-          <div className="flex items-center justify-between pr-8">
-            <div className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
-              <h2 className="text-base font-medium truncate max-w-[400px]">
-                {title || "Document"}
-              </h2>
-            </div>
-            <div className="flex items-center gap-2">
-              {hasValidUrl && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleDownload}
-                  className="gap-1.5"
-                >
-                  <Download className="h-4 w-4" />
-                  Télécharger
-                </Button>
-              )}
-            </div>
+          <div className="flex items-center justify-end pr-8">
+            {hasValidUrl && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDownload}
+                className="gap-1.5"
+              >
+                <Download className="h-4 w-4" />
+                Télécharger
+              </Button>
+            )}
           </div>
         </div>
         
