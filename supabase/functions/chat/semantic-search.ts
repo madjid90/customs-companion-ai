@@ -277,7 +277,8 @@ export async function searchPDFsSemantic(
   supabase: any,
   queryEmbedding: number[],
   threshold: number = SEMANTIC_THRESHOLDS.documentsMedium,
-  limit: number = 5
+  limit: number = 5,
+  supabaseUrl?: string
 ): Promise<any[]> {
   try {
     const { data, error } = await supabase.rpc("search_pdf_extractions_semantic", {
@@ -291,10 +292,31 @@ export async function searchPDFsSemantic(
       return [];
     }
 
-    const results = (data || []).map((doc: any) => ({
-      ...doc,
-      quality_score: calculateDocumentQuality(doc),
-    }));
+    if (!data || data.length === 0) return [];
+
+    // Enrich with pdf_documents metadata
+    const pdfIds = data.map((d: any) => d.pdf_id);
+    const { data: pdfDocs } = await supabase
+      .from("pdf_documents")
+      .select("id, title, category, file_path")
+      .in("id", pdfIds);
+
+    const pdfMap = new Map((pdfDocs || []).map((p: any) => [p.id, p]));
+    const baseUrl = supabaseUrl || Deno.env.get("SUPABASE_URL") || "";
+
+    const results = data.map((doc: any) => {
+      const pdfMeta = pdfMap.get(doc.pdf_id) as any;
+      return {
+        ...doc,
+        title: pdfMeta?.title || doc.summary?.slice(0, 50) || "Document PDF",
+        category: pdfMeta?.category || null,
+        download_url: pdfMeta?.file_path 
+          ? `${baseUrl}/storage/v1/object/public/pdf-documents/${pdfMeta.file_path}`
+          : null,
+        full_text: doc.extracted_text,
+        quality_score: calculateDocumentQuality(doc),
+      };
+    });
 
     return results.sort((a: any, b: any) => 
       (b.similarity * b.quality_score) - (a.similarity * a.quality_score)
