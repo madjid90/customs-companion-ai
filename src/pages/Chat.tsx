@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
@@ -6,6 +6,8 @@ import { useToast } from "@/hooks/use-toast";
 import { ChatMessage, ChatTypingIndicator } from "@/components/chat/ChatMessage";
 import { ChatWelcome } from "@/components/chat/ChatWelcome";
 import { ChatInput } from "@/components/chat/ChatInput";
+import { ChatHistory } from "@/components/chat/ChatHistory";
+import { cn } from "@/lib/utils";
 import type { UploadedFile } from "@/components/chat/ImageUploadButton";
 
 interface Message {
@@ -125,7 +127,8 @@ export default function Chat() {
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
-  const [sessionId] = useState(() => {
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [sessionId, setSessionId] = useState(() => {
     const stored = sessionStorage.getItem('chat_session_id');
     if (stored) return stored;
     const newId = crypto.randomUUID();
@@ -134,6 +137,34 @@ export default function Chat() {
   });
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  // Handle loading a previous session
+  const handleSelectSession = useCallback((newSessionId: string, loadedMessages: Array<{ role: "user" | "assistant"; content: string; conversationId?: string }>) => {
+    // Update session ID
+    setSessionId(newSessionId);
+    sessionStorage.setItem('chat_session_id', newSessionId);
+    
+    // Convert to Message format
+    const formattedMessages: Message[] = loadedMessages.map((msg, index) => ({
+      id: `${Date.now()}-${index}`,
+      role: msg.role,
+      content: msg.content,
+      conversationId: msg.conversationId,
+    }));
+    
+    setMessages(formattedMessages);
+    setIsHistoryOpen(false);
+  }, []);
+
+  // Start a new conversation
+  const handleNewChat = useCallback(() => {
+    const newId = crypto.randomUUID();
+    setSessionId(newId);
+    sessionStorage.setItem('chat_session_id', newId);
+    setMessages([]);
+    setInput("");
+    setIsHistoryOpen(false);
+  }, []);
 
   const hasProcessedInitialQuery = useRef(false);
   useEffect(() => {
@@ -297,43 +328,60 @@ export default function Chat() {
   }, [uploadedFiles]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] bg-gradient-to-b from-background to-muted/20">
-      {/* Chat messages area */}
-      <ScrollArea ref={scrollRef} className="flex-1 px-3 md:px-4 py-4">
-        <div className="max-w-3xl mx-auto space-y-4 md:space-y-6">
-          {messages.length === 0 && (
-            <ChatWelcome onQuestionClick={handleSend} />
-          )}
-
-          {messages.map((message, index) => (
-            <ChatMessage
-              key={message.id}
-              message={message}
-              isLastMessage={index === messages.length - 1 && message.role === "assistant"}
-              isLoading={isLoading}
-              onFeedback={handleFeedback}
-              onAnswer={handleSend}
-              cleanContent={cleanConfidenceFromContent}
-              removeQuestions={removeInteractiveQuestions}
-            />
-          ))}
-
-          {isLoading && <ChatTypingIndicator />}
-        </div>
-      </ScrollArea>
-
-      {/* Input area */}
-      <ChatInput
-        input={input}
-        onInputChange={setInput}
-        onSend={() => handleSend()}
-        onKeyDown={handleKeyDown}
-        isLoading={isLoading}
-        isUploading={isUploading}
-        uploadedFiles={uploadedFiles}
-        onFilesSelected={handleFilesSelected}
-        onRemoveFile={handleRemoveFile}
+    <div className="flex h-[calc(100vh-4rem)] bg-gradient-to-b from-background to-muted/20">
+      {/* History sidebar */}
+      <ChatHistory
+        currentSessionId={sessionId}
+        onSelectSession={handleSelectSession}
+        onNewChat={handleNewChat}
+        isOpen={isHistoryOpen}
+        onToggle={() => setIsHistoryOpen(!isHistoryOpen)}
       />
+
+      {/* Main chat area */}
+      <div 
+        className={cn(
+          "flex flex-col flex-1 transition-all duration-300",
+          isHistoryOpen ? "ml-72" : "ml-0"
+        )}
+      >
+        {/* Chat messages area */}
+        <ScrollArea ref={scrollRef} className="flex-1 px-3 md:px-4 py-4">
+          <div className="max-w-3xl mx-auto space-y-4 md:space-y-6">
+            {messages.length === 0 && (
+              <ChatWelcome onQuestionClick={handleSend} />
+            )}
+
+            {messages.map((message, index) => (
+              <ChatMessage
+                key={message.id}
+                message={message}
+                isLastMessage={index === messages.length - 1 && message.role === "assistant"}
+                isLoading={isLoading}
+                onFeedback={handleFeedback}
+                onAnswer={handleSend}
+                cleanContent={cleanConfidenceFromContent}
+                removeQuestions={removeInteractiveQuestions}
+              />
+            ))}
+
+            {isLoading && <ChatTypingIndicator />}
+          </div>
+        </ScrollArea>
+
+        {/* Input area */}
+        <ChatInput
+          input={input}
+          onInputChange={setInput}
+          onSend={() => handleSend()}
+          onKeyDown={handleKeyDown}
+          isLoading={isLoading}
+          isUploading={isUploading}
+          uploadedFiles={uploadedFiles}
+          onFilesSelected={handleFilesSelected}
+          onRemoveFile={handleRemoveFile}
+        />
+      </div>
     </div>
   );
 }
