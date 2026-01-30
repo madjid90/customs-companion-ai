@@ -227,19 +227,34 @@ export default function ExtractionPreviewDialog({
 
       // Insert HS codes
       if (uniqueHsCodes.length > 0) {
-        const chapterNumber = extractionData?.chapter_info?.number || null;
+        // Safely parse chapter number - must be a valid integer
+        const rawChapterNumber = extractionData?.chapter_info?.number;
+        const chapterNumber = typeof rawChapterNumber === 'number' && Number.isInteger(rawChapterNumber) 
+          ? rawChapterNumber 
+          : null;
         const chapterTitle = extractionData?.chapter_info?.title || null;
 
-        const hsRows = uniqueHsCodes.map(hsCode => ({
-          code: hsCode.code,
-          code_clean: hsCode.code_clean,
-          description_fr: hsCode.description,
-          chapter_number: chapterNumber || (hsCode.code_clean ? parseInt(hsCode.code_clean.slice(0, 2)) : null),
-          chapter_title_fr: chapterTitle,
-          is_active: true,
-          level: hsCode.level || "subheading",
-          parent_code: hsCode.code_clean?.length === 6 ? hsCode.code_clean.slice(0, 4) : null,
-        }));
+        const hsRows = uniqueHsCodes.map(hsCode => {
+          // Extract chapter from code_clean - ensure it's a valid 2-digit number
+          let derivedChapter: number | null = null;
+          if (hsCode.code_clean && /^\d{2,}/.test(hsCode.code_clean)) {
+            const parsed = parseInt(hsCode.code_clean.slice(0, 2), 10);
+            if (!isNaN(parsed) && parsed >= 1 && parsed <= 99) {
+              derivedChapter = parsed;
+            }
+          }
+          
+          return {
+            code: hsCode.code,
+            code_clean: hsCode.code_clean,
+            description_fr: hsCode.description,
+            chapter_number: chapterNumber || derivedChapter,
+            chapter_title_fr: chapterTitle,
+            is_active: true,
+            level: hsCode.level || "subheading",
+            parent_code: hsCode.code_clean?.length === 6 ? hsCode.code_clean.slice(0, 4) : null,
+          };
+        });
 
         const { error: hsError } = await supabase
           .from("hs_codes")
