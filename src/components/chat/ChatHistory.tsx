@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -72,6 +72,62 @@ export function ChatHistory({
   const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
   const [deleteSessionId, setDeleteSessionId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  // Swipe gesture state
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+
+  // Handle touch start
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    setIsSwiping(true);
+  };
+
+  // Handle touch move
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isSwiping) return;
+    
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+    const diffX = touchStartX.current - currentX;
+    const diffY = Math.abs(touchStartY.current - currentY);
+    
+    // Only handle horizontal swipes (ignore vertical scrolling)
+    if (diffY > Math.abs(diffX)) {
+      setIsSwiping(false);
+      return;
+    }
+    
+    // Only allow swiping left (to close)
+    if (diffX > 0) {
+      setSwipeOffset(Math.min(diffX, 320)); // Max offset is sidebar width
+    }
+  };
+
+  // Handle touch end
+  const handleTouchEnd = () => {
+    if (!isSwiping) return;
+    
+    // If swiped more than 30% of sidebar width, close it
+    if (swipeOffset > 96) {
+      onToggle();
+    }
+    
+    setSwipeOffset(0);
+    setIsSwiping(false);
+  };
+
+  // Reset swipe offset when sidebar closes
+  useEffect(() => {
+    if (!isOpen) {
+      setSwipeOffset(0);
+      setIsSwiping(false);
+    }
+  }, [isOpen]);
 
   // Fetch conversation sessions
   const fetchSessions = async () => {
@@ -231,10 +287,19 @@ export function ChatHistory({
 
       {/* Sidebar - full screen on mobile, fixed width on desktop */}
       <div
+        ref={sidebarRef}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         className={cn(
-          "fixed left-0 top-16 h-[calc(100vh-4rem)] bg-background border-r z-30 transition-all duration-300 ease-in-out flex flex-col",
-          isOpen ? "w-[85vw] max-w-[320px] md:w-72" : "w-0 overflow-hidden"
+          "fixed left-0 top-16 h-[calc(100vh-4rem)] bg-background border-r z-30 flex flex-col",
+          isOpen ? "w-[85vw] max-w-[320px] md:w-72" : "w-0 overflow-hidden",
+          !isSwiping && "transition-all duration-300 ease-in-out"
         )}
+        style={{
+          transform: isOpen && swipeOffset > 0 ? `translateX(-${swipeOffset}px)` : undefined,
+          opacity: isOpen && swipeOffset > 0 ? Math.max(0.3, 1 - swipeOffset / 320) : undefined,
+        }}
       >
         <div className="flex items-center justify-between p-3 border-b flex-shrink-0">
           <div className="flex items-center gap-2">
