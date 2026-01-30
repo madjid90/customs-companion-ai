@@ -168,11 +168,12 @@ export function ChatMessage({
     
     try {
       // Priority 1: Use chapter from URL parameter
-      // Priority 2: Extract from source title "Chapitre XX"
+      // Priority 2: Extract from source title "Chapitre XX" or "Chapitre SH XX"
       // Priority 3: Extract from title containing chapter number
       let chapter = chapterFromUrl;
       
       if (!chapter) {
+        // Match "Chapitre SH 83" or "Chapitre 83"
         const chapterMatch = sourceTitle.match(/Chapitre\s*(?:SH\s*)?(\d{1,2})/i);
         if (chapterMatch) {
           chapter = chapterMatch[1].padStart(2, '0');
@@ -180,33 +181,51 @@ export function ChatMessage({
       }
       
       if (!chapter) {
-        // Try to extract from title like "SH CODE 83" or similar
-        const codeMatch = sourceTitle.match(/(\d{2})/);
+        // Try to extract from title like "SH CODE 83" or "SH 83"
+        const codeMatch = sourceTitle.match(/SH\s*(?:CODE\s*)?(\d{1,2})/i);
         if (codeMatch) {
-          chapter = codeMatch[1];
+          chapter = codeMatch[1].padStart(2, '0');
+        }
+      }
+
+      if (!chapter) {
+        // Last resort: any 2-digit number in the title
+        const numMatch = sourceTitle.match(/\b(\d{2})\b/);
+        if (numMatch) {
+          chapter = numMatch[1];
         }
       }
 
       console.log("Searching for document, chapter:", chapter, "title:", sourceTitle);
 
-      let query = supabase
+      if (!chapter) {
+        console.log("No chapter found in title:", sourceTitle);
+        setPreviewDoc({
+          url: '',
+          title: `Document non trouvé: impossible d'identifier le chapitre`
+        });
+        return;
+      }
+
+      const paddedChapter = chapter.padStart(2, '0');
+      
+      // Search specifically for SH_CODE_XX format in file_name
+      const { data: docs, error } = await supabase
         .from("pdf_documents")
         .select("id, file_name, file_path, title")
         .eq("is_active", true)
-        .eq("category", "tarif");
-
-      // Search by chapter number in title (format: "Chapitre SH XX")
-      if (chapter) {
-        const paddedChapter = chapter.padStart(2, '0');
-        query = query.or(`title.ilike.%${paddedChapter}%,file_name.ilike.%${paddedChapter}%`);
-      }
-
-      const { data: docs, error } = await query.limit(1);
+        .eq("category", "tarif")
+        .ilike("file_name", `%SH_CODE_${paddedChapter}%`)
+        .limit(1);
 
       console.log("Document search results:", docs, error);
 
       if (error) {
         console.error("Error searching document:", error);
+        setPreviewDoc({
+          url: '',
+          title: `Erreur lors de la recherche du document`
+        });
         return;
       }
 
@@ -224,17 +243,26 @@ export function ChatMessage({
             url: urlData.publicUrl,
             title: doc.title || doc.file_name || sourceTitle
           });
+        } else {
+          setPreviewDoc({
+            url: '',
+            title: `Document non trouvé: Chapitre ${paddedChapter}`
+          });
         }
       } else {
         // Document not found - show a fallback message
         console.log("Document not found for chapter:", chapter, "title:", sourceTitle);
         setPreviewDoc({
           url: '',
-          title: `Document non trouvé: Chapitre ${chapter || 'inconnu'}`
+          title: `Document non trouvé: Chapitre SH ${paddedChapter}`
         });
       }
     } catch (err) {
       console.error("Error in searchAndOpenDocument:", err);
+      setPreviewDoc({
+        url: '',
+        title: `Erreur lors de la recherche du document`
+      });
     } finally {
       setIsSearchingDoc(false);
     }
