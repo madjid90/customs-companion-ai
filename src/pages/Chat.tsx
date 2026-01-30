@@ -197,24 +197,42 @@ export default function Chat() {
     if ((!messageText && uploadedFiles.length === 0) || isLoading) return;
 
     const imagesToSend: { type: "image"; base64: string; mediaType: string }[] = [];
+    const documentNames: string[] = [];
+    
     if (uploadedFiles.length > 0) {
       setIsUploading(true);
       for (const upload of uploadedFiles) {
         try {
-          const base64 = await fileToBase64(upload.file);
-          const mediaType = upload.file.type || "image/jpeg";
-          imagesToSend.push({ type: "image", base64, mediaType });
+          // Only send actual images to the AI vision API
+          // PDFs and documents are not supported for vision analysis
+          if (upload.type === "image" && upload.file.type.startsWith("image/")) {
+            const base64 = await fileToBase64(upload.file);
+            const mediaType = upload.file.type || "image/jpeg";
+            imagesToSend.push({ type: "image", base64, mediaType });
+          } else {
+            // Track document names to mention in the question
+            documentNames.push(upload.file.name);
+          }
         } catch (err) {
           console.error("Failed to convert file:", err);
         }
       }
       setIsUploading(false);
     }
+    
+    // If only documents were uploaded, add context to the question
+    let enhancedMessage = messageText;
+    if (documentNames.length > 0 && imagesToSend.length === 0) {
+      const docList = documentNames.join(", ");
+      enhancedMessage = messageText 
+        ? `${messageText} (Documents mentionnés: ${docList})`
+        : `J'ai des questions concernant ces documents: ${docList}`;
+    }
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: messageText || (uploadedFiles.length > 0 ? `📎 ${uploadedFiles.length} fichier(s) uploadé(s)` : ""),
+      content: enhancedMessage || (uploadedFiles.length > 0 ? `📎 ${uploadedFiles.length} fichier(s) uploadé(s)` : ""),
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -230,7 +248,7 @@ export default function Chat() {
       
       const { data, error } = await supabase.functions.invoke('chat', {
         body: {
-          question: messageText || "Identifie ce produit et donne-moi le code SH approprié",
+          question: enhancedMessage || "Identifie ce produit et donne-moi le code SH approprié",
           sessionId,
           images: imagesToSend.length > 0 ? imagesToSend : undefined,
           conversationHistory,
