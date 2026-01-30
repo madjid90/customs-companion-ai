@@ -79,9 +79,9 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
   };
 
   return (
-    <div className="text-center py-4 md:py-12 animate-fade-in px-3 md:px-4">
+    <div className="text-center py-6 md:py-8 animate-fade-in px-3 md:px-4 flex flex-col justify-center min-h-[calc(100dvh-180px)]">
       {/* Logo/Icon - smaller on mobile */}
-      <div className="relative inline-flex items-center justify-center mb-4 md:mb-6">
+      <div className="relative inline-flex items-center justify-center mb-3 md:mb-5">
         <div className="absolute inset-0 w-16 h-16 md:w-24 md:h-24 rounded-full bg-accent/10 blur-xl"></div>
         <div className="relative w-14 h-14 md:w-20 md:h-20 rounded-2xl bg-gradient-to-br from-accent/20 to-accent/5 flex items-center justify-center border border-accent/20 shadow-lg">
           <Bot className="h-7 w-7 md:h-10 md:w-10 text-accent" />
