@@ -1640,6 +1640,21 @@ INSTRUCTION: Utilise TOUTES ces informations extraites du PDF pour répondre à 
         context.knowledge_documents = [...context.knowledge_documents, ...newKnowledge].slice(0, 10);
       }
 
+      // MERGE PDF SEMANTIC RESULTS - This was missing!
+      if (semanticPDFs.length > 0) {
+        const existingPdfIds = new Set(context.pdf_summaries.map((p: any) => p.pdf_id || p.id));
+        const newPDFs = semanticPDFs
+          .filter((p: any) => !existingPdfIds.has(p.pdf_id) && !existingPdfIds.has(p.id))
+          .sort((a: any, b: any) => (b.similarity || 0) - (a.similarity || 0))
+          .map((p: any) => ({
+            ...p,
+            semantic_match: true,
+            similarity: p.similarity,
+          }));
+        context.pdf_summaries = [...context.pdf_summaries, ...newPDFs].slice(0, 10);
+        console.log("Merged semantic PDFs:", newPDFs.length, "new PDFs added");
+      }
+
       if (semanticVeille.length > 0) {
         const existingVeilleTitles = new Set(veilleDocuments.map((d: any) => d.title));
         const newVeille = semanticVeille
