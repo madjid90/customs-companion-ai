@@ -63,6 +63,27 @@ export default function AdminUpload() {
     updateFileStatus(fileId, { status: "uploading", progress: 10 });
 
     try {
+      // 0. Check for duplicates based on file name
+      const pdfTitle = file.name.replace(".pdf", "").replace(/_/g, " ");
+      const { data: existingDocs } = await supabase
+        .from("pdf_documents")
+        .select("id, title, file_name")
+        .or(`file_name.eq.${file.name},title.ilike.${pdfTitle}`)
+        .eq("is_active", true)
+        .limit(1);
+      
+      if (existingDocs && existingDocs.length > 0) {
+        const existing = existingDocs[0];
+        updateFileStatus(fileId, { 
+          status: "error", 
+          progress: 0,
+          error: `⚠️ Doublon détecté: "${existing.title}" existe déjà. Supprimez-le d'abord si vous voulez le remplacer.`
+        });
+        return;
+      }
+      
+      updateFileStatus(fileId, { progress: 15 });
+
       // 1. Upload to Supabase Storage
       const filePath = `uploads/${Date.now()}_${file.name}`;
       updateFileStatus(fileId, { progress: 20 });
@@ -78,7 +99,6 @@ export default function AdminUpload() {
       updateFileStatus(fileId, { progress: 40 });
 
       // 2. Create PDF document record with auto-detected category
-      const pdfTitle = file.name.replace(".pdf", "").replace(/_/g, " ");
       const { data: pdfDoc, error: insertError } = await supabase
         .from("pdf_documents")
         .insert({
