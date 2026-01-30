@@ -387,19 +387,20 @@ export async function searchPDFsHybrid(
   queryEmbedding: number[] | null,
   searchText: string,
   threshold: number = SEMANTIC_THRESHOLDS.documentsMedium,
-  limit: number = 5
+  limit: number = 5,
+  supabaseUrl?: string
 ): Promise<any[]> {
   let results: any[] = [];
 
   // 1. Try semantic search first if embedding available
   if (queryEmbedding) {
-    results = await searchPDFsSemantic(supabase, queryEmbedding, threshold, limit);
+    results = await searchPDFsSemantic(supabase, queryEmbedding, threshold, limit, supabaseUrl);
   }
 
   // 2. Fallback to keyword search if not enough results
   if (results.length < SEMANTIC_THRESHOLDS.minResultsForFallback && searchText) {
     console.log(`PDF search: only ${results.length} semantic results, adding keyword fallback`);
-    const keywordResults = await searchPDFsKeyword(supabase, searchText, limit);
+    const keywordResults = await searchPDFsKeyword(supabase, searchText, limit, supabaseUrl);
     
     // Merge and deduplicate by pdf_id
     const seenIds = new Set(results.map((r) => r.pdf_id));
