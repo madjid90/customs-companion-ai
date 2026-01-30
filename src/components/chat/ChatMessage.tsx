@@ -1,11 +1,12 @@
-import { useState } from "react";
-import { Bot, User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle, ExternalLink } from "lucide-react";
+import { useState, useCallback } from "react";
+import { Bot, User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle, ExternalLink, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { InteractiveQuestions, parseQuestionsFromResponse } from "./InteractiveQuestions";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
+import { supabase } from "@/integrations/supabase/client";
 
 interface MessageContext {
   hs_codes_found: number;
@@ -41,6 +42,52 @@ const confidenceConfig = {
   low: { icon: "🔴", label: "Confiance faible", className: "text-destructive" },
 };
 
+// Check if a URL is a document (PDF, etc.)
+const isDocumentUrl = (url: string) => {
+  return url.includes('.pdf') || 
+         url.includes('/storage/') || 
+         url.includes('pdf-documents') ||
+         url.includes('supabase.co/storage') ||
+         url.startsWith('source://');
+};
+
+// Extract title from URL or link text
+const extractDocTitle = (url: string, linkText?: string) => {
+  if (linkText && linkText.length > 3) {
+    return linkText.replace(/[\[\]📥📄📁]/g, '').trim();
+  }
+  try {
+    const urlParts = url.split('/');
+    const filename = urlParts[urlParts.length - 1];
+    return decodeURIComponent(filename.replace(/_/g, ' ').replace(/\d{13}_/, ''));
+  } catch {
+    return "Document";
+  }
+};
+
+// Fix broken markdown links (URLs with spaces)
+const fixMarkdownLinks = (content: string): string => {
+  return content.replace(
+    /\[([^\]]+)\]\(([^)]+)\)/g,
+    (match, text, url) => {
+      const fixedUrl = url.replace(/ /g, '%20');
+      return `[${text}](${fixedUrl})`;
+    }
+  );
+};
+
+// Transform source patterns into clickable links
+const transformSourcePatterns = (content: string): string => {
+  // Pattern: "📁 Source officielle:" or "📄 **Source officielle:**" followed by text
+  return content.replace(
+    /((?:📁|📄)\s*\*?\*?Source\s*officielle\s*:?\*?\*?\s*)([^\n]+)/gi,
+    (match, prefix, title) => {
+      const cleanTitle = title.trim().replace(/\*+/g, '');
+      return `[${prefix}${cleanTitle}](source://lookup?title=${encodeURIComponent(cleanTitle)})`;
+    }
+  );
+};
+
 export function ChatMessage({
   message,
   isLastMessage,
@@ -51,44 +98,89 @@ export function ChatMessage({
   removeQuestions,
 }: ChatMessageProps) {
   const [previewDoc, setPreviewDoc] = useState<{ url: string; title: string } | null>(null);
+  const [isSearchingDoc, setIsSearchingDoc] = useState(false);
   
   const isUser = message.role === "user";
   const isError = message.content.startsWith("⚠️");
 
-  // Check if a URL is a document (PDF, etc.)
-  const isDocumentUrl = (url: string) => {
-    return url.includes('.pdf') || 
-           url.includes('/storage/') || 
-           url.includes('pdf-documents') ||
-           url.includes('supabase.co/storage');
-  };
-
-  // Extract title from URL or link text
-  const extractDocTitle = (url: string, linkText?: string) => {
-    if (linkText && linkText.length > 3) {
-      return linkText.replace(/[\[\]📥📄]/g, '').trim();
-    }
+  // Search for PDF document by chapter/title mentioned in response
+  const searchAndOpenDocument = useCallback(async (sourceTitle: string) => {
+    setIsSearchingDoc(true);
+    
     try {
-      const urlParts = url.split('/');
-      const filename = urlParts[urlParts.length - 1];
-      return decodeURIComponent(filename.replace(/_/g, ' ').replace(/\d{13}_/, ''));
-    } catch {
-      return "Document";
-    }
-  };
+      // Extract chapter number from source title (e.g., "Chapitre 83" -> "83")
+      const chapterMatch = sourceTitle.match(/Chapitre\s*(?:SH\s*)?(\d{1,2})/i);
+      const chapter = chapterMatch ? chapterMatch[1].padStart(2, '0') : null;
 
-  // Fix broken markdown links (URLs with spaces)
-  const fixMarkdownLinks = (content: string): string => {
-    // Fix markdown links with spaces in URLs: [text](url with spaces)
-    return content.replace(
-      /\[([^\]]+)\]\(([^)]+)\)/g,
-      (match, text, url) => {
-        // Encode spaces and other problematic characters in the URL
-        const fixedUrl = url.replace(/ /g, '%20');
-        return `[${text}](${fixedUrl})`;
+      let query = supabase
+        .from("pdf_documents")
+        .select("id, file_name, file_path, title")
+        .eq("is_active", true)
+        .eq("category", "tarif");
+
+      // If we found a chapter number, search by it
+      if (chapter) {
+        query = query.or(`file_name.ilike.%${chapter}%,title.ilike.%${chapter}%`);
+      } else {
+        // Otherwise search by title keywords
+        const keywords = sourceTitle.split(' ').filter(w => w.length > 3).slice(0, 3);
+        if (keywords.length > 0) {
+          query = query.or(keywords.map(k => `title.ilike.%${k}%`).join(','));
+        }
       }
-    );
-  };
+
+      const { data: docs, error } = await query.limit(1);
+
+      if (error) {
+        console.error("Error searching document:", error);
+        return;
+      }
+
+      if (docs && docs.length > 0) {
+        const doc = docs[0];
+        // Get public URL from storage
+        const { data: urlData } = supabase.storage
+          .from("pdf-documents")
+          .getPublicUrl(doc.file_path);
+
+        if (urlData?.publicUrl) {
+          setPreviewDoc({
+            url: urlData.publicUrl,
+            title: doc.title || doc.file_name || sourceTitle
+          });
+        }
+      } else {
+        // Document not found - show a fallback message
+        console.log("Document not found for:", sourceTitle);
+        // Try to open generic source anyway
+        setPreviewDoc({
+          url: '',
+          title: `Document non trouvé: ${sourceTitle}`
+        });
+      }
+    } catch (err) {
+      console.error("Error in searchAndOpenDocument:", err);
+    } finally {
+      setIsSearchingDoc(false);
+    }
+  }, []);
+
+  // Handle link clicks including source:// protocol
+  const handleLinkClick = useCallback((url: string, linkText: string) => {
+    if (url.startsWith('source://')) {
+      // Extract title from URL
+      const params = new URLSearchParams(url.split('?')[1] || '');
+      const title = params.get('title') || linkText;
+      searchAndOpenDocument(decodeURIComponent(title));
+    } else if (isDocumentUrl(url)) {
+      setPreviewDoc({ url, title: extractDocTitle(url, linkText) });
+    }
+  }, [searchAndOpenDocument]);
+
+  // Process content to add source links
+  const processedContent = transformSourcePatterns(
+    fixMarkdownLinks(removeQuestions(cleanContent(message.content)))
+  );
 
   return (
     <div
@@ -144,20 +236,26 @@ export function ChatMessage({
                 td: ({ children }) => <td className="border-b border-border/50 px-3 py-2">{children}</td>,
                 a: ({ href, children }) => {
                   const url = href || '';
-                  const linkText = typeof children === 'string' ? children : '';
+                  const linkText = typeof children === 'string' ? children : 
+                    (Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('') : '');
                   
-                  if (isDocumentUrl(url)) {
+                  // Handle source:// links (our custom protocol for source references)
+                  if (url.startsWith('source://') || isDocumentUrl(url)) {
                     return (
                       <button
                         onClick={(e) => {
                           e.preventDefault();
-                          setPreviewDoc({ url, title: extractDocTitle(url, linkText) });
+                          handleLinkClick(url, linkText);
                         }}
-                        className="inline-flex items-center gap-1.5 text-primary hover:text-primary/80 underline underline-offset-2 transition-colors font-medium cursor-pointer"
+                        disabled={isSearchingDoc}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 text-primary hover:text-primary/80 underline underline-offset-2 transition-colors font-medium cursor-pointer bg-transparent border-none p-0",
+                          isSearchingDoc && "opacity-50 cursor-wait"
+                        )}
                       >
-                        <FileText className="h-3.5 w-3.5" />
-                        {children || "Voir le document"}
-                        <ExternalLink className="h-3 w-3" />
+                        <FolderOpen className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span>{children || "Voir le document"}</span>
+                        <ExternalLink className="h-3 w-3 flex-shrink-0" />
                       </button>
                     );
                   }
@@ -175,7 +273,7 @@ export function ChatMessage({
                 },
               }}
             >
-              {fixMarkdownLinks(removeQuestions(cleanContent(message.content)))}
+              {processedContent}
             </ReactMarkdown>
             
             {/* Always show interactive questions if they exist */}
