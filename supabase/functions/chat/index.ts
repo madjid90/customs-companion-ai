@@ -516,7 +516,9 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       imageAnalysis,
       analysis.country,
       availableSources,
-      SUPABASE_URL!
+      SUPABASE_URL!,
+      analysis.detectedCodes,
+      analysis.keywords
     );
 
     // Build messages array
