@@ -357,21 +357,24 @@ export function ChatMessage({
                   // Handle source:// links (our custom protocol for source references)
                   if (url.startsWith('source://') || isDocumentUrl(url)) {
                     return (
-                      <button
+                      <a 
+                        href="#"
+                        data-source-url={url}
+                        data-source-title={linkText}
                         onClick={(e) => {
                           e.preventDefault();
+                          e.stopPropagation();
                           handleLinkClick(url, linkText);
                         }}
-                        disabled={isSearchingDoc}
                         className={cn(
-                          "inline-flex items-center gap-1.5 text-primary hover:text-primary/80 underline underline-offset-2 transition-colors font-medium cursor-pointer bg-transparent border-none p-0",
-                          isSearchingDoc && "opacity-50 cursor-wait"
+                          "inline-flex items-center gap-1.5 text-primary hover:text-primary/80 underline underline-offset-2 transition-colors font-medium cursor-pointer",
+                          isSearchingDoc && "opacity-50 cursor-wait pointer-events-none"
                         )}
                       >
                         <FolderOpen className="h-3.5 w-3.5 flex-shrink-0" />
                         <span>{children || "Voir le document"}</span>
                         <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                      </button>
+                      </a>
                     );
                   }
                   
