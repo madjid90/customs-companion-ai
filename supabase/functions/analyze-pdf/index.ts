@@ -1930,15 +1930,75 @@ serve(async (req) => {
         }
 
         // Update PDF document with enriched metadata
-        await supabase.from("pdf_documents").update({
+        const chapterNumber = analysisResult.chapter_info?.number;
+        const updateData: Record<string, any> = {
           is_verified: true,
           verified_at: new Date().toISOString(),
           related_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
-          keywords: analysisResult.chapter_info?.number ? `Chapitre ${analysisResult.chapter_info.number}` : null,
+          keywords: chapterNumber ? `Chapitre ${chapterNumber}` : null,
           document_reference: analysisResult.document_reference || null,
           issuing_authority: analysisResult.issuing_authority?.name || null,
           document_type: isRegulatoryDoc ? "regulatory" : "tariff",
-        }).eq("id", pdfId);
+        };
+
+        // ================================================================
+        // AUTO-RENOMMAGE: Standardiser le chemin des PDFs tarifaires
+        // Format cible: tarifs/SH_CODE_XX.pdf où XX = numéro de chapitre
+        // ================================================================
+        if (!isRegulatoryDoc && chapterNumber && filePath.startsWith("uploads/")) {
+          const paddedChapter = String(chapterNumber).padStart(2, "0");
+          const newFilePath = `tarifs/SH_CODE_${paddedChapter}.pdf`;
+          
+          console.log(`[Background] Renaming PDF: ${filePath} -> ${newFilePath}`);
+          
+          try {
+            // 1. Vérifier si le fichier cible existe déjà
+            const { data: existingFile } = await supabase.storage
+              .from("pdf-documents")
+              .list("tarifs", { search: `SH_CODE_${paddedChapter}.pdf` });
+            
+            if (existingFile && existingFile.length > 0) {
+              // Supprimer l'ancien fichier si présent
+              await supabase.storage.from("pdf-documents").remove([newFilePath]);
+            }
+            
+            // 2. Télécharger le fichier source
+            const { data: fileData, error: downloadErr } = await supabase.storage
+              .from("pdf-documents")
+              .download(filePath);
+            
+            if (!downloadErr && fileData) {
+              // 3. Uploader vers le nouveau chemin
+              const { error: uploadErr } = await supabase.storage
+                .from("pdf-documents")
+                .upload(newFilePath, fileData, {
+                  cacheControl: "3600",
+                  upsert: true,
+                  contentType: "application/pdf"
+                });
+              
+              if (!uploadErr) {
+                // 4. Supprimer l'ancien fichier
+                await supabase.storage.from("pdf-documents").remove([filePath]);
+                
+                // 5. Mettre à jour le chemin dans pdf_documents
+                updateData.file_path = newFilePath;
+                updateData.title = `Chapitre SH ${paddedChapter}`;
+                
+                console.log(`[Background] ✅ PDF renamed successfully to ${newFilePath}`);
+              } else {
+                console.error("[Background] Upload to new path failed:", uploadErr);
+              }
+            } else {
+              console.error("[Background] Download for rename failed:", downloadErr);
+            }
+          } catch (renameError) {
+            console.error("[Background] PDF rename error:", renameError);
+            // Continuer sans renommer - le fichier reste dans uploads/
+          }
+        }
+
+        await supabase.from("pdf_documents").update(updateData).eq("id", pdfId);
         
         // ================================================================
         // NOUVEAU: Sauvegarder les données structurées pour documents réglementaires
