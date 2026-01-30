@@ -228,14 +228,24 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     // =========================================================================
     // ANALYSE DE LA QUESTION
     // =========================================================================
-    const searchQuestion = historyContextString + enrichedQuestion;
-    const analysis = analyzeQuestion(searchQuestion);
+    // IMPORTANT: Analyser SEULEMENT la question enrichie, PAS le contexte d'historique
+    // Le contexte d'historique contient des caractères spéciaux qui cassent les requêtes SQL
+    const analysis = analyzeQuestion(enrichedQuestion);
     
-    // Add codes detected from conversation history
+    // Add codes detected from conversation history SEPARATELY (already cleaned)
     if (historyContext.detectedCodes.length > 0) {
       const cleanedHistoryCodes = historyContext.detectedCodes.map(c => cleanHSCode(c));
       analysis.detectedCodes = [...new Set([...analysis.detectedCodes, ...cleanedHistoryCodes])];
       console.log("Added codes from history:", cleanedHistoryCodes);
+    }
+    
+    // Add keywords from history SEPARATELY (already cleaned)
+    if (historyContext.keywords.length > 0) {
+      // Filter out any keywords with special characters
+      const cleanHistoryKeywords = historyContext.keywords
+        .filter(k => /^[a-zA-ZàâäéèêëïîôùûüçÀÂÄÉÈÊËÏÎÔÙÛÜÇ]+$/i.test(k));
+      analysis.keywords = [...new Set([...analysis.keywords, ...cleanHistoryKeywords])];
+      console.log("Added keywords from history:", cleanHistoryKeywords);
     }
     
     if (imageAnalysis?.suggestedCodes.length) {
@@ -243,6 +253,9 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       analysis.detectedCodes = [...new Set([...analysis.detectedCodes, ...cleanedSuggested])];
     }
     console.log("Question analysis:", JSON.stringify(analysis));
+
+    // Create a clean search query for semantic/hybrid search (no special characters)
+    const cleanSearchQuery = analysis.keywords.slice(0, 5).join(' ') || enrichedQuestion;
 
     // =========================================================================
     // COLLECTE DU CONTEXTE
@@ -602,13 +615,13 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           ? searchHSCodesSemantic(supabase, queryEmbedding, adaptiveThresholds.hsThreshold, adaptiveThresholds.limits.hs)
           : Promise.resolve([]),
         context.knowledge_documents.length < 5
-          ? searchKnowledgeHybrid(supabase, queryEmbedding, searchQuestion, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs)
+          ? searchKnowledgeHybrid(supabase, queryEmbedding, cleanSearchQuery, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs)
           : Promise.resolve([]),
         context.pdf_summaries.length < 3
-          ? searchPDFsHybrid(supabase, queryEmbedding, searchQuestion, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs, SUPABASE_URL)
+          ? searchPDFsHybrid(supabase, queryEmbedding, cleanSearchQuery, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs, SUPABASE_URL)
           : Promise.resolve([]),
         veilleDocuments.length < 3
-          ? searchVeilleHybrid(supabase, queryEmbedding, searchQuestion, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs)
+          ? searchVeilleHybrid(supabase, queryEmbedding, cleanSearchQuery, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs)
           : Promise.resolve([]),
       ]);
 
