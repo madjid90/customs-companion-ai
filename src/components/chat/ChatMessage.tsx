@@ -322,19 +322,20 @@ export function ChatMessage({
   return (
     <div
       className={cn(
-        "flex gap-3 md:gap-4 animate-slide-up",
+        "flex gap-2 md:gap-4 animate-slide-up",
         isUser ? "justify-end" : "justify-start"
       )}
     >
+      {/* Bot avatar - hidden on mobile for more space */}
       {!isUser && (
-        <div className="flex-shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-accent/20 to-accent/5 flex items-center justify-center shadow-sm border border-accent/10">
+        <div className="flex-shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-accent/20 to-accent/5 flex items-center justify-center shadow-sm border border-accent/10 hidden sm:flex">
           <Bot className="h-4 w-4 md:h-5 md:w-5 text-accent" />
         </div>
       )}
 
       <div
         className={cn(
-          "max-w-[85%] md:max-w-[80%] rounded-2xl px-4 py-3 md:px-5 md:py-4 transition-all",
+          "max-w-[92%] sm:max-w-[85%] md:max-w-[80%] rounded-2xl px-3 py-2.5 md:px-5 md:py-4 transition-all",
           isUser
             ? "bg-chat-user text-chat-user-foreground chat-message-user shadow-md"
             : "bg-chat-ai text-chat-ai-foreground chat-message-ai"
@@ -571,30 +572,31 @@ export function ChatMessage({
         )}
       </div>
 
+      {/* User avatar - smaller on mobile */}
       {isUser && (
-        <div className="flex-shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-md">
-          <User className="h-4 w-4 md:h-5 md:w-5 text-primary-foreground" />
+        <div className="flex-shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-md">
+          <User className="h-3.5 w-3.5 md:h-5 md:w-5 text-primary-foreground" />
         </div>
       )}
 
       {/* Attachment Preview Dialog for history files */}
       {previewAttachment && (
         <Dialog open={!!previewAttachment} onOpenChange={(open) => !open && setPreviewAttachment(null)}>
-          <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden">
-            <DialogHeader className="p-4 pb-2 border-b bg-card/80 backdrop-blur-sm">
-              <DialogTitle className="flex items-center gap-2 text-base font-medium truncate pr-4">
+          <DialogContent className="max-w-[95vw] md:max-w-4xl max-h-[85vh] md:max-h-[90vh] p-0 overflow-hidden">
+            <DialogHeader className="p-3 md:p-4 pb-2 border-b bg-card/80 backdrop-blur-sm">
+              <DialogTitle className="flex items-center gap-2 text-sm md:text-base font-medium truncate pr-4">
                 {previewAttachment.type === "image" ? (
-                  <Image className="h-5 w-5 text-primary" />
+                  <Image className="h-4 w-4 md:h-5 md:w-5 text-primary flex-shrink-0" />
                 ) : (
-                  <FileText className="h-5 w-5 text-primary" />
+                  <FileText className="h-4 w-4 md:h-5 md:w-5 text-primary flex-shrink-0" />
                 )}
                 <span className="truncate">{previewAttachment.name}</span>
-                <span className="text-xs text-muted-foreground font-normal">
+                <span className="text-xs text-muted-foreground font-normal hidden sm:inline">
                   ({(previewAttachment.size / 1024).toFixed(1)} Ko)
                 </span>
               </DialogTitle>
             </DialogHeader>
-            <div className="flex-1 overflow-auto p-4 bg-muted/20 min-h-[400px] max-h-[calc(90vh-80px)]">
+            <div className="flex-1 overflow-auto p-2 md:p-4 bg-muted/20 min-h-[300px] md:min-h-[400px] max-h-[calc(85vh-80px)] md:max-h-[calc(90vh-80px)]">
               {previewAttachment.type === "image" ? (
                 <div className="flex items-center justify-center h-full">
                   <img

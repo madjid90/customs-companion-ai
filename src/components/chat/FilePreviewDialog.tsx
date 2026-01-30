@@ -48,17 +48,17 @@ export function FilePreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden">
-        <DialogHeader className="p-4 pb-2 border-b bg-card/80 backdrop-blur-sm">
-          <div className="flex items-center justify-between">
-            <DialogTitle className="flex items-center gap-2 text-base font-medium truncate pr-4">
+      <DialogContent className="max-w-[95vw] md:max-w-4xl max-h-[85vh] md:max-h-[90vh] p-0 overflow-hidden">
+        <DialogHeader className="p-3 md:p-4 pb-2 border-b bg-card/80 backdrop-blur-sm">
+          <div className="flex items-center justify-between gap-2">
+            <DialogTitle className="flex items-center gap-2 text-sm md:text-base font-medium truncate pr-2 md:pr-4 min-w-0">
               {type === "image" ? (
-                <span className="text-2xl">🖼️</span>
+                <span className="text-xl md:text-2xl flex-shrink-0">🖼️</span>
               ) : (
-                <FileText className="h-5 w-5 text-primary" />
+                <FileText className="h-4 w-4 md:h-5 md:w-5 text-primary flex-shrink-0" />
               )}
               <span className="truncate">{file.name}</span>
-              <span className="text-xs text-muted-foreground font-normal">
+              <span className="text-xs text-muted-foreground font-normal hidden sm:inline">
                 ({(file.size / 1024).toFixed(1)} Ko)
               </span>
             </DialogTitle>
@@ -110,7 +110,7 @@ export function FilePreviewDialog({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-auto p-4 bg-muted/20 min-h-[400px] max-h-[calc(90vh-80px)]">
+        <div className="flex-1 overflow-auto p-2 md:p-4 bg-muted/20 min-h-[300px] md:min-h-[400px] max-h-[calc(85vh-80px)] md:max-h-[calc(90vh-80px)]">
           {type === "image" ? (
             <div className="flex items-center justify-center h-full">
               <img
@@ -125,7 +125,7 @@ export function FilePreviewDialog({
           ) : isPDF ? (
             <iframe
               src={URL.createObjectURL(file)}
-              className="w-full h-full min-h-[500px] rounded-lg border bg-white"
+              className="w-full h-full min-h-[350px] md:min-h-[500px] rounded-lg border bg-white"
               title={file.name}
             />
           ) : (

@@ -208,22 +208,32 @@ export function ChatHistory({
 
   return (
     <>
+      {/* Toggle button - adjusted for mobile */}
       {!isOpen && (
         <Button
           variant="ghost"
           size="icon"
           onClick={onToggle}
-          className="fixed left-4 top-20 z-40 h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm border shadow-md hover:bg-accent"
+          className="fixed left-2 md:left-4 top-[4.5rem] md:top-20 z-40 h-9 w-9 md:h-10 md:w-10 rounded-full bg-background/80 backdrop-blur-sm border shadow-md hover:bg-accent"
           title="Ouvrir l'historique"
         >
-          <History className="h-5 w-5" />
+          <History className="h-4 w-4 md:h-5 md:w-5" />
         </Button>
       )}
 
+      {/* Overlay for mobile */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-20 md:hidden"
+          onClick={onToggle}
+        />
+      )}
+
+      {/* Sidebar - full screen on mobile, fixed width on desktop */}
       <div
         className={cn(
           "fixed left-0 top-16 h-[calc(100vh-4rem)] bg-background border-r z-30 transition-all duration-300 ease-in-out flex flex-col",
-          isOpen ? "w-72" : "w-0 overflow-hidden"
+          isOpen ? "w-[85vw] max-w-[320px] md:w-72" : "w-0 overflow-hidden"
         )}
       >
         <div className="flex items-center justify-between p-3 border-b flex-shrink-0">
