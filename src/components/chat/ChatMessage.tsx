@@ -117,13 +117,13 @@ const transformSourcePatterns = (content: string): string => {
   const chapter = extractChapterFromContent(content);
   
   // Pattern 1: Clean up "Source: Chapitre SH XX - [Consulter](URL)" format
-  // Combine the source text with the link into a single clean link
+  // Combine the source text with the link into a single clean link (without "Source:" prefix)
   let transformed = content.replace(
     /\*?\*?Source\s*:?\*?\*?\s*([^[\n]+?)\s*-?\s*\[Consulter\]\(([^)]+)\)/gi,
     (match, sourceTitle, url) => {
       const cleanTitle = sourceTitle.trim().replace(/\*+/g, '');
       if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
-        return `[Source: ${cleanTitle}](${url})`;
+        return `[${cleanTitle}](${url})`;
       }
       return match;
     }
@@ -140,7 +140,7 @@ const transformSourcePatterns = (content: string): string => {
     }
   );
   
-  // Pattern 3: "Source:" followed by text (not a link) - convert to searchable link
+  // Pattern 3: "Source:" followed by text (not a link) - convert to searchable link (without "Source:" prefix)
   transformed = transformed.replace(
     /\*?\*?Source\s*:?\*?\*?\s*([^\n\[]+?)(?=\n|$)/gi,
     (match, title) => {
@@ -151,7 +151,7 @@ const transformSourcePatterns = (content: string): string => {
       if (!cleanTitle || cleanTitle.length < 5 || cleanTitle.includes('intégré') || cleanTitle.includes('officiel')) return match;
       // Include chapter in URL if found
       const chapterParam = chapter ? `&chapter=${chapter}` : '';
-      return `[Source: ${cleanTitle}](source://lookup?title=${encodeURIComponent(cleanTitle)}${chapterParam})`;
+      return `[${cleanTitle}](source://lookup?title=${encodeURIComponent(cleanTitle)}${chapterParam})`;
     }
   );
   
