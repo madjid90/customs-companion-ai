@@ -462,41 +462,12 @@ export function ChatMessage({
               {processedContent}
             </ReactMarkdown>
             
-            {/* Always show interactive questions if they exist */}
-            {(() => {
-              const questions = parseQuestionsFromResponse(cleanContent(message.content));
-              if (questions.length > 0) {
-                return (
-                  <InteractiveQuestions
-                    questions={questions}
-                    onAnswer={(questionId, answer) => onAnswer(answer)}
-                    disabled={isLoading || !isLastMessage}
-                  />
-                );
-              }
-              return null;
-            })()}
-            
-            {/* Cited Circulars Section */}
+            {/* Display cited circulars */}
             {message.citedCirculars && message.citedCirculars.length > 0 && (
               <CitedCirculars
                 circulars={message.citedCirculars}
-                onDocumentClick={(url, title) => {
-                  if (url) {
-                    setPreviewDoc({ url, title });
-                  }
-                }}
+                onDocumentClick={handleLinkClick}
                 isSearchingDoc={isSearchingDoc}
-              />
-            )}
-            
-            {/* Document Preview Dialog */}
-            {previewDoc && (
-              <DocumentPreviewDialog
-                open={!!previewDoc}
-                onOpenChange={(open) => !open && setPreviewDoc(null)}
-                url={previewDoc.url}
-                title={previewDoc.title}
               />
             )}
           </div>
