@@ -10,6 +10,13 @@ import { ChatHistory } from "@/components/chat/ChatHistory";
 import { cn } from "@/lib/utils";
 import type { UploadedFile } from "@/components/chat/ImageUploadButton";
 
+interface AttachedFile {
+  name: string;
+  type: "image" | "document";
+  preview: string;
+  size: number;
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -17,6 +24,7 @@ interface Message {
   confidence?: "high" | "medium" | "low";
   feedback?: "up" | "down";
   conversationId?: string;
+  attachedFiles?: AttachedFile[];
   context?: {
     hs_codes_found: number;
     tariffs_found: number;
@@ -243,10 +251,19 @@ export default function Chat() {
       displayContent = `${displayContent} (+ ${pdfsToSend.length} PDF)`;
     }
 
+    // Build attached files for history display
+    const attachedFilesForHistory: AttachedFile[] = uploadedFiles.map((upload) => ({
+      name: upload.file.name,
+      type: upload.type,
+      preview: upload.preview,
+      size: upload.file.size,
+    }));
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
       content: displayContent || (uploadedFiles.length > 0 ? `📎 ${uploadedFiles.length} fichier(s) uploadé(s)` : ""),
+      attachedFiles: attachedFilesForHistory.length > 0 ? attachedFilesForHistory : undefined,
     };
 
     setMessages((prev) => [...prev, userMessage]);

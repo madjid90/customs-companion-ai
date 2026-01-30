@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Bot, User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle, ExternalLink } from "lucide-react";
+import { Bot, User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle, ExternalLink, Eye, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -7,6 +7,12 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { InteractiveQuestions, parseQuestionsFromResponse } from "./InteractiveQuestions";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface MessageContext {
   hs_codes_found: number;
@@ -14,6 +20,13 @@ interface MessageContext {
   controlled_found: number;
   documents_found: number;
   pdfs_used: number;
+}
+
+export interface AttachedFile {
+  name: string;
+  type: "image" | "document";
+  preview: string; // base64 or blob URL
+  size: number;
 }
 
 interface Message {
@@ -24,6 +37,7 @@ interface Message {
   feedback?: "up" | "down";
   conversationId?: string;
   context?: MessageContext;
+  attachedFiles?: AttachedFile[];
 }
 
 interface ChatMessageProps {
@@ -168,6 +182,7 @@ export function ChatMessage({
 }: ChatMessageProps) {
   const [previewDoc, setPreviewDoc] = useState<{ url: string; title: string } | null>(null);
   const [isSearchingDoc, setIsSearchingDoc] = useState(false);
+  const [previewAttachment, setPreviewAttachment] = useState<AttachedFile | null>(null);
   
   const isUser = message.role === "user";
   const isError = message.content.startsWith("⚠️");
@@ -429,9 +444,56 @@ export function ChatMessage({
             )}
           </div>
         ) : (
-          <p className="whitespace-pre-wrap text-sm leading-relaxed">
-            {message.content}
-          </p>
+          <div>
+            {/* User message text */}
+            <p className="whitespace-pre-wrap text-sm leading-relaxed">
+              {message.content}
+            </p>
+            
+            {/* Attached files in user message */}
+            {isUser && message.attachedFiles && message.attachedFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-white/20">
+                {message.attachedFiles.map((file, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setPreviewAttachment(file)}
+                    className={cn(
+                      "relative group flex items-center gap-2 bg-white/10 rounded-lg p-2 pr-3",
+                      "hover:bg-white/20 transition-all duration-200 cursor-pointer"
+                    )}
+                  >
+                    {file.type === "image" ? (
+                      <div className="relative w-10 h-10 rounded overflow-hidden">
+                        <img
+                          src={file.preview}
+                          alt={file.name}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <Eye className="h-3 w-3 text-white" />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="relative w-10 h-10 flex items-center justify-center bg-white/10 rounded">
+                        <FileText className="h-5 w-5 text-white/80" />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded">
+                          <Eye className="h-3 w-3 text-white" />
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex flex-col items-start min-w-0">
+                      <span className="text-xs font-medium text-white/90 max-w-[80px] truncate">
+                        {file.name}
+                      </span>
+                      <span className="text-[10px] text-white/60">
+                        {(file.size / 1024).toFixed(0)} Ko
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {!isUser && !isError && (
@@ -513,6 +575,63 @@ export function ChatMessage({
         <div className="flex-shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-md">
           <User className="h-4 w-4 md:h-5 md:w-5 text-primary-foreground" />
         </div>
+      )}
+
+      {/* Attachment Preview Dialog for history files */}
+      {previewAttachment && (
+        <Dialog open={!!previewAttachment} onOpenChange={(open) => !open && setPreviewAttachment(null)}>
+          <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden">
+            <DialogHeader className="p-4 pb-2 border-b bg-card/80 backdrop-blur-sm">
+              <DialogTitle className="flex items-center gap-2 text-base font-medium truncate pr-4">
+                {previewAttachment.type === "image" ? (
+                  <Image className="h-5 w-5 text-primary" />
+                ) : (
+                  <FileText className="h-5 w-5 text-primary" />
+                )}
+                <span className="truncate">{previewAttachment.name}</span>
+                <span className="text-xs text-muted-foreground font-normal">
+                  ({(previewAttachment.size / 1024).toFixed(1)} Ko)
+                </span>
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 overflow-auto p-4 bg-muted/20 min-h-[400px] max-h-[calc(90vh-80px)]">
+              {previewAttachment.type === "image" ? (
+                <div className="flex items-center justify-center h-full">
+                  <img
+                    src={previewAttachment.preview}
+                    alt={previewAttachment.name}
+                    className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
+                  <div className="w-24 h-24 rounded-2xl bg-primary/10 flex items-center justify-center">
+                    <FileText className="h-12 w-12 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-lg">{previewAttachment.name}</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {(previewAttachment.size / 1024).toFixed(1)} Ko
+                    </p>
+                  </div>
+                  {previewAttachment.preview && previewAttachment.preview.startsWith("data:application/pdf") && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const link = document.createElement('a');
+                        link.href = previewAttachment.preview;
+                        link.download = previewAttachment.name;
+                        link.click();
+                      }}
+                    >
+                      Télécharger
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
