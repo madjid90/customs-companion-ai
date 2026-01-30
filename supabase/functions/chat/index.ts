@@ -917,29 +917,31 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       const { data: pdfsByCode } = await pdfQuery;
       
       // Méthode 2: Recherche par titre du document via pdf_documents puis join extractions
-      // AMÉLIORATION: Chercher dans les 3 premiers chapitres, pas seulement le premier
+      // AMÉLIORATION: Chercher dans TOUS les chapitres pertinents (jusqu'à 10)
       let pdfsByTitle: any[] = [];
       if (chaptersForPdf.length > 0) {
-        // Construire une requête OR pour tous les chapitres pertinents (max 3)
+        // Construire une requête OR pour tous les chapitres pertinents (max 10)
         const chapterConditions: string[] = [];
-        for (const chapter of chaptersForPdf.slice(0, 3)) {
+        for (const chapter of chaptersForPdf.slice(0, 10)) {
           const chapterNum = parseInt(chapter);
           const paddedChapter = chapterNum.toString().padStart(2, '0');
           chapterConditions.push(`title.ilike.%Chapitre SH ${chapterNum}%`);
           chapterConditions.push(`title.ilike.%SH CODE ${chapterNum}%`);
-          if (chapterNum !== parseInt(paddedChapter)) {
+          // Aussi chercher avec le numéro paddé si différent
+          if (chapterNum < 10 && chapterNum.toString() !== paddedChapter) {
             chapterConditions.push(`title.ilike.%Chapitre SH ${paddedChapter}%`);
+            chapterConditions.push(`title.ilike.%SH CODE ${paddedChapter}%`);
           }
         }
         
-        console.log("Searching PDFs for chapters:", chaptersForPdf.slice(0, 3));
+        console.log("Searching PDFs for chapters:", chaptersForPdf.slice(0, 10));
         
         const { data: pdfDocs } = await supabase
           .from('pdf_documents')
           .select('id, title, category, file_path')
           .eq('is_active', true)
           .or(chapterConditions.join(','))
-          .limit(5);
+          .limit(15);
         
         console.log("PDF docs found by title:", pdfDocs?.length, pdfDocs?.map((d: any) => d.title));
         
