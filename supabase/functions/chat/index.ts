@@ -300,34 +300,33 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       context.knowledge_documents = [...new Map(context.knowledge_documents.map(d => [d.title, d])).values()].slice(0, 10);
     }
 
-    // 6. Get relevant PDF summaries
+    // 6. Get relevant PDF summaries - PRECISE CHAPTER MATCHING
+    // Extract unique chapter numbers from detected HS codes
     const chaptersForPdf = context.hs_codes.length > 0 
-      ? [...new Set(context.hs_codes.map(c => cleanHSCode(c.code || c.code_clean).substring(0, 2)))]
+      ? [...new Set(context.hs_codes.map(c => {
+          const code = cleanHSCode(c.code || c.code_clean);
+          return parseInt(code.substring(0, 2));
+        }).filter(ch => !isNaN(ch) && ch > 0 && ch <= 99))]
       : [];
     
     if (chaptersForPdf.length > 0) {
-      const chapterConditions: string[] = [];
-      for (const chapter of chaptersForPdf.slice(0, 10)) {
-        const chapterNum = parseInt(chapter);
-        const paddedChapter = chapterNum.toString().padStart(2, '0');
-        
-        if (chapterNum < 10) {
-          chapterConditions.push(`title.ilike.%Chapitre SH ${paddedChapter}`);
-          chapterConditions.push(`title.ilike.%SH_CODE_${paddedChapter}.%`);
-        } else {
-          chapterConditions.push(`title.ilike.%Chapitre SH ${chapterNum}%`);
-          chapterConditions.push(`title.ilike.%SH_CODE_${chapterNum}.%`);
-        }
-      }
+      // Build exact file_path matches for each chapter
+      const exactPaths = chaptersForPdf.slice(0, 10).map(chNum => 
+        `tarifs/SH_CODE_${chNum.toString().padStart(2, '0')}.pdf`
+      );
+      
+      console.log(`PDF lookup: searching for chapters ${chaptersForPdf.join(', ')} → paths: ${exactPaths.join(', ')}`);
       
       const { data: pdfDocs } = await supabase
         .from('pdf_documents')
         .select('id, title, category, file_path')
         .eq('is_active', true)
-        .or(chapterConditions.join(','))
-        .limit(15);
+        .eq('category', 'tarif')
+        .in('file_path', exactPaths);
       
       if (pdfDocs && pdfDocs.length > 0) {
+        console.log(`PDF lookup: found ${pdfDocs.length} matching PDFs: ${pdfDocs.map((d: any) => d.title).join(', ')}`);
+        
         const pdfIds = pdfDocs.map((d: any) => d.id);
         const { data: extractions } = await supabase
           .from('pdf_extractions')
@@ -336,12 +335,28 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         
         if (extractions) {
           const pdfMap = new Map(pdfDocs.map((d: any) => [d.id, d]));
+          
+          // Create a chapter-to-pdf mapping for verification
+          const chapterToPdf = new Map<number, any>();
+          for (const doc of pdfDocs as any[]) {
+            const match = doc.file_path?.match(/SH_CODE_(\d+)\.pdf/);
+            if (match) {
+              chapterToPdf.set(parseInt(match[1]), doc);
+            }
+          }
+          
           context.pdf_summaries = extractions.map((ext: any) => {
             const pdfDoc = pdfMap.get(ext.pdf_id) as any;
             const filePath = pdfDoc?.file_path;
+            
+            // Extract chapter number from file path for validation
+            const chapterMatch = filePath?.match(/SH_CODE_(\d+)\.pdf/);
+            const pdfChapter = chapterMatch ? parseInt(chapterMatch[1]) : null;
+            
             return {
               title: pdfDoc?.title,
               category: pdfDoc?.category,
+              chapter_number: pdfChapter,
               summary: ext.summary,
               key_points: ext.key_points,
               full_text: ext.extracted_text,
@@ -350,6 +365,8 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
             };
           });
         }
+      } else {
+        console.log(`PDF lookup: no matching PDFs found for paths: ${exactPaths.join(', ')}`);
       }
     }
 

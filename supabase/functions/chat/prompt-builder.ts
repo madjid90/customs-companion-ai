@@ -151,13 +151,15 @@ ${context.controlled_products.length > 0 ? JSON.stringify(context.controlled_pro
 ### Documents de référence
 ${context.knowledge_documents.length > 0 ? context.knowledge_documents.map(d => `- **${d.title}**: ${d.content?.substring(0, 500)}...`).join('\n') : "Aucun document de référence"}
 
-### Extractions PDF avec texte complet
+### Extractions PDF (Source Officielle du Tarif Douanier)
 ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map((p: any, idx: number) => {
-  let content = `---\n**Document ${idx + 1}:** ${p.title || 'Sans titre'}\n`;
+  const chapterInfo = p.chapter_number ? ` [CHAPITRE ${p.chapter_number.toString().padStart(2, '0')}]` : '';
+  let content = `---\n**Document ${idx + 1}:** ${p.title || 'Sans titre'}${chapterInfo}\n`;
+  content += `**IMPORTANT:** Ce PDF contient le tarif officiel${p.chapter_number ? ` pour le chapitre ${p.chapter_number}` : ''}. Utilise-le comme source pour les codes ${p.chapter_number ? `${p.chapter_number.toString().padStart(2, '0')}XX.XX.XX.XX` : 'mentionnés'}.\n`;
   if (p.summary) content += `**Résumé:** ${p.summary}\n`;
   if (p.key_points?.length > 0) content += `**Points clés:** ${JSON.stringify(p.key_points)}\n`;
-  if (p.mentioned_codes?.length > 0) content += `**Codes SH mentionnés:** ${p.mentioned_codes.join(', ')}\n`;
-  if (p.download_url) content += `**URL source:** ${p.download_url}\n`;
+  if (p.mentioned_codes?.length > 0) content += `**Codes SH couverts par ce document:** ${p.mentioned_codes.join(', ')}\n`;
+  if (p.download_url) content += `**URL EXACTE À CITER:** ${p.download_url}\n`;
   if (p.full_text) content += `**TEXTE INTÉGRAL:** ${p.full_text.substring(0, 4000)}...\n`;
   return content;
 }).join('\n') : "Aucune extraction PDF"}
