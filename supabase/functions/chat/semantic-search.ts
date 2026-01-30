@@ -260,6 +260,73 @@ export async function searchKnowledgeSemantic(
 }
 
 /**
+ * Recherche par mots-clés (FTS) des documents de connaissance - fallback
+ */
+export async function searchKnowledgeKeyword(
+  supabase: any,
+  searchQuery: string,
+  limit: number = 5
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase
+      .from("knowledge_documents")
+      .select("id, title, content, summary, category, country_code")
+      .eq("is_active", true)
+      .or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%,summary.ilike.%${searchQuery}%`)
+      .limit(limit);
+
+    if (error) {
+      console.error("Keyword knowledge search error:", error);
+      return [];
+    }
+
+    return (data || []).map((doc: any) => ({
+      ...doc,
+      similarity: 0.6, // Score fixe pour keyword search
+      source: "keyword",
+    }));
+  } catch (error) {
+    console.error("Keyword knowledge search failed:", error);
+    return [];
+  }
+}
+
+/**
+ * Recherche hybride knowledge: sémantique + fallback keyword
+ */
+export async function searchKnowledgeHybrid(
+  supabase: any,
+  queryEmbedding: number[] | null,
+  searchText: string,
+  threshold: number = SEMANTIC_THRESHOLDS.documentsMedium,
+  limit: number = 5
+): Promise<any[]> {
+  let results: any[] = [];
+
+  // 1. Try semantic search first if embedding available
+  if (queryEmbedding) {
+    results = await searchKnowledgeSemantic(supabase, queryEmbedding, threshold, limit);
+  }
+
+  // 2. Fallback to keyword search if not enough results
+  if (results.length < SEMANTIC_THRESHOLDS.minResultsForFallback && searchText) {
+    console.log(`Knowledge search: only ${results.length} semantic results, adding keyword fallback`);
+    const keywordResults = await searchKnowledgeKeyword(supabase, searchText, limit);
+    
+    // Merge and deduplicate by id
+    const seenIds = new Set(results.map((r) => r.id));
+    for (const kr of keywordResults) {
+      if (!seenIds.has(kr.id)) {
+        results.push(kr);
+        seenIds.add(kr.id);
+      }
+    }
+  }
+
+  return results.slice(0, limit);
+}
+
+/**
  * Calcule un score de qualité pour un document
  */
 function calculateDocumentQuality(doc: any): number {
@@ -446,4 +513,72 @@ export async function searchVeilleSemantic(
     console.error("Semantic veille search failed:", error);
     return [];
   }
+}
+
+/**
+ * Recherche par mots-clés (FTS) des documents de veille - fallback
+ */
+export async function searchVeilleKeyword(
+  supabase: any,
+  searchQuery: string,
+  limit: number = 5
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase
+      .from("veille_documents")
+      .select("id, title, content, summary, category, country_code, importance, source_url")
+      .eq("is_verified", true)
+      .or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%,summary.ilike.%${searchQuery}%`)
+      .limit(limit);
+
+    if (error) {
+      console.error("Keyword veille search error:", error);
+      return [];
+    }
+
+    return (data || []).map((doc: any) => ({
+      ...doc,
+      similarity: 0.6,
+      effective_similarity: doc.importance === 'haute' ? 0.69 : doc.importance === 'moyenne' ? 0.63 : 0.6,
+      source: "keyword",
+    }));
+  } catch (error) {
+    console.error("Keyword veille search failed:", error);
+    return [];
+  }
+}
+
+/**
+ * Recherche hybride veille: sémantique + fallback keyword
+ */
+export async function searchVeilleHybrid(
+  supabase: any,
+  queryEmbedding: number[] | null,
+  searchText: string,
+  threshold: number = SEMANTIC_THRESHOLDS.documentsMedium,
+  limit: number = 5
+): Promise<any[]> {
+  let results: any[] = [];
+
+  // 1. Try semantic search first if embedding available
+  if (queryEmbedding) {
+    results = await searchVeilleSemantic(supabase, queryEmbedding, threshold, limit);
+  }
+
+  // 2. Fallback to keyword search if not enough results
+  if (results.length < SEMANTIC_THRESHOLDS.minResultsForFallback && searchText) {
+    console.log(`Veille search: only ${results.length} semantic results, adding keyword fallback`);
+    const keywordResults = await searchVeilleKeyword(supabase, searchText, limit);
+    
+    // Merge and deduplicate by id
+    const seenIds = new Set(results.map((r) => r.id));
+    for (const kr of keywordResults) {
+      if (!seenIds.has(kr.id)) {
+        results.push(kr);
+        seenIds.add(kr.id);
+      }
+    }
+  }
+
+  return results.sort((a: any, b: any) => (b.effective_similarity || b.similarity) - (a.effective_similarity || a.similarity)).slice(0, limit);
 }
