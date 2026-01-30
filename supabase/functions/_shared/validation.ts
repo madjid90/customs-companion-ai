@@ -10,6 +10,11 @@ export interface ChatRequest {
     base64: string;
     mediaType: string;
   }>;
+  pdfDocuments?: Array<{
+    type: "pdf";
+    base64: string;
+    fileName: string;
+  }>;
   conversationHistory?: Array<{
     role: "user" | "assistant";
     content: string;
@@ -63,6 +68,26 @@ export function validateChatRequest(body: unknown): { valid: boolean; data?: Cha
       const validTypes = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/jpg"];
       if (!validTypes.includes(img.mediaType)) {
         return { valid: false, error: `Image ${i}: mediaType non supporté (${img.mediaType})` };
+      }
+    }
+  }
+  
+  // Validation des PDFs
+  if (b.pdfDocuments !== undefined) {
+    if (!Array.isArray(b.pdfDocuments)) {
+      return { valid: false, error: "pdfDocuments doit être un tableau" };
+    }
+    for (let i = 0; i < b.pdfDocuments.length; i++) {
+      const pdf = b.pdfDocuments[i] as Record<string, unknown>;
+      if (!pdf.base64 || typeof pdf.base64 !== "string") {
+        return { valid: false, error: `PDF ${i}: base64 manquant ou invalide` };
+      }
+      if (!pdf.fileName || typeof pdf.fileName !== "string") {
+        return { valid: false, error: `PDF ${i}: fileName manquant ou invalide` };
+      }
+      // Limite de taille: 10 MB en base64 (environ 7.5 MB fichier réel)
+      if (pdf.base64.length > 14_000_000) {
+        return { valid: false, error: `PDF ${i}: fichier trop volumineux (max 10 MB)` };
       }
     }
   }

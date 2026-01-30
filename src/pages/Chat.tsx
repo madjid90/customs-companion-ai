@@ -197,20 +197,26 @@ export default function Chat() {
     if ((!messageText && uploadedFiles.length === 0) || isLoading) return;
 
     const imagesToSend: { type: "image"; base64: string; mediaType: string }[] = [];
+    const pdfsToSend: { type: "pdf"; base64: string; fileName: string }[] = [];
     const documentNames: string[] = [];
     
     if (uploadedFiles.length > 0) {
       setIsUploading(true);
       for (const upload of uploadedFiles) {
         try {
-          // Only send actual images to the AI vision API
-          // PDFs and documents are not supported for vision analysis
+          // Images go to vision API
           if (upload.type === "image" && upload.file.type.startsWith("image/")) {
             const base64 = await fileToBase64(upload.file);
             const mediaType = upload.file.type || "image/jpeg";
             imagesToSend.push({ type: "image", base64, mediaType });
-          } else {
-            // Track document names to mention in the question
+          } 
+          // PDFs go to Claude's native PDF support
+          else if (upload.file.type === "application/pdf") {
+            const base64 = await fileToBase64(upload.file);
+            pdfsToSend.push({ type: "pdf", base64, fileName: upload.file.name });
+          }
+          // Other documents just get mentioned by name
+          else {
             documentNames.push(upload.file.name);
           }
         } catch (err) {
@@ -220,19 +226,27 @@ export default function Chat() {
       setIsUploading(false);
     }
     
-    // If only documents were uploaded, add context to the question
+    // Build context message for non-analyzed documents
     let enhancedMessage = messageText;
-    if (documentNames.length > 0 && imagesToSend.length === 0) {
+    if (documentNames.length > 0) {
       const docList = documentNames.join(", ");
       enhancedMessage = messageText 
         ? `${messageText} (Documents mentionnés: ${docList})`
         : `J'ai des questions concernant ces documents: ${docList}`;
     }
 
+    // Build display message
+    let displayContent = enhancedMessage;
+    if (pdfsToSend.length > 0 && !displayContent) {
+      displayContent = `📄 Analyse de ${pdfsToSend.length} document(s) PDF`;
+    } else if (pdfsToSend.length > 0) {
+      displayContent = `${displayContent} (+ ${pdfsToSend.length} PDF)`;
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: enhancedMessage || (uploadedFiles.length > 0 ? `📎 ${uploadedFiles.length} fichier(s) uploadé(s)` : ""),
+      content: displayContent || (uploadedFiles.length > 0 ? `📎 ${uploadedFiles.length} fichier(s) uploadé(s)` : ""),
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -248,9 +262,10 @@ export default function Chat() {
       
       const { data, error } = await supabase.functions.invoke('chat', {
         body: {
-          question: enhancedMessage || "Identifie ce produit et donne-moi le code SH approprié",
+          question: enhancedMessage || "Analyse ce document et donne-moi les informations pertinentes",
           sessionId,
           images: imagesToSend.length > 0 ? imagesToSend : undefined,
+          pdfDocuments: pdfsToSend.length > 0 ? pdfsToSend : undefined,
           conversationHistory,
         },
       });
