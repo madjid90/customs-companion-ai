@@ -123,13 +123,13 @@ export function InteractiveQuestions({ questions, onAnswer, disabled }: Interact
   if (questions.length === 0) return null;
   
   return (
-    <div className="mt-4 pt-4 border-t border-border/20 space-y-3">
-      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+    <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-border/20 space-y-2 md:space-y-3">
+      <p className="text-[10px] md:text-xs text-muted-foreground font-medium uppercase tracking-wider">
         Sélectionnez une option
       </p>
       {questions.map((question) => (
-        <div key={question.id} className="space-y-2">
-          <div className="flex flex-wrap gap-2">
+        <div key={question.id} className="space-y-1.5 md:space-y-2">
+          <div className="flex flex-wrap gap-1.5 md:gap-2">
             {question.options.map((option, idx) => (
               <Button
                 key={idx}
@@ -138,11 +138,11 @@ export function InteractiveQuestions({ questions, onAnswer, disabled }: Interact
                 disabled={disabled}
                 onClick={() => onAnswer(question.id, option)}
                 className={cn(
-                  "h-auto py-2.5 px-4 text-sm whitespace-normal text-left rounded-xl",
+                  "h-auto py-2 md:py-2.5 px-3 md:px-4 text-xs md:text-sm whitespace-normal text-left rounded-lg md:rounded-xl",
                   "bg-background/50 hover:bg-accent/10 hover:text-accent-foreground",
-                  "border-border/50 hover:border-accent/50",
+                  "border-border/50 hover:border-accent/50 active:scale-[0.98]",
                   "transition-all duration-200 hover:scale-[1.02] hover:shadow-sm",
-                  "font-medium"
+                  "font-medium max-w-full"
                 )}
               >
                 {cleanMarkdown(option)}
