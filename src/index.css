@@ -249,6 +249,20 @@
   box-shadow: 0 -4px 20px -4px hsl(213 52% 15% / 0.08);
 }
 
+/* Safe area for mobile devices with notch/home bar */
+.safe-area-bottom {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+/* Hide scrollbar for horizontal scroll */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 .typing-indicator span {
   @apply inline-block w-2 h-2 rounded-full;
   background: hsl(var(--chat-typing-dot));
@@ -257,3 +271,14 @@
 .typing-indicator span:nth-child(1) { animation: typing 1.4s ease-in-out infinite 0s; }
 .typing-indicator span:nth-child(2) { animation: typing 1.4s ease-in-out infinite 0.2s; }
 .typing-indicator span:nth-child(3) { animation: typing 1.4s ease-in-out infinite 0.4s; }
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  .chat-message-user::after {
+    @apply w-2 h-2 -bottom-0.5 -right-0.5;
+  }
+  
+  .chat-message-ai {
+    box-shadow: 0 1px 4px -1px hsl(213 52% 15% / 0.06);
+  }
+}

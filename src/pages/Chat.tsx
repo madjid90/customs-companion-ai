@@ -378,7 +378,7 @@ export default function Chat() {
   }, [uploadedFiles]);
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] bg-gradient-to-b from-background to-muted/20">
+    <div className="flex h-[calc(100vh-4rem)] h-[calc(100dvh-4rem)] bg-gradient-to-b from-background to-muted/20 overflow-hidden">
       {/* History sidebar */}
       <ChatHistory
         currentSessionId={sessionId}
@@ -388,16 +388,16 @@ export default function Chat() {
         onToggle={() => setIsHistoryOpen(!isHistoryOpen)}
       />
 
-      {/* Main chat area */}
+      {/* Main chat area - no margin on mobile when sidebar is open (overlay mode) */}
       <div 
         className={cn(
-          "flex flex-col flex-1 transition-all duration-300",
-          isHistoryOpen ? "ml-72" : "ml-0"
+          "flex flex-col flex-1 transition-all duration-300 min-w-0",
+          isHistoryOpen ? "md:ml-72" : "ml-0"
         )}
       >
         {/* Chat messages area */}
-        <ScrollArea ref={scrollRef} className="flex-1 px-3 md:px-4 py-4">
-          <div className="max-w-3xl mx-auto space-y-4 md:space-y-6">
+        <ScrollArea ref={scrollRef} className="flex-1 px-2 md:px-4 py-2 md:py-4">
+          <div className="max-w-3xl mx-auto space-y-3 md:space-y-6">
             {messages.length === 0 && (
               <ChatWelcome onQuestionClick={handleSend} />
             )}

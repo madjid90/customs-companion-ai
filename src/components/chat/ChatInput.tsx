@@ -45,11 +45,11 @@ export function ChatInput({
 
   return (
     <>
-      <div className="border-t bg-card/80 backdrop-blur-sm p-3 md:p-4 chat-input-wrapper">
+      <div className="border-t bg-card/95 backdrop-blur-md p-2 md:p-4 chat-input-wrapper sticky bottom-0 safe-area-bottom">
         <div className="max-w-3xl mx-auto">
-          {/* Uploaded files preview */}
+          {/* Uploaded files preview - horizontal scroll on mobile */}
           {uploadedFiles.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-3 p-2 bg-muted/30 rounded-xl border border-border/50">
+            <div className="flex gap-2 mb-2 md:mb-3 p-2 bg-muted/30 rounded-xl border border-border/50 overflow-x-auto scrollbar-hide">
               {uploadedFiles.map((upload, index) => (
                 <div
                   key={index}
@@ -113,7 +113,7 @@ export function ChatInput({
           )}
           
           {/* Input row */}
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-1.5 md:gap-2">
             <ImageUploadButton
               onFilesSelected={onFilesSelected}
               uploadedFiles={[]}
@@ -121,15 +121,15 @@ export function ChatInput({
               disabled={isLoading}
               isUploading={isUploading}
             />
-            <div className="relative flex-1">
+            <div className="relative flex-1 min-w-0">
               <Textarea
                 value={input}
                 onChange={(e) => onInputChange(e.target.value)}
                 onKeyDown={onKeyDown}
                 placeholder={uploadedFiles.length > 0 
-                  ? "Décrivez votre produit ou posez une question..." 
-                  : "Posez votre question sur la douane..."}
-                className="min-h-[52px] max-h-32 pr-14 resize-none rounded-xl border-border/50 focus:border-accent/50 bg-background shadow-sm transition-all"
+                  ? "Décrivez votre produit..." 
+                  : "Posez votre question..."}
+                className="min-h-[44px] md:min-h-[52px] max-h-24 md:max-h-32 pr-12 md:pr-14 resize-none rounded-xl border-border/50 focus:border-accent/50 bg-background shadow-sm transition-all text-sm md:text-base"
                 rows={1}
               />
               <Button
