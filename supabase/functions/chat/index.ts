@@ -176,8 +176,10 @@ async function checkResponseCache(
   similarityThreshold: number = SEMANTIC_THRESHOLDS.cacheMatch
 ): Promise<{ found: boolean; response?: any }> {
   try {
+    // Convert embedding array to pgvector string format "[...]"
+    const embeddingString = `[${queryEmbedding.join(",")}]`;
     const { data, error } = await supabase.rpc("find_cached_response", {
-      query_embedding: queryEmbedding,
+      query_embedding: embeddingString,
       similarity_threshold: similarityThreshold,
     });
 
@@ -221,11 +223,14 @@ async function saveToResponseCache(
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const questionHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 
+    // Convert embedding array to pgvector string format "[...]"
+    const embeddingString = `[${questionEmbedding.join(",")}]`;
+    
     await supabase.from("response_cache").upsert(
       {
         question_hash: questionHash,
         question_text: question,
-        question_embedding: questionEmbedding,
+        question_embedding: embeddingString,
         response_text: response,
         context_used: contextUsed,
         confidence_level: confidenceLevel,
