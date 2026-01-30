@@ -17,6 +17,16 @@ interface AttachedFile {
   size: number;
 }
 
+interface CircularReference {
+  id: string;
+  reference_type: string;
+  reference_number: string;
+  title?: string;
+  reference_date?: string;
+  download_url?: string;
+  pdf_title?: string;
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -25,12 +35,14 @@ interface Message {
   feedback?: "up" | "down";
   conversationId?: string;
   attachedFiles?: AttachedFile[];
+  citedCirculars?: CircularReference[];
   context?: {
     hs_codes_found: number;
     tariffs_found: number;
     controlled_found: number;
     documents_found: number;
     pdfs_used: number;
+    legal_references_found?: number;
   };
 }
 
@@ -297,6 +309,7 @@ export default function Chat() {
         confidence: data.confidence as "high" | "medium" | "low",
         conversationId: data.conversationId,
         context: data.context,
+        citedCirculars: data.cited_circulars || [],
       };
 
       setMessages((prev) => [...prev, aiMessage]);

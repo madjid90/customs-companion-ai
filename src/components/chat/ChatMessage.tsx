@@ -1,11 +1,12 @@
 import { useState, useCallback } from "react";
-import { Bot, User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle, ExternalLink, Eye, Image } from "lucide-react";
+import { Bot, User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle, ExternalLink, Eye, Image, Scale } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { InteractiveQuestions, parseQuestionsFromResponse } from "./InteractiveQuestions";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
+import { CitedCirculars, type CircularReference } from "./CitedCirculars";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog,
@@ -38,6 +39,7 @@ interface Message {
   conversationId?: string;
   context?: MessageContext;
   attachedFiles?: AttachedFile[];
+  citedCirculars?: CircularReference[];
 }
 
 interface ChatMessageProps {
@@ -475,6 +477,19 @@ export function ChatMessage({
               return null;
             })()}
             
+            {/* Cited Circulars Section */}
+            {message.citedCirculars && message.citedCirculars.length > 0 && (
+              <CitedCirculars
+                circulars={message.citedCirculars}
+                onDocumentClick={(url, title) => {
+                  if (url) {
+                    setPreviewDoc({ url, title });
+                  }
+                }}
+                isSearchingDoc={isSearchingDoc}
+              />
+            )}
+            
             {/* Document Preview Dialog */}
             {previewDoc && (
               <DocumentPreviewDialog
@@ -541,7 +556,7 @@ export function ChatMessage({
         {!isUser && !isError && (
           <div className="mt-4 pt-3 border-t border-border/30">
             {/* Context info */}
-            {message.context && (message.context.hs_codes_found > 0 || message.context.tariffs_found > 0 || message.context.controlled_found > 0) && (
+            {message.context && (message.context.hs_codes_found > 0 || message.context.tariffs_found > 0 || message.context.controlled_found > 0 || (message.citedCirculars && message.citedCirculars.length > 0)) && (
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {message.context.hs_codes_found > 0 && (
                   <span className="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-1 rounded-full font-medium">
@@ -565,6 +580,12 @@ export function ChatMessage({
                   <span className="inline-flex items-center gap-1 text-xs bg-accent/10 text-accent px-2 py-1 rounded-full font-medium">
                     <FileText className="h-3 w-3" />
                     {message.context.pdfs_used} PDFs
+                  </span>
+                )}
+                {message.citedCirculars && message.citedCirculars.length > 0 && (
+                  <span className="inline-flex items-center gap-1 text-xs bg-success/15 text-success px-2 py-1 rounded-full font-medium">
+                    <Scale className="h-3 w-3" />
+                    {message.citedCirculars.length} circulaire{message.citedCirculars.length > 1 ? 's' : ''}
                   </span>
                 )}
               </div>
