@@ -67,6 +67,78 @@ const escapeSearchTerm = (term: string): string => {
 // SEMANTIC SEARCH & EMBEDDING FUNCTIONS (Phase 3)
 // ============================================================================
 
+// Configuration des seuils de similarité optimisés par type de recherche et intention
+interface SemanticThresholds {
+  hsCodesHigh: number;      // Classification précise
+  hsCodesMedium: number;    // Recherche générale
+  hsCodesLow: number;       // Recherche exploratoire
+  documentsHigh: number;    // Documents très pertinents
+  documentsMedium: number;  // Documents moyennement pertinents
+  documentsLow: number;     // Inclure plus de contexte
+  cacheMatch: number;       // Cache de réponses
+  minResultsForFallback: number; // Seuil pour déclencher une recherche plus large
+}
+
+const SEMANTIC_THRESHOLDS: SemanticThresholds = {
+  // Codes SH: seuils affinés pour classification précise
+  hsCodesHigh: 0.78,      // Très proche sémantiquement (classification directe)
+  hsCodesMedium: 0.68,    // Bonne correspondance (recherche standard)
+  hsCodesLow: 0.55,       // Recherche élargie (fallback si peu de résultats)
+  
+  // Documents: seuils pour PDF, knowledge, veille
+  documentsHigh: 0.72,    // Très pertinents
+  documentsMedium: 0.62,  // Pertinence moyenne
+  documentsLow: 0.50,     // Inclure contexte additionnel
+  
+  // Cache de réponses: strict pour éviter les faux positifs
+  cacheMatch: 0.94,       // Très strict pour le cache
+  
+  // Fallback
+  minResultsForFallback: 3, // Si moins de 3 résultats, élargir la recherche
+};
+
+// Déterminer les seuils optimaux en fonction de l'intention détectée
+function getAdaptiveThresholds(intent: string): { hsThreshold: number; docThreshold: number; limits: { hs: number; docs: number } } {
+  switch (intent) {
+    case 'classify':
+      // Classification: haute précision sur les codes SH, moins sur les docs
+      return {
+        hsThreshold: SEMANTIC_THRESHOLDS.hsCodesHigh,
+        docThreshold: SEMANTIC_THRESHOLDS.documentsLow,
+        limits: { hs: 15, docs: 8 }
+      };
+    case 'calculate':
+      // Calcul: précision moyenne, besoin des tarifs exacts
+      return {
+        hsThreshold: SEMANTIC_THRESHOLDS.hsCodesMedium,
+        docThreshold: SEMANTIC_THRESHOLDS.documentsMedium,
+        limits: { hs: 10, docs: 5 }
+      };
+    case 'control':
+    case 'procedure':
+      // Contrôles/Procédures: plus de contexte documentaire
+      return {
+        hsThreshold: SEMANTIC_THRESHOLDS.hsCodesMedium,
+        docThreshold: SEMANTIC_THRESHOLDS.documentsHigh,
+        limits: { hs: 8, docs: 10 }
+      };
+    case 'origin':
+      // Origine: équilibré entre codes et accords
+      return {
+        hsThreshold: SEMANTIC_THRESHOLDS.hsCodesMedium,
+        docThreshold: SEMANTIC_THRESHOLDS.documentsHigh,
+        limits: { hs: 10, docs: 8 }
+      };
+    default:
+      // Info générale: recherche équilibrée
+      return {
+        hsThreshold: SEMANTIC_THRESHOLDS.hsCodesMedium,
+        docThreshold: SEMANTIC_THRESHOLDS.documentsMedium,
+        limits: { hs: 12, docs: 6 }
+      };
+  }
+}
+
 // Generate embedding using OpenAI API
 async function generateQueryEmbedding(text: string, apiKey: string): Promise<number[] | null> {
   try {
@@ -100,7 +172,7 @@ async function generateQueryEmbedding(text: string, apiKey: string): Promise<num
 async function checkResponseCache(
   supabase: any,
   queryEmbedding: number[],
-  similarityThreshold: number = 0.92
+  similarityThreshold: number = SEMANTIC_THRESHOLDS.cacheMatch
 ): Promise<{ found: boolean; response?: any }> {
   try {
     const { data, error } = await supabase.rpc("find_cached_response", {
@@ -165,15 +237,15 @@ async function saveToResponseCache(
   }
 }
 
-// Semantic search for HS codes
+// Semantic search with adaptive thresholds and fallback
 async function searchHSCodesSemantic(
   supabase: any,
   queryEmbedding: number[],
-  threshold: number = 0.65,
+  threshold: number = SEMANTIC_THRESHOLDS.hsCodesMedium,
   limit: number = 10
 ): Promise<any[]> {
   try {
-    // Convert embedding array to string format for pgvector
+    // Premier essai avec le seuil demandé
     const { data, error } = await supabase.rpc("search_hs_codes_semantic", {
       query_embedding: `[${queryEmbedding.join(",")}]`,
       match_threshold: threshold,
@@ -185,6 +257,17 @@ async function searchHSCodesSemantic(
       return [];
     }
 
+    // Si peu de résultats et seuil élevé, retry avec seuil plus bas
+    if ((!data || data.length < SEMANTIC_THRESHOLDS.minResultsForFallback) && threshold > SEMANTIC_THRESHOLDS.hsCodesLow) {
+      console.log(`Semantic HS: only ${data?.length || 0} results at threshold ${threshold}, retrying at ${SEMANTIC_THRESHOLDS.hsCodesLow}`);
+      const { data: fallbackData } = await supabase.rpc("search_hs_codes_semantic", {
+        query_embedding: `[${queryEmbedding.join(",")}]`,
+        match_threshold: SEMANTIC_THRESHOLDS.hsCodesLow,
+        match_count: limit + 5,
+      });
+      return fallbackData || data || [];
+    }
+
     return data || [];
   } catch (error) {
     console.error("Semantic HS search failed:", error);
@@ -192,11 +275,11 @@ async function searchHSCodesSemantic(
   }
 }
 
-// Semantic search for knowledge documents
+// Semantic search for knowledge documents with adaptive fallback
 async function searchKnowledgeSemantic(
   supabase: any,
   queryEmbedding: number[],
-  threshold: number = 0.6,
+  threshold: number = SEMANTIC_THRESHOLDS.documentsMedium,
   limit: number = 5
 ): Promise<any[]> {
   try {
@@ -211,6 +294,16 @@ async function searchKnowledgeSemantic(
       return [];
     }
 
+    // Fallback si peu de résultats
+    if ((!data || data.length < 2) && threshold > SEMANTIC_THRESHOLDS.documentsLow) {
+      const { data: fallbackData } = await supabase.rpc("search_knowledge_documents_semantic", {
+        query_embedding: `[${queryEmbedding.join(",")}]`,
+        match_threshold: SEMANTIC_THRESHOLDS.documentsLow,
+        match_count: limit + 3,
+      });
+      return fallbackData || data || [];
+    }
+
     return data || [];
   } catch (error) {
     console.error("Semantic knowledge search failed:", error);
@@ -218,11 +311,11 @@ async function searchKnowledgeSemantic(
   }
 }
 
-// Semantic search for PDF extractions
+// Semantic search for PDF extractions with quality scoring
 async function searchPDFsSemantic(
   supabase: any,
   queryEmbedding: number[],
-  threshold: number = 0.6,
+  threshold: number = SEMANTIC_THRESHOLDS.documentsMedium,
   limit: number = 5
 ): Promise<any[]> {
   try {
@@ -237,18 +330,43 @@ async function searchPDFsSemantic(
       return [];
     }
 
-    return data || [];
+    // Filtrer et scorer les résultats par qualité
+    const results = (data || []).map((doc: any) => ({
+      ...doc,
+      quality_score: calculateDocumentQuality(doc),
+    }));
+
+    // Trier par qualité combinée (similarité * quality_score)
+    return results.sort((a: any, b: any) => 
+      (b.similarity * b.quality_score) - (a.similarity * a.quality_score)
+    );
   } catch (error) {
     console.error("Semantic PDF search failed:", error);
     return [];
   }
 }
 
+// Calculer un score de qualité pour un document
+function calculateDocumentQuality(doc: any): number {
+  let score = 1.0;
+  
+  // Bonus si a un résumé substantiel
+  if (doc.summary && doc.summary.length > 100) score += 0.2;
+  
+  // Bonus si a des key_points
+  if (doc.key_points && Array.isArray(doc.key_points) && doc.key_points.length > 0) score += 0.15;
+  
+  // Bonus si texte extrait substantiel
+  if (doc.extracted_text && doc.extracted_text.length > 500) score += 0.15;
+  
+  return Math.min(score, 1.5); // Cap à 1.5
+}
+
 // Semantic search for veille documents
 async function searchVeilleSemantic(
   supabase: any,
   queryEmbedding: number[],
-  threshold: number = 0.6,
+  threshold: number = SEMANTIC_THRESHOLDS.documentsMedium,
   limit: number = 5
 ): Promise<any[]> {
   try {
@@ -263,7 +381,13 @@ async function searchVeilleSemantic(
       return [];
     }
 
-    return data || [];
+    // Bonus pour les documents à haute importance
+    const results = (data || []).map((doc: any) => ({
+      ...doc,
+      effective_similarity: doc.similarity * (doc.importance === 'haute' ? 1.15 : doc.importance === 'moyenne' ? 1.05 : 1.0)
+    }));
+
+    return results.sort((a: any, b: any) => b.effective_similarity - a.effective_similarity);
   } catch (error) {
     console.error("Semantic veille search failed:", error);
     return [];
@@ -1441,25 +1565,29 @@ INSTRUCTION: Utilise TOUTES ces informations extraites du PDF pour répondre à 
     };
 
     if (useSemanticSearch && queryEmbedding) {
-      console.log("Using semantic search enhancement...");
+      console.log("Using semantic search enhancement with adaptive thresholds...");
+      
+      // Obtenir les seuils optimisés selon l'intention détectée
+      const adaptiveThresholds = getAdaptiveThresholds(analysis.intent);
+      console.log("Adaptive thresholds for intent", analysis.intent, ":", adaptiveThresholds);
 
-      // Parallel semantic searches
+      // Parallel semantic searches avec seuils adaptatifs
       const [semanticHS, semanticKnowledge, semanticPDFs, semanticVeille] = await Promise.all([
         // Only search HS if we don't have enough from keyword search
         context.hs_codes.length < 10
-          ? searchHSCodesSemantic(supabase, queryEmbedding, 0.65, 10)
+          ? searchHSCodesSemantic(supabase, queryEmbedding, adaptiveThresholds.hsThreshold, adaptiveThresholds.limits.hs)
           : Promise.resolve([]),
         // Only search knowledge if we don't have enough
         context.knowledge_documents.length < 5
-          ? searchKnowledgeSemantic(supabase, queryEmbedding, 0.6, 5)
+          ? searchKnowledgeSemantic(supabase, queryEmbedding, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs)
           : Promise.resolve([]),
         // Only search PDFs if we don't have enough
         context.pdf_summaries.length < 3
-          ? searchPDFsSemantic(supabase, queryEmbedding, 0.6, 5)
+          ? searchPDFsSemantic(supabase, queryEmbedding, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs)
           : Promise.resolve([]),
         // Only search veille if we don't have enough
         veilleDocuments.length < 3
-          ? searchVeilleSemantic(supabase, queryEmbedding, 0.6, 5)
+          ? searchVeilleSemantic(supabase, queryEmbedding, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs)
           : Promise.resolve([]),
       ]);
 
@@ -1471,10 +1599,12 @@ INSTRUCTION: Utilise TOUTES ces informations extraites du PDF pour répondre à 
       };
 
       // Merge semantic results with keyword results (prioritizing keyword results)
+      // Trier par similarité pour garder les meilleurs
       if (semanticHS.length > 0) {
         const existingCodes = new Set(context.hs_codes.map((c: any) => c.code || c.code_clean));
         const newHSCodes = semanticHS
           .filter((hs: any) => !existingCodes.has(hs.code))
+          .sort((a: any, b: any) => (b.similarity || 0) - (a.similarity || 0))
           .map((hs: any) => ({
             ...hs,
             semantic_match: true,
@@ -1487,6 +1617,7 @@ INSTRUCTION: Utilise TOUTES ces informations extraites du PDF pour répondre à 
         const existingTitles = new Set(context.knowledge_documents.map((d: any) => d.title));
         const newKnowledge = semanticKnowledge
           .filter((d: any) => !existingTitles.has(d.title))
+          .sort((a: any, b: any) => (b.similarity || 0) - (a.similarity || 0))
           .map((d: any) => ({
             ...d,
             semantic_match: true,
@@ -1499,6 +1630,7 @@ INSTRUCTION: Utilise TOUTES ces informations extraites du PDF pour répondre à 
         const existingVeilleTitles = new Set(veilleDocuments.map((d: any) => d.title));
         const newVeille = semanticVeille
           .filter((d: any) => !existingVeilleTitles.has(d.title))
+          .sort((a: any, b: any) => (b.effective_similarity || b.similarity || 0) - (a.effective_similarity || a.similarity || 0))
           .map((d: any) => ({
             ...d,
             semantic_match: true,
@@ -1507,7 +1639,9 @@ INSTRUCTION: Utilise TOUTES ces informations extraites du PDF pour répondre à 
         veilleDocuments = [...veilleDocuments, ...newVeille].slice(0, 8);
       }
 
-      console.log("Semantic search added:", {
+      console.log("Semantic search added with adaptive thresholds:", {
+        intent: analysis.intent,
+        thresholds: adaptiveThresholds,
         hs_codes: semanticHS.length,
         knowledge: semanticKnowledge.length,
         pdfs: semanticPDFs.length,
