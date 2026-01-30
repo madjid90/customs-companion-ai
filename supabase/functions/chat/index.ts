@@ -1266,16 +1266,29 @@ INSTRUCTION: Utilise TOUTES ces informations extraites du PDF pour répondre à 
       let pdfsByTitle: any[] = [];
       if (chaptersForPdf.length > 0) {
         // Construire une requête OR pour tous les chapitres pertinents (max 10)
+        // IMPORTANT: Utiliser des patterns EXACTS pour éviter les faux positifs
+        // Ex: "Chapitre SH 7" ne doit PAS matcher "Chapitre SH 70" ou "Chapitre SH 71"
         const chapterConditions: string[] = [];
         for (const chapter of chaptersForPdf.slice(0, 10)) {
           const chapterNum = parseInt(chapter);
           const paddedChapter = chapterNum.toString().padStart(2, '0');
-          chapterConditions.push(`title.ilike.%Chapitre SH ${chapterNum}%`);
-          chapterConditions.push(`title.ilike.%SH CODE ${chapterNum}%`);
-          // Aussi chercher avec le numéro paddé si différent
-          if (chapterNum < 10 && chapterNum.toString() !== paddedChapter) {
-            chapterConditions.push(`title.ilike.%Chapitre SH ${paddedChapter}%`);
-            chapterConditions.push(`title.ilike.%SH CODE ${paddedChapter}%`);
+          
+          // Patterns EXACTS avec délimiteurs pour éviter les faux positifs
+          // Pour chapitre 7: on veut "SH 07" ou "SH 7" mais PAS "SH 70", "SH 71", etc.
+          // On utilise des patterns avec fin de chaîne ou espace/tiret après le numéro
+          if (chapterNum < 10) {
+            // Pour les chapitres 1-9: utiliser le format paddé (01-09) exclusivement
+            chapterConditions.push(`title.ilike.%Chapitre SH ${paddedChapter}`);
+            chapterConditions.push(`title.ilike.%Chapitre SH ${paddedChapter} %`);
+            chapterConditions.push(`title.ilike.%Chapitre SH ${paddedChapter}-%`);
+            chapterConditions.push(`title.ilike.%SH CODE ${paddedChapter}`);
+            chapterConditions.push(`title.ilike.%SH CODE ${paddedChapter} %`);
+            chapterConditions.push(`title.ilike.%SH_CODE_${paddedChapter}.%`);
+          } else {
+            // Pour les chapitres 10-99: le numéro suffit car pas d'ambiguïté
+            chapterConditions.push(`title.ilike.%Chapitre SH ${chapterNum}%`);
+            chapterConditions.push(`title.ilike.%SH CODE ${chapterNum}%`);
+            chapterConditions.push(`title.ilike.%SH_CODE_${chapterNum}.%`);
           }
         }
         
