@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, Download, X, FileText, Loader2, AlertCircle } from "lucide-react";
 
@@ -34,14 +34,17 @@ export function DocumentPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0 gap-0">
-        <DialogHeader className="px-4 py-3 border-b flex-shrink-0">
+      <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0 gap-0" aria-describedby="document-preview-description">
+        <DialogDescription id="document-preview-description" className="sr-only">
+          Prévisualisation du document PDF
+        </DialogDescription>
+        <div className="px-4 py-3 border-b flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" />
-              <DialogTitle className="text-base font-medium truncate max-w-[400px]">
+              <h2 className="text-base font-medium truncate max-w-[400px]">
                 {title || "Document"}
-              </DialogTitle>
+              </h2>
             </div>
             <div className="flex items-center gap-2">
               {hasValidUrl && (
@@ -76,7 +79,7 @@ export function DocumentPreviewDialog({
               </Button>
             </div>
           </div>
-        </DialogHeader>
+        </div>
         
         <div className="flex-1 relative bg-muted/30">
           {!hasValidUrl ? (

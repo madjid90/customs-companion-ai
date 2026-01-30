@@ -24,17 +24,25 @@ interface Message {
   };
 }
 
-// Remove confidence indicators and decorative icons from AI response content
+// Remove confidence indicators, emojis, and decorative icons from AI response content
 const cleanConfidenceFromContent = (content: string): string => {
   let cleaned = content
+    // Remove confidence indicators
     .replace(/^[🟢🟡🔴]\s*\*?\*?Confiance[^]*?\n/gim, '')
     .replace(/[🟢🟡🔴]\s*\*?\*?Confiance\s*(haute|moyenne|faible|élevée)[^]*?(?=\n\n|\n##|\n\*\*|$)/gim, '')
     .replace(/^\*?\*?Niveau de confiance\s*:\s*(élevé|moyen|faible)[^\n]*\n?/gim, '')
     .replace(/^\*?\*?Confiance\s*:\s*(haute|moyenne|faible|élevée)[^\n]*\n?/gim, '')
     .replace(/^[❓❔ℹ️🔍]\s*$/gm, '')
-    .replace(/\n[❓❔]\s*\n/g, '\n');
+    .replace(/\n[❓❔]\s*\n/g, '\n')
+    // Remove ALL emojis from the response
+    .replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2300}-\u{23FF}]|[\u{2B50}]|[\u{203C}\u{2049}]|[\u{20E3}]|[\u{FE00}-\u{FE0F}]|[\u{1F900}-\u{1F9FF}]|[✅✓✔️❌❎⚠️ℹ️📁📂📄📥📜🔗💡🎯🚨]/gu, '')
+    // Remove raw JSON blocks that shouldn't be displayed
+    .replace(/```json[\s\S]*?```/g, '')
+    .replace(/"[a-z_]+"\s*:\s*(?:"[^"]*"|[0-9.]+|null|true|false)\s*,?/gi, '')
+    // Clean up extra whitespace
+    .replace(/\n{3,}/g, '\n\n');
   
-  return cleaned.replace(/\n{3,}/g, '\n\n').trim();
+  return cleaned.trim();
 };
 
 // Remove interactive question options from content (they're shown as buttons)
