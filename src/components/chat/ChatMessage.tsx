@@ -96,16 +96,34 @@ const transformSourcePatterns = (content: string): string => {
   // Extract chapter from the content for use in links
   const chapter = extractChapterFromContent(content);
   
+  // Also look for existing markdown download links and make them clickable source links
+  // Pattern: "[📥 Télécharger le justificatif](URL)" or "[📥 Télécharger](URL)"
+  let transformed = content.replace(
+    /\[📥[^\]]*\]\(([^)]+)\)/gi,
+    (match, url) => {
+      if (url && url.startsWith('http')) {
+        const chapterParam = chapter ? `&chapter=${chapter}` : '';
+        return `[📁 Voir le document source](source://lookup?url=${encodeURIComponent(url)}${chapterParam})`;
+      }
+      return match;
+    }
+  );
+  
   // Pattern: "📁 Source officielle:" or "📄 **Source officielle:**" followed by text
-  return content.replace(
-    /((?:📁|📄)\s*\*?\*?Source\s*officielle\s*:?\*?\*?\s*)([^\n]+)/gi,
+  transformed = transformed.replace(
+    /((?:📁|📄)\s*\*?\*?Source\s*officielle\s*:?\*?\*?\s*)([^\n\[]+)/gi,
     (match, prefix, title) => {
+      // Skip if already a markdown link
+      if (match.includes('[') || match.includes('](')) return match;
       const cleanTitle = title.trim().replace(/\*+/g, '');
+      if (!cleanTitle) return match;
       // Include chapter in URL if found
       const chapterParam = chapter ? `&chapter=${chapter}` : '';
       return `[${prefix}${cleanTitle}](source://lookup?title=${encodeURIComponent(cleanTitle)}${chapterParam})`;
     }
   );
+  
+  return transformed;
 };
 
 export function ChatMessage({
@@ -204,11 +222,19 @@ export function ChatMessage({
   // Handle link clicks including source:// protocol
   const handleLinkClick = useCallback((url: string, linkText: string) => {
     if (url.startsWith('source://')) {
-      // Extract title and chapter from URL
+      // Extract parameters from URL
       const params = new URLSearchParams(url.split('?')[1] || '');
+      const directUrl = params.get('url');
       const title = params.get('title') || linkText;
       const chapter = params.get('chapter') || undefined;
-      searchAndOpenDocument(decodeURIComponent(title), chapter);
+      
+      // If we have a direct URL, use it
+      if (directUrl) {
+        setPreviewDoc({ url: decodeURIComponent(directUrl), title: decodeURIComponent(title) });
+      } else {
+        // Otherwise search by title/chapter
+        searchAndOpenDocument(decodeURIComponent(title), chapter);
+      }
     } else if (isDocumentUrl(url)) {
       setPreviewDoc({ url, title: extractDocTitle(url, linkText) });
     }
