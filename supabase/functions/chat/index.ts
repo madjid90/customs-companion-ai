@@ -172,17 +172,38 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
       }
     }
 
-    // Analyse des PDFs
+    // Analyse des PDFs (avec détection automatique DUM)
     if (pdfDocuments && pdfDocuments.length > 0) {
       console.log("Analyzing", pdfDocuments.length, "PDF(s) with Claude...");
       const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
       
       if (ANTHROPIC_API_KEY) {
         try {
-          pdfAnalysis = await analyzePdfWithClaude(pdfDocuments as PdfInput[], question || "Analyse ce document", ANTHROPIC_API_KEY);
-          console.log("PDF analysis complete. Content length:", pdfAnalysis.fullContent?.length || 0);
+          // Pass supabase client for DUM verification
+          pdfAnalysis = await analyzePdfWithClaude(
+            pdfDocuments as PdfInput[], 
+            question || "Analyse ce document", 
+            ANTHROPIC_API_KEY,
+            supabase
+          );
+          console.log("PDF analysis complete. isDUM:", pdfAnalysis.isDUM, "Content length:", pdfAnalysis.fullContent?.length || 0);
           
-          enrichedQuestion = `${question || "Analyse ce document"}
+          // Si c'est une DUM, utiliser le formatage spécialisé
+          if (pdfAnalysis.isDUM && pdfAnalysis.dumAnalysis) {
+            enrichedQuestion = `${question || "Analyse cette DUM"}
+
+[ANALYSE COMPLÈTE DE LA DUM]
+${pdfAnalysis.fullContent}
+
+INSTRUCTIONS: L'utilisateur a uploadé une Déclaration Unique de Marchandises (DUM). 
+L'analyse ci-dessus contient:
+- Extraction des données: code SH, valeurs, poids, origines
+- Calcul des droits et taxes applicables
+- Vérification de conformité (contrôles requis, restrictions)
+
+Réponds en te basant sur cette analyse. Si des anomalies sont détectées, explique-les clairement.`;
+          } else {
+            enrichedQuestion = `${question || "Analyse ce document"}
 
 [EXTRACTION COMPLÈTE DU DOCUMENT PDF]
 === RÉSUMÉ ===
@@ -195,6 +216,7 @@ ${pdfAnalysis.fullContent || "Non disponible"}
 ${pdfAnalysis.extractedInfo}
 
 ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAnalysis.suggestedCodes.join(", ")}` : ""}`;
+          }
         } catch (pdfError) {
           console.error("PDF analysis failed:", pdfError);
           const fileNames = pdfDocuments.map(p => p.fileName).join(", ");

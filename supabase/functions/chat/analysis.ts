@@ -3,6 +3,15 @@
 // ============================================================================
 
 import { cleanHSCode } from "./hs-utils.ts";
+import { 
+  DUMData, 
+  DUMAnalysisResult, 
+  detectDUMDocument, 
+  getDUMExtractionPrompt,
+  parseDUMFromAIResponse,
+  verifyDUMCompliance,
+  formatDUMAnalysisForChat 
+} from "./dum-analyzer.ts";
 
 // ============================================================================
 // TYPES
@@ -38,6 +47,8 @@ export interface PdfAnalysisResult {
   extractedInfo: string;
   suggestedCodes: string[];
   fullContent: string;
+  isDUM?: boolean;
+  dumAnalysis?: DUMAnalysisResult;
 }
 
 // ============================================================================
@@ -184,12 +195,13 @@ export function extractHistoryContext(conversationHistory: Array<{ role: string;
 // ============================================================================
 
 /**
- * Analyse des PDFs avec Claude (support natif)
+ * Analyse des PDFs avec Claude (support natif) - Détecte automatiquement les DUM
  */
 export async function analyzePdfWithClaude(
   pdfDocuments: PdfInput[],
   question: string,
-  apiKey: string
+  apiKey: string,
+  supabase?: any
 ): Promise<PdfAnalysisResult> {
   const contentBlocks: any[] = [];
   
@@ -204,28 +216,37 @@ export async function analyzePdfWithClaude(
     });
   }
   
-  contentBlocks.push({
-    type: "text",
-    text: `Tu es un expert en douane et commerce international. Analyse ce(s) document(s) PDF en EXTRAYANT TOUTES LES INFORMATIONS DISPONIBLES.
+  // Première passe: extraction générale pour détecter le type de document
+  const initialPrompt = `Tu es un expert en douane et commerce international. Analyse ce document PDF.
 
-Question de l'utilisateur: "${question}"
+ÉTAPE 1: Identifie d'abord le TYPE de document parmi:
+- DUM (Déclaration Unique de Marchandises)
+- Facture commerciale
+- Certificat d'origine
+- Connaissement / BL
+- Tarif douanier
+- Circulaire / Note administrative
+- Autre document
 
-INSTRUCTION CRITIQUE: Tu dois extraire 100% du contenu pertinent du document, pas un résumé. Je veux TOUTES les données.
-
-Réponds en JSON avec ce format:
+Si c'est une DUM, réponds avec:
 {
+  "documentType": "DUM",
+  "isDUM": true
+}
+
+Sinon, extrais les informations avec:
+{
+  "documentType": "type identifié",
+  "isDUM": false,
   "summary": "Résumé structuré du document",
   "fullContent": "EXTRACTION COMPLÈTE de toutes les informations",
   "extractedInfo": "Synthèse structurée des informations clés",
   "suggestedCodes": ["8517.12", "8517.13"]
 }
 
-RÈGLES IMPÉRATIVES:
-1. EXHAUSTIVITÉ: Extrais CHAQUE produit, CHAQUE ligne, CHAQUE montant du document
-2. PRÉCISION: Conserve les valeurs exactes (chiffres, unités, devises)
-3. STRUCTURE: Si tableau, reproduis les données tabulaires en texte structuré
-4. AUCUNE TRONCATURE: Le champ fullContent peut être très long, c'est voulu`,
-  });
+Question de l'utilisateur: "${question}"`;
+
+  contentBlocks.push({ type: "text", text: initialPrompt });
 
   const PDF_TIMEOUT_MS = 180000;
   const pdfController = new AbortController();
@@ -271,11 +292,19 @@ RÈGLES IMPÉRATIVES:
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
+      
+      // Si c'est une DUM, faire une analyse spécialisée
+      if (parsed.isDUM || parsed.documentType === "DUM") {
+        console.log("DUM detected, running specialized analysis...");
+        return await analyzeDUMDocument(pdfDocuments, question, apiKey, supabase);
+      }
+      
       return {
         summary: parsed.summary || "Document analysé",
         extractedInfo: parsed.extractedInfo || "",
         fullContent: parsed.fullContent || "",
         suggestedCodes: Array.isArray(parsed.suggestedCodes) ? parsed.suggestedCodes : [],
+        isDUM: false,
       };
     }
   } catch (e) {
@@ -287,6 +316,111 @@ RÈGLES IMPÉRATIVES:
     extractedInfo: text,
     fullContent: text,
     suggestedCodes: [],
+    isDUM: false,
+  };
+}
+
+/**
+ * Analyse spécialisée des documents DUM
+ */
+async function analyzeDUMDocument(
+  pdfDocuments: PdfInput[],
+  question: string,
+  apiKey: string,
+  supabase?: any
+): Promise<PdfAnalysisResult> {
+  const contentBlocks: any[] = [];
+  
+  for (const pdf of pdfDocuments) {
+    contentBlocks.push({
+      type: "document",
+      source: {
+        type: "base64",
+        media_type: "application/pdf",
+        data: pdf.base64,
+      },
+    });
+  }
+  
+  // Utiliser le prompt spécialisé DUM
+  contentBlocks.push({
+    type: "text",
+    text: getDUMExtractionPrompt(),
+  });
+
+  const PDF_TIMEOUT_MS = 180000;
+  const pdfController = new AbortController();
+  const pdfTimeoutId = setTimeout(() => pdfController.abort(), PDF_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(CLAUDE_PDF_API_URL, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "pdfs-2024-09-25",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 16384,
+        messages: [{ role: "user", content: contentBlocks }],
+      }),
+      signal: pdfController.signal,
+    });
+  } catch (fetchError: any) {
+    clearTimeout(pdfTimeoutId);
+    if (fetchError.name === "AbortError") {
+      console.error("DUM PDF API timeout after", PDF_TIMEOUT_MS, "ms");
+      throw new Error("DUM PDF API timeout");
+    }
+    throw fetchError;
+  }
+  clearTimeout(pdfTimeoutId);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Claude DUM API error:", response.status, errorText);
+    throw new Error(`Claude DUM API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const text = data.content?.[0]?.text || "{}";
+  
+  // Parser les données DUM
+  const dumData = parseDUMFromAIResponse(text);
+  
+  if (dumData && supabase) {
+    // Vérifier la conformité
+    const verification = await verifyDUMCompliance(supabase, dumData);
+    
+    const dumAnalysis: DUMAnalysisResult = {
+      extracted: dumData,
+      verification,
+      summary: `DUM ${dumData.dumNumber || "N/A"} - ${dumData.goods.length} article(s) - ${dumData.totals.totalValueMAD.toLocaleString()} MAD`,
+    };
+    
+    // Formater pour le chat
+    const formattedResponse = formatDUMAnalysisForChat(dumAnalysis);
+    
+    return {
+      summary: dumAnalysis.summary,
+      extractedInfo: formattedResponse,
+      fullContent: formattedResponse,
+      suggestedCodes: dumData.goods.map(g => g.hsCode),
+      isDUM: true,
+      dumAnalysis,
+    };
+  }
+  
+  // Fallback si pas de données DUM parsées
+  return {
+    summary: "Document DUM analysé",
+    extractedInfo: text,
+    fullContent: text,
+    suggestedCodes: [],
+    isDUM: true,
   };
 }
 
