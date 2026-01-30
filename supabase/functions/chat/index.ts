@@ -27,7 +27,7 @@ import {
   saveToResponseCache,
   searchHSCodesSemantic,
   searchKnowledgeSemantic,
-  searchPDFsSemantic,
+  searchPDFsHybrid,
   searchVeilleSemantic,
 } from "./semantic-search.ts";
 import {
@@ -452,7 +452,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           ? searchKnowledgeSemantic(supabase, queryEmbedding, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs)
           : Promise.resolve([]),
         context.pdf_summaries.length < 3
-          ? searchPDFsSemantic(supabase, queryEmbedding, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs)
+          ? searchPDFsHybrid(supabase, queryEmbedding, searchQuestion, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs, SUPABASE_URL)
           : Promise.resolve([]),
         veilleDocuments.length < 3
           ? searchVeilleSemantic(supabase, queryEmbedding, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs)
