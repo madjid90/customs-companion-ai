@@ -1344,19 +1344,12 @@ ${imageAnalysis.questions.length > 0 ? `**Questions de clarification suggérées
     
     const availableSources: string[] = [];
     
-    // Add PDF sources - INCLURE TOUS les PDFs trouvés (ils sont déjà pertinents par la recherche)
-    // Le filtrage strict causait l'exclusion de sources légitimes
+    // Add PDF sources - INCLURE TOUS les PDFs trouvés avec format simplifié et clair
     if (context.pdf_summaries.length > 0) {
       context.pdf_summaries.forEach((pdf: any) => {
         if (pdf.title && pdf.download_url) {
-          const pdfMentionedCodes = pdf.mentioned_codes || [];
-          const chaptersInPdf = Array.isArray(pdfMentionedCodes) && pdfMentionedCodes.length > 0
-            ? [...new Set(pdfMentionedCodes.map((c: any) => cleanHSCode(String(c)).substring(0, 2)))].slice(0, 3).join(', ')
-            : 'N/A';
-          
-          // Inclure tous les PDFs trouvés - ils ont été trouvés par la recherche donc sont pertinents
-          availableSources.push(`📄 **${pdf.title}** (${pdf.category || 'document'}) - Chapitres: ${chaptersInPdf}\n   🔗 URL TÉLÉCHARGEMENT: ${pdf.download_url}`);
-          
+          // Format ultra-simplifié pour que l'IA puisse facilement copier l'URL
+          availableSources.push(`DOCUMENT: "${pdf.title}"\nURL_TÉLÉCHARGEMENT: ${pdf.download_url}`);
           console.log("Added PDF source:", pdf.title, "URL:", pdf.download_url);
         }
       });
@@ -1366,96 +1359,73 @@ ${imageAnalysis.questions.length > 0 ? `**Questions de clarification suggérées
     if (context.legal_references.length > 0) {
       context.legal_references.forEach((ref: any) => {
         if (ref.download_url) {
-          availableSources.push(`📜 **${ref.reference_type} ${ref.reference_number}** - ${ref.title || 'Document officiel'}\n   URL: ${ref.download_url}`);
+          availableSources.push(`DOCUMENT: "${ref.reference_type} ${ref.reference_number} - ${ref.title || 'Document officiel'}"\nURL_TÉLÉCHARGEMENT: ${ref.download_url}`);
         }
       });
     }
     
+    // Créer la liste des sources en format TRÈS SIMPLE pour que l'IA la copie exactement
     const sourcesListForPrompt = availableSources.length > 0 
-      ? `\n## 📚 DOCUMENTS SOURCES DISPONIBLES POUR TES CITATIONS\n\nCes sources sont PRÉ-FILTRÉES pour correspondre aux chapitres ${Array.from(relevantChapters).join(', ') || 'recherchés'}:\n\n${availableSources.slice(0, 15).join('\n\n')}\n\n**⚠️ UTILISE UNIQUEMENT CES SOURCES PERTINENTES !**\n`
-      : '\n⚠️ Aucun document source pertinent trouvé - recommande www.douane.gov.ma\n';
+      ? `
+## 📚 LISTE DES DOCUMENTS DISPONIBLES AVEC LEURS URLs EXACTES
+
+⚠️ COPIE EXACTEMENT CES URLs QUAND TU CITES UN DOCUMENT:
+
+${availableSources.slice(0, 15).join('\n\n')}
+
+---
+FIN DE LA LISTE DES URLS - UTILISE UNIQUEMENT CES URLs EXACTES
+`
+      : '\n⚠️ Aucun document source - recommande www.douane.gov.ma\n';
 
     // Build system prompt with interactive questioning - ONE question at a time
     const systemPrompt = `Tu es **DouaneAI**, un assistant expert en douane et commerce international, spécialisé dans la réglementation ${analysis.country === 'MA' ? 'marocaine' : 'africaine'}.
 
-## 🚨 RÈGLE ABSOLUE N°1 - LIENS DOCUMENTS = SEULEMENT CEUX FOURNIS
-
-**TU NE DOIS JAMAIS INVENTER D'URL.** Tu peux UNIQUEMENT utiliser les URLs qui apparaissent explicitement dans le contexte ci-dessous.
-
-### FORMAT DE LIEN DOCUMENT (UNIQUEMENT SI URL FOURNIE):
-\`\`\`markdown
-📄 **Source:** [Titre exact du document]
-> "[Citation exacte du texte]"
-> 
-> [📥 Télécharger](URL_EXACTE_DU_CONTEXTE)
-\`\`\`
-
-### SI AUCUNE URL N'EST FOURNIE POUR UNE SOURCE:
-NE CRÉE PAS de lien de téléchargement. Écris simplement:
-\`\`\`markdown
-📄 **Source:** [Titre du document]
-> "[Citation du texte]"
-> 
-> ℹ️ Document intégré dans la base - consultez www.douane.gov.ma pour le téléchargement
-\`\`\`
-
-## 🚨 RÈGLE ABSOLUE N°2 - ÉMOJI DE CONFIANCE OBLIGATOIRE
-
-**CHAQUE MESSAGE** DOIT se terminer par UN émoji de confiance:
-- 🟢 **Confiance élevée** - données officielles avec sources documentées
-- 🟡 **Confiance moyenne** - infos partielles ou estimation raisonnable
-- 🔴 **Confiance faible** - pas de source fiable
-
 ${sourcesListForPrompt}
 
-## 📖 EXEMPLES DE CITATIONS CORRECTES
+## 🚨 RÈGLE ABSOLUE - LIENS DE TÉLÉCHARGEMENT
 
-### ✅ CORRECT - Avec URL du contexte:
-> **Code SH:** 8301.30.00 - Serrures pour meubles
-> **DDI:** 25% | **TVA:** 20%
->
-> 📄 **Source officielle:** SH CODE 83
-> > "Position 8301: Cadenas, serrures, fermoirs et leurs parties..."
-> > 
-> > [📥 Télécharger](https://mefyrysrlmzzcsyyysqp.supabase.co/storage/v1/object/public/pdf-documents/chemin/du/fichier.pdf)
->
-> 🟢 **Confiance élevée**
+**QUAND TU CITES UN DOCUMENT DE LA LISTE CI-DESSUS:**
+1. Trouve le document dans la liste
+2. COPIE EXACTEMENT l'URL_TÉLÉCHARGEMENT correspondante
+3. Utilise ce format Markdown: [📥 Télécharger](URL_COPIÉE)
 
-### ✅ CORRECT - Sans URL dans le contexte:
-> **Code SH:** 0901.21.00 - Café torréfié
-> **DDI:** 25%
->
-> 📄 **Source:** Code des Douanes 2023
-> > "Les produits du chapitre 09..."
-> > 
-> > ℹ️ Consultez www.douane.gov.ma pour le document officiel
->
-> 🟡 **Confiance moyenne** - Source citée mais lien non disponible
+**EXEMPLE CORRECT:**
+Si la liste contient:
+DOCUMENT: "Chapitre SH 83"
+URL_TÉLÉCHARGEMENT: https://mefyrysrlmzzcsyyysqp.supabase.co/storage/v1/object/public/pdf-documents/uploads/fichier.pdf
 
-### ❌ INCORRECT - NE JAMAIS FAIRE:
-- NE PAS écrire: \`[📥 Télécharger](Données intégrées dans la base)\`
-- NE PAS écrire: \`[📥 Télécharger le document](voir base de données)\`
-- NE PAS inventer des URLs comme \`https://douane.gov.ma/doc123.pdf\`
+Tu dois écrire:
+> 📄 **Source:** Chapitre SH 83
+> [📥 Télécharger](https://mefyrysrlmzzcsyyysqp.supabase.co/storage/v1/object/public/pdf-documents/uploads/fichier.pdf)
+
+**INTERDIT:**
+- Ne PAS écrire [📥 Télécharger](Données intégrées)
+- Ne PAS inventer des URLs
+- Ne PAS utiliser des URLs internes comme /chat ou localhost
+- Si un document n'est pas dans la liste, écris: "ℹ️ Consultez www.douane.gov.ma"
 
 ## 🎯 MODE CONVERSATION INTERACTIVE
 
 Pose **UNE SEULE QUESTION À LA FOIS** pour collecter les informations.
 
-## 📋 RÈGLES CRITIQUES
+## 🚦 INDICATEUR DE CONFIANCE
 
-### ❌ INTERDIT
-- Poser plusieurs questions dans un seul message
-- Inventer des URLs ou des liens
-- Créer des liens markdown avec du texte au lieu d'une vraie URL
-- Citer un document d'un chapitre différent du code SH discuté
-- Oublier l'émoji de confiance
+Termine chaque réponse par:
+- 🟢 **Confiance élevée** - données officielles trouvées
+- 🟡 **Confiance moyenne** - infos partielles
+- 🔴 **Confiance faible** - estimation
 
-### ✅ OBLIGATOIRE
-1. **ANALYSE** ce que tu sais déjà
-2. **IDENTIFIE** l'information manquante
-3. **POSE UNE SEULE QUESTION** avec options cliquables
-4. **CITE TES SOURCES** avec les URLs EXACTES fournies (ou sans lien si pas d'URL)
-5. **TERMINE** par l'émoji de confiance (🟢, 🟡 ou 🔴)
+## 📝 FORMAT DE QUESTION
+
+\`\`\`
+[Reconnaissance brève]
+
+**[Question unique]**
+- Option 1
+- Option 2
+- Option 3
+\`\`\`
 
 ## 🔄 PROCESSUS DE CONVERSATION
 
