@@ -1000,6 +1000,48 @@ export type Database = {
           },
         ]
       }
+      response_cache: {
+        Row: {
+          confidence_level: string | null
+          context_used: Json | null
+          created_at: string
+          expires_at: string
+          hit_count: number | null
+          id: string
+          question_embedding: string | null
+          question_hash: string
+          question_text: string
+          response_text: string
+          updated_at: string
+        }
+        Insert: {
+          confidence_level?: string | null
+          context_used?: Json | null
+          created_at?: string
+          expires_at?: string
+          hit_count?: number | null
+          id?: string
+          question_embedding?: string | null
+          question_hash: string
+          question_text: string
+          response_text: string
+          updated_at?: string
+        }
+        Update: {
+          confidence_level?: string | null
+          context_used?: Json | null
+          created_at?: string
+          expires_at?: string
+          hit_count?: number | null
+          id?: string
+          question_embedding?: string | null
+          question_hash?: string
+          question_text?: string
+          response_text?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       statistics: {
         Row: {
           avg_rating: number | null
@@ -1440,7 +1482,19 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_expired_cache: { Args: never; Returns: number }
       cleanup_old_rate_limits: { Args: never; Returns: number }
+      find_cached_response: {
+        Args: { query_embedding: string; similarity_threshold?: number }
+        Returns: {
+          confidence_level: string
+          context_used: Json
+          id: string
+          question_text: string
+          response_text: string
+          similarity: number
+        }[]
+      }
       get_dashboard_stats: {
         Args: never
         Returns: {
@@ -1594,6 +1648,7 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      update_cache_hit: { Args: { cache_id: string }; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "user"
