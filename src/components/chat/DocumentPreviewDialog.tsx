@@ -26,9 +26,23 @@ export function DocumentPreviewDialog({
     ? `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`
     : '';
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (hasValidUrl) {
-      window.open(url, '_blank');
+      try {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = title || 'document.pdf';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(downloadUrl);
+      } catch (error) {
+        // Fallback: open in new tab if download fails
+        window.open(url, '_blank');
+      }
     }
   };
 
@@ -48,26 +62,15 @@ export function DocumentPreviewDialog({
             </div>
             <div className="flex items-center gap-2">
               {hasValidUrl && (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleDownload}
-                    className="gap-1.5"
-                  >
-                    <Download className="h-4 w-4" />
-                    Télécharger
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => window.open(url, '_blank')}
-                    className="gap-1.5"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    Ouvrir
-                  </Button>
-                </>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownload}
+                  className="gap-1.5"
+                >
+                  <Download className="h-4 w-4" />
+                  Télécharger
+                </Button>
               )}
             </div>
           </div>
