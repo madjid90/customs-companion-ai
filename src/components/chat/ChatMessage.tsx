@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Bot, User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle, ExternalLink, FolderOpen } from "lucide-react";
+import { Bot, User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -116,11 +116,11 @@ const transformSourcePatterns = (content: string): string => {
   // Extract chapter from the content for use in links
   const chapter = extractChapterFromContent(content);
   
-  // Pattern 1: Handle [📥 Télécharger](URL) links
+  // Pattern 1: Handle [Consulter](URL) or [Télécharger](URL) links
   // If URL is valid HTTP, KEEP IT AS-IS (don't transform to source://)
   // If URL is invalid (just text), remove the link
   let transformed = content.replace(
-    /\[([📥📁📄][^\]]*)\]\(([^)]+)\)/gi,
+    /\[([^\]]*(?:Consulter|Télécharger)[^\]]*)\]\(([^)]+)\)/gi,
     (match, label, url) => {
       // Real HTTP URLs - keep them as-is for direct preview
       if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
@@ -132,10 +132,10 @@ const transformSourcePatterns = (content: string): string => {
     }
   );
   
-  // Pattern 2: "📁 Source officielle:" or "📄 **Source officielle:**" followed by text (not a link)
+  // Pattern 2: "Source officielle:" or "**Source:**" followed by text (not a link)
   // Convert these text references to searchable source:// links
   transformed = transformed.replace(
-    /((?:📁|📄)\s*\*?\*?Source\s*officielle\s*:?\*?\*?\s*)([^\n\[]+)/gi,
+    /(\*?\*?Source\s*(?:officielle)?\s*:?\*?\*?\s*)([^\n\[]+)/gi,
     (match, prefix, title) => {
       // Skip if already a markdown link
       if (match.includes('[') || match.includes('](')) return match;
@@ -144,7 +144,7 @@ const transformSourcePatterns = (content: string): string => {
       if (!cleanTitle || cleanTitle.length < 5 || cleanTitle.includes('intégré')) return match;
       // Include chapter in URL if found
       const chapterParam = chapter ? `&chapter=${chapter}` : '';
-      return `[${prefix}${cleanTitle}](source://lookup?title=${encodeURIComponent(cleanTitle)}${chapterParam})`;
+      return `[Source: ${cleanTitle}](source://lookup?title=${encodeURIComponent(cleanTitle)}${chapterParam})`;
     }
   );
   
@@ -375,8 +375,7 @@ export function ChatMessage({
                           isSearchingDoc && "opacity-50 cursor-wait pointer-events-none"
                         )}
                       >
-                        <FolderOpen className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span>{children || "Voir le document"}</span>
+                        <span>{children || "Consulter"}</span>
                         <ExternalLink className="h-3 w-3 flex-shrink-0" />
                       </a>
                     );
