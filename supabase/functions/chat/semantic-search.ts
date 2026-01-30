@@ -306,6 +306,72 @@ export async function searchPDFsSemantic(
 }
 
 /**
+ * Recherche par mots-clés (FTS) des extractions PDF - fallback quand sémantique insuffisante
+ */
+export async function searchPDFsKeyword(
+  supabase: any,
+  searchQuery: string,
+  limit: number = 5
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.rpc("search_pdf_extractions_keyword", {
+      search_query: searchQuery,
+      match_count: limit,
+    });
+
+    if (error) {
+      console.error("Keyword PDF search error:", error);
+      return [];
+    }
+
+    // Normalize relevance score to similarity-like format (0-1)
+    return (data || []).map((doc: any) => ({
+      ...doc,
+      similarity: Math.min(doc.relevance_score / 10, 1), // Normalize FTS score
+      source: "keyword",
+    }));
+  } catch (error) {
+    console.error("Keyword PDF search failed:", error);
+    return [];
+  }
+}
+
+/**
+ * Recherche hybride PDF: sémantique + fallback keyword si peu de résultats
+ */
+export async function searchPDFsHybrid(
+  supabase: any,
+  queryEmbedding: number[] | null,
+  searchText: string,
+  threshold: number = SEMANTIC_THRESHOLDS.documentsMedium,
+  limit: number = 5
+): Promise<any[]> {
+  let results: any[] = [];
+
+  // 1. Try semantic search first if embedding available
+  if (queryEmbedding) {
+    results = await searchPDFsSemantic(supabase, queryEmbedding, threshold, limit);
+  }
+
+  // 2. Fallback to keyword search if not enough results
+  if (results.length < SEMANTIC_THRESHOLDS.minResultsForFallback && searchText) {
+    console.log(`PDF search: only ${results.length} semantic results, adding keyword fallback`);
+    const keywordResults = await searchPDFsKeyword(supabase, searchText, limit);
+    
+    // Merge and deduplicate by pdf_id
+    const seenIds = new Set(results.map((r) => r.pdf_id));
+    for (const kr of keywordResults) {
+      if (!seenIds.has(kr.pdf_id)) {
+        results.push(kr);
+        seenIds.add(kr.pdf_id);
+      }
+    }
+  }
+
+  return results.slice(0, limit);
+}
+
+/**
  * Recherche sémantique des documents de veille
  */
 export async function searchVeilleSemantic(

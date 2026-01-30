@@ -1601,6 +1601,17 @@ export type Database = {
           title: string
         }[]
       }
+      search_pdf_extractions_keyword: {
+        Args: { match_count?: number; search_query: string }
+        Returns: {
+          extracted_text: string
+          id: string
+          key_points: Json
+          pdf_id: string
+          relevance_score: number
+          summary: string
+        }[]
+      }
       search_pdf_extractions_semantic: {
         Args: {
           match_count?: number
