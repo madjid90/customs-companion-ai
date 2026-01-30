@@ -7,6 +7,17 @@ interface Question {
   options: string[];
 }
 
+// Clean markdown from option text for display
+const cleanMarkdown = (text: string): string => {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold **text**
+    .replace(/\*([^*]+)\*/g, '$1')     // Remove italic *text*
+    .replace(/__([^_]+)__/g, '$1')     // Remove bold __text__
+    .replace(/_([^_]+)_/g, '$1')       // Remove italic _text_
+    .replace(/`([^`]+)`/g, '$1')       // Remove code `text`
+    .trim();
+};
+
 interface InteractiveQuestionsProps {
   questions: Question[];
   onAnswer: (questionId: string, answer: string) => void;
@@ -134,7 +145,7 @@ export function InteractiveQuestions({ questions, onAnswer, disabled }: Interact
                   "font-medium"
                 )}
               >
-                {option}
+                {cleanMarkdown(option)}
               </Button>
             ))}
           </div>
