@@ -1601,6 +1601,21 @@ export type Database = {
           title: string
         }[]
       }
+      search_legal_references_fts: {
+        Args: { limit_count?: number; search_query: string }
+        Returns: {
+          context: string
+          id: string
+          pdf_category: string
+          pdf_id: string
+          pdf_title: string
+          reference_date: string
+          reference_number: string
+          reference_type: string
+          relevance_score: number
+          title: string
+        }[]
+      }
       search_pdf_by_chapter_prefixes: {
         Args: { prefixes: string[] }
         Returns: {
