@@ -404,14 +404,32 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
               limit_count: 10 
             });
           
-          if (ftsRefs) {
+          if (ftsRefs && ftsRefs.length > 0) {
+            // Get file paths for FTS results
+            const pdfIds = ftsRefs.map((r: any) => r.pdf_id).filter(Boolean);
+            const pdfPathsMap: Record<string, string> = {};
+            
+            if (pdfIds.length > 0) {
+              const { data: pdfDocs } = await supabase
+                .from('pdf_documents')
+                .select('id, file_path')
+                .in('id', pdfIds);
+              
+              if (pdfDocs) {
+                for (const doc of pdfDocs) {
+                  pdfPathsMap[doc.id] = doc.file_path;
+                }
+              }
+            }
+            
             for (const ref of ftsRefs) {
               if (!seenIds.has(ref.id)) {
                 seenIds.add(ref.id);
+                const filePath = pdfPathsMap[ref.pdf_id];
                 allRefs.push({
                   ...ref,
-                  download_url: ref.pdf_id 
-                    ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${ref.pdf_id}`
+                  download_url: filePath 
+                    ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${filePath}`
                     : null,
                   search_method: 'fts_keyword'
                 });
@@ -420,20 +438,28 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           }
         } catch (ftsError) {
           console.log("FTS legal search fallback to ILIKE:", ftsError);
-          // Fallback to ILIKE search
+          // Fallback to ILIKE search with join
           const escapedTerm = escapeSearchTerm(analysis.keywords[0] || '');
           const { data: refs } = await supabase
             .from('legal_references')
-            .select(`id, reference_type, reference_number, title, reference_date, context, pdf_id`)
+            .select(`id, reference_type, reference_number, title, reference_date, context, pdf_id, pdf_documents!inner(file_path, title)`)
             .or(`reference_number.ilike.%${escapedTerm}%,title.ilike.%${escapedTerm}%`)
             .eq('is_active', true)
             .limit(10);
           
           if (refs) {
-            for (const ref of refs) {
+            for (const ref of refs as any[]) {
               if (!seenIds.has(ref.id)) {
                 seenIds.add(ref.id);
-                allRefs.push({ ...ref, search_method: 'ilike_fallback' });
+                const filePath = ref.pdf_documents?.file_path;
+                allRefs.push({ 
+                  ...ref, 
+                  pdf_title: ref.pdf_documents?.title,
+                  download_url: filePath 
+                    ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${filePath}`
+                    : null,
+                  search_method: 'ilike_fallback' 
+                });
               }
             }
           }
