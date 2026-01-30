@@ -5,6 +5,7 @@
 import { RAGContext, TariffWithInheritance, formatTariffForRAG } from "./context-builder.ts";
 import { ImageAnalysisResult, PdfAnalysisResult } from "./analysis.ts";
 import { cleanHSCode } from "./hs-utils.ts";
+import { extractTopPassages, formatPassagesForPrompt } from "./passage-scorer.ts";
 
 // ============================================================================
 // CONSTRUCTION DU PROMPT
@@ -20,7 +21,9 @@ export function buildSystemPrompt(
   imageAnalysis: ImageAnalysisResult | null,
   country: string,
   availableSources: string[],
-  supabaseUrl: string
+  supabaseUrl: string,
+  detectedCodes: string[] = [],
+  keywords: string[] = []
 ): string {
   // Build image analysis context
   const imageAnalysisContext = imageAnalysis ? `
@@ -160,7 +163,17 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map((p: any, idx: num
   if (p.key_points?.length > 0) content += `**Points clés:** ${JSON.stringify(p.key_points)}\n`;
   if (p.mentioned_codes?.length > 0) content += `**Codes SH couverts par ce document:** ${p.mentioned_codes.join(', ')}\n`;
   if (p.download_url) content += `**URL EXACTE À CITER:** ${p.download_url}\n`;
-  if (p.full_text) content += `**TEXTE INTÉGRAL:** ${p.full_text.substring(0, 4000)}...\n`;
+  
+  // Use scored passages instead of raw truncated text
+  if (p.full_text) {
+    const topPassages = extractTopPassages(p.full_text, detectedCodes, keywords, 5, 2000);
+    if (topPassages.length > 0) {
+      content += formatPassagesForPrompt(topPassages, p.title || 'Document');
+    } else {
+      // Fallback to summary if no relevant passages found
+      content += `**Note:** Aucun extrait pertinent trouvé pour les codes demandés.\n`;
+    }
+  }
   return content;
 }).join('\n') : "Aucune extraction PDF"}
 
