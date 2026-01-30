@@ -243,16 +243,40 @@ export async function searchKnowledgeSemantic(
       return [];
     }
 
-    if ((!data || data.length < 2) && threshold > SEMANTIC_THRESHOLDS.documentsLow) {
+    let results = data || [];
+
+    // Fallback if not enough results
+    if (results.length < 2 && threshold > SEMANTIC_THRESHOLDS.documentsLow) {
       const { data: fallbackData } = await supabase.rpc("search_knowledge_documents_semantic", {
         query_embedding: `[${queryEmbedding.join(",")}]`,
         match_threshold: SEMANTIC_THRESHOLDS.documentsLow,
         match_count: limit + 3,
       });
-      return fallbackData || data || [];
+      results = fallbackData || results;
     }
 
-    return data || [];
+    if (results.length === 0) return [];
+
+    // Enrich with additional metadata (source_url, source_name)
+    const docIds = results.map((d: any) => d.id);
+    const { data: fullDocs } = await supabase
+      .from("knowledge_documents")
+      .select("id, source_url, source_name, reference, tags")
+      .in("id", docIds);
+
+    const docMap = new Map((fullDocs || []).map((d: any) => [d.id, d]));
+
+    return results.map((doc: any) => {
+      const fullDoc = docMap.get(doc.id) as any;
+      return {
+        ...doc,
+        source_url: fullDoc?.source_url || null,
+        source_name: fullDoc?.source_name || null,
+        reference: fullDoc?.reference || null,
+        tags: fullDoc?.tags || [],
+        source: "semantic",
+      };
+    });
   } catch (error) {
     console.error("Semantic knowledge search failed:", error);
     return [];
@@ -270,7 +294,7 @@ export async function searchKnowledgeKeyword(
   try {
     const { data, error } = await supabase
       .from("knowledge_documents")
-      .select("id, title, content, summary, category, country_code")
+      .select("id, title, content, summary, category, country_code, source_url, source_name, reference, tags")
       .eq("is_active", true)
       .or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%,summary.ilike.%${searchQuery}%`)
       .limit(limit);
@@ -282,7 +306,7 @@ export async function searchKnowledgeKeyword(
 
     return (data || []).map((doc: any) => ({
       ...doc,
-      similarity: 0.6, // Score fixe pour keyword search
+      similarity: 0.6,
       source: "keyword",
     }));
   } catch (error) {
@@ -503,10 +527,29 @@ export async function searchVeilleSemantic(
       return [];
     }
 
-    const results = (data || []).map((doc: any) => ({
-      ...doc,
-      effective_similarity: doc.similarity * (doc.importance === 'haute' ? 1.15 : doc.importance === 'moyenne' ? 1.05 : 1.0)
-    }));
+    if (!data || data.length === 0) return [];
+
+    // Enrich with additional metadata (source_name, publication_date)
+    const docIds = data.map((d: any) => d.id);
+    const { data: fullDocs } = await supabase
+      .from("veille_documents")
+      .select("id, source_url, source_name, publication_date, tags")
+      .in("id", docIds);
+
+    const docMap = new Map((fullDocs || []).map((d: any) => [d.id, d]));
+
+    const results = data.map((doc: any) => {
+      const fullDoc = docMap.get(doc.id) as any;
+      return {
+        ...doc,
+        source_url: fullDoc?.source_url || doc.source_url || null,
+        source_name: fullDoc?.source_name || null,
+        publication_date: fullDoc?.publication_date || null,
+        tags: fullDoc?.tags || [],
+        effective_similarity: doc.similarity * (doc.importance === 'haute' ? 1.15 : doc.importance === 'moyenne' ? 1.05 : 1.0),
+        source: "semantic",
+      };
+    });
 
     return results.sort((a: any, b: any) => b.effective_similarity - a.effective_similarity);
   } catch (error) {
@@ -526,7 +569,7 @@ export async function searchVeilleKeyword(
   try {
     const { data, error } = await supabase
       .from("veille_documents")
-      .select("id, title, content, summary, category, country_code, importance, source_url")
+      .select("id, title, content, summary, category, country_code, importance, source_url, source_name, publication_date, tags")
       .eq("is_verified", true)
       .or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%,summary.ilike.%${searchQuery}%`)
       .limit(limit);
