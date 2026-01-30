@@ -875,10 +875,28 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
     }
 
     // 6. Get relevant PDF summaries AND full text for precise RAG + download links
+    // AMÉLIORATION: Recherche par chapitre (2 premiers chiffres) ET par position (4 premiers chiffres)
+    const chaptersForPdf = context.hs_codes.length > 0 
+      ? [...new Set(context.hs_codes.map(c => cleanHSCode(c.code || c.code_clean).substring(0, 2)))]
+      : [];
     const codes4ForPdf = context.hs_codes.length > 0 
       ? [...new Set(context.hs_codes.map(c => cleanHSCode(c.code || c.code_clean).substring(0, 4)))]
       : [];
-    if (codes4ForPdf.length > 0 || analysis.keywords.length > 0) {
+    
+    // Créer les patterns de recherche (ex: pour code 8301, chercher 830100, 830110, 830120, etc.)
+    const searchPatterns: string[] = [];
+    codes4ForPdf.forEach(code4 => {
+      // Ajouter le code à 6 chiffres (format stocké dans mentioned_hs_codes)
+      searchPatterns.push(code4 + '00');
+      searchPatterns.push(code4 + '10');
+      searchPatterns.push(code4 + '20');
+      searchPatterns.push(code4 + '30');
+    });
+    
+    console.log("PDF search - Chapters:", chaptersForPdf, "Patterns:", searchPatterns.slice(0, 5));
+    
+    if (searchPatterns.length > 0 || chaptersForPdf.length > 0 || analysis.keywords.length > 0) {
+      // Méthode 1: Recherche par mentioned_hs_codes (JSONB contains)
       let pdfQuery = supabase
         .from('pdf_extractions')
         .select(`
@@ -889,16 +907,69 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
           extracted_data,
           pdf_documents!inner(id, title, category, country_code, file_path)
         `)
-        // AMÉLIORATION: Augmenté de 5 à 10 PDFs pour plus de sources
         .limit(10);
       
-      if (codes4ForPdf.length > 0) {
-        pdfQuery = pdfQuery.contains('mentioned_hs_codes', [codes4ForPdf[0]]);
+      // Recherche avec le premier pattern
+      if (searchPatterns.length > 0) {
+        pdfQuery = pdfQuery.contains('mentioned_hs_codes', [searchPatterns[0]]);
       }
       
-      const { data } = await pdfQuery;
-      if (data) {
-        context.pdf_summaries = data.map((p: any) => {
+      const { data: pdfsByCode } = await pdfQuery;
+      
+      // Méthode 2: Recherche par titre du document via pdf_documents puis join extractions
+      // AMÉLIORATION: Chercher dans les 3 premiers chapitres, pas seulement le premier
+      let pdfsByTitle: any[] = [];
+      if (chaptersForPdf.length > 0) {
+        // Construire une requête OR pour tous les chapitres pertinents (max 3)
+        const chapterConditions: string[] = [];
+        for (const chapter of chaptersForPdf.slice(0, 3)) {
+          const chapterNum = parseInt(chapter);
+          const paddedChapter = chapterNum.toString().padStart(2, '0');
+          chapterConditions.push(`title.ilike.%Chapitre SH ${chapterNum}%`);
+          chapterConditions.push(`title.ilike.%SH CODE ${chapterNum}%`);
+          if (chapterNum !== parseInt(paddedChapter)) {
+            chapterConditions.push(`title.ilike.%Chapitre SH ${paddedChapter}%`);
+          }
+        }
+        
+        console.log("Searching PDFs for chapters:", chaptersForPdf.slice(0, 3));
+        
+        const { data: pdfDocs } = await supabase
+          .from('pdf_documents')
+          .select('id, title, category, file_path')
+          .eq('is_active', true)
+          .or(chapterConditions.join(','))
+          .limit(5);
+        
+        console.log("PDF docs found by title:", pdfDocs?.length, pdfDocs?.map((d: any) => d.title));
+        
+        // Puis récupérer les extractions pour ces PDFs
+        if (pdfDocs && pdfDocs.length > 0) {
+          const pdfIds = pdfDocs.map((d: any) => d.id);
+          const { data: extractions } = await supabase
+            .from('pdf_extractions')
+            .select('summary, key_points, mentioned_hs_codes, extracted_text, extracted_data, pdf_id')
+            .in('pdf_id', pdfIds);
+          
+          if (extractions) {
+            // Combiner avec les infos du PDF
+            const pdfMap = new Map(pdfDocs.map((d: any) => [d.id, d]));
+            pdfsByTitle = extractions.map((ext: any) => ({
+              ...ext,
+              pdf_documents: pdfMap.get(ext.pdf_id)
+            }));
+          }
+        }
+      }
+      
+      // Combiner et dédupliquer les résultats
+      const allPdfResults = [...(pdfsByCode || []), ...pdfsByTitle];
+      const uniquePdfs = [...new Map(allPdfResults.map(p => [p.pdf_documents?.id || p.pdf_id, p])).values()];
+      
+      console.log("Total unique PDFs found:", uniquePdfs.length);
+      
+      if (uniquePdfs.length > 0) {
+        context.pdf_summaries = uniquePdfs.map((p: any) => {
           // Generate public download URL for the PDF
           const filePath = p.pdf_documents?.file_path;
           const downloadUrl = filePath 
@@ -912,9 +983,11 @@ ${imageAnalysis.questions.length > 0 ? `Questions de clarification: ${imageAnaly
             key_points: p.key_points,
             full_text: p.extracted_text,
             extracted_data: p.extracted_data,
+            mentioned_codes: p.mentioned_hs_codes,
             download_url: downloadUrl,
           };
         });
+        console.log("PDF summaries prepared:", context.pdf_summaries.length, "with URLs:", context.pdf_summaries.filter((p: any) => p.download_url).length);
       }
     }
     
@@ -1271,37 +1344,20 @@ ${imageAnalysis.questions.length > 0 ? `**Questions de clarification suggérées
     
     const availableSources: string[] = [];
     
-    // Add PDF sources - FILTER BY RELEVANT CHAPTERS
+    // Add PDF sources - INCLURE TOUS les PDFs trouvés (ils sont déjà pertinents par la recherche)
+    // Le filtrage strict causait l'exclusion de sources légitimes
     if (context.pdf_summaries.length > 0) {
       context.pdf_summaries.forEach((pdf: any) => {
         if (pdf.title && pdf.download_url) {
-          // Vérifier si le PDF contient des codes SH pertinents
-          const pdfMentionedCodes = pdf.extracted_data?.mentioned_hs_codes || [];
-          let isRelevant = relevantChapters.size === 0; // Si pas de chapitre détecté, accepter tout
+          const pdfMentionedCodes = pdf.mentioned_codes || [];
+          const chaptersInPdf = Array.isArray(pdfMentionedCodes) && pdfMentionedCodes.length > 0
+            ? [...new Set(pdfMentionedCodes.map((c: any) => cleanHSCode(String(c)).substring(0, 2)))].slice(0, 3).join(', ')
+            : 'N/A';
           
-          // Vérifier si un des codes mentionnés dans le PDF correspond à nos chapitres
-          if (!isRelevant && Array.isArray(pdfMentionedCodes)) {
-            isRelevant = pdfMentionedCodes.some((code: string) => {
-              const codeChapter = cleanHSCode(code).substring(0, 2);
-              return relevantChapters.has(codeChapter);
-            });
-          }
+          // Inclure tous les PDFs trouvés - ils ont été trouvés par la recherche donc sont pertinents
+          availableSources.push(`📄 **${pdf.title}** (${pdf.category || 'document'}) - Chapitres: ${chaptersInPdf}\n   🔗 URL TÉLÉCHARGEMENT: ${pdf.download_url}`);
           
-          // Vérifier aussi le titre du PDF (ex: "SH CODE 83" pour chapitre 83)
-          if (!isRelevant && pdf.title) {
-            const titleMatch = pdf.title.match(/(?:SH\s*CODE|CHAPITRE)\s*(\d{1,2})/i);
-            if (titleMatch) {
-              const titleChapter = titleMatch[1].padStart(2, '0');
-              isRelevant = relevantChapters.has(titleChapter);
-            }
-          }
-          
-          if (isRelevant) {
-            const chaptersInPdf = Array.isArray(pdfMentionedCodes) 
-              ? [...new Set(pdfMentionedCodes.map((c: string) => cleanHSCode(c).substring(0, 2)))].slice(0, 3).join(', ')
-              : 'N/A';
-            availableSources.push(`📄 **${pdf.title}** (${pdf.category || 'document'}) - Chapitres: ${chaptersInPdf}\n   URL: ${pdf.download_url}`);
-          }
+          console.log("Added PDF source:", pdf.title, "URL:", pdf.download_url);
         }
       });
     }
