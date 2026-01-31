@@ -802,6 +802,68 @@ export type Database = {
           },
         ]
       }
+      pdf_extraction_runs: {
+        Row: {
+          batch_size: number | null
+          completed_at: string | null
+          country_code: string | null
+          created_at: string
+          current_page: number
+          file_name: string | null
+          id: string
+          last_error: string | null
+          pdf_id: string
+          processed_pages: number
+          started_at: string | null
+          stats: Json | null
+          status: string
+          total_pages: number | null
+          updated_at: string
+        }
+        Insert: {
+          batch_size?: number | null
+          completed_at?: string | null
+          country_code?: string | null
+          created_at?: string
+          current_page?: number
+          file_name?: string | null
+          id?: string
+          last_error?: string | null
+          pdf_id: string
+          processed_pages?: number
+          started_at?: string | null
+          stats?: Json | null
+          status?: string
+          total_pages?: number | null
+          updated_at?: string
+        }
+        Update: {
+          batch_size?: number | null
+          completed_at?: string | null
+          country_code?: string | null
+          created_at?: string
+          current_page?: number
+          file_name?: string | null
+          id?: string
+          last_error?: string | null
+          pdf_id?: string
+          processed_pages?: number
+          started_at?: string | null
+          stats?: Json | null
+          status?: string
+          total_pages?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pdf_extraction_runs_pdf_id_fkey"
+            columns: ["pdf_id"]
+            isOneToOne: false
+            referencedRelation: "pdf_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pdf_extractions: {
         Row: {
           created_at: string
