@@ -242,50 +242,52 @@ export default function AdminUpload() {
         // Récupérer les données extraites depuis la DB
         const { data: extraction } = await supabase
           .from("pdf_extractions")
-          .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text, extracted_data")
+          .select("id, summary, key_points, mentioned_hs_codes, extracted_text, extracted_data")
           .eq("pdf_id", pdfDoc.id)
           .maybeSingle();
         
-        if (extraction && extraction.summary && extraction.summary !== "__PROCESSING__") {
-          const tariffChanges = extraction.detected_tariff_changes as any[] || [];
-          const hsCodesRaw = extraction.mentioned_hs_codes as string[] || [];
-          const extractedData = extraction.extracted_data as any || {};
-          
-          const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
-          
-          const hsCodes = hsCodesFull.length > 0 
-            ? hsCodesFull 
-            : hsCodesRaw.map((code: string) => ({
-                code: code,
-                code_clean: code.replace(/[^0-9]/g, ""),
-                description: "",
-                level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
-              }));
-          
-          analysisData = {
-            summary: extraction.summary,
-            key_points: extraction.key_points || [],
-            tariff_lines: tariffChanges,
-            hs_codes: hsCodes,
-            hs_codes_full: hsCodesFull,
-            chapter_info: extractedData.chapter_info,
-            document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
-            trade_agreements: extractedData.trade_agreements || [],
-            full_text: extraction.extracted_text || "",
-          };
-        } else {
-          // Si pas d'extraction trouvée mais batch terminé avec succès, créer des données basiques
-          analysisData = {
-            summary: `Extraction batch terminée: ${batchResult.stats.tariff_lines_inserted} lignes tarifaires`,
-            key_points: [],
-            tariff_lines: [],
-            hs_codes: [],
-            hs_codes_full: [],
-            document_type: "tariff",
-            trade_agreements: [],
-            full_text: "",
-          };
-        }
+        // IMPORTANT: Récupérer les vraies données depuis country_tariffs et hs_codes
+        // car ces tables contiennent l'agrégation de TOUS les batches
+        const { data: realTariffs } = await supabase
+          .from("country_tariffs")
+          .select("national_code, hs_code_6, description_local, duty_rate, unit_code")
+          .eq("source_pdf", pdfDoc.id)
+          .order("national_code");
+        
+        const { data: realHsCodes } = await supabase
+          .from("hs_codes")
+          .select("code, code_clean, description_fr, level")
+          .in("code_clean", (realTariffs || []).map(t => t.hs_code_6).filter(Boolean));
+        
+        const tariffLines = (realTariffs || []).map(t => ({
+          national_code: t.national_code,
+          hs_code_6: t.hs_code_6,
+          description: t.description_local || "",
+          duty_rate: t.duty_rate || 0,
+          unit: t.unit_code || undefined,
+        }));
+        
+        const hsCodesFull = (realHsCodes || []).map(h => ({
+          code: h.code,
+          code_clean: h.code_clean,
+          description: h.description_fr || "",
+          level: h.level || "subheading",
+        }));
+        
+        const extractedData = extraction?.extracted_data as any || {};
+        const stats = batchResult.stats || {};
+        
+        analysisData = {
+          summary: extraction?.summary || `Extraction batch terminée: ${stats.tariff_lines_inserted || tariffLines.length} lignes tarifaires, ${stats.hs_codes_inserted || hsCodesFull.length} codes SH, ${stats.notes_inserted || 0} notes`,
+          key_points: extraction?.key_points || [],
+          tariff_lines: tariffLines,
+          hs_codes: hsCodesFull,
+          hs_codes_full: hsCodesFull,
+          chapter_info: extractedData.chapter_info,
+          document_type: tariffLines.length > 0 ? "tariff" : "regulatory",
+          trade_agreements: extractedData.trade_agreements || [],
+          full_text: extraction?.extracted_text || "",
+        };
         
       } catch (err: any) {
         console.error("Batch extraction error:", err);
@@ -299,42 +301,45 @@ export default function AdminUpload() {
           error: `Vérification finale de l'extraction...`
         });
         
-        const { data: finalCheck } = await supabase
-          .from("pdf_extractions")
-          .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text, extracted_data")
-          .eq("pdf_id", pdfDoc.id)
-          .maybeSingle();
+        // Récupérer les vraies données depuis les tables (agrégation complète)
+        const { data: realTariffs } = await supabase
+          .from("country_tariffs")
+          .select("national_code, hs_code_6, description_local, duty_rate, unit_code")
+          .eq("source_pdf", pdfDoc.id)
+          .order("national_code");
         
-        // Vérifier que c'est une extraction COMPLÈTE (pas le marqueur PROCESSING)
-        if (finalCheck && finalCheck.summary && finalCheck.summary !== "__PROCESSING__") {
-          console.log("Extraction found in final check, recovering data...");
-          const tariffChanges = finalCheck.detected_tariff_changes as any[] || [];
-          const extractedData = finalCheck.extracted_data as any || {};
+        const { data: realHsCodes } = await supabase
+          .from("hs_codes")
+          .select("code, code_clean, description_fr, level")
+          .in("code_clean", (realTariffs || []).map(t => t.hs_code_6).filter(Boolean));
+        
+        if (realTariffs && realTariffs.length > 0) {
+          console.log("Extraction found via country_tariffs, recovering data...");
           
-          // Utiliser hs_codes_full depuis extracted_data (avec descriptions)
-          const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
-          const hsCodesRaw = finalCheck.mentioned_hs_codes as string[] || [];
+          const tariffLines = realTariffs.map(t => ({
+            national_code: t.national_code,
+            hs_code_6: t.hs_code_6,
+            description: t.description_local || "",
+            duty_rate: t.duty_rate || 0,
+            unit: t.unit_code || undefined,
+          }));
           
-          // Préférer hs_codes_full (avec descriptions) sinon fallback sur mentioned_hs_codes
-          const hsCodes = hsCodesFull.length > 0 
-            ? hsCodesFull 
-            : hsCodesRaw.map((code: string) => ({
-                code: code,
-                code_clean: code.replace(/[^0-9]/g, ""),
-                description: "",
-                level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
-              }));
+          const hsCodesFull = (realHsCodes || []).map(h => ({
+            code: h.code,
+            code_clean: h.code_clean,
+            description: h.description_fr || "",
+            level: h.level || "subheading",
+          }));
           
           analysisData = {
-            summary: finalCheck.summary,
-            key_points: finalCheck.key_points || [],
-            tariff_lines: tariffChanges,
-            hs_codes: hsCodes,
+            summary: `Extraction batch terminée: ${tariffLines.length} lignes tarifaires, ${hsCodesFull.length} codes SH`,
+            key_points: [],
+            tariff_lines: tariffLines,
+            hs_codes: hsCodesFull,
             hs_codes_full: hsCodesFull,
-            chapter_info: extractedData.chapter_info,
-            document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
-            trade_agreements: extractedData.trade_agreements || [],
-            full_text: finalCheck.extracted_text || "",
+            document_type: "tariff",
+            trade_agreements: [],
+            full_text: "",
           };
           analysisError = null;
         }
