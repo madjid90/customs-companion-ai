@@ -37,6 +37,7 @@ interface HSCode {
   section_number: number | null;
   level: string | null;
   is_active: boolean;
+  national_codes?: string[]; // Codes nationaux à 10 chiffres associés
 }
 
 interface TariffLine {
@@ -117,7 +118,35 @@ export default function AdminHSCodes() {
       const { data, error, count } = await query;
 
       if (error) throw error;
-      setHsCodes(data || []);
+
+      // Charger les codes nationaux associés pour chaque code HS
+      const hsCodesWithNational: HSCode[] = [];
+      if (data && data.length > 0) {
+        const codeCleans = data.map((hs) => hs.code_clean);
+        const { data: tariffs } = await supabase
+          .from("country_tariffs")
+          .select("hs_code_6, national_code")
+          .in("hs_code_6", codeCleans)
+          .eq("is_active", true);
+
+        // Grouper les codes nationaux par hs_code_6
+        const nationalByHs: Record<string, string[]> = {};
+        tariffs?.forEach((t) => {
+          if (!nationalByHs[t.hs_code_6]) {
+            nationalByHs[t.hs_code_6] = [];
+          }
+          nationalByHs[t.hs_code_6].push(t.national_code);
+        });
+
+        for (const hs of data) {
+          hsCodesWithNational.push({
+            ...hs,
+            national_codes: nationalByHs[hs.code_clean] || [],
+          });
+        }
+      }
+
+      setHsCodes(hsCodesWithNational);
       setTotalCount(count || 0);
     } catch (error) {
       console.error("Error loading HS codes:", error);
@@ -435,9 +464,10 @@ export default function AdminHSCodes() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-32">Code</TableHead>
+                    <TableHead className="w-28">Code SH</TableHead>
+                    <TableHead className="w-40">Code National</TableHead>
                     <TableHead>Description</TableHead>
-                    <TableHead className="w-24">Chapitre</TableHead>
+                    <TableHead className="w-20">Chapitre</TableHead>
                     <TableHead className="w-24">Niveau</TableHead>
                     <TableHead className="w-20">Statut</TableHead>
                     <TableHead className="w-24 text-right">Actions</TableHead>
@@ -446,9 +476,27 @@ export default function AdminHSCodes() {
                 <TableBody>
                   {hsCodes.map((hs) => (
                     <TableRow key={hs.id}>
-                      <TableCell className="font-mono font-medium">{hs.code}</TableCell>
-                      <TableCell className="max-w-md truncate">{hs.description_fr}</TableCell>
-                      <TableCell>{hs.chapter_number || "-"}</TableCell>
+                      <TableCell className="font-mono font-medium text-sm">{hs.code}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {hs.national_codes && hs.national_codes.length > 0 ? (
+                          <div className="flex flex-col gap-0.5">
+                            {hs.national_codes.slice(0, 3).map((nc, idx) => (
+                              <span key={idx} className="text-muted-foreground">
+                                {nc.slice(0, 4)}.{nc.slice(4, 6)}.{nc.slice(6, 8)}.{nc.slice(8)}
+                              </span>
+                            ))}
+                            {hs.national_codes.length > 3 && (
+                              <span className="text-xs text-accent">
+                                +{hs.national_codes.length - 3} autres
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground/50">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="max-w-sm truncate text-sm">{hs.description_fr}</TableCell>
+                      <TableCell className="text-sm">{hs.chapter_number || "-"}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs">
                           {hs.level || "subheading"}
