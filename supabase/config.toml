@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.answer-with-sources]
 verify_jwt = false
+
+[functions.ingest-legal-doc]
+verify_jwt = false
