@@ -58,6 +58,11 @@ interface TariffLine {
   unit_comp: string | null;
   is_inherited: boolean;
   page_number?: number | null;
+  // Source tracking
+  source_pdf?: string | null;
+  source_page?: number | null;
+  source_extraction_id?: string | null;
+  source_evidence?: string | null;
 }
 
 interface HSCodeEntry {
@@ -65,6 +70,15 @@ interface HSCodeEntry {
   code_clean: string;
   description: string;
   level: string;
+}
+
+interface CircularReference {
+  source_type: string;
+  source_ref: string;
+  title?: string;
+  issuer?: string;
+  related_hs_codes: string[];
+  note_text: string;
 }
 
 interface RawTableDebug {
@@ -666,8 +680,51 @@ function extractNotesFromText(text: string, pageNumber?: number): ExtractedNote[
 }
 
 // =============================================================================
-// ANALYSE D'UNE PAGE VIA CLAUDE
+// DETECTION DES CIRCULAIRES DANS LES NOTES
 // =============================================================================
+
+function extractCircularReferences(notes: ExtractedNote[]): CircularReference[] {
+  const refs: CircularReference[] = [];
+  const seen = new Set<string>();
+  
+  // Pattern: "circulaire n° XXXX" ou "circulaire ADII n° XXXX"
+  const circularPattern = /circulaire\s+(?:(ADII|ASMEX|DGDI)\s+)?n[°o]?\s*(\d{3,6}(?:\/\d{2,4})?)/gi;
+  // Pattern pour détecter les codes HS associés
+  const hsPattern = /\b(\d{4}(?:\.\d{2}){1,2})\b/g;
+  
+  for (const note of notes) {
+    const text = note.note_text;
+    let match;
+    
+    while ((match = circularPattern.exec(text)) !== null) {
+      const issuer = match[1] || "ADII";
+      const ref = match[2];
+      const key = `circular:${ref}`;
+      
+      if (!seen.has(key)) {
+        seen.add(key);
+        
+        // Chercher les codes HS mentionnés dans cette note
+        const relatedHsCodes: string[] = [];
+        let hsMatch;
+        while ((hsMatch = hsPattern.exec(text)) !== null) {
+          relatedHsCodes.push(hsMatch[1].replace(/\./g, ""));
+        }
+        
+        refs.push({
+          source_type: "circular",
+          source_ref: ref,
+          title: `Circulaire ${issuer} n° ${ref}`,
+          issuer,
+          related_hs_codes: relatedHsCodes,
+          note_text: text
+        });
+      }
+    }
+  }
+  
+  return refs;
+}
 
 async function analyzePageWithClaude(
   base64Pdf: string,
@@ -1057,22 +1114,54 @@ serve(async (req) => {
     
     // Insérer les données en DB si pas en mode preview
     if (!previewOnly) {
-      // Insérer les lignes tarifaires
+      // Récupérer ou créer extraction_id
+      let extractionId: string | null = null;
+      const { data: existingExtraction } = await supabase
+        .from("pdf_extractions")
+        .select("id")
+        .eq("pdf_id", pdfId)
+        .maybeSingle();
+      
+      if (existingExtraction) {
+        extractionId = existingExtraction.id;
+      }
+      
+      // Insérer les lignes tarifaires avec source tracking
       if (tariffLines.length > 0) {
-        const tariffRows = tariffLines.map(line => ({
-          country_code: countryCode,
-          hs_code_6: line.hs_code_6,
-          national_code: line.national_code,
-          description_local: line.description,
-          duty_rate: line.duty_rate,
-          duty_note: line.duty_note,
-          vat_rate: 20,
-          unit_code: line.unit_norm || null,
-          unit_complementary_code: line.unit_comp || null,
-          is_active: true,
-          is_inherited: line.is_inherited,
-          source: `PDF: ${title}`,
-        }));
+        const tariffRows = tariffLines.map(line => {
+          // Construire source_evidence stable
+          const evidence = [
+            line.hs_code_6 || "",
+            line.national_code?.slice(6, 8) || "",
+            line.national_code?.slice(8, 10) || "",
+            "|",
+            line.duty_rate?.toString() || "",
+            "|",
+            line.unit_norm || "",
+            line.unit_comp || ""
+          ].filter(Boolean).join(" ").trim();
+          
+          return {
+            country_code: countryCode,
+            hs_code_6: line.hs_code_6,
+            national_code: line.national_code,
+            description_local: line.description,
+            duty_rate: line.duty_rate,
+            duty_note: line.duty_note,
+            vat_rate: 20,
+            unit_code: line.unit_norm || null,
+            unit_complementary_code: line.unit_comp || null,
+            unit_complementary_description: null,
+            is_active: true,
+            is_inherited: line.is_inherited,
+            source: `PDF: ${title}`,
+            // Source tracking fields
+            source_pdf: title,
+            source_page: line.page_number || null,
+            source_extraction_id: extractionId ? parseInt(extractionId.split('-')[0], 16) : null,
+            source_evidence: evidence,
+          };
+        });
         
         const { error: tariffError } = await supabase
           .from("country_tariffs")
@@ -1083,11 +1172,11 @@ serve(async (req) => {
           stats.errors.push(`Tariff insert: ${tariffError.message}`);
         } else {
           stats.tariff_lines_inserted += tariffRows.length;
-          console.log(`✅ Inserted ${tariffRows.length} tariff lines`);
+          console.log(`✅ Inserted ${tariffRows.length} tariff lines with source tracking`);
         }
       }
       
-      // Insérer les codes HS
+      // Insérer les codes HS depuis les lignes validées
       if (hsCodeEntries.length > 0) {
         const hsRows = hsCodeEntries.map(hsCode => ({
           code: hsCode.code,
@@ -1107,11 +1196,11 @@ serve(async (req) => {
           stats.errors.push(`HS insert: ${hsError.message}`);
         } else {
           stats.hs_codes_inserted += hsRows.length;
-          console.log(`✅ Inserted ${hsRows.length} HS codes`);
+          console.log(`✅ Inserted/updated ${hsRows.length} HS codes from validated tariff lines`);
         }
       }
       
-      // Insérer les notes
+      // Insérer les notes dans tariff_notes avec source tracking
       if (allNotes.length > 0) {
         const chapterMatch = title.match(/chapitre\s*(\d+)/i) || title.match(/SH_CODE_(\d+)/i);
         const chapterNum = chapterMatch ? chapterMatch[1] : null;
@@ -1124,6 +1213,7 @@ serve(async (req) => {
           note_text: note.note_text,
           page_number: note.page_number || null,
           source_pdf: title,
+          source_extraction_id: extractionId ? parseInt(extractionId.split('-')[0], 16) : null,
         }));
         
         const { error: noteError } = await supabase
@@ -1135,7 +1225,53 @@ serve(async (req) => {
           stats.errors.push(`Notes insert: ${noteError.message}`);
         } else {
           stats.notes_inserted += noteRows.length;
-          console.log(`✅ Inserted ${noteRows.length} notes`);
+          console.log(`✅ Inserted ${noteRows.length} notes with source tracking`);
+        }
+      }
+      
+      // Détecter et insérer les circulaires mentionnées
+      const circularRefs = extractCircularReferences(allNotes);
+      if (circularRefs.length > 0) {
+        console.log(`Found ${circularRefs.length} circular references in notes`);
+        
+        for (const circRef of circularRefs) {
+          // Insérer dans legal_sources
+          const { data: legalSource, error: legalError } = await supabase
+            .from("legal_sources")
+            .upsert({
+              country_code: countryCode,
+              source_type: circRef.source_type,
+              source_ref: circRef.source_ref,
+              title: circRef.title,
+              issuer: circRef.issuer,
+              excerpt: circRef.note_text.slice(0, 500),
+            }, { onConflict: "country_code,source_type,source_ref" })
+            .select("id")
+            .single();
+          
+          if (legalError) {
+            console.error("Legal source insert error:", legalError);
+          } else if (legalSource && circRef.related_hs_codes.length > 0) {
+            // Insérer les liens hs_evidence
+            const evidenceRows = circRef.related_hs_codes.map(hsCode => ({
+              country_code: countryCode,
+              national_code: hsCode.padEnd(10, "0"),
+              hs_code_6: hsCode.slice(0, 6),
+              source_id: legalSource.id,
+              evidence_text: circRef.note_text.slice(0, 300),
+              confidence: "high",
+            }));
+            
+            const { error: evidenceError } = await supabase
+              .from("hs_evidence")
+              .insert(evidenceRows);
+            
+            if (evidenceError) {
+              console.error("HS evidence insert error:", evidenceError);
+            } else {
+              console.log(`✅ Linked ${evidenceRows.length} HS codes to legal source ${circRef.source_ref}`);
+            }
+          }
         }
       }
     }
@@ -1173,6 +1309,31 @@ serve(async (req) => {
       // Construire notes_text pour RAG
       const notesText = allNotes.map(n => n.note_text).join("\n\n");
       
+      // Enrichir les tariff_lines avec source info
+      const enrichedTariffLines = tariffLines.map(line => ({
+        ...line,
+        source_pdf: title,
+        source_page: line.page_number,
+        source_extraction_id: runId,
+        source_evidence: [
+          line.hs_code_6 || "",
+          line.national_code?.slice(6, 8) || "",
+          line.national_code?.slice(8, 10) || "",
+          "|",
+          line.duty_rate?.toString() || "",
+          "|",
+          line.unit_norm || "",
+          line.unit_comp || ""
+        ].filter(Boolean).join(" ").trim()
+      }));
+      
+      // Enrichir les notes avec source info
+      const enrichedNotes = allNotes.map(note => ({
+        ...note,
+        source_pdf: title,
+        source_extraction_id: runId
+      }));
+      
       const extractionData = {
         pdf_id: pdfId,
         summary: `Extraction batch terminée: ${stats.tariff_lines_inserted} lignes tarifaires, ${stats.hs_codes_inserted} codes HS, ${stats.notes_inserted} notes`,
@@ -1183,13 +1344,14 @@ serve(async (req) => {
           `Erreurs: ${stats.errors.length}`
         ],
         mentioned_hs_codes: hsCodeEntries.map(h => h.code_clean),
-        detected_tariff_changes: tariffLines,
+        detected_tariff_changes: enrichedTariffLines,
         extracted_data: {
           batch_run_id: runId,
           stats: stats,
           raw_table_debug: debug,
-          notes: allNotes,
+          notes: enrichedNotes,
           notes_text: notesText,
+          tariff_lines: enrichedTariffLines,
         },
         extraction_model: CLAUDE_MODEL,
         extraction_confidence: 0.92,
