@@ -190,6 +190,8 @@ interface BatchResponse {
   tariff_lines?: TariffLine[];
   hs_codes?: HSCodeEntry[];
   notes?: ExtractedNote[];
+  // Résumé du document (généré au premier batch)
+  summary?: string;
 }
 
 // =============================================================================
@@ -492,6 +494,17 @@ Les tableaux sont hiérarchiques. Tu DOIS maintenir l'héritage:
 - Si col2 est vide sur cette ligne → hériter de la ligne précédente
 - Si col3 est vide sur cette ligne → utiliser "00" par défaut OU hériter si la ligne parente existe
 
+=== EXTRACTION DES NOTES (TRÈS IMPORTANT) ===
+
+EXTRAIRE TOUTES les notes présentes sur la page:
+1. Notes numérotées: "1. Le présent Chapitre ne comprend pas : a) les mammifères..."
+2. Notes complémentaires: "Note complémentaire : Les autorités compétentes..."
+3. Définitions: "Dans le présent Chapitre, l'expression «X» désigne..."
+4. Exclusions: "Ce chapitre ne couvre pas..."
+5. Notes de bas de page avec (a), (b), (1), (2)
+
+Types de notes acceptés: "chapter_note", "section_note", "definition", "exclusion", "footnote", "remark"
+
 === FORMAT JSON STRICT ===
 
 {
@@ -513,9 +526,15 @@ Les tableaux sont hiérarchiques. Tu DOIS maintenir l'héritage:
   ],
   "notes": [
     {
+      "note_type": "chapter_note",
+      "anchor": "1",
+      "note_text": "1. Le présent Chapitre ne comprend pas : a) les mammifères du n° 01.06 ; b) les viandes...",
+      "page_number": ${pageNumber}
+    },
+    {
       "note_type": "definition",
-      "anchor": "BRT",
-      "note_text": "BRT : Bruto Registered Ton",
+      "anchor": "agglomérés",
+      "note_text": "Dans le présent Chapitre, l'expression «agglomérés sous forme de pellets» désigne les produits présentés sous forme de cylindres...",
       "page_number": ${pageNumber}
     }
   ]
@@ -526,10 +545,11 @@ Si la page ne contient PAS de tableau tarifaire (que du texte/notes):
   "page_number": ${pageNumber},
   "has_tariff_table": false,
   "raw_lines": [],
-  "notes": [...]
+  "notes": [... toutes les notes de la page ...]
 }
 
 RAPPEL: col2 est la sous-position (variable), col3 est le détail national (souvent 00).
+IMPORTANT: Extraire TOUTES les notes textuelles même si la page n'a pas de tableau.
 RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
 
 // =============================================================================
@@ -766,6 +786,101 @@ function pageContainsTariffTable(pageText: string): boolean {
 }
 
 // =============================================================================
+// GÉNÉRATION DE RÉSUMÉ DU DOCUMENT
+// =============================================================================
+
+const SUMMARY_CACHE = new Map<string, string>();
+
+async function generateDocumentSummary(
+  base64Pdf: string,
+  title: string,
+  apiKey: string,
+  pdfId: string
+): Promise<string> {
+  // Vérifier le cache
+  if (SUMMARY_CACHE.has(pdfId)) {
+    return SUMMARY_CACHE.get(pdfId)!;
+  }
+  
+  console.log("[Summary] Generating document summary...");
+  
+  const requestBody = {
+    model: CLAUDE_MODEL,
+    max_tokens: 1000,
+    system: "Tu es un expert en tarifs douaniers. Génère des résumés concis et informatifs en français.",
+    messages: [{
+      role: "user",
+      content: [
+        { 
+          type: "document", 
+          source: { type: "base64", media_type: "application/pdf", data: base64Pdf },
+        },
+        { 
+          type: "text", 
+          text: `Analyse ce document tarifaire douanier "${title}" et génère un résumé structuré.
+
+Inclure:
+1. Le numéro et titre du chapitre (ex: "Chapitre 3 - Poissons et crustacés")
+2. Une description générale du contenu (2-3 phrases)
+3. Les principales catégories de produits couverts
+4. Les notes importantes ou exceptions à retenir
+5. La fourchette approximative des droits de douane
+
+Format de réponse (texte brut, pas JSON):
+**Chapitre X - [Titre]**
+[Description générale]
+
+**Produits couverts:** [liste]
+
+**Notes importantes:** [résumé des notes clés]
+
+**Droits de douane:** [fourchette en %]`
+        }
+      ]
+    }],
+  };
+  
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s max
+    
+    const response = await fetch(ANTHROPIC_API_URL, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "pdfs-2024-09-25",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      console.warn("[Summary] API error, skipping summary generation");
+      return "";
+    }
+    
+    const data = await response.json();
+    const summary = data.content?.[0]?.text || "";
+    
+    if (summary.length > 50) {
+      console.log(`[Summary] Generated summary (${summary.length} chars)`);
+      SUMMARY_CACHE.set(pdfId, summary);
+      return summary;
+    }
+    
+    return "";
+    
+  } catch (err: any) {
+    console.warn("[Summary] Error:", err.message);
+    return "";
+  }
+}
+
+// =============================================================================
 // DÉTECTION DU NOMBRE DE PAGES VIA CLAUDE (appel léger)
 // =============================================================================
 
@@ -852,8 +967,8 @@ async function scanPagesForTariffContent(
   startPage: number,
   endPage: number,
   apiKey: string
-): Promise<{ pagesToProcess: number[]; pagesSkipped: number[] }> {
-  console.log(`[Page Scan] Quick scan pages ${startPage}-${endPage} for tariff content...`);
+): Promise<{ tariffPages: number[]; textPages: number[] }> {
+  console.log(`[Page Scan] Quick scan pages ${startPage}-${endPage} for content type...`);
   
   const requestBody = {
     model: CLAUDE_MODEL,
@@ -869,16 +984,19 @@ async function scanPagesForTariffContent(
         { 
           type: "text", 
           text: `Analyse les pages ${startPage} à ${endPage} de ce PDF.
-Pour chaque page, détermine si elle contient un TABLEAU TARIFAIRE (colonnes avec codes SH, descriptions, taux) ou juste du texte/notes.
+Pour chaque page, détermine si elle contient:
+- Un TABLEAU TARIFAIRE (colonnes avec codes SH, descriptions, taux)
+- Du TEXTE/NOTES (notes de chapitre, définitions, introductions)
 
 Réponds UNIQUEMENT avec ce JSON:
 {
   "tariff_pages": [${startPage}, ...],  
-  "text_only_pages": [...]
+  "text_pages": [...]
 }
 
 Pages avec tableau tarifaire = ont des colonnes de codes (XXXX.XX XX XX), descriptions produits, taux en %.
-Pages texte = notes de chapitre, définitions, introductions, index.`
+Pages texte = notes de chapitre, définitions, introductions, index.
+IMPORTANT: Inclure TOUTES les pages dans l'une des deux catégories.`
         }
       ]
     }],
@@ -903,11 +1021,11 @@ Pages texte = notes de chapitre, définitions, introductions, index.`
     clearTimeout(timeoutId);
     
     if (!response.ok) {
-      console.warn("[Page Scan] API error, processing all pages");
+      console.warn("[Page Scan] API error, processing all pages as tariff");
       // Fallback: traiter toutes les pages
       const allPages: number[] = [];
       for (let i = startPage; i <= endPage; i++) allPages.push(i);
-      return { pagesToProcess: allPages, pagesSkipped: [] };
+      return { tariffPages: allPages, textPages: [] };
     }
     
     const data = await response.json();
@@ -926,28 +1044,28 @@ Pages texte = notes de chapitre, définitions, introductions, index.`
       const tariffPages = parsed.tariff_pages.filter((p: any) => 
         typeof p === 'number' && p >= startPage && p <= endPage
       );
-      const textOnlyPages = parsed.text_only_pages?.filter((p: any) => 
+      const textPages = (parsed.text_pages || parsed.text_only_pages || []).filter((p: any) => 
         typeof p === 'number' && p >= startPage && p <= endPage
-      ) || [];
+      );
       
-      console.log(`[Page Scan] Found ${tariffPages.length} tariff pages, ${textOnlyPages.length} text-only pages`);
+      console.log(`[Page Scan] Found ${tariffPages.length} tariff pages, ${textPages.length} text pages`);
       
       return { 
-        pagesToProcess: tariffPages, 
-        pagesSkipped: textOnlyPages 
+        tariffPages, 
+        textPages 
       };
     }
     
     // Fallback si parsing échoue
     const allPages: number[] = [];
     for (let i = startPage; i <= endPage; i++) allPages.push(i);
-    return { pagesToProcess: allPages, pagesSkipped: [] };
+    return { tariffPages: allPages, textPages: [] };
     
   } catch (err: any) {
     console.warn("[Page Scan] Error:", err.message);
     const allPages: number[] = [];
     for (let i = startPage; i <= endPage; i++) allPages.push(i);
-    return { pagesToProcess: allPages, pagesSkipped: [] };
+    return { tariffPages: allPages, textPages: [] };
   }
 }
 
@@ -1076,49 +1194,91 @@ function extractNotesFromText(text: string, pageNumber?: number): ExtractedNote[
   const notes: ExtractedNote[] = [];
   const seen = new Set<string>();
   
-  // Définitions (BRT : ...)
-  const defPattern = /([A-Z]{2,5})\s*:\s*([^.\n]{10,80})/g;
+  // Helper pour éviter les doublons
+  const addNote = (note: ExtractedNote) => {
+    const key = `${note.note_type}:${note.note_text.slice(0, 50)}`;
+    if (!seen.has(key) && note.note_text.length > 15) {
+      seen.add(key);
+      notes.push(note);
+    }
+  };
+  
+  // 1. Notes numérotées au format "1. Le présent chapitre ne comprend pas..."
+  const numberedNotePattern = /\b(\d+)\.\s+([A-Z](?:[^.]+\.){0,5}[^.]+\.)/g;
   let match;
+  while ((match = numberedNotePattern.exec(text)) !== null) {
+    const noteNum = match[1];
+    const noteContent = match[2].trim();
+    if (noteContent.length > 30 && noteContent.length < 2000) {
+      addNote({
+        note_type: "chapter_note",
+        anchor: noteNum,
+        note_text: `${noteNum}. ${noteContent}`,
+        page_number: pageNumber
+      });
+    }
+  }
+  
+  // 2. Définitions (BRT : ..., TVA : ...)
+  const defPattern = /\b([A-Z]{2,8})\s*:\s*([^.\n]{10,200})/g;
   while ((match = defPattern.exec(text)) !== null) {
-    const key = match[1] + ":" + match[2].slice(0, 20);
-    if (!seen.has(key)) {
-      seen.add(key);
-      notes.push({
-        note_type: "definition",
-        anchor: match[1],
-        note_text: `${match[1]} : ${match[2].trim()}`,
+    addNote({
+      note_type: "definition",
+      anchor: match[1],
+      note_text: `${match[1]} : ${match[2].trim()}`,
+      page_number: pageNumber
+    });
+  }
+  
+  // 3. Notes de chapitre/section explicites
+  const noteHeaderPattern = /(Notes?\s*(?:de\s+)?(?:chapitre|section|complémentaires?)?)\s*[:\-]?\s*((?:[^.\n]+\.?\s*)+)/gi;
+  while ((match = noteHeaderPattern.exec(text)) !== null) {
+    const header = match[1].trim();
+    const content = match[2].trim();
+    if (content.length > 20 && content.length < 1500) {
+      const noteType = header.toLowerCase().includes("complémentaire") 
+        ? "section_note" 
+        : header.toLowerCase().includes("chapitre") 
+          ? "chapter_note" 
+          : "section_note";
+      addNote({
+        note_type: noteType,
+        note_text: content,
         page_number: pageNumber
       });
     }
   }
   
-  // Notes de chapitre/section
-  const notePattern = /(NOTE[S]?\s*(?:DE\s+)?(?:CHAPITRE|SECTION)?)\s*[:\-]?\s*([^\n]{10,200})/gi;
-  while ((match = notePattern.exec(text)) !== null) {
-    const key = match[2].slice(0, 30);
-    if (!seen.has(key)) {
-      seen.add(key);
-      notes.push({
-        note_type: match[1].toLowerCase().includes("chapitre") ? "chapter_note" : "section_note",
-        note_text: match[2].trim(),
-        page_number: pageNumber
-      });
-    }
-  }
-  
-  // Footnotes (1), (2), etc.
-  const footnotePattern = /\((\d)\)\s*([^()\n]{10,150})/g;
+  // 4. Footnotes (a), (b), (1), (2)
+  const footnotePattern = /\(([a-z1-9])\)\s*([^()]{10,300})/g;
   while ((match = footnotePattern.exec(text)) !== null) {
-    const key = "fn" + match[1] + ":" + match[2].slice(0, 20);
-    if (!seen.has(key)) {
-      seen.add(key);
-      notes.push({
-        note_type: "footnote",
-        anchor: `(${match[1]})`,
-        note_text: match[2].trim(),
-        page_number: pageNumber
-      });
-    }
+    addNote({
+      note_type: "footnote",
+      anchor: `(${match[1]})`,
+      note_text: match[2].trim(),
+      page_number: pageNumber
+    });
+  }
+  
+  // 5. Exclusions explicites "ne comprend pas"
+  const exclusionPattern = /((?:ne\s+comprend\s+pas|ne\s+couvre\s+pas)[^.]+\.)/gi;
+  while ((match = exclusionPattern.exec(text)) !== null) {
+    addNote({
+      note_type: "exclusion",
+      note_text: match[1].trim(),
+      page_number: pageNumber
+    });
+  }
+  
+  // 6. Expressions désignent "l'expression ... désigne"
+  const expressionPattern = /(l'expression\s*["«]([^"»]+)["»]\s*désigne[^.]+\.)/gi;
+  while ((match = expressionPattern.exec(text)) !== null) {
+    addNote({
+      note_type: "definition",
+      anchor: match[2]?.trim(),
+      note_text: match[1].trim(),
+      page_number: pageNumber
+    });
   }
   
   return notes;
@@ -1467,7 +1627,13 @@ serve(async (req) => {
       }
     }
     
-    console.log(`PDF size: ${fileSizeBytes} bytes, detected pages: ${totalPagesDetected || "from existing run"}`);
+    // Générer un résumé du document au premier batch
+    let documentSummary = "";
+    if (!extraction_run_id && start_page === 1) {
+      documentSummary = await generateDocumentSummary(base64Pdf, title, ANTHROPIC_API_KEY, pdfId);
+    }
+    
+    console.log(`PDF size: ${fileSizeBytes} bytes, detected pages: ${totalPagesDetected || "from existing run"}, summary: ${documentSummary ? "yes" : "no"}`);
     
     // Gérer le run d'extraction
     let runId = extraction_run_id;
@@ -1544,10 +1710,10 @@ serve(async (req) => {
     let pagesProcessed = 0;
     let pagesSkipped = 0;
     
-    // Pré-scan intelligent pour identifier les pages avec tableaux tarifaires
-    // (Économise des appels LLM coûteux sur les pages de texte pur)
-    let pagesToProcess: number[] = [];
-    let preSkippedPages: number[] = [];
+    // Pré-scan intelligent pour identifier les pages avec tableaux tarifaires vs texte
+    // NOUVELLE LOGIQUE: On analyse aussi les pages texte pour extraire les notes
+    let tariffPages: number[] = [];
+    let textPages: number[] = [];
     
     // Activer le pré-scan seulement si batch assez grand (>= 3 pages)
     const usePreScan = batchSize >= 3;
@@ -1559,22 +1725,18 @@ serve(async (req) => {
         endPage,
         ANTHROPIC_API_KEY
       );
-      pagesToProcess = scanResult.pagesToProcess;
-      preSkippedPages = scanResult.pagesSkipped;
+      tariffPages = scanResult.tariffPages;
+      textPages = scanResult.textPages;
       
-      if (preSkippedPages.length > 0) {
-        console.log(`[Pre-scan] Skipping ${preSkippedPages.length} text-only pages: ${preSkippedPages.join(", ")}`);
-        pagesSkipped += preSkippedPages.length;
-        stats.pages_skipped += preSkippedPages.length;
-      }
+      console.log(`[Pre-scan] ${tariffPages.length} tariff pages, ${textPages.length} text pages to process`);
     } else {
-      // Pas de pré-scan, traiter toutes les pages
-      for (let i = startPage; i <= endPage; i++) pagesToProcess.push(i);
+      // Pas de pré-scan, traiter toutes les pages comme tarifaires
+      for (let i = startPage; i <= endPage; i++) tariffPages.push(i);
     }
     
-    // Traitement des pages identifiées comme tarifaires
-    for (const page of pagesToProcess) {
-      console.log(`--- Processing page ${page}/${totalPages} ---`);
+    // 1. Traitement des pages tarifaires
+    for (const page of tariffPages) {
+      console.log(`--- Processing TARIFF page ${page}/${totalPages} ---`);
       
       const pageResult = await analyzePageWithClaude(
         base64Pdf,
@@ -1587,10 +1749,8 @@ serve(async (req) => {
       if (pageResult.error) {
         stats.errors.push(`Page ${page}: ${pageResult.error}`);
         if (pageResult.error === "Rate limit exceeded") {
-          // Arrêter le batch, on reprendra plus tard
           console.warn(`Rate limit hit at page ${page}, stopping batch`);
-          // Recalculer le nombre de pages traitées dans ce batch
-          pagesProcessed = pagesToProcess.indexOf(page) + preSkippedPages.filter(p => p < page).length;
+          pagesProcessed = tariffPages.indexOf(page) + textPages.filter(p => p < page).length;
           break;
         }
       }
@@ -1610,15 +1770,55 @@ serve(async (req) => {
       pagesProcessed++;
       
       // Petite pause entre les pages pour éviter le rate limiting
-      if (pagesToProcess.indexOf(page) < pagesToProcess.length - 1) {
+      if (tariffPages.indexOf(page) < tariffPages.length - 1) {
         await delay(500);
       }
     }
     
-    // Ajouter les pages pré-skippées au compteur
-    pagesProcessed += preSkippedPages.length;
+    // 2. NOUVEAU: Traitement des pages de texte pur pour extraire les notes
+    if (textPages.length > 0) {
+      console.log(`--- Processing ${textPages.length} TEXT pages for notes extraction ---`);
+      
+      for (const page of textPages) {
+        console.log(`--- Processing TEXT page ${page}/${totalPages} ---`);
+        
+        const pageResult = await analyzePageWithClaude(
+          base64Pdf,
+          page,
+          totalPages,
+          title,
+          ANTHROPIC_API_KEY
+        );
+        
+        if (pageResult.error) {
+          stats.errors.push(`Text page ${page}: ${pageResult.error}`);
+          if (pageResult.error === "Rate limit exceeded") {
+            console.warn(`Rate limit hit at text page ${page}, stopping`);
+            break;
+          }
+        }
+        
+        // On s'attend à ne trouver QUE des notes sur ces pages
+        if (pageResult.notes.length > 0) {
+          allNotes.push(...pageResult.notes);
+          console.log(`  -> Extracted ${pageResult.notes.length} notes from text page`);
+        }
+        
+        // Si des lignes tarifaires sont trouvées quand même, les inclure
+        if (pageResult.raw_lines.length > 0) {
+          allRawLines.push(...pageResult.raw_lines);
+          console.log(`  -> Bonus: found ${pageResult.raw_lines.length} tariff lines on text page`);
+        }
+        
+        pagesProcessed++;
+        
+        if (textPages.indexOf(page) < textPages.length - 1) {
+          await delay(300);
+        }
+      }
+    }
     
-    console.log(`Batch complete: ${pagesProcessed} pages (${preSkippedPages.length} pre-skipped), ${allRawLines.length} raw lines, ${allNotes.length} notes`);
+    console.log(`Batch complete: ${pagesProcessed} pages, ${allRawLines.length} raw lines, ${allNotes.length} notes`);
     
     // Traiter les lignes brutes
     const { tariffLines, debug } = processRawLines(allRawLines);
@@ -1911,6 +2111,8 @@ serve(async (req) => {
       tariff_lines: tariffLines,
       hs_codes: hsCodeEntries,
       notes: allNotes,
+      // Résumé du document (seulement au premier batch)
+      summary: documentSummary || undefined,
     };
     
     // Update metrics

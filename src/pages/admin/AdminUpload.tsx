@@ -68,6 +68,9 @@ export default function AdminUpload() {
       page_number?: number;
     }> = [];
     
+    // Résumé généré au premier batch
+    let documentSummary = "";
+    
     while (!done) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -106,6 +109,12 @@ export default function AdminUpload() {
         if (!runId) runId = batchResult.extraction_run_id;
         totalPages = batchResult.total_pages || totalPages;
         processedPages = batchResult.processed_pages || processedPages;
+        
+        // Capturer le résumé au premier batch (seulement s'il n'est pas déjà défini)
+        if (batchResult.summary && !documentSummary) {
+          documentSummary = batchResult.summary;
+          console.log("[Batch] Captured document summary:", documentSummary.substring(0, 100) + "...");
+        }
         
         // Accumuler les données de ce batch
         if (batchResult.tariff_lines && Array.isArray(batchResult.tariff_lines)) {
@@ -166,6 +175,8 @@ export default function AdminUpload() {
             tariff_lines: accumulatedTariffLines,
             hs_codes: accumulatedHsCodes,
             notes: accumulatedNotes,
+            // Résumé intelligent généré au premier batch
+            summary: documentSummary,
           };
         } else if (batchResult.next_page) {
           startPage = batchResult.next_page;
@@ -189,6 +200,7 @@ export default function AdminUpload() {
       tariff_lines: accumulatedTariffLines,
       hs_codes: accumulatedHsCodes,
       notes: accumulatedNotes,
+      summary: documentSummary,
     };
   }, [updateFileStatus]);
 
@@ -316,9 +328,13 @@ export default function AdminUpload() {
         const hsCodesFull = batchResult.hs_codes || [];
         const notes = batchResult.notes || [];
         const stats = batchResult.stats || {};
+        const summary = batchResult.summary || "";
+        
+        // Construire un fallback de résumé si Claude n'en a pas généré
+        const fallbackSummary = `Extraction terminée: ${tariffLines.length} lignes tarifaires, ${hsCodesFull.length} codes SH, ${notes.length} notes`;
         
         analysisData = {
-          summary: `Extraction terminée: ${tariffLines.length} lignes tarifaires, ${hsCodesFull.length} codes SH, ${notes.length} notes`,
+          summary: summary || fallbackSummary,
           key_points: [],
           tariff_lines: tariffLines,
           hs_codes: hsCodesFull,

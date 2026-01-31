@@ -515,8 +515,16 @@ export default function ExtractionPreviewDialog({
         </DialogHeader>
 
         {extractionData?.summary && (
-          <div className="p-3 bg-muted rounded-lg text-sm">
-            <strong>Résumé:</strong> {extractionData.summary}
+          <div className="p-4 bg-accent/50 border border-border rounded-lg">
+            <div className="flex items-start gap-3">
+              <FileText className="h-5 w-5 text-primary mt-0.5 shrink-0" />
+              <div className="text-sm space-y-1.5">
+                <strong className="text-foreground">Résumé du document</strong>
+                <div className="text-muted-foreground whitespace-pre-wrap">
+                  {extractionData.summary}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
