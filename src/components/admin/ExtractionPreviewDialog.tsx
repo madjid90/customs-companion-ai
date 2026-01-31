@@ -296,10 +296,10 @@ export default function ExtractionPreviewDialog({
         }
       }
 
-      // Save extraction record
+      // Save extraction record (upsert pour éviter les doublons si un record existe déjà)
       const { error: extractionError } = await supabase
         .from("pdf_extractions")
-        .insert([{
+        .upsert([{
           pdf_id: pdfId,
           summary: extractionData?.summary || "",
           key_points: extractionData?.key_points || [],
@@ -312,7 +312,7 @@ export default function ExtractionPreviewDialog({
           })),
           extraction_model: "claude-sonnet-4-20250514",
           extraction_confidence: 0.90,
-        }]);
+        }], { onConflict: "pdf_id" });
 
       if (extractionError) {
         console.error("Extraction save error:", extractionError);

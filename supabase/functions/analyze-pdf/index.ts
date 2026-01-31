@@ -178,6 +178,10 @@ interface BatchResponse {
   pdfTitle?: string;
   countryCode?: string;
   error?: string;
+  // Preview data - retourné quand previewOnly=true ou pour accumulation côté frontend
+  tariff_lines?: TariffLine[];
+  hs_codes?: HSCodeEntry[];
+  notes?: ExtractedNote[];
 }
 
 // =============================================================================
@@ -1670,7 +1674,7 @@ serve(async (req) => {
         .eq("id", pdfId);
     }
     
-    // Réponse batch
+    // Réponse batch - toujours inclure les données extraites pour accumulation côté frontend
     const response: BatchResponse = {
       extraction_run_id: runId!,
       done: isDone,
@@ -1682,6 +1686,10 @@ serve(async (req) => {
       pdfId,
       pdfTitle: title,
       countryCode,
+      // Inclure les données extraites de ce batch pour accumulation côté frontend
+      tariff_lines: tariffLines,
+      hs_codes: hsCodeEntries,
+      notes: allNotes,
     };
     
     // Update metrics
