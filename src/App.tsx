@@ -18,8 +18,6 @@ import AdminLogin from "@/pages/admin/AdminLogin";
 
 import AdminHSCodes from "@/pages/admin/AdminHSCodes";
 import AdminUpload from "@/pages/admin/AdminUpload";
-import AdminScraping from "@/pages/admin/AdminScraping";
-import AdminVeille from "@/pages/admin/AdminVeille";
 import AdminDocuments from "@/pages/admin/AdminDocuments";
 import NotFound from "@/pages/NotFound";
 
@@ -53,8 +51,6 @@ const App = () => (
                 >
                   <Route index element={<Navigate to="/admin/upload" replace />} />
                   <Route path="upload" element={<AdminUpload />} />
-                  <Route path="scraping" element={<AdminScraping />} />
-                  <Route path="veille" element={<AdminVeille />} />
                   <Route path="hs-codes" element={<AdminHSCodes />} />
                   <Route path="documents" element={<AdminDocuments />} />
                 </Route>
