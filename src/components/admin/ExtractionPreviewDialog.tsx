@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import ReactMarkdown from "react-markdown";
 
 interface HSCodeEntry {
   code: string;
@@ -520,8 +521,10 @@ export default function ExtractionPreviewDialog({
               <FileText className="h-5 w-5 text-primary mt-0.5 shrink-0" />
               <div className="text-sm space-y-1.5">
                 <strong className="text-foreground">Résumé du document</strong>
-                <div className="text-muted-foreground whitespace-pre-wrap">
-                  {extractionData.summary}
+                <div className="text-muted-foreground prose prose-sm dark:prose-invert max-w-none">
+                  <ReactMarkdown>
+                    {extractionData.summary}
+                  </ReactMarkdown>
                 </div>
               </div>
             </div>
