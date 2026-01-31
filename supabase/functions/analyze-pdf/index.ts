@@ -344,13 +344,17 @@ interface Col2Col3Resolution {
 
 /**
  * Résout l'inversion col2/col3 de manière déterministe.
- * Construit 2 candidats (normal vs swapped) et choisit le meilleur score.
  * 
- * RÈGLE FONDAMENTALE du tarif marocain:
- * - col2 = sous-position (varie: 10, 20, 80, etc.)
- * - col3 = détail national (souvent 00)
+ * RÈGLE FONDAMENTALE du tarif marocain (CORRIGÉE):
+ * - col2 = sous-position de la position SH (peut être 00 pour ligne parente, ou 10/20/90 pour sous-positions)
+ * - col3 = détail national (peut être 00 si pas de détail, ou 10/20/90 pour détails)
  * 
- * Donc si on voit "00" et "20", le "00" doit être en col3, pas col2.
+ * IMPORTANT: col2=00 est VALIDE pour les lignes parentes (ex: 3502.11 00 = "Séchée")
+ * Donc on ne doit PAS swapper quand le LLM retourne col2=00.
+ * 
+ * Le swap ne s'applique QUE si:
+ * - col2 est un détail (10, 20, 90...) ET col3=00
+ * - Car cela suggère que le vrai col2 devrait être 00 et le vrai col3 le détail
  */
 function resolveCol2Col3(
   pos6: string,
@@ -367,8 +371,22 @@ function resolveCol2Col3(
   }
   
   // =========================================================================
-  // RÈGLE 0: Si aucun des deux n'est "00", on garde l'ordre Claude
-  // Seule la présence de "00" est un signal fiable pour décider.
+  // RÈGLE 0: Si col2 (a) = "00", c'est une ligne parente → NE JAMAIS SWAPPER
+  // col2=00 est parfaitement valide pour les positions parentes.
+  // Ex: 3502.11 | 00 | (vide) = "Séchée" → col2=00 est correct
+  //            |    | 10     = "impropre..." → col2=00 (hérité), col3=10
+  // =========================================================================
+  if (col2A === "00") {
+    return {
+      col2: col2A,
+      col3: col2B,
+      swapApplied: false,
+      reason: `KEEP(col2=00-parent) col2=${col2A},col3=${col2B}`
+    };
+  }
+  
+  // =========================================================================
+  // RÈGLE 1: Si aucun des deux n'est "00", garder l'ordre Claude
   // Sans "00", on ne peut pas savoir qui est col2 vs col3 → garder A.
   // =========================================================================
   if (col2A !== "00" && col2B !== "00") {
@@ -381,63 +399,18 @@ function resolveCol2Col3(
   }
   
   // =========================================================================
-  // RÈGLE 1: Heuristique "00 appartient à col3" (poids TRÈS FORT)
-  // Dans le tarif marocain, col3 (détail national) est souvent 00.
-  // Si Claude met 00 en col2, c'est probablement inversé.
+  // RÈGLE 2: col2 est un détail (10/20/90) et col3=00
+  // Ceci suggère une inversion: le vrai col2 devrait être 00, col3 le détail.
+  // MAIS: ce cas est ambigu. Dans le tarif, on peut avoir:
+  //   - 3502.11 | 10 | 00 = sous-position 10, pas de détail national
+  // Donc on ne swappe PAS ici non plus. On fait confiance au LLM.
   // =========================================================================
-  let scoreA = 0;
-  let scoreB = 0;
-  const reasons: string[] = [];
-  
-  if (col2B === "00" && col2A !== "00") {
-    // Candidat A a col3=00 → correct
-    scoreA += 5;
-    reasons.push("A:col3=00(+5)");
-  }
-  if (col2A === "00" && col2B !== "00") {
-    // Candidat B aurait col3=00 → correct si on swap
-    scoreB += 5;
-    reasons.push("B:col3=00(+5)");
-  }
-  
-  // =========================================================================
-  // RÈGLE 2: Cohérence héritage (traçabilité uniquement, pas de score)
-  // =========================================================================
-  if (ctx.lastCol2) {
-    if (col2A === ctx.lastCol2) {
-      reasons.push(`A:inherit(${col2A}==last)`);
-    }
-    if (col2B === ctx.lastCol2) {
-      reasons.push(`B:inherit(${col2B}==last)`);
-    }
-  }
-  
-  // =========================================================================
-  // RÈGLE 3: Statistiques locales (traçabilité uniquement, pas de score)
-  // =========================================================================
-  const pos6Stats = ctx.pos6Col2Counts.get(pos6);
-  if (pos6Stats) {
-    const countA = pos6Stats.get(col2A) || 0;
-    const countB = pos6Stats.get(col2B) || 0;
-    if (countA > 0 || countB > 0) {
-      reasons.push(`stats(A:${countA},B:${countB})`);
-    }
-  }
-  
-  // =========================================================================
-  // DÉCISION: Seule la règle "00 en col3" décide du swap
-  // =========================================================================
-  const swapApplied = scoreB > scoreA;
-  
-  const finalReason = swapApplied 
-    ? `SWAP(B:${scoreB}>A:${scoreA}) ${reasons.join(", ")}`
-    : `KEEP(A:${scoreA}>=B:${scoreB}) ${reasons.join(", ")}`;
-  
+  // col2B === "00" && col2A !== "00" → on garde l'ordre, col2=détail, col3=00
   return {
-    col2: swapApplied ? col2B : col2A,
-    col3: swapApplied ? col2A : col2B,
-    swapApplied,
-    reason: finalReason
+    col2: col2A,
+    col3: col2B,
+    swapApplied: false,
+    reason: `KEEP(trust-llm) col2=${col2A},col3=${col2B}`
   };
 }
 
