@@ -29,6 +29,8 @@ import {
   searchKnowledgeHybrid,
   searchPDFsHybrid,
   searchVeilleHybrid,
+  searchTariffNotesHybrid,
+  searchTariffNotesByChapter,
 } from "./semantic-search.ts";
 import {
   analyzeQuestion,
@@ -43,6 +45,7 @@ import {
 import {
   searchHSCodeWithInheritance,
   formatTariffForRAG,
+  formatTariffNotesForRAG,
   createEmptyContext,
   buildAvailableSources,
   type RAGContext,
@@ -612,6 +615,43 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     }
 
     // =========================================================================
+    // TARIFF NOTES SEARCH (10. Search chapter notes for detected codes)
+    // =========================================================================
+    const chapterNumbers = [...new Set([
+      ...context.hs_codes.map((c: any) => {
+        const code = cleanHSCode(c.code || c.code_clean);
+        return code.substring(0, 2);
+      }),
+      ...analysis.detectedCodes.map(c => cleanHSCode(c).substring(0, 2))
+    ])].filter(ch => /^\d{2}$/.test(ch));
+
+    if (chapterNumbers.length > 0) {
+      console.log(`Searching tariff notes for chapters: ${chapterNumbers.join(', ')}`);
+      
+      // First, direct lookup by chapter numbers (fast, always works)
+      const directNotes = await searchTariffNotesByChapter(supabase, chapterNumbers, 15);
+      context.tariff_notes = directNotes;
+      
+      // If we have semantic search and want more relevant notes
+      if (useSemanticSearch && queryEmbedding && directNotes.length < 5) {
+        const semanticNotes = await searchTariffNotesHybrid(
+          supabase, 
+          queryEmbedding, 
+          cleanSearchQuery, 
+          chapterNumbers, 
+          10
+        );
+        
+        // Merge and deduplicate
+        const existingIds = new Set(context.tariff_notes.map((n: any) => n.id));
+        const newNotes = semanticNotes.filter((n: any) => !existingIds.has(n.id));
+        context.tariff_notes = [...context.tariff_notes, ...newNotes].slice(0, 20);
+      }
+      
+      console.log(`Found ${context.tariff_notes.length} tariff notes`);
+    }
+
+    // =========================================================================
     // SEMANTIC SEARCH ENHANCEMENT
     // =========================================================================
     if (useSemanticSearch && queryEmbedding) {
@@ -679,6 +719,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       hs_codes: context.hs_codes.length,
       pdfs: context.pdf_summaries.length,
       veille: veilleDocuments.length,
+      tariff_notes: context.tariff_notes.length,
     });
 
     // =========================================================================

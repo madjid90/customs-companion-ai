@@ -1485,6 +1485,8 @@ export type Database = {
           chapter_number: string | null
           country_code: string
           created_at: string
+          embedding: string | null
+          embedding_updated_at: string | null
           id: number
           note_text: string
           note_type: string
@@ -1497,6 +1499,8 @@ export type Database = {
           chapter_number?: string | null
           country_code?: string
           created_at?: string
+          embedding?: string | null
+          embedding_updated_at?: string | null
           id?: number
           note_text: string
           note_type: string
@@ -1509,6 +1513,8 @@ export type Database = {
           chapter_number?: string | null
           country_code?: string
           created_at?: string
+          embedding?: string | null
+          embedding_updated_at?: string | null
           id?: number
           note_text?: string
           note_type?: string
@@ -2125,6 +2131,40 @@ export type Database = {
           penalties: string
           procedure_name: string
           required_documents: Json
+        }[]
+      }
+      search_tariff_notes_fts: {
+        Args: {
+          chapter_filter?: string
+          match_count?: number
+          search_query: string
+        }
+        Returns: {
+          anchor: string
+          chapter_number: string
+          country_code: string
+          id: number
+          note_text: string
+          note_type: string
+          page_number: number
+          relevance_score: number
+        }[]
+      }
+      search_tariff_notes_semantic: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          anchor: string
+          chapter_number: string
+          country_code: string
+          id: number
+          note_text: string
+          note_type: string
+          page_number: number
+          similarity: number
         }[]
       }
       search_veille_documents_semantic: {

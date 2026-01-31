@@ -2,7 +2,7 @@
 // CONSTRUCTION DU PROMPT SYSTÈME
 // ============================================================================
 
-import { RAGContext, TariffWithInheritance, formatTariffForRAG } from "./context-builder.ts";
+import { RAGContext, TariffWithInheritance, formatTariffForRAG, formatTariffNotesForRAG } from "./context-builder.ts";
 import { ImageAnalysisResult, PdfAnalysisResult } from "./analysis.ts";
 import { extractTopPassages, formatPassagesForPrompt } from "./passage-scorer.ts";
 
@@ -275,6 +275,11 @@ ${context.regulatory_procedures.length > 0 ? context.regulatory_procedures.map((
   if (proc.penalties) content += `**Sanctions:** ${proc.penalties}\n`;
   return content;
 }).join('\n') : "Aucune procédure réglementaire spécifique trouvée"}
+
+### Notes et Définitions Tarifaires
+${context.tariff_notes && context.tariff_notes.length > 0 
+  ? formatTariffNotesForRAG(context.tariff_notes)
+  : "Aucune note de chapitre trouvée"}
 
 ---
 ## RAPPELS CRITIQUES:
