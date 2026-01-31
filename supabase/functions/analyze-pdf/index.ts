@@ -17,33 +17,56 @@ import { createLogger } from "../_shared/logger.ts";
 // =============================================================================
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-// NOTE: Only Sonnet models support native PDF input (anthropic-beta header)
-// Haiku does NOT support PDF input, so we use Sonnet for all PDF analysis
-const CLAUDE_MODEL = "claude-sonnet-4-20250514"; // Sonnet 4 - supports native PDF input
+const CLAUDE_MODEL = "claude-sonnet-4-20250514";
 
 // =============================================================================
-// INTERFACES
+// INTERFACES - ÉTAPE 1: Schéma RawTariffLine standardisé
 // =============================================================================
 
-interface RawTarifLine {
-  // Structure SIMPLIFIÉE - Claude extrait directement le code national à 10 chiffres
-  national_code: string;    // Code national COMPLET à 10 chiffres (ex: "3201100000")
-  hs_code_6?: string;       // Code SH à 6 chiffres (optionnel, déduit si absent)
-  description: string;
-  duty_rate: string | number | null;
-  unit: string | null;
+/**
+ * Structure standardisée pour les lignes tarifaires brutes
+ * Utilisée par le prompt LLM et tous les fallbacks
+ */
+interface RawTariffLine {
+  prefix_col?: string | null;       // Chiffre d'alignement (1-8) à IGNORER
+  position_6?: string | null;       // Position 6 chiffres ex: "8903.11" ou "890311"
+  col2?: string | null;             // 2 digits (positions 7-8)
+  col3?: string | null;             // 2 digits (positions 9-10)
+  national_code?: string | null;    // 10 digits (optionnel, peut être reconstruit)
+  hs_code_6?: string | null;        // 6 digits (optionnel, reconstruit)
+  description?: string | null;
+  duty_rate?: string | number | null;
+  unit_norm?: string | null;        // Unité principale (KG, L, U, etc.)
+  unit_comp?: string | null;        // Unité complémentaire
 }
 
+/**
+ * Note extraite du document (notes de chapitre, définitions, etc.)
+ */
+interface ExtractedNote {
+  note_type: "chapter_note" | "section_note" | "definition" | "footnote" | "exclusion" | "remark";
+  anchor?: string;                  // Ex: "BRT", "(a)", "Chapitre 84"
+  note_text: string;
+  page_number?: number;
+}
+
+/**
+ * Ligne tarifaire validée et normalisée
+ */
 interface TariffLine {
   national_code: string;   // 10 chiffres
   hs_code_6: string;       // 6 premiers chiffres
   description: string;
   duty_rate: number;
   duty_note: string | null;
-  unit: string | null;
+  unit_norm: string | null;
+  unit_comp: string | null;
   is_inherited: boolean;
 }
 
+/**
+ * Code SH à 6 chiffres
+ */
 interface HSCodeEntry {
   code: string;           // Format "XXXX.XX"
   code_clean: string;     // 6 chiffres sans points
@@ -68,18 +91,17 @@ interface TradeAgreementMention {
   mentioned_benefits?: string[];
 }
 
-// Nouvelles interfaces pour les documents réglementaires enrichis
 interface LegalReference {
-  type: string;  // circulaire, loi, décret, arrêté, article, note, convention, bo
+  type: string;
   reference: string;
   title?: string;
   date?: string;
-  context?: string;  // abroge, modifie, complète, etc.
+  context?: string;
 }
 
 interface ImportantDate {
   date: string;
-  type: string;  // publication, application, expiration, limite, référence
+  type: string;
   description: string;
 }
 
@@ -94,6 +116,20 @@ interface Procedure {
   required_documents?: string[];
   deadlines?: string;
   penalties?: string;
+}
+
+/**
+ * Mode DEBUG - informations de diagnostic
+ */
+interface RawTableDebug {
+  detectedSwaps: number;
+  swappedSamples: Array<{
+    national_code: string;
+    before: { duty_rate: string | number | null | undefined; unit_norm: string | null | undefined };
+    after: { duty_rate: number | null; unit_norm: string | null };
+  }>;
+  parsingWarnings: string[];
+  skippedLines: number;
 }
 
 interface AnalysisResult {
@@ -111,267 +147,325 @@ interface AnalysisResult {
   authorities?: string[];
   trade_agreements?: TradeAgreementMention[];
   preferential_rates?: PreferentialRate[];
-  raw_lines?: RawTarifLine[];  // Pour debug
-  document_type?: string;  // "tariff" ou "regulatory"
-  
-  // Champs enrichis pour documents réglementaires
-  document_reference?: string;  // Numéro/référence officielle
+  raw_lines?: RawTariffLine[];
+  extracted_notes?: ExtractedNote[];
+  document_type?: string;
+  document_reference?: string;
   publication_date?: string;
   effective_date?: string;
   expiry_date?: string;
-  legal_references?: LegalReference[] | string[];  // Support ancien et nouveau format
+  legal_references?: LegalReference[] | string[];
   important_dates?: ImportantDate[];
   issuing_authority?: IssuingAuthority;
   recipients?: string[];
   procedures?: Procedure[];
-  abrogates?: string[];  // Textes abrogés
-  modifies?: string[];   // Textes modifiés
-  full_text?: string;    // Texte intégral du document pour recherche RAG
+  abrogates?: string[];
+  modifies?: string[];
+  full_text?: string;
+  raw_table_debug?: RawTableDebug;
 }
 
 // =============================================================================
-// PROMPT CLAUDE - DOCUMENTS TARIFAIRES (tableaux SH codes)
+// ÉTAPE 3: HELPERS STRICTS (pas de padding)
 // =============================================================================
 
-const getTariffPrompt = (title: string, category: string) => `Expert en tarifs douaniers marocains. Analyse ce PDF et extrais TOUTES les lignes tarifaires.
+/**
+ * Extrait uniquement les chiffres d'une chaîne
+ */
+function digitsOnly(str: string | null | undefined): string {
+  if (!str) return "";
+  return str.replace(/[^0-9]/g, "");
+}
+
+/**
+ * Normalise un code à exactement 10 chiffres ou retourne null
+ * NE JAMAIS PADDER - retourne null si invalide
+ */
+function normalize10Strict(str: string | null | undefined): string | null {
+  if (!str) return null;
+  const digits = digitsOnly(str);
+  if (digits.length !== 10) return null;
+  return digits;
+}
+
+/**
+ * Normalise un code à exactement 6 chiffres ou retourne null
+ * NE JAMAIS PADDER
+ */
+function normalize6Strict(str: string | null | undefined): string | null {
+  if (!str) return null;
+  // Nettoyer les points, tirets, espaces
+  const cleaned = str.replace(/[\.\-\s]/g, "");
+  const digits = digitsOnly(cleaned);
+  if (digits.length !== 6) return null;
+  return digits;
+}
+
+/**
+ * Normalise un code à exactement 2 chiffres ou retourne null
+ * Accepte aussi "00" comme valide
+ */
+function normalize2Strict(str: string | null | undefined): string | null {
+  if (!str) return null;
+  const digits = digitsOnly(str);
+  if (digits.length !== 2) return null;
+  return digits;
+}
+
+/**
+ * Normalise un taux (duty_rate) en nombre
+ * Gère les formats: "2,5", "2.5", "40%", 17.5, etc.
+ */
+function normalizeRate(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  
+  if (typeof value === "number") {
+    return isNaN(value) ? null : value;
+  }
+  
+  const str = String(value).trim();
+  if (str === "" || str === "-" || str === "–" || str === "—") return null;
+  
+  // Supprimer le symbole %
+  let cleaned = str.replace(/%/g, "").trim();
+  // Remplacer la virgule par un point
+  cleaned = cleaned.replace(",", ".");
+  // Supprimer les parenthèses et notes (ex: "2,5(a)" -> "2.5")
+  cleaned = cleaned.replace(/\([a-z]\)/gi, "").trim();
+  
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? null : num;
+}
+
+/**
+ * Vérifie si une valeur est une unité (KG, L, U, M2, BRT, etc.)
+ */
+function isUnit(val: string | number | null | undefined): boolean {
+  if (val === null || val === undefined) return false;
+  const str = String(val).trim();
+  if (str === "-" || str === "–" || str === "—") return true;
+  // Unités courantes: lettres majuscules 1-5 caractères, éventuellement suivies de chiffres
+  return /^[A-Za-z]{1,5}\d{0,2}$/i.test(str);
+}
+
+/**
+ * Vérifie si une valeur ressemble à un nombre (taux)
+ */
+function isNumberLike(val: string | number | null | undefined): boolean {
+  if (val === null || val === undefined) return false;
+  if (typeof val === "number") return !isNaN(val);
+  const str = String(val).trim();
+  // Formats: "2,5", "2.5", "40", "17.5%"
+  return /^\d+([.,]\d+)?%?$/.test(str);
+}
+
+/**
+ * Corrige l'inversion duty_rate / unit_norm (colonnes 4 et 5 inversées)
+ */
+function fixRateUnitSwap(
+  line: RawTariffLine,
+  debug: RawTableDebug
+): { duty_rate: number | null; unit_norm: string | null; swapped: boolean } {
+  const originalDuty = line.duty_rate;
+  const originalUnit = line.unit_norm;
+  
+  let dutyRate = originalDuty;
+  let unitNorm = originalUnit;
+  let swapped = false;
+  
+  // Détection d'inversion: duty_rate contient une unité ET unit_norm contient un nombre
+  if (isUnit(dutyRate) && isNumberLike(unitNorm)) {
+    // SWAP!
+    dutyRate = unitNorm;
+    unitNorm = String(originalDuty);
+    swapped = true;
+    
+    debug.detectedSwaps++;
+    if (debug.swappedSamples.length < 5) {
+      debug.swappedSamples.push({
+        national_code: line.national_code || "unknown",
+        before: { duty_rate: originalDuty, unit_norm: originalUnit as string | null },
+        after: { duty_rate: normalizeRate(dutyRate), unit_norm: unitNorm }
+      });
+    }
+  }
+  
+  // Autre cas: duty_rate est "-" et unit_norm est un nombre
+  if ((dutyRate === "-" || dutyRate === "–" || dutyRate === "—") && isNumberLike(unitNorm)) {
+    dutyRate = unitNorm;
+    unitNorm = "-";
+    swapped = true;
+    debug.detectedSwaps++;
+  }
+  
+  return {
+    duty_rate: normalizeRate(dutyRate),
+    unit_norm: unitNorm ? String(unitNorm).trim() : null,
+    swapped
+  };
+}
+
+/**
+ * Extrait la note entre parenthèses du taux (ex: "2,5(a)" -> "a")
+ */
+function extractDutyNote(dutyStr: string | number | null): string | null {
+  if (dutyStr === null || dutyStr === undefined) return null;
+  if (typeof dutyStr === "number") return null;
+  const str = String(dutyStr).trim();
+  const match = str.match(/\(([a-z])\)/i);
+  return match ? match[1].toLowerCase() : null;
+}
+
+/**
+ * Vérifie si un code est entre crochets (position réservée)
+ */
+function isReservedCode(code: string): boolean {
+  if (!code || code.trim() === "") return false;
+  const raw = code.trim();
+  return raw.startsWith("[") || raw.endsWith("]") || raw.includes("[") || raw.includes("]");
+}
+
+/**
+ * Vérifie si un code clean est valide (6 chiffres)
+ */
+function isValidCleanCode(codeClean: string): boolean {
+  if (!codeClean) return false;
+  return /^\d{6}$/.test(codeClean);
+}
+
+// =============================================================================
+// ÉTAPE 2: PROMPT TARIFAIRE AVEC JSON STRICT + NOTES + EXEMPLES
+// =============================================================================
+
+const getTariffPrompt = (title: string, category: string) => `Expert en tarifs douaniers marocains. Analyse ce PDF et extrais TOUTES les lignes tarifaires ET les notes importantes.
 
 Doc: ${title}
-Catégorie : ${category}
-
-=== TA MISSION ===
-
-Extraire TOUTES les lignes tarifaires avec le CODE NATIONAL COMPLET À 10 CHIFFRES.
-Le tarif marocain utilise un système de codification qui forme le code national.
-
-⚠️⚠️⚠️ RÈGLE LA PLUS IMPORTANTE ⚠️⚠️⚠️
-Tu DOIS analyser TOUTES LES PAGES du PDF, de la première à la dernière.
-CHAQUE ligne tarifaire de CHAQUE page doit être extraite, y compris:
-- Les lignes sur la DERNIÈRE PAGE du document
-- Les lignes qui apparaissent APRÈS les notes de bas de page
-- Les sous-lignes (ex: 10, 20, 30, 80, 90) même si elles sont sur une page différente de leur en-tête
+Catégorie: ${category}
 
 === STRUCTURE DU TARIF MAROCAIN ===
 
 Les codes nationaux ont TOUJOURS 10 chiffres.
 
-⚠️⚠️⚠️ RÈGLE CRITIQUE : COMMENT LIRE LE PDF ⚠️⚠️⚠️
+⚠️ RÈGLE CRITIQUE: IGNORER LE CHIFFRE D'ALIGNEMENT ⚠️
 
-STRUCTURE DU TABLEAU PDF:
-Colonne 1 (Position) | Colonne 2 | Colonne 3 | Description | Taux | Unité
+Certaines lignes du PDF contiennent un chiffre dans une colonne JUSTE AVANT la Position SH (1, 3, 4, 5, 7, 8, etc.).
+Ce chiffre est un REPÈRE D'ALIGNEMENT et NE FAIT PAS PARTIE DU CODE SH.
+IL FAUT L'IGNORER COMPLÈTEMENT.
 
-Le CODE NATIONAL = Position_6_chiffres + Colonne2 + Colonne3 = 10 chiffres
+Exemple:
+"8 8903.11 00 00 ... 2,5 u" 
+→ Le "8" au début est un repère à IGNORER
+→ Position = 8903.11, Col2 = 00, Col3 = 00
+→ national_code = 8903110000
 
-⚠️⚠️⚠️ RÈGLE D'OR - ALGORITHME OBLIGATOIRE ⚠️⚠️⚠️
+=== RÈGLE DE CONSTRUCTION DU CODE ===
 
-Pour CHAQUE ligne tarifaire, tu DOIS suivre cet algorithme EXACTEMENT:
+CODE NATIONAL 10 CHIFFRES = Position_6 + Col2 + Col3
 
-ÉTAPE 1: Identifier la Position à 6 chiffres (ex: 2009.90 → 200990)
-ÉTAPE 2: Lire la valeur ACTUELLE de Colonne 2 sur cette ligne (ou hériter du parent si vide)
-ÉTAPE 3: Lire la valeur ACTUELLE de Colonne 3 sur cette ligne (ou hériter du parent si vide)
-ÉTAPE 4: Construire le code: Position + Col2 + Col3 (DANS CET ORDRE EXACT)
+Position_6 = Les 6 premiers chiffres (ex: "8903.11" → "890311")
+Col2 = Chiffres 7-8 (colonne après la position)
+Col3 = Chiffres 9-10 (colonne après Col2)
 
-⚠️⚠️⚠️ RÈGLE DE POSITION ABSOLUE - NE JAMAIS INTERVERTIR ⚠️⚠️⚠️
+=== RÈGLES D'HÉRITAGE (CARRY-FORWARD) ===
 
-Le code 10 chiffres = [Position 6 chiffres] + [Col2 = positions 7-8] + [Col3 = positions 9-10]
+Les tableaux sont hiérarchiques. Certaines sous-lignes n'affichent pas tout le code.
+Tu DOIS maintenir l'héritage:
+- Si position_6 est vide → hériter du parent
+- Si col2 est vide → hériter du parent
+- Si col3 est vide → hériter du parent
 
-POSITION 7-8 = Toujours la valeur de COLONNE 2
-POSITION 9-10 = Toujours la valeur de COLONNE 3
+Exemple PDF:
+Position | Col2 | Col3 | Description          | Taux | Unité
+---------|------|------|----------------------|------|------
+8903.11  | 00   | 00   | Bateaux gonflables   | 2,5  | u
+8903.12  |      |      | - Autres:            |      |
+         | 00   | 00   | -- en bois           | 2,5  | u
+         |      | 10   | --- petits           | 2,5  | u
+         |      | 90   | --- autres           | 2,5  | u
 
-⚠️⚠️⚠️ RÈGLE VISUELLE CRITIQUE - IDENTIFICATION DES COLONNES ⚠️⚠️⚠️
+Construction:
+- Ligne "8903.11 | 00 | 00" → national_code = 8903110000 ✓
+- Ligne "8903.12" → parent, pas de taux
+- Ligne "| 00 | 00 | en bois" → position héritée 890312, code = 8903120000 ✓
+- Ligne "| | 10 | petits" → position=890312 (héritée), col2=00 (héritée), col3=10 → code = 8903120010 ✓
+- Ligne "| | 90 | autres" → position=890312 (héritée), col2=00 (héritée), col3=90 → code = 8903120090 ✓
 
-ATTENTION: Dans le PDF, les colonnes sont physiquement séparées.
-- La PREMIÈRE petite colonne après Position = COLONNE 2 (positions 7-8)
-- La DEUXIÈME petite colonne = COLONNE 3 (positions 9-10)
+=== FORMAT JSON STRICT ===
 
-MÊME si une seule valeur apparaît sur une ligne, tu dois déterminer si c'est en Col2 ou Col3:
-- Si la valeur est ALIGNÉE AVEC Col2 du parent → c'est Col2
-- Si la valeur est ALIGNÉE AVEC Col3 du parent → c'est Col3 (et Col2 est héritée)
-
-⚠️ EXEMPLE CHAPITRE 20 - POSITION 2001.90 ⚠️
-
-Ce que tu vois dans le PDF:
-Position | Col2 | Col3 | Description                                                      | Taux
----------|------|------|------------------------------------------------------------------|------
-2001.90  | 00   |      | - Autres                                                         | (parent)
-         |      | 11   | ---- en boîtes, verres, bocaux et récipients hermétiquement...   | 40
-         |      | 19   | ---- autrement présentées (en fûts, cuveaux, etc)                | 40
-         |      | 20   | --- oignons                                                      | 40
-         |      | 30   | --- maïs doux en grains ou épis précuits...                      | 40
-
-ANALYSE:
-- La ligne "2001.90 | 00 | | - Autres" définit Position=200190, Col2=00, Col3=vide
-- Les lignes suivantes ont Col2=VIDE (donc héritée=00) et Col3=11, 19, 20, 30...
-
-CONSTRUCTION DES CODES:
-Pour "| | 11 | en boîtes...":
-- Position = 200190 (héritée)
-- Col2 = 00 (héritée du parent) → POSITIONS 7-8
-- Col3 = 11 (de cette ligne) → POSITIONS 9-10
-- CODE = 200190 + 00 + 11 = 2001900011 ✓
-
-Pour "| | 19 | autrement présentées...":
-- CODE = 200190 + 00 + 19 = 2001900019 ✓
-
-Pour "| | 20 | oignons":
-- CODE = 200190 + 00 + 20 = 2001900020 ✓
-
-⚠️⚠️⚠️ CODES INTERDITS - LISTE NOIRE CHAPITRE 20 ⚠️⚠️⚠️
-
-Ces codes sont FAUX car ils inversent Col2 et Col3:
-❌ 2001901100 → CORRECT: 2001900011 (câpres en boîtes)
-❌ 2001901900 → CORRECT: 2001900019 (câpres autrement)
-❌ 2001902000 → CORRECT: 2001900020 (oignons)
-❌ 2001903000 → CORRECT: 2001900030 (maïs doux)
-❌ 2001904000 → CORRECT: 2001900040 (variantes)
-❌ 2001909000 → CORRECT: 2001900090 (autres)
-❌ 2002901000 → CORRECT: 2002900010 (simplement cuites)
-❌ 2002901100 → CORRECT: 2002900011 (purées en boîtes)
-❌ 2002901900 → CORRECT: 2002900019 (purées autrement)
-❌ 2002909100 → CORRECT: 2002900091 (autres conserves boîtes)
-❌ 2002909900 → CORRECT: 2002900099 (autres conserves)
-❌ 2009901100 → CORRECT: 2009900011
-❌ 2009901900 → CORRECT: 2009900019
-❌ 2009902100 → CORRECT: 2009900021
-❌ 2009902900 → CORRECT: 2009900029
-❌ 2009909100 → CORRECT: 2009900091
-❌ 2009909900 → CORRECT: 2009900099
-❌ 2009811000 → CORRECT: 2009810010
-❌ 2009891000 → CORRECT: 2009890010
-❌ 2009892200 → CORRECT: 2009890022
-
-⚠️⚠️⚠️ VALIDATION AUTO-DIAGNOSTIC ⚠️⚠️⚠️
-
-Pour chaque code généré pour 2001.90, 2002.90, 2009.xx:
-1. Extrais les caractères 7-8 du code
-2. Compare avec la valeur Col2 du parent (souvent 00)
-3. Si caractères 7-8 ≠ valeur Col2 → LE CODE EST INVERSÉ → CORRIGE-LE!
-
-EXEMPLE DE DIAGNOSTIC:
-- Tu génères 2001901100 pour "câpres en boîtes"
-- Caractères 7-8 = "11" mais Col2 parent = "00"
-- 11 ≠ 00 → ERREUR DÉTECTÉE → Le bon code est 2001900011
-
-EXEMPLE 2 - CHAPITRE 12 - POSITION 1205.90 (Format avec héritage multi-niveaux):
-
-PDF (ce que tu vois) :
-Position | Col2 | Col3 | Description                    | Taux
----------|------|------|--------------------------------|------
-1205.90  |      |      | - Autres                       | (PARENT niveau 0)
-         | 10   |      | --- de semence (a):            | (PARENT niveau 1, Col2=10)
-         |      | 10   | ---- de navette (a)            | 2,5   ← LIGNE TARIFAIRE
-         |      | 90   | ---- de colza (a)              | 2,5   ← LIGNE TARIFAIRE
-         | 90   |      | --- autres:                    | (PARENT niveau 1, Col2=90)
-         |      | 11   | ----- importées triturateurs   | 2,5   ← LIGNE TARIFAIRE
-         |      | 99   | ----- autres                   | 2,5   ← LIGNE TARIFAIRE
-
-EXTRACTION CORRECTE:
-
-Pour "| | 10 | de navette (a) | 2,5":
-→ Position héritée = 1205.90 = 120590
-→ Col2 héritée du parent "10" = 10 → positions 7-8
-→ Col3 de cette ligne = 10 → positions 9-10
-→ CODE = 120590 + 10 + 10 = 1205901010 ✓
-
-Pour "| | 11 | importées triturateurs | 2,5":
-→ Position héritée = 1205.90 = 120590
-→ Col2 héritée du parent "90" = 90 → positions 7-8
-→ Col3 de cette ligne = 11 → positions 9-10
-→ CODE = 120590 + 90 + 11 = 1205909011 ✓
-
-⚠️ ERREURS À NE JAMAIS FAIRE:
-FAUX: 1205901000 (00 en pos 9-10 au lieu de 10)
-VRAI: 1205901010 (10 hérité en pos 7-8, 10 en pos 9-10)
-
-FAUX: 1205909000 (00 en pos 9-10 au lieu de 11)
-VRAI: 1205909011 (90 hérité en pos 7-8, 11 en pos 9-10)
-
-AUTRE EXEMPLE - POSITION 1206.00:
-
-PDF:
-Position | Col2 | Col3 | Description                    | Taux
----------|------|------|--------------------------------|------
-1206.00  |      |      | Graines de tournesol           | (PARENT)
-         | 10   | 00   | --- de semence                 | 2,5   ← LIGNE TARIFAIRE
-         | 81   | 00   | --- importées triturateurs     | 2,5   ← LIGNE TARIFAIRE
-         | 89   | 00   | --- autres                     | 2,5   ← LIGNE TARIFAIRE
-
-Pour "| 10 | 00 | de semence | 2,5":
-→ Position héritée = 1206.00 = 120600
-→ Col2 de cette ligne = 10 → positions 7-8
-→ Col3 de cette ligne = 00 → positions 9-10
-→ CODE = 120600 + 10 + 00 = 1206001000 ✓
-
-RÈGLE UNIVERSELLE:
-1. TROUVE la Position 6 chiffres (héritée ou de la ligne)
-2. TROUVE la Col2 (héritée de la ligne parent OU de cette ligne si présente)
-3. TROUVE la Col3 (toujours de cette ligne car c'est le niveau le plus bas)
-4. CONCATÈNE: Position + Col2 + Col3 = Code 10 chiffres
-RAPPEL: Seules les lignes AVEC UN TAUX sont des lignes tarifaires.
-Les lignes SANS TAUX sont des en-têtes/parents qui définissent le contexte.
-
-=== CE QUE TU DOIS EXTRAIRE ===
-
-Pour CHAQUE ligne tarifaire avec un taux de droit (duty_rate):
-1. Reconstruire le CODE NATIONAL COMPLET À 10 CHIFFRES selon les règles ci-dessus
-2. Les 6 premiers chiffres forment le code SH (hs_code_6)
-3. La description exacte
-4. Le taux de droit (avec notes si présentes, ex: "2,5(a)")
-5. L'unité (kg, L, U, etc.)
-
-=== RÈGLES D'HÉRITAGE ===
-
-- Quand une colonne est VIDE, elle HÉRITE de la ligne précédente de niveau supérieur
-- Les lignes SANS taux sont des EN-TÊTES qui établissent le contexte pour les sous-lignes
-- Chaque ligne AVEC un taux doit avoir un code complet à 10 chiffres
-
-=== FORMAT JSON DE SORTIE ===
+Tu DOIS retourner ce JSON EXACT (pas d'autre format):
 
 {
+  "doc_type": "tariff_table",
+  "chapter_number": "XX",
   "summary": "Résumé du chapitre",
-  "key_points": ["Note importante 1", "Note 2"],
-  "chapter_info": {"number": 97, "title": "OBJETS D'ART, DE COLLECTION OU D'ANTIQUITE"},
-  "notes": {
-    "legal": ["1. Le présent chapitre ne comprend pas..."],
-    "subposition": [],
-    "complementary": []
-  },
-  "footnotes": {},
-"raw_lines": [
-    {"national_code": "9701210000", "hs_code_6": "970121", "description": "Tableaux, peintures et dessins ayant plus de 100 ans d'âge", "duty_rate": "2,5", "unit": "u"},
-    {"national_code": "9701290010", "hs_code_6": "970129", "description": "Autres en liège ayant plus de 100 ans d'âge", "duty_rate": "2,5", "unit": "kg"},
-    {"national_code": "9701290090", "hs_code_6": "970129", "description": "Autres ayant plus de 100 ans d'âge", "duty_rate": "2,5", "unit": "kg"}
+  "key_points": ["Point 1", "Point 2"],
+  "chapter_info": {"number": XX, "title": "Titre du chapitre"},
+  "raw_lines": [
+    {
+      "prefix_col": "8",
+      "position_6": "8903.11",
+      "col2": "00",
+      "col3": "00",
+      "national_code": "8903110000",
+      "hs_code_6": "890311",
+      "description": "Comportant un moteur hors-bord",
+      "duty_rate": "2,5",
+      "unit_norm": "u",
+      "unit_comp": "N"
+    }
   ],
-  "hs_codes": [
-    {"code": "9701.21", "code_clean": "970121", "description": "Tableaux, peintures et dessins ayant plus de 100 ans d'âge", "level": "subheading"},
-    {"code": "9701.29", "code_clean": "970129", "description": "Autres ayant plus de 100 ans d'âge", "level": "subheading"}
+  "notes": [
+    {
+      "note_type": "definition",
+      "anchor": "BRT",
+      "note_text": "BRT : Bruto Registered Ton (2,8316m3)",
+      "page_number": 2
+    },
+    {
+      "note_type": "chapter_note",
+      "anchor": "Note 1",
+      "note_text": "Le présent chapitre ne comprend pas...",
+      "page_number": 1
+    }
   ],
-  "trade_agreements": [],
-  "preferential_rates": [],
   "full_text": "TEXTE INTÉGRAL DU DOCUMENT..."
 }
 
+=== TYPES DE NOTES À EXTRAIRE ===
+
+1. "chapter_note" - Notes de chapitre (ex: "Note 1. Le présent chapitre...")
+2. "section_note" - Notes de section
+3. "definition" - Définitions (ex: "BRT : Bruto Registered Ton")
+4. "footnote" - Notes de bas de page (ex: "(a) Soumis à licence")
+5. "exclusion" - Exclusions (ex: "Ne comprend pas...")
+6. "remark" - Remarques générales
+
 === RÈGLES STRICTES ===
 
-✓ CHAQUE raw_line DOIT avoir un national_code de EXACTEMENT 10 CHIFFRES
-✓ CHAQUE raw_line DOIT avoir un duty_rate non-vide (sinon c'est un en-tête, pas une ligne tarifaire)
-✓ CHAQUE hs_codes DOIT avoir un code_clean de EXACTEMENT 6 CHIFFRES
-✓ IGNORER les codes entre crochets [XX.XX] - ce sont des positions réservées
-✓ EXTRAIRE ABSOLUMENT TOUTES LES LIGNES du tableau - sans limite, sans troncature
-✓ Préserver les notes (a), (b) dans duty_rate: "2,5(a)"
-✓ full_text doit contenir le TEXTE INTÉGRAL (jusqu'à 50000 caractères)
+✓ CHAQUE raw_line DOIT avoir:
+  - position_6: les 6 chiffres (format "XXXX.XX" ou "XXXXXX")
+  - col2: 2 chiffres ou vide (à hériter)
+  - col3: 2 chiffres ou vide (à hériter)
+  - description: texte descriptif
+  - duty_rate: nombre ou chaîne (ex: "2,5", 40, "17,5(a)")
+  - unit_norm: unité principale (KG, L, U, M2, etc.) ou null
+  - unit_comp: unité complémentaire ou null
 
-⚠️⚠️⚠️ VÉRIFICATION FINALE ⚠️⚠️⚠️
-Avant de répondre, vérifie:
-1. Tu as parcouru TOUTES les pages du PDF
-2. Les codes qui finissent par "0010" ou "0090" sont corrects (pas "1000" ou "9000")
-3. Les dernières lignes du chapitre sont incluses
+✓ prefix_col: Si présent, c'est le chiffre d'alignement À IGNORER
+✓ national_code: Optionnel, sera reconstruit si absent
+✓ hs_code_6: Optionnel, sera déduit de national_code
 
-**NE JAMAIS TRONQUER - EXTRAIRE 100% DES LIGNES TARIFAIRES DE TOUTES LES PAGES !**
+✓ duty_rate DOIT être un nombre (ou string convertible): "2,5", 40, "17.5"
+✓ unit_norm/unit_comp DOIVENT être des strings courtes: "KG", "L", "U", "M2", "N", "-"
+
+⚠️ IGNORER les codes entre crochets [XX.XX] - positions réservées
+⚠️ NE JAMAIS inventer de codes en paddant de zéros
+⚠️ EXTRAIRE 100% DES LIGNES DE TOUTES LES PAGES
 
 RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
 
 // =============================================================================
-// PROMPT CLAUDE - DOCUMENTS RÉGLEMENTAIRES (circulaires, accords, notes)
+// PROMPT RÉGLEMENTAIRE (inchangé)
 // =============================================================================
 
 const getRegulatoryPrompt = (title: string, category: string) => `Tu es un expert en réglementation douanière marocaine. Analyse ce document PDF (${category}) avec précision.
@@ -380,160 +474,58 @@ Document : ${title}
 Type : ${category}
 
 === CONTEXTE ===
-Ce document est un texte RÉGLEMENTAIRE/JURIDIQUE (circulaire, accord commercial, note technique, instruction, convention). 
-Il NE CONTIENT PAS de tableau tarifaire avec des codes SH à extraire.
-Tu dois extraire les informations juridiques et réglementaires pertinentes avec une attention particulière aux RÉFÉRENCES LÉGALES et DATES.
+Ce document est un texte RÉGLEMENTAIRE/JURIDIQUE. Il NE CONTIENT PAS de tableau tarifaire.
 
 === INFORMATIONS À EXTRAIRE ===
 
-1. RÉSUMÉ : Une synthèse claire du contenu et de l'objectif du document
+1. RÉSUMÉ : Synthèse claire du contenu
+2. POINTS CLÉS : Dispositions principales
+3. RÉFÉRENCES LÉGALES : Circulaires, lois, décrets, arrêtés, articles
+4. DATES IMPORTANTES : Publication, application, expiration
+5. AUTORITÉS ET SIGNATAIRES
+6. ACCORDS COMMERCIAUX (si applicable)
+7. CODES SH MENTIONNÉS (références explicites)
+8. PROCÉDURES ET OBLIGATIONS
 
-2. POINTS CLÉS : Les dispositions, règles ou obligations principales
-
-3. RÉFÉRENCES LÉGALES (CRITIQUE - extraire TOUTES les références) :
-   - Numéros de circulaires (ex: "Circulaire n° 4091/223")
-   - Références de lois (ex: "Dahir n° 1-77-339", "Loi n° 01-02")
-   - Décrets (ex: "Décret n° 2-77-862")
-   - Arrêtés ministériels
-   - Articles spécifiques cités (ex: "Article 15 du Code des Douanes")
-   - Notes techniques et instructions
-   - Références aux Bulletins Officiels (ex: "BO n° 3590 du 15/01/2023")
-   - Conventions internationales citées
-
-4. DATES IMPORTANTES (extraire TOUTES les dates avec leur contexte) :
-   - Date de publication/signature du document
-   - Date d'entrée en vigueur/application
-   - Date d'expiration (si applicable)
-   - Dates de périodes transitoires
-   - Dates limites mentionnées
-   - Dates de référence citées
-
-5. AUTORITÉS ET SIGNATAIRES :
-   - Autorité émettrice (ex: "Direction Générale des Douanes")
-   - Signataires nommés
-   - Services destinataires
-   - Ministères concernés
-
-6. ACCORDS COMMERCIAUX (si applicable) :
-   - Nom de l'accord
-   - Type (bilatéral, multilatéral, régional, transport, etc.)
-   - Parties/Pays concernés
-   - Date de signature et d'entrée en vigueur
-   - Principales dispositions et avantages
-
-7. TAUX PRÉFÉRENTIELS (si mentionnés) :
-   - Code accord
-   - Taux préférentiel
-   - Conditions d'application
-   - Pays d'origine concernés
-
-8. CODES SH MENTIONNÉS (si le document fait référence à des codes spécifiques) :
-   - Code au format XXXX.XX
-   - Description associée
-
-9. PROCÉDURES ET OBLIGATIONS :
-   - Formalités requises
-   - Documents à fournir
-   - Délais à respecter
-   - Sanctions en cas de non-conformité
-
-=== FORMAT JSON DE SORTIE ===
+=== FORMAT JSON ===
 
 {
-  "summary": "Résumé clair du document et son objectif principal",
-  "key_points": [
-    "Disposition principale 1",
-    "Obligation ou règle importante 2",
-    "Autre point clé 3"
-  ],
-  "chapter_info": {"number": null, "title": "Titre du document ou de l'accord"},
+  "summary": "Résumé...",
+  "key_points": ["Point 1", "Point 2"],
+  "chapter_info": {"number": null, "title": "Titre"},
   "document_type": "${category}",
-  "document_reference": "Numéro/référence officielle du document (ex: Circulaire n° 4091/223)",
-  "publication_date": "Date de publication/signature (format YYYY-MM-DD si possible)",
-  "effective_date": "Date d'entrée en vigueur (format YYYY-MM-DD si possible)",
-  "expiry_date": "Date d'expiration si applicable (format YYYY-MM-DD si possible)",
+  "document_reference": "Numéro officiel",
+  "publication_date": "YYYY-MM-DD",
+  "effective_date": "YYYY-MM-DD",
+  "expiry_date": "YYYY-MM-DD ou null",
   "legal_references": [
-    {
-      "type": "circulaire|loi|décret|arrêté|article|note|convention|bo",
-      "reference": "Numéro/référence complète",
-      "title": "Intitulé si disponible",
-      "date": "Date si mentionnée",
-      "context": "Pourquoi ce texte est cité (abroge, modifie, complète, etc.)"
-    }
+    {"type": "circulaire", "reference": "n° XXX", "title": "...", "date": "...", "context": "..."}
   ],
   "important_dates": [
-    {
-      "date": "YYYY-MM-DD ou format trouvé",
-      "type": "publication|application|expiration|limite|référence",
-      "description": "Contexte de cette date"
-    }
+    {"date": "YYYY-MM-DD", "type": "application", "description": "..."}
   ],
-  "issuing_authority": {
-    "name": "Nom de l'autorité émettrice",
-    "department": "Service/Direction",
-    "signatory": "Nom du signataire si mentionné"
-  },
-  "recipients": ["Direction régionale X", "Services concernés"],
+  "issuing_authority": {"name": "...", "department": "...", "signatory": "..."},
+  "recipients": ["Service 1", "Service 2"],
   "raw_lines": [],
   "hs_codes": [
-    {"code": "XXXX.XX", "code_clean": "XXXXXX", "description": "Description", "level": "reference"}
+    {"code": "XXXX.XX", "code_clean": "XXXXXX", "description": "...", "level": "reference"}
   ],
-  "trade_agreements": [
-    {
-      "code": "CODE_ACCORD",
-      "name": "Nom complet de l'accord",
-      "type": "Type d'accord (bilatéral, transport, association, etc.)",
-      "countries": ["Pays 1", "Pays 2"],
-      "mentioned_benefits": ["Avantage 1", "Exemption X"],
-      "signature_date": "Date de signature",
-      "entry_into_force": "Date d'entrée en vigueur"
-    }
-  ],
-  "preferential_rates": [
-    {
-      "agreement_code": "CODE_ACCORD",
-      "agreement_name": "Nom de l'accord",
-      "hs_code": "XXXXXX",
-      "preferential_rate": 0,
-      "conditions": "Conditions d'application",
-      "origin_countries": ["Pays d'origine"]
-    }
-  ],
-  "procedures": [
-    {
-      "name": "Nom de la procédure",
-      "required_documents": ["Document 1", "Document 2"],
-      "deadlines": "Délais applicables",
-      "penalties": "Sanctions en cas de non-respect"
-    }
-  ],
-  "authorities": ["Autorité compétente 1", "Ministère X"],
-  "abrogates": ["Références des textes abrogés par ce document"],
-  "modifies": ["Références des textes modifiés par ce document"],
-  "full_text": "TEXTE INTÉGRAL DU DOCUMENT - Copie ici TOUT le contenu textuel visible du PDF, incluant les articles, paragraphes, conditions, dispositions, annexes. Ce texte sera utilisé pour répondre aux questions précises."
+  "trade_agreements": [],
+  "preferential_rates": [],
+  "procedures": [],
+  "authorities": [],
+  "full_text": "TEXTE INTÉGRAL..."
 }
-
-=== RÈGLES ===
-✓ raw_lines DOIT être un tableau VIDE [] car ce n'est pas un document tarifaire
-✓ hs_codes peut contenir des codes SI le document y fait explicitement référence
-✓ Concentre-toi sur le contenu juridique et réglementaire
-✓ Extraire TOUTES les références légales avec leur type et contexte
-✓ Extraire TOUTES les dates importantes avec leur signification
-✓ Identifier les textes abrogés ou modifiés par ce document
-✓ Si le document est un accord de transport, identifier les parties et conditions
-✓ CRITIQUE: full_text doit contenir le TEXTE INTÉGRAL du document (jusqu'à 50000 caractères) pour permettre la recherche précise
-✓ Les formats de date doivent être normalisés en YYYY-MM-DD quand possible
 
 RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
 
 // =============================================================================
-// SÉLECTION DU PROMPT APPROPRIÉ - DÉTECTION AUTOMATIQUE INTELLIGENTE
+// CLASSIFICATION DU DOCUMENT
 // =============================================================================
 
 const TARIFF_CATEGORIES = ["tarif", "chapitre", "chapter", "nomenclature", "sh_code", "hs_code"];
 const REGULATORY_CATEGORIES = ["circulaire", "accord", "note", "instruction", "reglement", "règlement", "convention", "loi", "decret", "décret", "arrete", "arrêté"];
 
-// Document type detected by content analysis
 type DocumentType = "tariff" | "regulatory";
 
 interface DocumentClassification {
@@ -542,7 +534,6 @@ interface DocumentClassification {
   reason: string;
 }
 
-// Prompt de classification rapide - utilise peu de tokens
 const CLASSIFICATION_PROMPT = `Tu es un expert en classification de documents douaniers.
 
 Analyse les PREMIÈRES PAGES de ce PDF et détermine SON TYPE :
@@ -550,49 +541,39 @@ Analyse les PREMIÈRES PAGES de ce PDF et détermine SON TYPE :
 TYPE "tariff" si le document contient :
 - Un TABLEAU de nomenclature douanière avec des colonnes (Position, Description, Taux, Unité)
 - Des codes SH/HS à 6, 8 ou 10 chiffres organisés hiérarchiquement
-- Des taux de droits de douane en pourcentage (ex: 2,5%, 17,5%, 40%)
-- Des unités de mesure (kg, L, U, m², etc.)
-- Un titre comme "Chapitre XX" ou une référence au Système Harmonisé
+- Des taux de droits de douane en pourcentage
 
 TYPE "regulatory" si le document contient :
-- Un texte juridique/réglementaire (circulaire, note, décret, arrêté, accord)
+- Un texte juridique/réglementaire (circulaire, note, décret, accord)
 - Des paragraphes de texte législatif avec articles numérotés
-- Des références à d'autres textes de loi
-- Un en-tête officiel d'une administration (Douanes, Ministère, etc.)
-- Pas de tableau tarifaire structuré avec codes et taux
+- Pas de tableau tarifaire structuré
 
 RÉPONDS UNIQUEMENT avec ce JSON :
 {
   "type": "tariff" ou "regulatory",
   "confidence": 0.0 à 1.0,
-  "reason": "Explication courte en 1 phrase"
+  "reason": "Explication courte"
 }`;
 
-/**
- * Classifie automatiquement le document en analysant son contenu
- * Utilise une requête légère à Claude pour détecter le type
- */
 async function classifyDocument(
   base64Pdf: string,
   title: string,
   category: string,
   apiKey: string
 ): Promise<DocumentClassification> {
-  console.log(`[Classification] Starting auto-classification for: "${title}"`);
+  console.log(`[Classification] Starting for: "${title}"`);
   
-  // ÉTAPE 1: Classification heuristique par métadonnées (rapide, sans API call)
   const heuristicResult = classifyByHeuristics(title, category);
   if (heuristicResult.confidence >= 0.9) {
-    console.log(`[Classification] High-confidence heuristic match: ${heuristicResult.type} (${heuristicResult.confidence})`);
+    console.log(`[Classification] High-confidence heuristic: ${heuristicResult.type} (${heuristicResult.confidence})`);
     return heuristicResult;
   }
   
-  // ÉTAPE 2: Si pas assez confiant, utiliser Claude pour analyse du contenu
-  console.log(`[Classification] Heuristic confidence low (${heuristicResult.confidence}), using AI content analysis...`);
+  console.log(`[Classification] Heuristic low (${heuristicResult.confidence}), using AI...`);
   
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout pour classification
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
     const response = await fetch(ANTHROPIC_API_URL, {
       method: "POST",
@@ -605,22 +586,13 @@ async function classifyDocument(
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
         max_tokens: 500,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "document",
-                source: {
-                  type: "base64",
-                  media_type: "application/pdf",
-                  data: base64Pdf
-                }
-              },
-              { type: "text", text: CLASSIFICATION_PROMPT }
-            ]
-          }
-        ]
+        messages: [{
+          role: "user",
+          content: [
+            { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64Pdf } },
+            { type: "text", text: CLASSIFICATION_PROMPT }
+          ]
+        }]
       }),
       signal: controller.signal,
     });
@@ -628,42 +600,35 @@ async function classifyDocument(
     clearTimeout(timeoutId);
     
     if (!response.ok) {
-      console.warn(`[Classification] AI classification failed with status ${response.status}, falling back to heuristics`);
+      console.warn(`[Classification] AI failed ${response.status}, fallback to heuristics`);
       return heuristicResult;
     }
     
     const data = await response.json();
     const responseText = data.content?.[0]?.text || "";
-    
-    // Parse JSON response
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    
     if (jsonMatch) {
       const classification = JSON.parse(jsonMatch[0]);
-      console.log(`[Classification] AI classification: ${classification.type} (confidence: ${classification.confidence}) - ${classification.reason}`);
+      console.log(`[Classification] AI: ${classification.type} (${classification.confidence})`);
       return {
         type: classification.type === "tariff" ? "tariff" : "regulatory",
         confidence: Math.min(1, Math.max(0, classification.confidence || 0.8)),
-        reason: classification.reason || "Classified by AI content analysis"
+        reason: classification.reason || "AI classification"
       };
     }
     
-    console.warn(`[Classification] Could not parse AI response, falling back to heuristics`);
     return heuristicResult;
-    
   } catch (error) {
-    console.warn(`[Classification] AI classification error: ${error}, falling back to heuristics`);
+    console.warn(`[Classification] Error: ${error}, fallback to heuristics`);
     return heuristicResult;
   }
 }
 
-/**
- * Classification rapide par heuristiques (sans appel API)
- */
 function classifyByHeuristics(title: string, category: string): DocumentClassification {
   const categoryLower = category.toLowerCase();
   const titleLower = title.toLowerCase();
   
-  // Mots-clés forts pour tarif (confiance élevée)
   const strongTariffKeywords = [
     /sh\s*code/i, /hs\s*code/i, /chapitre\s*\d+/i, /chapter\s*\d+/i,
     /tarif\s*douanier/i, /nomenclature/i, /système\s*harmonisé/i
@@ -671,15 +636,10 @@ function classifyByHeuristics(title: string, category: string): DocumentClassifi
   
   for (const regex of strongTariffKeywords) {
     if (regex.test(titleLower) || regex.test(categoryLower)) {
-      return {
-        type: "tariff",
-        confidence: 0.95,
-        reason: `Mot-clé tarif fort détecté: ${regex.source}`
-      };
+      return { type: "tariff", confidence: 0.95, reason: `Mot-clé tarif: ${regex.source}` };
     }
   }
   
-  // Mots-clés forts pour réglementaire (confiance élevée)
   const strongRegulatoryKeywords = [
     /circulaire\s*n[°o]?/i, /décret\s*n[°o]?/i, /arrêté/i,
     /accord\s*(commercial|de\s*libre)/i, /convention/i, /note\s*technique/i
@@ -687,330 +647,724 @@ function classifyByHeuristics(title: string, category: string): DocumentClassifi
   
   for (const regex of strongRegulatoryKeywords) {
     if (regex.test(titleLower) || regex.test(categoryLower)) {
-      return {
-        type: "regulatory",
-        confidence: 0.95,
-        reason: `Mot-clé réglementaire fort détecté: ${regex.source}`
-      };
+      return { type: "regulatory", confidence: 0.95, reason: `Mot-clé réglementaire: ${regex.source}` };
     }
   }
   
-  // Vérification par catégories simples
-  const isTariffCategory = TARIFF_CATEGORIES.some(t => categoryLower.includes(t) || titleLower.includes(t));
-  const isRegulatoryCategory = REGULATORY_CATEGORIES.some(r => categoryLower.includes(r) || titleLower.includes(r));
+  const isTariff = TARIFF_CATEGORIES.some(t => categoryLower.includes(t) || titleLower.includes(t));
+  const isRegulatory = REGULATORY_CATEGORIES.some(r => categoryLower.includes(r) || titleLower.includes(r));
   
-  if (isTariffCategory && !isRegulatoryCategory) {
-    return { type: "tariff", confidence: 0.8, reason: "Catégorie tarifaire détectée" };
-  }
+  if (isTariff && !isRegulatory) return { type: "tariff", confidence: 0.8, reason: "Catégorie tarifaire" };
+  if (isRegulatory && !isTariff) return { type: "regulatory", confidence: 0.8, reason: "Catégorie réglementaire" };
   
-  if (isRegulatoryCategory && !isTariffCategory) {
-    return { type: "regulatory", confidence: 0.8, reason: "Catégorie réglementaire détectée" };
-  }
-  
-  // Pas assez de signaux - confiance basse, nécessite analyse IA
-  return {
-    type: "tariff", // Par défaut
-    confidence: 0.4,
-    reason: "Pas assez de signaux pour classification automatique"
-  };
+  return { type: "tariff", confidence: 0.4, reason: "Classification par défaut" };
 }
 
-/**
- * Sélectionne le prompt approprié basé sur le type de document
- */
 function getAnalysisPrompt(title: string, category: string, documentType: DocumentType = "tariff"): string {
   if (documentType === "regulatory") {
-    console.log(`Using REGULATORY prompt for: "${title}" (category: ${category})`);
+    console.log(`Using REGULATORY prompt for: "${title}"`);
     return getRegulatoryPrompt(title, category);
   }
-  
-  console.log(`Using TARIFF prompt for: "${title}" (category: ${category})`);
+  console.log(`Using TARIFF prompt for: "${title}"`);
   return getTariffPrompt(title, category);
 }
 
-// Fonction utilitaire pour vérifier le type de document (legacy compatibility)
 function isRegulatoryDocument(category: string, title: string): boolean {
   const result = classifyByHeuristics(title, category);
   return result.type === "regulatory" && result.confidence >= 0.7;
 }
 
 // =============================================================================
-// FONCTIONS DE TRAITEMENT
+// ÉTAPE 3: PROCESSRAWLINES - RECONSTRUCTION + HÉRITAGE + SWAP
 // =============================================================================
 
 /**
- * Nettoie un code SH (supprime points, espaces, tirets)
- * CRITIQUE: Préserve les zéros initiaux pour les chapitres 01-09
+ * Traite les lignes brutes avec héritage robuste et correction d'inversion
+ * SUPPRESSION DU PADDING - retourne null si invalide
  */
-function cleanCode(code: string): string {
-  if (!code) return "";
-  const raw = code.trim();
-  
-  // Traitement spécial pour les codes avec point (format XX.XX ou XXXX.XX)
-  if (raw.includes(".")) {
-    const parts = raw.split(".");
-    
-    // Format "XX.XX" (chapitre.position, ex: "07.02")
-    if (parts.length === 2 && parts[0].length <= 2 && parts[1].length === 2) {
-      // Préserver le zéro initial du chapitre: "07.02" → "0702"
-      const chapter = parts[0].padStart(2, "0"); // "7" → "07", "07" → "07"
-      const position = parts[1];
-      return chapter + position; // "0702"
-    }
-    
-    // Format "XXXX.XX" (position complète, ex: "0702.00" ou "1001.11")  
-    if (parts[0].length === 4 && parts[1].length === 2) {
-      // Préserver tel quel: "0702.00" → "070200"
-      return parts[0] + parts[1];
-    }
-    
-    // Autres formats avec point: supprimer les points et préserver les zéros initiaux
-    const cleaned = raw.replace(/[.\-\s]/g, "");
-    // Si le code original commençait par "0", s'assurer qu'il est préservé
-    if (raw.startsWith("0") && !cleaned.startsWith("0")) {
-      return "0" + cleaned;
-    }
-    return cleaned;
-  }
-  
-  // Pas de point: nettoyer simplement
-  const cleaned = raw.replace(/[.\-\s]/g, "");
-  return cleaned;
-}
-
-/**
- * Parse le taux de droit et extrait la note
- */
-function parseDutyRate(dutyStr: string | number | null): { rate: number | null; note: string | null } {
-  if (dutyStr === null || dutyStr === undefined) {
-    return { rate: null, note: null };
-  }
-  
-  if (typeof dutyStr === "number") {
-    return { rate: dutyStr, note: null };
-  }
-  
-  const str = String(dutyStr).trim();
-  if (str === "" || str === "–" || str === "-") {
-    return { rate: null, note: null };
-  }
-  
-  // Extraire note entre parenthèses
-  const noteMatch = str.match(/\(([a-z])\)/i);
-  const note = noteMatch ? noteMatch[1].toLowerCase() : null;
-  
-  // Extraire le nombre
-  const numStr = str.replace(/\([a-z]\)/gi, "").replace(",", ".").trim();
-  const rate = parseFloat(numStr);
-  
-  return {
-    rate: isNaN(rate) ? null : rate,
-    note,
-  };
-}
-
-/**
- * Traite les lignes brutes extraites par Claude (nouvelle version simplifiée)
- * Claude fournit maintenant directement le national_code à 10 chiffres
- */
-function processRawLines(rawLines: RawTarifLine[]): TariffLine[] {
+function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]; debug: RawTableDebug } {
   const results: TariffLine[] = [];
+  const debug: RawTableDebug = {
+    detectedSwaps: 0,
+    swappedSamples: [],
+    parsingWarnings: [],
+    skippedLines: 0
+  };
   
-  console.log(`Processing ${rawLines.length} raw lines from Claude...`);
+  // Variables d'héritage (carry-forward)
+  let lastPos6: string | null = null;
+  let lastCol2: string | null = null;
+  let lastCol3: string | null = null;
   
-  for (const line of rawLines) {
-    // Récupérer le code national directement fourni par Claude
-    let nationalCode = (line.national_code || "").trim().replace(/[.\-\s]/g, "");
+  console.log(`[processRawLines] Processing ${rawLines.length} raw lines...`);
+  
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
     
-    // Vérifier qu'on a un code
-    if (!nationalCode) {
-      console.log(`Skipping line without national_code: ${line.description?.substring(0, 50)}`);
+    // Ignorer les codes réservés [XX.XX]
+    if (line.position_6 && isReservedCode(line.position_6)) {
+      debug.parsingWarnings.push(`Line ${i}: Reserved code [${line.position_6}] ignored`);
+      debug.skippedLines++;
       continue;
     }
     
-    // Préserver les zéros initiaux et compléter à 10 chiffres
-    nationalCode = nationalCode.padEnd(10, "0").slice(0, 10);
+    // ÉTAPE 1: Normaliser la position à 6 chiffres
+    let pos6: string | null = null;
     
-    // Validation: doit être exactement 10 chiffres
-    if (!/^\d{10}$/.test(nationalCode)) {
-      console.warn(`Invalid national_code format: ${line.national_code} -> ${nationalCode}`);
+    // D'abord essayer position_6
+    if (line.position_6) {
+      const cleaned = line.position_6.replace(/[\.\-\s]/g, "");
+      const digits = digitsOnly(cleaned);
+      if (digits.length === 6) {
+        pos6 = digits;
+      } else if (digits.length === 4) {
+        // Format "XX.XX" (heading) - compléter avec "00"
+        pos6 = digits + "00";
+      }
+    }
+    
+    // Si pas de position valide, essayer depuis national_code
+    if (!pos6 && line.national_code) {
+      const nc = normalize10Strict(line.national_code);
+      if (nc) {
+        pos6 = nc.slice(0, 6);
+      }
+    }
+    
+    // Hériter si toujours pas de position
+    if (!pos6 && lastPos6) {
+      pos6 = lastPos6;
+    }
+    
+    // Si toujours pas de position, ignorer la ligne
+    if (!pos6) {
+      debug.parsingWarnings.push(`Line ${i}: No valid position_6, skipped`);
+      debug.skippedLines++;
       continue;
     }
     
-    // Parser le taux de droit
-    const { rate, note } = parseDutyRate(line.duty_rate);
+    // Mettre à jour lastPos6 si on a une nouvelle position
+    if (line.position_6) {
+      lastPos6 = pos6;
+    }
     
-    // Ne garder que les lignes avec un taux valide
-    if (rate === null) {
-      console.log(`Skipping line without duty_rate: ${nationalCode}`);
+    // ÉTAPE 2: Normaliser col2 (positions 7-8)
+    let col2 = normalize2Strict(line.col2);
+    if (!col2) {
+      // Essayer d'extraire depuis national_code
+      if (line.national_code) {
+        const nc = normalize10Strict(line.national_code);
+        if (nc) col2 = nc.slice(6, 8);
+      }
+      // Sinon hériter
+      if (!col2 && lastCol2) col2 = lastCol2;
+    }
+    
+    // Mettre à jour l'héritage si on a une valeur explicite
+    if (line.col2 && normalize2Strict(line.col2)) {
+      lastCol2 = normalize2Strict(line.col2);
+    }
+    
+    // ÉTAPE 3: Normaliser col3 (positions 9-10)
+    let col3 = normalize2Strict(line.col3);
+    if (!col3) {
+      // Essayer d'extraire depuis national_code
+      if (line.national_code) {
+        const nc = normalize10Strict(line.national_code);
+        if (nc) col3 = nc.slice(8, 10);
+      }
+      // Sinon hériter
+      if (!col3 && lastCol3) col3 = lastCol3;
+    }
+    
+    // Mettre à jour l'héritage si on a une valeur explicite
+    if (line.col3 && normalize2Strict(line.col3)) {
+      lastCol3 = normalize2Strict(line.col3);
+    }
+    
+    // ÉTAPE 4: Reconstruire national_code
+    let nationalCode: string | null = null;
+    
+    // D'abord essayer le national_code fourni
+    if (line.national_code) {
+      nationalCode = normalize10Strict(line.national_code);
+    }
+    
+    // Sinon reconstruire
+    if (!nationalCode && col2 && col3) {
+      nationalCode = pos6 + col2 + col3;
+    }
+    
+    // Validation stricte: exactement 10 chiffres
+    if (!nationalCode || nationalCode.length !== 10 || !/^\d{10}$/.test(nationalCode)) {
+      debug.parsingWarnings.push(`Line ${i}: Invalid national_code "${nationalCode}", skipped (NO PADDING)`);
+      debug.skippedLines++;
       continue;
     }
     
-    // Déduire hs_code_6 si non fourni
-    const hsCode6 = line.hs_code_6 ? cleanCode(line.hs_code_6).slice(0, 6).padEnd(6, "0") : nationalCode.slice(0, 6);
+    // ÉTAPE 5: Correction d'inversion duty_rate / unit_norm
+    const { duty_rate, unit_norm, swapped } = fixRateUnitSwap(line, debug);
     
-    console.log(`Processed: ${nationalCode} (HS6: ${hsCode6}) - ${line.description?.substring(0, 40)}`);
+    // ÉTAPE 6: Validation du taux
+    if (duty_rate === null) {
+      // Ligne sans taux = en-tête parent, pas une ligne tarifaire
+      // Mais on met à jour l'héritage quand même
+      if (pos6) lastPos6 = pos6;
+      if (col2) lastCol2 = col2;
+      if (col3) lastCol3 = col3;
+      continue;
+    }
     
+    // ÉTAPE 7: Extraire la note du taux
+    const dutyNote = extractDutyNote(line.duty_rate ?? null);
+    
+    // ÉTAPE 8: Calculer hs_code_6
+    const hsCode6 = nationalCode.slice(0, 6);
+    
+    // Ligne valide!
     results.push({
       national_code: nationalCode,
       hs_code_6: hsCode6,
       description: (line.description || "").replace(/^[–\-\s]+/, "").trim(),
-      duty_rate: rate,
-      duty_note: note,
-      unit: line.unit || null,
-      is_inherited: false,
+      duty_rate: duty_rate,
+      duty_note: dutyNote,
+      unit_norm: unit_norm,
+      unit_comp: line.unit_comp || null,
+      is_inherited: swapped || !line.national_code // Marqué si reconstruit
     });
+    
+    // Mettre à jour l'héritage pour les lignes suivantes
+    lastPos6 = pos6;
+    lastCol2 = col2;
+    lastCol3 = col3;
   }
   
-  console.log(`Processed ${results.length} valid tariff lines`);
-  return results;
+  console.log(`[processRawLines] Processed ${results.length} valid lines, ${debug.skippedLines} skipped, ${debug.detectedSwaps} swaps`);
+  
+  return { tariffLines: results, debug };
 }
 
+// =============================================================================
+// ÉTAPE 4: FALLBACK - EXTRACTION PARTIELLE ET AGRESSIVE
+// =============================================================================
+
 /**
- * Vérifie si un code est entre crochets (position réservée/vide)
- * Détecte aussi les codes nettoyés qui contenaient des crochets
- * NOTE: Les codes VIDES ne sont PAS réservés - ils représentent des lignes héritées
+ * Tente de réparer un JSON tronqué
  */
-function isReservedCode(code: string): boolean {
-  // IMPORTANT: code vide = ligne héritée, PAS réservée
-  // Ces lignes doivent être traitées par la logique d'héritage (CAS 2b)
-  if (!code || code.trim() === "") return false;
-  const raw = code.trim();
-  // Crochets présents = position réservée/vide
-  if (raw.startsWith("[") || raw.endsWith("]") || raw.includes("[") || raw.includes("]")) {
-    return true;
+function repairTruncatedJson(text: string): string {
+  let repaired = text.trim();
+  
+  // Supprimer les virgules pendantes
+  repaired = repaired.replace(/,\s*([}\]])/g, '$1');
+  
+  // Fermer les chaînes ouvertes
+  const lastPart = repaired.slice(-500);
+  const lastQuote = lastPart.lastIndexOf('"');
+  if (lastQuote !== -1) {
+    const afterLastQuote = lastPart.slice(lastQuote + 1);
+    if (!afterLastQuote.match(/^\s*[,:}\]]/)) {
+      repaired = repaired + '"';
+    }
   }
-  return false;
+  
+  // Équilibrer accolades et crochets
+  const openBraces = (repaired.match(/\{/g) || []).length;
+  const closeBraces = (repaired.match(/\}/g) || []).length;
+  const openBrackets = (repaired.match(/\[/g) || []).length;
+  const closeBrackets = (repaired.match(/\]/g) || []).length;
+  
+  for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += "]";
+  for (let i = 0; i < openBraces - closeBraces; i++) repaired += "}";
+  
+  return repaired;
 }
 
 /**
- * Vérifie si un code clean est valide (6 chiffres uniquement)
+ * Extrait les données partielles depuis un JSON malformé
+ * ÉTAPE 4: Unifié au format RawTariffLine
  */
-function isValidCleanCode(codeClean: string): boolean {
-  if (!codeClean) return false;
-  // Doit être exactement 6 chiffres
-  return /^\d{6}$/.test(codeClean);
+function extractPartialData(text: string, debug: RawTableDebug): any {
+  const result: any = {};
+  
+  // Extraire summary
+  const summaryMatch = text.match(/"summary"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+  if (summaryMatch) result.summary = summaryMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+  
+  // Extraire full_text
+  const fullTextMatch = text.match(/"full_text"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (fullTextMatch) {
+    result.full_text = fullTextMatch[1]
+      .replace(/\\"/g, '"')
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t')
+      .replace(/\\\\/g, '\\');
+  }
+  
+  // Extraire key_points
+  const keyPointsMatch = text.match(/"key_points"\s*:\s*\[((?:[^\[\]]|\[(?:[^\[\]]|\[[^\[\]]*\])*\])*)\]/);
+  if (keyPointsMatch) {
+    try {
+      result.key_points = JSON.parse('[' + keyPointsMatch[1] + ']');
+    } catch {
+      const points = keyPointsMatch[1].match(/"([^"]+)"/g);
+      result.key_points = points ? points.map(p => p.replace(/"/g, '')) : [];
+    }
+  }
+  
+  // Extraire chapter_info
+  const chapterMatch = text.match(/"chapter_info"\s*:\s*\{([^}]+)\}/);
+  if (chapterMatch) {
+    try {
+      result.chapter_info = JSON.parse('{' + chapterMatch[1] + '}');
+    } catch {
+      const numMatch = chapterMatch[1].match(/"number"\s*:\s*(\d+)/);
+      const titleMatch = chapterMatch[1].match(/"title"\s*:\s*"([^"]+)"/);
+      if (numMatch || titleMatch) {
+        result.chapter_info = {
+          number: numMatch ? parseInt(numMatch[1]) : 0,
+          title: titleMatch ? titleMatch[1] : ""
+        };
+      }
+    }
+  }
+  
+  // IMPORTANT: Extraire raw_lines au format RawTariffLine
+  const rawLinesMatch = text.match(/"raw_lines"\s*:\s*\[([\s\S]*?)(?:\](?:\s*,\s*"|\s*\})|$)/);
+  if (rawLinesMatch) {
+    const rawLinesContent = rawLinesMatch[1];
+    const lines: RawTariffLine[] = [];
+    
+    const lineMatches = rawLinesContent.matchAll(/\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g);
+    for (const match of lineMatches) {
+      try {
+        const content = match[1];
+        const lineObj: RawTariffLine = {};
+        
+        // Extraire les champs du nouveau format
+        const prefixMatch = content.match(/"prefix_col"\s*:\s*"([^"]*)"/);
+        lineObj.prefix_col = prefixMatch ? prefixMatch[1] : null;
+        
+        const pos6Match = content.match(/"position_6"\s*:\s*"([^"]*)"/);
+        lineObj.position_6 = pos6Match ? pos6Match[1] : null;
+        
+        const col2Match = content.match(/"col2"\s*:\s*"([^"]*)"/);
+        lineObj.col2 = col2Match ? col2Match[1] : null;
+        
+        const col3Match = content.match(/"col3"\s*:\s*"([^"]*)"/);
+        lineObj.col3 = col3Match ? col3Match[1] : null;
+        
+        const ncMatch = content.match(/"national_code"\s*:\s*"([^"]*)"/);
+        lineObj.national_code = ncMatch ? ncMatch[1] : null;
+        
+        const hs6Match = content.match(/"hs_code_6"\s*:\s*"([^"]*)"/);
+        lineObj.hs_code_6 = hs6Match ? hs6Match[1] : null;
+        
+        const descMatch = content.match(/"description"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+        lineObj.description = descMatch ? descMatch[1].replace(/\\"/g, '"') : null;
+        
+        const dutyMatch = content.match(/"duty_rate"\s*:\s*(?:"([^"]+)"|(\d+\.?\d*)|null)/);
+        if (dutyMatch) {
+          lineObj.duty_rate = dutyMatch[1] || (dutyMatch[2] ? parseFloat(dutyMatch[2]) : null);
+        }
+        
+        const unitNormMatch = content.match(/"unit_norm"\s*:\s*(?:"([^"]+)"|null)/);
+        lineObj.unit_norm = unitNormMatch ? unitNormMatch[1] || null : null;
+        
+        const unitCompMatch = content.match(/"unit_comp"\s*:\s*(?:"([^"]+)"|null)/);
+        lineObj.unit_comp = unitCompMatch ? unitCompMatch[1] || null : null;
+        
+        // FALLBACK: Ancien format col1..col5
+        if (!lineObj.position_6 && !lineObj.national_code) {
+          const col1Match = content.match(/"col1"\s*:\s*"([^"]*)"/);
+          const col2OldMatch = content.match(/"col2"\s*:\s*"([^"]*)"/);
+          const col3OldMatch = content.match(/"col3"\s*:\s*"([^"]*)"/);
+          
+          if (col1Match) {
+            // Tenter de construire depuis col1+col2+col3
+            const combined = digitsOnly(col1Match[1] + (col2OldMatch?.[1] || "") + (col3OldMatch?.[1] || ""));
+            if (combined.length >= 6) {
+              lineObj.position_6 = combined.slice(0, 6);
+              if (combined.length >= 8) lineObj.col2 = combined.slice(6, 8);
+              if (combined.length >= 10) lineObj.col3 = combined.slice(8, 10);
+            }
+          }
+          debug.parsingWarnings.push(`Fallback: Converted old format col1..col5 to RawTariffLine`);
+        }
+        
+        // Appliquer correction swap
+        if (lineObj.duty_rate || lineObj.unit_norm) {
+          const { duty_rate, unit_norm } = fixRateUnitSwap(lineObj, debug);
+          lineObj.duty_rate = duty_rate;
+          lineObj.unit_norm = unit_norm;
+        }
+        
+        // Garder si on a au moins une position ou description
+        if (lineObj.position_6 || lineObj.national_code || lineObj.description) {
+          lines.push(lineObj);
+        }
+      } catch (lineError) {
+        debug.parsingWarnings.push(`Failed to parse line: ${match[0].substring(0, 100)}`);
+      }
+    }
+    
+    if (lines.length > 0) {
+      result.raw_lines = lines;
+      console.log(`[extractPartialData] Extracted ${lines.length} raw_lines`);
+    }
+  }
+  
+  // Extraire notes
+  const notesMatch = text.match(/"notes"\s*:\s*\[([\s\S]*?)(?:\](?:\s*,\s*"|\s*\})|$)/);
+  if (notesMatch) {
+    const notes: ExtractedNote[] = [];
+    const noteMatches = notesMatch[1].matchAll(/\{([^{}]*)\}/g);
+    for (const match of noteMatches) {
+      try {
+        const content = match[1];
+        const typeMatch = content.match(/"note_type"\s*:\s*"([^"]*)"/);
+        const anchorMatch = content.match(/"anchor"\s*:\s*"([^"]*)"/);
+        const textMatch = content.match(/"note_text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+        const pageMatch = content.match(/"page_number"\s*:\s*(\d+)/);
+        
+        if (textMatch) {
+          notes.push({
+            note_type: (typeMatch?.[1] || "remark") as ExtractedNote["note_type"],
+            anchor: anchorMatch?.[1] || undefined,
+            note_text: textMatch[1].replace(/\\"/g, '"'),
+            page_number: pageMatch ? parseInt(pageMatch[1]) : undefined
+          });
+        }
+      } catch {}
+    }
+    if (notes.length > 0) result.extracted_notes = notes;
+  }
+  
+  // Extraire hs_codes si raw_lines absent
+  if (!result.raw_lines) {
+    const hsCodesMatch = text.match(/"hs_codes"\s*:\s*\[([\s\S]*?)(?:\](?:\s*,\s*"|\s*\})|$)/);
+    if (hsCodesMatch) {
+      const codes: any[] = [];
+      const codeMatches = hsCodesMatch[1].matchAll(/\{([^{}]*)\}/g);
+      for (const match of codeMatches) {
+        try {
+          const codeObj = JSON.parse('{' + match[1] + '}');
+          if (codeObj.code_clean && /^\d{6}$/.test(codeObj.code_clean)) {
+            codes.push(codeObj);
+          }
+        } catch {}
+      }
+      if (codes.length > 0) result.hs_codes = codes;
+    }
+  }
+  
+  // Extraire trade_agreements
+  const agreementsMatch = text.match(/"trade_agreements"\s*:\s*\[([\s\S]*?)(?:\](?:\s*,\s*"|\s*\})|$)/);
+  if (agreementsMatch && agreementsMatch[1].trim().length > 2) {
+    try { result.trade_agreements = JSON.parse('[' + agreementsMatch[1] + ']'); } catch {}
+  }
+  
+  // Extraire preferential_rates
+  const prefRatesMatch = text.match(/"preferential_rates"\s*:\s*\[([\s\S]*?)(?:\](?:\s*,\s*"|\s*\})|$)/);
+  if (prefRatesMatch && prefRatesMatch[1].trim().length > 2) {
+    try { result.preferential_rates = JSON.parse('[' + prefRatesMatch[1] + ']'); } catch {}
+  }
+  
+  return result;
 }
 
 /**
- * Extrait les codes HS à 6 chiffres uniques (version simplifiée)
- * @param tariffLines - Lignes tarifaires reconstruites
- * @param rawLines - Lignes brutes de Claude (avec national_code)
- * @param claudeHSCodes - Codes SH directement fournis par Claude (optionnel)
+ * Extraction agressive des lignes brutes via regex
+ * ÉTAPE 4: Unifié au format RawTariffLine
  */
-function extractHSCodes(tariffLines: TariffLine[], rawLines: RawTarifLine[], claudeHSCodes?: any[]): HSCodeEntry[] {
-  const seen = new Set<string>();
-  const results: HSCodeEntry[] = [];
+function extractRawLinesAggressively(text: string, debug: RawTableDebug): RawTariffLine[] {
+  console.log("[extractRawLinesAggressively] Attempting aggressive extraction...");
+  const lines: RawTariffLine[] = [];
   
-  // Map pour stocker les descriptions de heading depuis Claude
-  const headingDescriptions = new Map<string, string>();
+  // Pattern pour objets dans raw_lines
+  const rawLinesRegex = /["']raw_lines["']\s*:\s*\[\s*([\s\S]*?)\s*\]\s*(?:,\s*["']|$|\})/;
+  const rawLinesMatch = text.match(rawLinesRegex);
   
-  // ÉTAPE 1: Récupérer les descriptions depuis hs_codes de Claude (source fiable)
-  if (claudeHSCodes && Array.isArray(claudeHSCodes)) {
-    for (const hs of claudeHSCodes) {
-      const code = hs.code_clean || cleanCode(hs.code || "");
-      const desc = (hs.description || "").trim();
-      if (code && code.length >= 4 && desc && desc.length > 2) {
-        const code6 = code.length >= 6 ? code.slice(0, 6) : code.padEnd(6, "0");
-        if (isValidCleanCode(code6) && !headingDescriptions.has(code6)) {
-          headingDescriptions.set(code6, desc);
-          console.log(`[Claude hs_codes] Description for ${code6}: "${desc.substring(0, 50)}..."`);
+  if (rawLinesMatch) {
+    const content = rawLinesMatch[1];
+    const objectRegex = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g;
+    let match;
+    
+    while ((match = objectRegex.exec(content)) !== null) {
+      try {
+        const lineObj = JSON.parse(match[0]) as RawTariffLine;
+        
+        // Convertir ancien format si nécessaire
+        if ((lineObj as any).col1 !== undefined && !lineObj.position_6) {
+          const col1 = (lineObj as any).col1 || "";
+          const col2Old = (lineObj as any).col2 || "";
+          const col3Old = (lineObj as any).col3 || "";
+          const combined = digitsOnly(col1 + col2Old + col3Old);
+          if (combined.length >= 6) {
+            lineObj.position_6 = combined.slice(0, 6);
+            if (combined.length >= 8) lineObj.col2 = combined.slice(6, 8);
+            if (combined.length >= 10) lineObj.col3 = combined.slice(8, 10);
+          }
+          debug.parsingWarnings.push(`Aggressive: Converted old format`);
+        }
+        
+        // Appliquer swap si nécessaire
+        const { duty_rate, unit_norm } = fixRateUnitSwap(lineObj, debug);
+        lineObj.duty_rate = duty_rate;
+        lineObj.unit_norm = unit_norm;
+        
+        if (lineObj.position_6 || lineObj.national_code || lineObj.description) {
+          lines.push(lineObj);
+        }
+      } catch {
+        // Extraction manuelle
+        const lineData: RawTariffLine = {};
+        
+        const pos6Match = match[0].match(/["']position_6["']\s*:\s*["']([^"']+)["']/);
+        lineData.position_6 = pos6Match?.[1] || null;
+        
+        const col2Match = match[0].match(/["']col2["']\s*:\s*["']([^"']+)["']/);
+        lineData.col2 = col2Match?.[1] || null;
+        
+        const col3Match = match[0].match(/["']col3["']\s*:\s*["']([^"']+)["']/);
+        lineData.col3 = col3Match?.[1] || null;
+        
+        const ncMatch = match[0].match(/["']national_code["']\s*:\s*["']([^"']+)["']/);
+        lineData.national_code = ncMatch?.[1] || null;
+        
+        const descMatch = match[0].match(/["']description["']\s*:\s*["']([^"']*(?:\\.[^"']*)*)["']/);
+        lineData.description = descMatch?.[1]?.replace(/\\"/g, '"') || null;
+        
+        const dutyMatch = match[0].match(/["']duty_rate["']\s*:\s*(?:["']([^"']+)["']|(\d+\.?\d*)|null)/);
+        lineData.duty_rate = dutyMatch?.[1] || (dutyMatch?.[2] ? parseFloat(dutyMatch[2]) : null);
+        
+        const unitMatch = match[0].match(/["']unit_norm["']\s*:\s*(?:["']([^"']*)["']|null)/);
+        lineData.unit_norm = unitMatch?.[1] || null;
+        
+        if (lineData.position_6 || lineData.national_code || lineData.description) {
+          lines.push(lineData);
         }
       }
     }
   }
   
-  // ÉTAPE 2: Extraire les codes SH depuis les hs_codes de Claude
+  console.log(`[extractRawLinesAggressively] Found ${lines.length} lines`);
+  return lines;
+}
+
+/**
+ * Parse JSON avec tentatives multiples
+ */
+function parseJsonRobust(text: string, debug: RawTableDebug): { parsed: any | null; method: string } {
+  // Tentative 1: Parse direct
+  try {
+    return { parsed: JSON.parse(text), method: "direct" };
+  } catch {}
+  
+  // Tentative 2: Après réparation
+  const repaired = repairTruncatedJson(text);
+  try {
+    return { parsed: JSON.parse(repaired), method: "repaired" };
+  } catch {}
+  
+  // Tentative 3: Extraction partielle
+  try {
+    const partial = extractPartialData(text, debug);
+    if (partial && (partial.raw_lines || partial.summary || partial.hs_codes)) {
+      return { parsed: partial, method: "partial" };
+    }
+  } catch {}
+  
+  // Tentative 4: Plus grand objet JSON valide
+  let bestMatch = null;
+  let bestLength = 0;
+  
+  const jsonObjects = text.matchAll(/\{[\s\S]*?\}/g);
+  for (const match of jsonObjects) {
+    if (match[0].length > bestLength) {
+      try {
+        JSON.parse(match[0]);
+        bestMatch = match[0];
+        bestLength = match[0].length;
+      } catch {}
+    }
+  }
+  
+  if (bestMatch) {
+    try {
+      return { parsed: JSON.parse(bestMatch), method: "largest_object" };
+    } catch {}
+  }
+  
+  return { parsed: null, method: "failed" };
+}
+
+// =============================================================================
+// ÉTAPE 6: EXTRACTION DES HS CODES DEPUIS TARIFF LINES
+// =============================================================================
+
+/**
+ * Extrait les codes HS uniques depuis les lignes tarifaires validées
+ */
+function extractHSCodesFromTariffLines(
+  tariffLines: TariffLine[],
+  rawLines: RawTariffLine[],
+  claudeHSCodes?: any[]
+): HSCodeEntry[] {
+  const seen = new Set<string>();
+  const results: HSCodeEntry[] = [];
+  const descriptionMap = new Map<string, string>();
+  
+  // ÉTAPE 1: Collecter les descriptions depuis Claude hs_codes
   if (claudeHSCodes && Array.isArray(claudeHSCodes)) {
     for (const hs of claudeHSCodes) {
-      const codeRaw = hs.code_clean || cleanCode(hs.code || "");
-      if (!codeRaw) continue;
+      const code = hs.code_clean || digitsOnly(hs.code || "");
+      const desc = (hs.description || "").trim();
+      if (code && code.length >= 6 && desc) {
+        const code6 = code.slice(0, 6);
+        if (!descriptionMap.has(code6)) {
+          descriptionMap.set(code6, desc);
+        }
+      }
+    }
+  }
+  
+  // ÉTAPE 2: Ajouter les codes depuis tariffLines validées (SOURCE PRINCIPALE)
+  for (const line of tariffLines) {
+    const code6 = line.hs_code_6;
+    if (code6 && isValidCleanCode(code6) && !seen.has(code6)) {
+      seen.add(code6);
+      const desc = descriptionMap.get(code6) || line.description;
+      results.push({
+        code: `${code6.slice(0, 4)}.${code6.slice(4, 6)}`,
+        code_clean: code6,
+        description: desc,
+        level: "subheading"
+      });
+    }
+  }
+  
+  // ÉTAPE 3: Compléter depuis rawLines
+  for (const line of rawLines) {
+    const hs6 = line.hs_code_6 ? digitsOnly(line.hs_code_6).slice(0, 6) :
+                line.national_code ? digitsOnly(line.national_code).slice(0, 6) : null;
+    
+    if (hs6 && isValidCleanCode(hs6) && !seen.has(hs6)) {
+      seen.add(hs6);
+      const desc = descriptionMap.get(hs6) || (line.description || "").replace(/^[–\-\s]+/, "").trim();
+      results.push({
+        code: `${hs6.slice(0, 4)}.${hs6.slice(4, 6)}`,
+        code_clean: hs6,
+        description: desc,
+        level: "subheading"
+      });
+    }
+  }
+  
+  // ÉTAPE 4: Compléter depuis Claude hs_codes
+  if (claudeHSCodes && Array.isArray(claudeHSCodes)) {
+    for (const hs of claudeHSCodes) {
+      const codeRaw = hs.code_clean || digitsOnly(hs.code || "");
+      const code6 = codeRaw.length >= 6 ? codeRaw.slice(0, 6) : null;
       
-      const code6 = codeRaw.length >= 6 ? codeRaw.slice(0, 6) : codeRaw.padEnd(6, "0");
-      
-      if (isValidCleanCode(code6) && !seen.has(code6)) {
+      if (code6 && isValidCleanCode(code6) && !seen.has(code6)) {
         seen.add(code6);
-        const desc = headingDescriptions.get(code6) || (hs.description || "").trim();
         results.push({
           code: `${code6.slice(0, 4)}.${code6.slice(4, 6)}`,
           code_clean: code6,
-          description: desc,
-          level: hs.level || "subheading",
+          description: hs.description || "",
+          level: hs.level || "subheading"
         });
       }
     }
   }
   
-  console.log(`[extractHSCodes] Collected ${results.length} codes from Claude hs_codes`);
-  
-  // ÉTAPE 3: Compléter avec les codes depuis rawLines (hs_code_6)
-  for (const line of rawLines) {
-    const hsCode6 = line.hs_code_6 ? cleanCode(line.hs_code_6).slice(0, 6) : 
-                    line.national_code ? line.national_code.replace(/[.\-\s]/g, "").slice(0, 6) : "";
-    
-    if (hsCode6 && isValidCleanCode(hsCode6) && !seen.has(hsCode6)) {
-      seen.add(hsCode6);
-      const desc = headingDescriptions.get(hsCode6) || 
-                   (line.description || "").replace(/^[–\-\s]+/, "").trim();
-      results.push({
-        code: `${hsCode6.slice(0, 4)}.${hsCode6.slice(4, 6)}`,
-        code_clean: hsCode6,
-        description: desc,
-        level: "subheading",
-      });
-    }
-  }
-  
-  // ÉTAPE 4: Compléter avec les codes depuis tariffLines
-  for (const line of tariffLines) {
-    const code6 = line.hs_code_6;
-    if (code6 && isValidCleanCode(code6) && !seen.has(code6)) {
-      seen.add(code6);
-      const desc = headingDescriptions.get(code6) || line.description;
-      results.push({
-        code: `${code6.slice(0, 4)}.${code6.slice(4, 6)}`,
-        code_clean: code6,
-        description: desc,
-        level: "subheading",
-      });
-    }
-  }
-  
-  console.log(`[extractHSCodes] Total HS codes extracted: ${results.length}`);
+  console.log(`[extractHSCodesFromTariffLines] Total: ${results.length} HS codes`);
   return results;
 }
-// Code orphelin supprimé - fonction extractHSCodes complète ci-dessus
 
 // =============================================================================
-// HELPER FUNCTIONS
+// ÉTAPE 7: EXTRACTION DES NOTES
+// =============================================================================
+
+/**
+ * Extrait les notes importantes depuis le texte du document (fallback serveur)
+ */
+function extractNotesFromText(fullText: string): ExtractedNote[] {
+  if (!fullText) return [];
+  
+  const notes: ExtractedNote[] = [];
+  const seen = new Set<string>();
+  
+  const lines = fullText.split('\n');
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    
+    // Notes de chapitre
+    if (/^(NOTE|NOTES|Note|Notes)\s*[:.]?\s*/i.test(line)) {
+      const text = line.replace(/^(NOTE|NOTES|Note|Notes)\s*[:.]?\s*/i, "").trim();
+      if (text && !seen.has(text)) {
+        seen.add(text);
+        notes.push({ note_type: "chapter_note", note_text: text });
+      }
+    }
+    
+    // Définitions (BRT : ..., etc.)
+    const defMatch = line.match(/^([A-Z]{2,5})\s*:\s*(.+)/);
+    if (defMatch) {
+      const anchor = defMatch[1];
+      const text = defMatch[2].trim();
+      if (!seen.has(anchor)) {
+        seen.add(anchor);
+        notes.push({ note_type: "definition", anchor, note_text: `${anchor} : ${text}` });
+      }
+    }
+    
+    // Footnotes (1), (2), (a), (b)
+    const footMatch = line.match(/^\(([a-z0-9])\)\s*(.+)/i);
+    if (footMatch) {
+      const anchor = `(${footMatch[1]})`;
+      const text = footMatch[2].trim();
+      if (!seen.has(anchor)) {
+        seen.add(anchor);
+        notes.push({ note_type: "footnote", anchor, note_text: text });
+      }
+    }
+    
+    // Exclusions
+    if (/^(Sont exclus|Ne comprend pas|Exclu)/i.test(line)) {
+      if (!seen.has(line)) {
+        seen.add(line);
+        notes.push({ note_type: "exclusion", note_text: line });
+      }
+    }
+  }
+  
+  return notes;
+}
+
+// =============================================================================
+// HELPERS
 // =============================================================================
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Parse flexible date formats to YYYY-MM-DD or null
- * Supports: "YYYY-MM-DD", "DD/MM/YYYY", "DD-MM-YYYY", "1er janvier 2024", etc.
- */
 function parseFlexibleDate(dateStr: string | null | undefined): string | null {
   if (!dateStr) return null;
   
   const str = dateStr.trim();
   
-  // Already in ISO format
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-    return str;
-  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
   
-  // Format DD/MM/YYYY or DD-MM-YYYY
   const dmyMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if (dmyMatch) {
     const [, day, month, year] = dmyMatch;
     return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   }
   
-  // French text format: "1er janvier 2024" or "15 mars 2023"
   const frenchMonths: Record<string, string> = {
     'janvier': '01', 'février': '02', 'mars': '03', 'avril': '04',
     'mai': '05', 'juin': '06', 'juillet': '07', 'août': '08',
@@ -1021,26 +1375,19 @@ function parseFlexibleDate(dateStr: string | null | undefined): string | null {
   if (frenchMatch) {
     const [, day, monthName, year] = frenchMatch;
     const month = frenchMonths[monthName.toLowerCase()];
-    if (month) {
-      return `${year}-${month}-${day.padStart(2, '0')}`;
-    }
+    if (month) return `${year}-${month}-${day.padStart(2, '0')}`;
   }
   
-  // Try standard Date parsing as fallback
   try {
     const parsed = new Date(str);
-    if (!isNaN(parsed.getTime())) {
-      return parsed.toISOString().split('T')[0];
-    }
-  } catch {
-    // Ignore parsing errors
-  }
+    if (!isNaN(parsed.getTime())) return parsed.toISOString().split('T')[0];
+  } catch {}
   
   return null;
 }
 
 // =============================================================================
-// APPEL ANTHROPIC CLAUDE API (Native PDF Support)
+// APPEL CLAUDE API
 // =============================================================================
 
 async function analyzeWithClaude(
@@ -1048,50 +1395,35 @@ async function analyzeWithClaude(
   title: string,
   category: string,
   apiKey: string,
-  documentType: DocumentType = "tariff",  // Type de document pré-classifié
+  documentType: DocumentType = "tariff",
   retryCount = 0
 ): Promise<{ result: AnalysisResult | null; truncated: boolean; rateLimited: boolean; documentType: DocumentType }> {
   
   const MAX_RETRIES = 5;
   const BASE_DELAY = 5000;
-  
-  // Utiliser le prompt approprié basé sur le type détecté
   const prompt = getAnalysisPrompt(title, category, documentType);
-
-  // All PDFs use Sonnet - it's the only model that supports native PDF input
+  
   console.log(`PDF base64 size: ${base64Pdf.length} chars`);
   console.log(`Document type: ${documentType}`);
   console.log("Using model:", CLAUDE_MODEL);
-
-  // Claude API with native PDF support
+  
   const requestBody = {
     model: CLAUDE_MODEL,
     max_tokens: 64000,
-    system: "Tu es un expert en tarifs douaniers et nomenclature du Système Harmonisé (SH). Analyse les documents PDF de manière exhaustive et retourne les données structurées en JSON.",
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "document",
-            source: {
-              type: "base64",
-              media_type: "application/pdf",
-              data: base64Pdf
-            }
-          },
-          { type: "text", text: prompt }
-        ]
-      }
-    ],
+    system: "Tu es un expert en tarifs douaniers et nomenclature SH. Analyse les PDFs de manière exhaustive et retourne les données en JSON structuré.",
+    messages: [{
+      role: "user",
+      content: [
+        { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64Pdf } },
+        { type: "text", text: prompt }
+      ]
+    }],
   };
-
+  
   console.log("Sending request to Claude API...");
   
   const controller = new AbortController();
-  // Sonnet timeout: 290 seconds (just under 5 min Edge Function limit)
   const CLAUDE_TIMEOUT_MS = 290000;
-  console.log(`Timeout set to ${CLAUDE_TIMEOUT_MS / 1000}s for Sonnet (max Edge Function limit ~300s)`);
   const timeoutId = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS);
   
   let aiResponse: Response;
@@ -1111,15 +1443,15 @@ async function analyzeWithClaude(
     clearTimeout(timeoutId);
     if (fetchError.name === 'AbortError') {
       console.error(`Request timed out after ${CLAUDE_TIMEOUT_MS / 1000} seconds`);
-      throw new Error(`Timeout après ${CLAUDE_TIMEOUT_MS / 60000} min - PDF trop volumineux. Divisez le document en parties plus petites.`);
+      throw new Error(`Timeout après ${CLAUDE_TIMEOUT_MS / 60000} min`);
     }
     throw fetchError;
   }
   
   clearTimeout(timeoutId);
   console.log("Claude response status:", aiResponse.status);
-
-  // Handle rate limiting (429) and overloaded (529)
+  
+  // Rate limiting
   if (aiResponse.status === 429 || aiResponse.status === 529) {
     if (retryCount < MAX_RETRIES) {
       const retryAfter = aiResponse.headers.get("Retry-After");
@@ -1128,377 +1460,63 @@ async function analyzeWithClaude(
       await delay(delayMs);
       return analyzeWithClaude(base64Pdf, title, category, apiKey, documentType, retryCount + 1);
     } else {
-      console.error("Max retries reached for rate limiting");
+      console.error("Max retries reached");
       return { result: null, truncated: false, rateLimited: true, documentType };
     }
   }
-
+  
   if (!aiResponse.ok) {
     const errorText = await aiResponse.text();
     console.error("Claude error:", aiResponse.status, errorText);
     throw new Error(`Claude error: ${aiResponse.status} - ${errorText}`);
   }
-
-  const aiData = await aiResponse.json();
   
-  // Claude format: stop_reason
+  const aiData = await aiResponse.json();
   const stopReason = aiData.stop_reason;
   const truncated = stopReason === "max_tokens";
   
   console.log("Claude response - stop_reason:", stopReason, "truncated:", truncated);
   
-  // Claude format: content[0].text
   const responseText = aiData.content?.[0]?.text || "{}";
-  
-  // Parse JSON
   let cleanedResponse = responseText.trim();
   
-  // Remove markdown code blocks
+  // Nettoyer les blocs markdown
   if (cleanedResponse.includes("```json")) {
     const jsonStart = cleanedResponse.indexOf("```json") + 7;
     const jsonEnd = cleanedResponse.indexOf("```", jsonStart);
-    if (jsonEnd > jsonStart) {
-      cleanedResponse = cleanedResponse.slice(jsonStart, jsonEnd).trim();
-    }
+    if (jsonEnd > jsonStart) cleanedResponse = cleanedResponse.slice(jsonStart, jsonEnd).trim();
   } else if (cleanedResponse.includes("```")) {
     const jsonStart = cleanedResponse.indexOf("```") + 3;
     const jsonEnd = cleanedResponse.indexOf("```", jsonStart);
-    if (jsonEnd > jsonStart) {
-      cleanedResponse = cleanedResponse.slice(jsonStart, jsonEnd).trim();
-    }
+    if (jsonEnd > jsonStart) cleanedResponse = cleanedResponse.slice(jsonStart, jsonEnd).trim();
   }
   
-  // Extract JSON object
   if (!cleanedResponse.startsWith("{")) {
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      cleanedResponse = jsonMatch[0];
-    }
+    if (jsonMatch) cleanedResponse = jsonMatch[0];
   }
   
-  // =========================================================================
-  // PARSING JSON ROBUSTE MULTI-NIVEAUX
-  // =========================================================================
-  
-  /**
-   * Tente de réparer un JSON tronqué avec plusieurs stratégies
-   */
-  const repairTruncatedJson = (text: string): string => {
-    let repaired = text.trim();
-    
-    // Stratégie 1: Supprimer les virgules pendantes
-    repaired = repaired.replace(/,\s*([}\]])/g, '$1');
-    
-    // Stratégie 2: Compléter les chaînes de caractères ouvertes
-    // Trouver les guillemets non fermés dans les 500 derniers caractères
-    const lastPart = repaired.slice(-500);
-    const lastQuote = lastPart.lastIndexOf('"');
-    if (lastQuote !== -1) {
-      const afterLastQuote = lastPart.slice(lastQuote + 1);
-      // Si après le dernier guillemet on n'a pas de fermeture valide...
-      if (!afterLastQuote.match(/^\s*[,:}\]]/)) {
-        // Fermer la chaîne et ajouter une fermeture
-        repaired = repaired + '"';
-      }
-    }
-    
-    // Stratégie 3: Équilibrer les accolades et crochets
-    const openBraces = (repaired.match(/\{/g) || []).length;
-    const closeBraces = (repaired.match(/\}/g) || []).length;
-    const openBrackets = (repaired.match(/\[/g) || []).length;
-    const closeBrackets = (repaired.match(/\]/g) || []).length;
-    
-    for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += "]";
-    for (let i = 0; i < openBraces - closeBraces; i++) repaired += "}";
-    
-    return repaired;
+  // Initialiser debug
+  const debug: RawTableDebug = {
+    detectedSwaps: 0,
+    swappedSamples: [],
+    parsingWarnings: [],
+    skippedLines: 0
   };
   
-  /**
-   * Extrait les données partielles depuis un JSON malformé
-   */
-  const extractPartialData = (text: string): any => {
-    const result: any = {};
-    
-    // Extraire le summary
-    const summaryMatch = text.match(/"summary"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
-    if (summaryMatch) result.summary = summaryMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
-    
-    // IMPORTANT: Extraire full_text (texte intégral du document)
-    const fullTextMatch = text.match(/"full_text"\s*:\s*"((?:[^"\\]|\\.)*)"/);
-    if (fullTextMatch) {
-      result.full_text = fullTextMatch[1]
-        .replace(/\\"/g, '"')
-        .replace(/\\n/g, '\n')
-        .replace(/\\t/g, '\t')
-        .replace(/\\\\/g, '\\');
-    }
-    
-    // Extraire key_points
-    const keyPointsMatch = text.match(/"key_points"\s*:\s*\[((?:[^\[\]]|\[(?:[^\[\]]|\[[^\[\]]*\])*\])*)\]/);
-    if (keyPointsMatch) {
-      try {
-        result.key_points = JSON.parse('[' + keyPointsMatch[1] + ']');
-      } catch {
-        const points = keyPointsMatch[1].match(/"([^"]+)"/g);
-        result.key_points = points ? points.map(p => p.replace(/"/g, '')) : [];
-      }
-    }
-    
-    // Extraire chapter_info
-    const chapterMatch = text.match(/"chapter_info"\s*:\s*\{([^}]+)\}/);
-    if (chapterMatch) {
-      try {
-        result.chapter_info = JSON.parse('{' + chapterMatch[1] + '}');
-      } catch {
-        const numMatch = chapterMatch[1].match(/"number"\s*:\s*(\d+)/);
-        const titleMatch = chapterMatch[1].match(/"title"\s*:\s*"([^"]+)"/);
-        if (numMatch || titleMatch) {
-          result.chapter_info = {
-            number: numMatch ? parseInt(numMatch[1]) : 0,
-            title: titleMatch ? titleMatch[1] : ""
-          };
-        }
-      }
-    }
-    
-    // Extraire raw_lines (le plus important!)
-    const rawLinesMatch = text.match(/"raw_lines"\s*:\s*\[([\s\S]*?)(?:\](?:\s*,\s*"|\s*\})|$)/);
-    if (rawLinesMatch) {
-      const rawLinesContent = rawLinesMatch[1];
-      const lines: any[] = [];
-      
-      // Parser chaque objet de ligne séparément
-      const lineMatches = rawLinesContent.matchAll(/\{([^{}]*)\}/g);
-      for (const match of lineMatches) {
-        try {
-          const lineObj: any = {};
-          const content = match[1];
-          
-          // Extraire col1-col5
-          for (let i = 1; i <= 5; i++) {
-            const colMatch = content.match(new RegExp(`"col${i}"\\s*:\\s*"([^"]*)"`));
-            lineObj[`col${i}`] = colMatch ? colMatch[1] : "";
-          }
-          
-          // Extraire description
-          const descMatch = content.match(/"description"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
-          lineObj.description = descMatch ? descMatch[1].replace(/\\"/g, '"') : "";
-          
-          // Extraire duty_rate
-          const dutyMatch = content.match(/"duty_rate"\s*:\s*(?:"([^"]+)"|(\d+\.?\d*)|null)/);
-          if (dutyMatch) {
-            lineObj.duty_rate = dutyMatch[1] || (dutyMatch[2] ? parseFloat(dutyMatch[2]) : null);
-          } else {
-            lineObj.duty_rate = null;
-          }
-          
-          // Extraire unit
-          const unitMatch = content.match(/"unit"\s*:\s*(?:"([^"]+)"|null)/);
-          lineObj.unit = unitMatch ? unitMatch[1] || null : null;
-          
-          // Ne garder que si col1 a une valeur
-          if (lineObj.col1 && lineObj.col1.trim() !== "") {
-            lines.push(lineObj);
-          }
-        } catch (lineError) {
-          console.warn("Failed to parse individual line, skipping:", match[0].substring(0, 100));
-        }
-      }
-      
-      if (lines.length > 0) {
-        result.raw_lines = lines;
-        console.log(`Extracted ${lines.length} raw_lines from partial data`);
-      }
-    }
-    
-    // Extraire hs_codes si raw_lines n'est pas disponible
-    if (!result.raw_lines) {
-      const hsCodesMatch = text.match(/"hs_codes"\s*:\s*\[([\s\S]*?)(?:\](?:\s*,\s*"|\s*\})|$)/);
-      if (hsCodesMatch) {
-        const codes: any[] = [];
-        const codeMatches = hsCodesMatch[1].matchAll(/\{([^{}]*)\}/g);
-        for (const match of codeMatches) {
-          try {
-            const codeObj = JSON.parse('{' + match[1] + '}');
-            if (codeObj.code_clean && /^\d{6}$/.test(codeObj.code_clean)) {
-              codes.push(codeObj);
-            }
-          } catch {}
-        }
-        if (codes.length > 0) {
-          result.hs_codes = codes;
-          console.log(`Extracted ${codes.length} hs_codes from partial data`);
-        }
-      }
-    }
-    
-    // Extraire trade_agreements
-    const agreementsMatch = text.match(/"trade_agreements"\s*:\s*\[([\s\S]*?)(?:\](?:\s*,\s*"|\s*\})|$)/);
-    if (agreementsMatch && agreementsMatch[1].trim().length > 2) {
-      try {
-        result.trade_agreements = JSON.parse('[' + agreementsMatch[1] + ']');
-      } catch {}
-    }
-    
-    // Extraire preferential_rates
-    const prefRatesMatch = text.match(/"preferential_rates"\s*:\s*\[([\s\S]*?)(?:\](?:\s*,\s*"|\s*\})|$)/);
-    if (prefRatesMatch && prefRatesMatch[1].trim().length > 2) {
-      try {
-        result.preferential_rates = JSON.parse('[' + prefRatesMatch[1] + ']');
-      } catch {}
-    }
-    
-    return result;
-  };
-  
-  /**
-   * Parser JSON avec tentatives multiples
-   */
-  const parseJsonRobust = (text: string): { parsed: any | null; method: string } => {
-    // Tentative 1: Parse direct
-    try {
-      return { parsed: JSON.parse(text), method: "direct" };
-    } catch {}
-    
-    // Tentative 2: Après réparation
-    const repaired = repairTruncatedJson(text);
-    try {
-      return { parsed: JSON.parse(repaired), method: "repaired" };
-    } catch {}
-    
-    // Tentative 3: Trouver le plus grand objet JSON valide
-    let bestParsed: any = null;
-    let bestLength = 0;
-    
-    for (let endPos = text.length; endPos > 100; endPos -= 50) {
-      const truncatedText = repairTruncatedJson(text.slice(0, endPos));
-      try {
-        const attempt = JSON.parse(truncatedText);
-        if (JSON.stringify(attempt).length > bestLength) {
-          bestParsed = attempt;
-          bestLength = JSON.stringify(attempt).length;
-        }
-        // Si on a trouvé un résultat avec des données, on arrête
-        if (attempt.raw_lines?.length > 0 || attempt.hs_codes?.length > 0) {
-          return { parsed: attempt, method: "truncated_search" };
-        }
-      } catch {}
-    }
-    
-    if (bestParsed) {
-      return { parsed: bestParsed, method: "best_truncated" };
-    }
-    
-    // Tentative 4: Extraction partielle
-    const partial = extractPartialData(text);
-    if (partial.raw_lines?.length > 0 || partial.hs_codes?.length > 0 || partial.summary) {
-      console.log("Using partial extraction method");
-      return { parsed: partial, method: "partial_extraction" };
-    }
-    
-    return { parsed: null, method: "failed" };
-  };
-  
-  const { parsed, method } = parseJsonRobust(cleanedResponse);
+  // Parse JSON
+  const { parsed, method } = parseJsonRobust(cleanedResponse, debug);
   console.log(`JSON parsing method: ${method}`);
-  
-  // Log pour debug: vérifier ce que Claude a renvoyé
-  console.log(`Parsed data check - raw_lines: ${parsed?.raw_lines?.length ?? 'undefined'}, hs_codes: ${parsed?.hs_codes?.length ?? 'undefined'}, summary: ${parsed?.summary?.substring(0, 50) ?? 'undefined'}`);
-  
-  // Vérifier si c'est un document réglementaire (circulaire, accord, etc.)
-  const isRegulatory = isRegulatoryDocument(category, title);
-  
-  // Si parsed existe mais n'a pas de raw_lines, essayer une extraction plus agressive
-  // SEULEMENT pour les documents tarifaires (pas les circulaires/accords)
-  if (parsed && (!parsed.raw_lines || parsed.raw_lines.length === 0) && !isRegulatory) {
-    console.log("No raw_lines found in parsed data (tariff document), attempting aggressive extraction...");
-    console.log("Looking for raw_lines in response (first 3000 chars):", cleanedResponse.substring(0, 3000));
-    
-    // Tentative d'extraction directe avec regex plus flexible
-    const rawLinesRegex = /["']raw_lines["']\s*:\s*\[\s*([\s\S]*?)\s*\]\s*(?:,\s*["']|$|\})/;
-    const rawLinesMatch = cleanedResponse.match(rawLinesRegex);
-    
-    if (rawLinesMatch) {
-      console.log("Found raw_lines section, attempting manual extraction...");
-      const rawLinesContent = rawLinesMatch[1];
-      const lines: any[] = [];
-      
-      // Regex pour matcher chaque objet de ligne individuellement
-      const objectRegex = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g;
-      let match;
-      
-      while ((match = objectRegex.exec(rawLinesContent)) !== null) {
-        try {
-          const lineObj = JSON.parse(match[0]);
-          if (lineObj.col1 !== undefined || lineObj.description !== undefined) {
-            lines.push(lineObj);
-          }
-        } catch {
-          // Si le parse JSON échoue, extraire manuellement
-          const lineData: any = {};
-          for (let i = 1; i <= 5; i++) {
-            const colMatch = match[0].match(new RegExp(`["']col${i}["']\\s*:\\s*["']([^"']*)["']`));
-            lineData[`col${i}`] = colMatch ? colMatch[1] : "";
-          }
-          const descMatch = match[0].match(/["']description["']\s*:\s*["']([^"']*(?:\\.[^"']*)*)["']/);
-          lineData.description = descMatch ? descMatch[1].replace(/\\"/g, '"') : "";
-          const dutyMatch = match[0].match(/["']duty_rate["']\s*:\s*(?:["']([^"']+)["']|(\d+\.?\d*)|null)/);
-          lineData.duty_rate = dutyMatch ? (dutyMatch[1] || (dutyMatch[2] ? parseFloat(dutyMatch[2]) : null)) : null;
-          const unitMatch = match[0].match(/["']unit["']\s*:\s*(?:["']([^"']*)["']|null)/);
-          lineData.unit = unitMatch ? unitMatch[1] || null : null;
-          
-          if (lineData.col1 || lineData.description) {
-            lines.push(lineData);
-          }
-        }
-      }
-      
-      if (lines.length > 0) {
-        console.log(`Aggressive extraction found ${lines.length} raw_lines!`);
-        parsed.raw_lines = lines;
-      }
-    }
-    
-    // Si toujours pas de raw_lines, chercher des hs_codes directement
-    if (!parsed.raw_lines || parsed.raw_lines.length === 0) {
-      console.log("Still no raw_lines, trying direct hs_codes extraction...");
-      
-      const hsCodesRegex = /["']hs_codes["']\s*:\s*\[\s*([\s\S]*?)\s*\]\s*(?:,\s*["']|$|\})/;
-      const hsMatch = cleanedResponse.match(hsCodesRegex);
-      
-      if (hsMatch) {
-        const codes: any[] = [];
-        const codeObjectRegex = /\{[^{}]*\}/g;
-        let codeMatch;
-        
-        while ((codeMatch = codeObjectRegex.exec(hsMatch[1])) !== null) {
-          try {
-            const codeObj = JSON.parse(codeMatch[0]);
-            if (codeObj.code_clean && /^\d{6}$/.test(codeObj.code_clean)) {
-              codes.push(codeObj);
-            }
-          } catch {}
-        }
-        
-        if (codes.length > 0) {
-          console.log(`Direct extraction found ${codes.length} hs_codes!`);
-          parsed.hs_codes = codes;
-        }
-      }
-    }
-  }
   
   if (!parsed) {
     console.error("All JSON parsing methods failed");
-    console.error("Raw response (first 2000):", responseText.substring(0, 2000));
-    console.error("Raw response (last 500):", responseText.substring(responseText.length - 500));
     return { 
       result: {
-        summary: "Analyse échouée - Impossible de parser la réponse. Veuillez réessayer.",
-        key_points: ["Le document a été analysé mais le format de réponse était invalide."],
+        summary: "Analyse échouée - Impossible de parser la réponse.",
+        key_points: [],
         hs_codes: [],
         tariff_lines: [],
+        raw_table_debug: debug
       }, 
       truncated, 
       rateLimited: false,
@@ -1506,64 +1524,61 @@ async function analyzeWithClaude(
     };
   }
   
-  // POST-TRAITEMENT: Reconstruire les codes à partir des raw_lines
-  let tariffLines: TariffLine[] = [];
-  let hsCodeEntries: HSCodeEntry[] = [];
+  const isRegulatory = isRegulatoryDocument(category, title);
   
-  // Pour les documents réglementaires (circulaires, accords), 
-  // on utilise directement les hs_codes retournés par Claude (s'il y en a)
-  if (isRegulatory) {
-    console.log(`Processing REGULATORY document - no tariff lines expected`);
-    
-    // Utiliser les hs_codes mentionnés dans le document (si Claude en a trouvé)
-    if (parsed.hs_codes && Array.isArray(parsed.hs_codes)) {
-      hsCodeEntries = parsed.hs_codes.filter((hs: any) => 
-        hs.code_clean && /^\d{6}$/.test(hs.code_clean)
-      );
-      console.log(`Found ${hsCodeEntries.length} HS codes mentioned in regulatory document`);
+  // Extraction agressive si pas de raw_lines
+  if (!isRegulatory && (!parsed.raw_lines || parsed.raw_lines.length === 0)) {
+    console.log("No raw_lines found, attempting aggressive extraction...");
+    const aggressiveLines = extractRawLinesAggressively(cleanedResponse, debug);
+    if (aggressiveLines.length > 0) {
+      parsed.raw_lines = aggressiveLines;
     }
-    
-    // Pas de lignes tarifaires pour les documents réglementaires
-    tariffLines = [];
-    
-  } else if (parsed.raw_lines && Array.isArray(parsed.raw_lines) && parsed.raw_lines.length > 0) {
-    // Pour les documents tarifaires: traitement normal avec héritage
-    console.log(`Processing ${parsed.raw_lines.length} raw lines with inheritance...`);
-    
-    // Reconstruire avec l'héritage
-    tariffLines = processRawLines(parsed.raw_lines);
-    // Passer aussi les hs_codes de Claude pour récupérer les descriptions
-    hsCodeEntries = extractHSCodes(tariffLines, parsed.raw_lines, parsed.hs_codes);
-    
-    console.log(`Reconstructed ${tariffLines.length} tariff lines and ${hsCodeEntries.length} HS codes`);
-  } else if (parsed.tariff_lines) {
-    // Fallback: utiliser tariff_lines si raw_lines n'est pas présent
-    tariffLines = (parsed.tariff_lines as any[])
-      .map(line => {
-        const { rate, note } = parseDutyRate(line.duty_rate);
-        let code = cleanCode(line.national_code || "");
-        if (code.length > 0 && code.length < 10) {
-          code = code.padEnd(10, "0");
-        }
-        return {
-          national_code: code,
-          hs_code_6: code.slice(0, 6),
-          description: line.description || "",
-          duty_rate: rate || 0,
-          duty_note: note,
-          unit: line.unit || null,
-          is_inherited: false,
-        };
-      })
-      .filter(line => line.national_code.length === 10 && line.duty_rate > 0);
-    
-    hsCodeEntries = parsed.hs_codes || [];
-  } else {
-    // Fallback pour les documents sans raw_lines ni tariff_lines
-    hsCodeEntries = parsed.hs_codes || [];
   }
   
-  // Récupérer le texte intégral du document (critique pour RAG)
+  // Traitement des données
+  let tariffLines: TariffLine[] = [];
+  let hsCodeEntries: HSCodeEntry[] = [];
+  let extractedNotes: ExtractedNote[] = [];
+  
+  if (isRegulatory) {
+    console.log(`Processing REGULATORY document`);
+    if (parsed.hs_codes && Array.isArray(parsed.hs_codes)) {
+      hsCodeEntries = parsed.hs_codes.filter((hs: any) => hs.code_clean && /^\d{6}$/.test(hs.code_clean));
+    }
+  } else if (parsed.raw_lines && Array.isArray(parsed.raw_lines) && parsed.raw_lines.length > 0) {
+    console.log(`Processing ${parsed.raw_lines.length} raw lines...`);
+    
+    // ÉTAPE 3: Traitement avec héritage et swap
+    const { tariffLines: processedLines, debug: processDebug } = processRawLines(parsed.raw_lines);
+    tariffLines = processedLines;
+    
+    // Fusionner les debug info
+    debug.detectedSwaps = processDebug.detectedSwaps;
+    debug.swappedSamples = processDebug.swappedSamples;
+    debug.parsingWarnings.push(...processDebug.parsingWarnings);
+    debug.skippedLines = processDebug.skippedLines;
+    
+    // ÉTAPE 6: Extraire les codes HS depuis les lignes tarifaires validées
+    hsCodeEntries = extractHSCodesFromTariffLines(tariffLines, parsed.raw_lines, parsed.hs_codes);
+    
+    console.log(`Reconstructed ${tariffLines.length} tariff lines and ${hsCodeEntries.length} HS codes`);
+  }
+  
+  // ÉTAPE 7: Extraire les notes
+  if (parsed.notes && Array.isArray(parsed.notes)) {
+    extractedNotes = parsed.notes.map((n: any) => ({
+      note_type: n.note_type || "remark",
+      anchor: n.anchor || undefined,
+      note_text: n.note_text || "",
+      page_number: n.page_number || undefined
+    }));
+  }
+  
+  // Fallback: extraire notes du full_text
+  if (extractedNotes.length === 0 && parsed.full_text) {
+    extractedNotes = extractNotesFromText(parsed.full_text);
+  }
+  
   const fullText = parsed.full_text || "";
   
   const result: AnalysisResult = {
@@ -1576,21 +1591,23 @@ async function analyzeWithClaude(
     tariff_lines: tariffLines,
     trade_agreements: parsed.trade_agreements || [],
     preferential_rates: parsed.preferential_rates || [],
-    raw_lines: parsed.raw_lines,  // Garder pour debug
+    raw_lines: parsed.raw_lines,
+    extracted_notes: extractedNotes,
     document_type: isRegulatory ? "regulatory" : "tariff",
     authorities: parsed.authorities || [],
     effective_date: parsed.effective_date,
     legal_references: parsed.legal_references || [],
-    full_text: fullText,  // TEXTE INTÉGRAL pour recherche RAG
+    full_text: fullText,
+    raw_table_debug: debug  // ÉTAPE 8: Mode DEBUG
   };
   
   console.log("Final result:", 
     "document_type:", isRegulatory ? "regulatory" : "tariff",
     "tariff_lines:", result.tariff_lines.length,
     "hs_codes:", result.hs_codes.length,
-    "trade_agreements:", result.trade_agreements?.length || 0,
-    "full_text_length:", fullText.length,
-    isRegulatory ? "" : `inherited: ${result.tariff_lines.filter(l => l.is_inherited).length}`
+    "notes:", extractedNotes.length,
+    "swaps:", debug.detectedSwaps,
+    "skipped:", debug.skippedLines
   );
   
   return { result, truncated, rateLimited: false, documentType };
@@ -1603,27 +1620,20 @@ async function analyzeWithClaude(
 serve(async (req) => {
   const logger = createLogger("analyze-pdf", req);
   
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return handleCorsPreFlight(req);
-  }
-
+  if (req.method === "OPTIONS") return handleCorsPreFlight(req);
+  
   logger.info("Request received");
-
-  // Rate limiting distribué (5 requests per minute for PDF analysis - more expensive)
+  
   const clientId = getClientId(req);
   const rateLimit = await checkRateLimitDistributed(clientId, {
     maxRequests: 5,
     windowMs: 60000,
     blockDurationMs: 300000,
   });
-
-  if (!rateLimit.allowed) {
-    return rateLimitResponse(req, rateLimit.resetAt);
-  }
-
+  
+  if (!rateLimit.allowed) return rateLimitResponse(req, rateLimit.resetAt);
+  
   try {
-    // Valider le body
     let body: unknown;
     try {
       body = await req.json();
@@ -1631,61 +1641,49 @@ serve(async (req) => {
       logger.error("Invalid JSON", e as Error);
       return errorResponse(req, "Body JSON invalide", 400);
     }
-
+    
     const validation = validateAnalyzePdfRequest(body);
     if (!validation.valid) {
       logger.warn("Validation failed", { error: validation.error });
       return errorResponse(req, validation.error!, 400);
     }
-
+    
     const { pdfId, filePath, previewOnly = true } = validation.data!;
     logger.info("Analyzing PDF", { pdfId, previewOnly });
-
-    if (!filePath) {
-      return errorResponse(req, "filePath is required", 400);
-    }
-
+    
+    if (!filePath) return errorResponse(req, "filePath is required", 400);
+    
     const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!ANTHROPIC_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY is not configured");
-    }
-
+    
+    if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not configured");
+    
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
-
-    // Check file size
+    
+    // Vérifier taille fichier
     const { data: fileList } = await supabase.storage
       .from("pdf-documents")
-      .list(filePath.split('/').slice(0, -1).join('/') || '', {
-        search: filePath.split('/').pop()
-      });
+      .list(filePath.split('/').slice(0, -1).join('/') || '', { search: filePath.split('/').pop() });
     
     const fileInfo = fileList?.find(f => filePath.endsWith(f.name));
     const fileSizeMB = fileInfo?.metadata?.size ? fileInfo.metadata.size / (1024 * 1024) : 0;
     
-    const MAX_FILE_SIZE_MB = 25;
-    if (fileSizeMB > MAX_FILE_SIZE_MB) {
+    if (fileSizeMB > 25) {
       return new Response(
-        JSON.stringify({ 
-          error: `Le PDF est trop volumineux (${fileSizeMB.toFixed(1)}MB). Limite: ${MAX_FILE_SIZE_MB}MB.`,
-          fileSizeMB: fileSizeMB.toFixed(2)
-        }),
+        JSON.stringify({ error: `PDF trop volumineux (${fileSizeMB.toFixed(1)}MB). Limite: 25MB.` }),
         { status: 413, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
-
-    // Download PDF
+    
+    // Télécharger PDF
     const { data: pdfData, error: downloadError } = await supabase.storage
       .from("pdf-documents")
       .download(filePath);
-
-    if (downloadError) {
-      throw new Error(`Failed to download PDF: ${downloadError.message}`);
-    }
-
-    // Convert to base64
+    
+    if (downloadError) throw new Error(`Failed to download PDF: ${downloadError.message}`);
+    
+    // Convertir en base64
     const arrayBuffer = await pdfData.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
     
@@ -1696,65 +1694,52 @@ serve(async (req) => {
       binaryString += String.fromCharCode(...chunk);
     }
     const base64Pdf = btoa(binaryString);
-
+    
     console.log("PDF converted to base64, size:", base64Pdf.length, "chars");
-
-    // Get PDF metadata
+    
+    // Métadonnées PDF
     const { data: pdfDoc } = await supabase
       .from("pdf_documents")
       .select("title, category, country_code")
       .eq("id", pdfId)
       .single();
-
+    
     const title = pdfDoc?.title || "Tarif douanier";
     const category = pdfDoc?.category || "tarif";
     const countryCode = pdfDoc?.country_code || "MA";
-
-    // === CRÉER UNE EXTRACTION "PROCESSING" IMMÉDIATEMENT ===
-    // Ceci permet au client de savoir que l'analyse est en cours
-    // et d'attendre plus longtemps via polling
-    const { data: existingProcExtraction } = await supabase
+    
+    // Vérifier si extraction existe déjà
+    const { data: existingExtraction } = await supabase
       .from("pdf_extractions")
       .select("id, summary")
       .eq("pdf_id", pdfId)
       .maybeSingle();
     
-    // Si une extraction complète existe déjà, la retourner immédiatement
-    if (existingProcExtraction && existingProcExtraction.summary && existingProcExtraction.summary !== "__PROCESSING__") {
-      console.log("Extraction already exists for PDF:", pdfId, "- returning cached data");
+    if (existingExtraction && existingExtraction.summary && existingExtraction.summary !== "__PROCESSING__") {
+      console.log("Extraction already exists for PDF:", pdfId);
       
-      // Récupérer les données complètes
       const { data: fullExtraction } = await supabase
         .from("pdf_extractions")
         .select("*")
-        .eq("id", existingProcExtraction.id)
+        .eq("id", existingExtraction.id)
         .single();
       
       if (fullExtraction) {
-        // Récupérer les codes SH complets depuis extracted_data (avec descriptions)
         const extractedData = fullExtraction.extracted_data as Record<string, any> || {};
-        const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
-        
-        // Si les codes complets sont stockés, les utiliser; sinon fallback sur mentioned_hs_codes
-        const hsCodes = hsCodesFull.length > 0 
-          ? hsCodesFull 
-          : (fullExtraction.mentioned_hs_codes as string[] || []).map(code => ({
-              code: code,
-              code_clean: code.replace(/[^0-9]/g, ""),
-              description: "",  // Fallback sans description
-              level: "subheading"
-            }));
+        const hsCodesFull = extractedData.hs_codes_full || [];
         
         return new Response(
           JSON.stringify({
             summary: fullExtraction.summary,
             key_points: fullExtraction.key_points || [],
-            hs_codes: hsCodes,
+            hs_codes: hsCodesFull,
             tariff_lines: fullExtraction.detected_tariff_changes || [],
             full_text: fullExtraction.extracted_text || "",
             chapter_info: extractedData.chapter_info || null,
             trade_agreements: extractedData.trade_agreements || [],
             preferential_rates: extractedData.preferential_rates || [],
+            extracted_notes: extractedData.extracted_notes || [],
+            raw_table_debug: extractedData.raw_table_debug || null,
             pdfId,
             pdfTitle: title,
             countryCode,
@@ -1765,20 +1750,15 @@ serve(async (req) => {
       }
     }
     
-    // Si le traitement est déjà en cours, retourner le statut
-    if (existingProcExtraction && existingProcExtraction.summary === "__PROCESSING__") {
-      console.log("PDF already being processed:", pdfId);
+    // En cours de traitement?
+    if (existingExtraction && existingExtraction.summary === "__PROCESSING__") {
       return new Response(
-        JSON.stringify({
-          status: "processing",
-          message: "L'analyse est en cours, veuillez patienter...",
-          pdfId,
-        }),
+        JSON.stringify({ status: "processing", message: "Analyse en cours...", pdfId }),
         { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
     
-    // Créer le marqueur PROCESSING
+    // Créer marqueur PROCESSING
     const { data: processingMarker } = await supabase.from("pdf_extractions").insert({
       pdf_id: pdfId,
       summary: "__PROCESSING__",
@@ -1788,26 +1768,22 @@ serve(async (req) => {
       extraction_model: CLAUDE_MODEL,
       extraction_confidence: 0,
     }).select("id").single();
-    console.log("Created PROCESSING marker for PDF:", pdfId);
-
-    // === TRAITEMENT ASYNCHRONE AVEC EdgeRuntime.waitUntil ===
-    // Répondre immédiatement au client, puis continuer le traitement en arrière-plan
     
+    console.log("Created PROCESSING marker for PDF:", pdfId);
+    
+    // Traitement en arrière-plan
     const backgroundProcess = async () => {
       try {
         console.log(`[Background] Starting analysis for PDF: ${pdfId}`);
         
-        // ÉTAPE 1: Classification automatique du document
-        console.log(`[Background] Classifying document: ${title}`);
+        // Classification
         const classification = await classifyDocument(base64Pdf, title, category, ANTHROPIC_API_KEY);
-        console.log(`[Background] Document classified as: ${classification.type} (confidence: ${classification.confidence}) - ${classification.reason}`);
+        console.log(`[Background] Classified as: ${classification.type} (${classification.confidence})`);
         
-        // ÉTAPE 2: Analyse avec le prompt approprié
+        // Analyse
         const { result, truncated, rateLimited, documentType } = await analyzeWithClaude(
           base64Pdf, title, category, ANTHROPIC_API_KEY, classification.type
         );
-        
-        let analysisResult: AnalysisResult | null = result;
         
         if (rateLimited) {
           console.error("[Background] Rate limited for PDF:", pdfId);
@@ -1818,68 +1794,82 @@ serve(async (req) => {
           return;
         }
         
-        if (truncated && analysisResult) {
-          console.warn("[Background] Response was truncated for PDF:", pdfId);
-        }
-        
-        if (!analysisResult) {
+        if (!result) {
           console.error("[Background] No analysis result for PDF:", pdfId);
           await supabase.from("pdf_extractions").update({
-            summary: "Erreur: Analyse échouée - contenu non structuré",
+            summary: "Erreur: Analyse échouée",
             extraction_confidence: 0,
           }).eq("pdf_id", pdfId);
           return;
         }
-
-        // Utiliser le type détecté par la classification IA
+        
         const isRegulatoryDoc = documentType === "regulatory";
         
-        console.log("[Background] Analysis complete for PDF:", pdfId,
-          "Document type:", documentType,
-          "Classification confidence:", classification.confidence,
-          "HS codes:", analysisResult.hs_codes?.length || 0,
-          "Tariff lines:", analysisResult.tariff_lines?.length || 0,
-          "Trade agreements:", analysisResult.trade_agreements?.length || 0
+        console.log("[Background] Analysis complete:",
+          "HS codes:", result.hs_codes?.length || 0,
+          "Tariff lines:", result.tariff_lines?.length || 0,
+          "Notes:", result.extracted_notes?.length || 0,
+          "Swaps:", result.raw_table_debug?.detectedSwaps || 0
         );
-
-        // Mettre à jour l'extraction avec les données complètes
-        // IMPORTANT: Stocker les hs_codes complets (avec descriptions) dans extracted_data
+        
+        // Mettre à jour l'extraction
         const { error: updateError } = await supabase.from("pdf_extractions").update({
-          summary: analysisResult.summary || "Document analysé",
-          key_points: analysisResult.key_points || [],
-          mentioned_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
-          detected_tariff_changes: analysisResult.tariff_lines || [],
-          extracted_text: analysisResult.full_text || null,
+          summary: result.summary || "Document analysé",
+          key_points: result.key_points || [],
+          mentioned_hs_codes: result.hs_codes?.map(h => h.code_clean) || [],
+          detected_tariff_changes: result.tariff_lines || [],
+          extracted_text: result.full_text || null,
           extracted_data: {
-            chapter_info: analysisResult.chapter_info || null,
-            notes: analysisResult.notes || null,
-            footnotes: analysisResult.footnotes || null,
-            tariff_lines_count: analysisResult.tariff_lines?.length || 0,
-            inherited_lines_count: analysisResult.tariff_lines?.filter(l => l.is_inherited).length || 0,
-            trade_agreements: analysisResult.trade_agreements || [],
-            preferential_rates: analysisResult.preferential_rates || [],
-            authorities: analysisResult.authorities || [],
-            legal_references: analysisResult.legal_references || [],
+            chapter_info: result.chapter_info || null,
+            notes: result.notes || null,
+            footnotes: result.footnotes || null,
+            tariff_lines_count: result.tariff_lines?.length || 0,
+            inherited_lines_count: result.tariff_lines?.filter(l => l.is_inherited).length || 0,
+            trade_agreements: result.trade_agreements || [],
+            preferential_rates: result.preferential_rates || [],
+            authorities: result.authorities || [],
+            legal_references: result.legal_references || [],
             document_type: isRegulatoryDoc ? "regulatory" : "tariff",
-            // NOUVEAU: Stocker les codes SH complets avec leurs descriptions
-            hs_codes_full: analysisResult.hs_codes || [],
+            hs_codes_full: result.hs_codes || [],
+            extracted_notes: result.extracted_notes || [],
+            raw_table_debug: result.raw_table_debug || null,
           },
           extraction_model: CLAUDE_MODEL,
           extraction_confidence: 0.92,
           extracted_at: new Date().toISOString(),
         }).eq("pdf_id", pdfId);
         
-        if (updateError) {
-          console.error("[Background] Extraction update error:", updateError);
-        } else {
-          console.log("[Background] ✅ Extraction saved for PDF:", pdfId, "- Full text length:", analysisResult.full_text?.length || 0);
+        if (updateError) console.error("[Background] Extraction update error:", updateError);
+        else console.log("[Background] ✅ Extraction saved for PDF:", pdfId);
+        
+        // ÉTAPE 7: Insérer les notes dans tariff_notes
+        if (result.extracted_notes && result.extracted_notes.length > 0 && !previewOnly) {
+          const chapterNum = result.chapter_info?.number?.toString() || null;
+          
+          const noteRows = result.extracted_notes.map((note: ExtractedNote) => ({
+            country_code: countryCode,
+            chapter_number: chapterNum,
+            note_type: note.note_type,
+            anchor: note.anchor || null,
+            note_text: note.note_text,
+            page_number: note.page_number || null,
+            source_pdf: title,
+            source_extraction_id: processingMarker?.id ? parseInt(processingMarker.id) : null
+          }));
+          
+          const { error: noteError } = await supabase
+            .from("tariff_notes")
+            .insert(noteRows);
+          
+          if (noteError) console.error("[Background] Notes insert error:", noteError);
+          else console.log(`[Background] ✅ Inserted ${noteRows.length} notes`);
         }
-
-        // Pour les documents non-preview, insérer les tarifs et codes HS
+        
+        // Insérer tarifs et codes HS
         if (!previewOnly) {
-          // Insert tariff lines
-          if (analysisResult.tariff_lines && analysisResult.tariff_lines.length > 0) {
-            const tariffRows = analysisResult.tariff_lines.map(line => ({
+          // ÉTAPE 5: Insert tariff lines avec unit_comp
+          if (result.tariff_lines && result.tariff_lines.length > 0) {
+            const tariffRows = result.tariff_lines.map(line => ({
               country_code: countryCode,
               hs_code_6: line.hs_code_6,
               national_code: line.national_code,
@@ -1887,64 +1877,56 @@ serve(async (req) => {
               duty_rate: line.duty_rate,
               duty_note: line.duty_note,
               vat_rate: 20,
-              unit_code: line.unit || null,
+              unit_code: line.unit_norm || null,
+              unit_complementary_code: line.unit_comp || null,  // ÉTAPE 5
               is_active: true,
               is_inherited: line.is_inherited,
               source: `PDF: ${title}`,
             }));
-
+            
             const { error: tariffError } = await supabase
               .from("country_tariffs")
               .upsert(tariffRows, { onConflict: "country_code,national_code" });
-
-            if (tariffError) {
-              console.error("[Background] Tariff insert error:", tariffError);
-            } else {
-              console.log(`[Background] Inserted ${tariffRows.length} tariff lines`);
-            }
+            
+            if (tariffError) console.error("[Background] Tariff insert error:", tariffError);
+            else console.log(`[Background] ✅ Inserted ${tariffRows.length} tariff lines`);
           }
-
-          // Insert HS codes
-          if (analysisResult.hs_codes && analysisResult.hs_codes.length > 0) {
-            const hsRows = analysisResult.hs_codes.map(hsCode => ({
+          
+          // ÉTAPE 6: Insert HS codes depuis tariffLines
+          if (result.hs_codes && result.hs_codes.length > 0) {
+            const hsRows = result.hs_codes.map(hsCode => ({
               code: hsCode.code,
               code_clean: hsCode.code_clean,
               description_fr: hsCode.description,
-              chapter_number: analysisResult.chapter_info?.number || parseInt(hsCode.code_clean?.slice(0, 2) || "0"),
-              chapter_title_fr: analysisResult.chapter_info?.title,
+              chapter_number: result.chapter_info?.number || parseInt(hsCode.code_clean?.slice(0, 2) || "0"),
+              chapter_title_fr: result.chapter_info?.title,
               is_active: true,
               level: hsCode.level || "subheading",
               parent_code: hsCode.code_clean?.slice(0, 4),
             }));
-
+            
             const { error: hsError } = await supabase
               .from("hs_codes")
               .upsert(hsRows, { onConflict: "code" });
-
-            if (hsError) {
-              console.error("[Background] HS codes insert error:", hsError);
-            } else {
-              console.log(`[Background] Inserted ${hsRows.length} HS codes`);
-            }
+            
+            if (hsError) console.error("[Background] HS codes insert error:", hsError);
+            else console.log(`[Background] ✅ Inserted ${hsRows.length} HS codes`);
           }
         }
-
-        // Update PDF document with enriched metadata
-        const chapterNumber = analysisResult.chapter_info?.number;
+        
+        // Update PDF document metadata
+        const chapterNumber = result.chapter_info?.number;
         const updateData: Record<string, any> = {
           is_verified: true,
           verified_at: new Date().toISOString(),
-          related_hs_codes: analysisResult.hs_codes?.map(h => h.code_clean) || [],
+          related_hs_codes: result.hs_codes?.map(h => h.code_clean) || [],
           keywords: chapterNumber ? `Chapitre ${chapterNumber}` : null,
-          document_reference: analysisResult.document_reference || null,
-          issuing_authority: analysisResult.issuing_authority?.name || null,
+          document_reference: result.document_reference || null,
+          issuing_authority: result.issuing_authority?.name || null,
           document_type: isRegulatoryDoc ? "regulatory" : "tariff",
         };
-
-        // ================================================================
-        // AUTO-RENOMMAGE: Standardiser le chemin des PDFs tarifaires
-        // Format cible: tarifs/SH_CODE_XX.pdf où XX = numéro de chapitre
-        // ================================================================
+        
+        // Renommer si tarif dans uploads/
         if (!isRegulatoryDoc && chapterNumber && filePath.startsWith("uploads/")) {
           const paddedChapter = String(chapterNumber).padStart(2, "0");
           const newFilePath = `tarifs/SH_CODE_${paddedChapter}.pdf`;
@@ -1952,81 +1934,55 @@ serve(async (req) => {
           console.log(`[Background] Renaming PDF: ${filePath} -> ${newFilePath}`);
           
           try {
-            // 1. Vérifier si le fichier cible existe déjà
             const { data: existingFile } = await supabase.storage
               .from("pdf-documents")
               .list("tarifs", { search: `SH_CODE_${paddedChapter}.pdf` });
             
             if (existingFile && existingFile.length > 0) {
-              // Supprimer l'ancien fichier si présent
               await supabase.storage.from("pdf-documents").remove([newFilePath]);
             }
             
-            // 2. Télécharger le fichier source
             const { data: fileData, error: downloadErr } = await supabase.storage
               .from("pdf-documents")
               .download(filePath);
             
             if (!downloadErr && fileData) {
-              // 3. Uploader vers le nouveau chemin
               const { error: uploadErr } = await supabase.storage
                 .from("pdf-documents")
-                .upload(newFilePath, fileData, {
-                  cacheControl: "3600",
-                  upsert: true,
-                  contentType: "application/pdf"
-                });
+                .upload(newFilePath, fileData, { cacheControl: "3600", upsert: true, contentType: "application/pdf" });
               
               if (!uploadErr) {
-                // 4. Supprimer l'ancien fichier
                 await supabase.storage.from("pdf-documents").remove([filePath]);
-                
-                // 5. Mettre à jour le chemin dans pdf_documents
                 updateData.file_path = newFilePath;
                 updateData.title = `Chapitre SH ${paddedChapter}`;
-                
-                console.log(`[Background] ✅ PDF renamed successfully to ${newFilePath}`);
-              } else {
-                console.error("[Background] Upload to new path failed:", uploadErr);
+                console.log(`[Background] ✅ PDF renamed to ${newFilePath}`);
               }
-            } else {
-              console.error("[Background] Download for rename failed:", downloadErr);
             }
           } catch (renameError) {
             console.error("[Background] PDF rename error:", renameError);
-            // Continuer sans renommer - le fichier reste dans uploads/
           }
         }
-
+        
         await supabase.from("pdf_documents").update(updateData).eq("id", pdfId);
         
-        // ================================================================
-        // NOUVEAU: Sauvegarder les données structurées pour documents réglementaires
-        // ================================================================
+        // Documents réglementaires: sauvegarder données structurées
         if (isRegulatoryDoc) {
           console.log("[Background] Saving regulatory data for PDF:", pdfId);
           
-          // 1. Sauvegarder les références légales
-          if (analysisResult.legal_references && Array.isArray(analysisResult.legal_references) && analysisResult.legal_references.length > 0) {
-            // Supprimer les anciennes références
+          // Legal references
+          if (result.legal_references && Array.isArray(result.legal_references) && result.legal_references.length > 0) {
             await supabase.from("legal_references").delete().eq("pdf_id", pdfId);
             
-            const legalRefRows = analysisResult.legal_references
+            const legalRefRows = result.legal_references
               .filter((ref: any) => ref && (typeof ref === 'object' ? ref.reference : ref))
               .map((ref: any) => {
-                // Support ancien format (string[]) et nouveau format (LegalReference[])
                 if (typeof ref === 'string') {
-                  return {
-                    pdf_id: pdfId,
-                    reference_type: 'reference',
-                    reference_number: ref,
-                    country_code: countryCode,
-                  };
+                  return { pdf_id: pdfId, reference_type: 'reference', reference_number: ref, country_code: countryCode };
                 }
                 return {
                   pdf_id: pdfId,
                   reference_type: ref.type || 'reference',
-                  reference_number: ref.reference || ref.reference_number || '',
+                  reference_number: ref.reference || '',
                   title: ref.title || null,
                   reference_date: ref.date ? parseFlexibleDate(ref.date) : null,
                   context: ref.context || null,
@@ -2037,20 +1993,15 @@ serve(async (req) => {
             
             if (legalRefRows.length > 0) {
               const { error: legalError } = await supabase.from("legal_references").insert(legalRefRows);
-              if (legalError) {
-                console.error("[Background] Legal references insert error:", legalError);
-              } else {
-                console.log(`[Background] ✅ Inserted ${legalRefRows.length} legal references`);
-              }
+              if (!legalError) console.log(`[Background] ✅ Inserted ${legalRefRows.length} legal references`);
             }
           }
           
-          // 2. Sauvegarder les dates importantes
-          if (analysisResult.important_dates && Array.isArray(analysisResult.important_dates) && analysisResult.important_dates.length > 0) {
-            // Supprimer les anciennes dates
+          // Important dates
+          if (result.important_dates && Array.isArray(result.important_dates) && result.important_dates.length > 0) {
             await supabase.from("regulatory_dates").delete().eq("pdf_id", pdfId);
             
-            const dateRows = analysisResult.important_dates
+            const dateRows = result.important_dates
               .filter((d: any) => d && d.date)
               .map((d: any) => ({
                 pdf_id: pdfId,
@@ -2063,20 +2014,15 @@ serve(async (req) => {
             
             if (dateRows.length > 0) {
               const { error: dateError } = await supabase.from("regulatory_dates").insert(dateRows);
-              if (dateError) {
-                console.error("[Background] Regulatory dates insert error:", dateError);
-              } else {
-                console.log(`[Background] ✅ Inserted ${dateRows.length} regulatory dates`);
-              }
+              if (!dateError) console.log(`[Background] ✅ Inserted ${dateRows.length} regulatory dates`);
             }
           }
           
-          // 3. Sauvegarder les procédures
-          if (analysisResult.procedures && Array.isArray(analysisResult.procedures) && analysisResult.procedures.length > 0) {
-            // Supprimer les anciennes procédures
+          // Procedures
+          if (result.procedures && Array.isArray(result.procedures) && result.procedures.length > 0) {
             await supabase.from("regulatory_procedures").delete().eq("pdf_id", pdfId);
             
-            const procRows = analysisResult.procedures
+            const procRows = result.procedures
               .filter((p: any) => p && p.name)
               .map((p: any) => ({
                 pdf_id: pdfId,
@@ -2084,21 +2030,15 @@ serve(async (req) => {
                 required_documents: p.required_documents || [],
                 deadlines: p.deadlines || null,
                 penalties: p.penalties || null,
-                authority: p.authority || analysisResult.issuing_authority?.name || null,
+                authority: p.authority || result.issuing_authority?.name || null,
                 country_code: countryCode,
               }));
             
             if (procRows.length > 0) {
               const { error: procError } = await supabase.from("regulatory_procedures").insert(procRows);
-              if (procError) {
-                console.error("[Background] Procedures insert error:", procError);
-              } else {
-                console.log(`[Background] ✅ Inserted ${procRows.length} procedures`);
-              }
+              if (!procError) console.log(`[Background] ✅ Inserted ${procRows.length} procedures`);
             }
           }
-          
-          console.log("[Background] ✅ Regulatory data saved for PDF:", pdfId);
         }
         
         console.log("[Background] ✅ PDF processing complete:", pdfId);
@@ -2111,24 +2051,21 @@ serve(async (req) => {
         }).eq("pdf_id", pdfId);
       }
     };
-
-    // Utiliser EdgeRuntime.waitUntil pour traitement en arrière-plan
-    // @ts-ignore - EdgeRuntime est disponible dans Supabase Edge Functions
+    
+    // @ts-ignore
     if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
       console.log("Using EdgeRuntime.waitUntil for background processing");
       // @ts-ignore
       EdgeRuntime.waitUntil(backgroundProcess());
     } else {
-      // Fallback: exécuter de manière synchrone (ancien comportement)
       console.log("EdgeRuntime.waitUntil not available, running synchronously");
       await backgroundProcess();
     }
-
-    // Répondre immédiatement au client
+    
     return new Response(
       JSON.stringify({
         status: "processing",
-        message: "Analyse démarrée en arrière-plan. Le client peut polluer pour les résultats.",
+        message: "Analyse démarrée en arrière-plan.",
         pdfId,
         pdfTitle: title,
         countryCode,
@@ -2136,7 +2073,7 @@ serve(async (req) => {
       }),
       { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
-
+    
   } catch (error) {
     logger.error("Analyze PDF error", error as Error);
     return new Response(

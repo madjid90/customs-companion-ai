@@ -367,6 +367,8 @@ export type Database = {
           source: string | null
           source_url: string | null
           unit_code: string | null
+          unit_complementary_code: string | null
+          unit_complementary_description: string | null
           unit_description: string | null
           updated_at: string
           vat_rate: number | null
@@ -392,6 +394,8 @@ export type Database = {
           source?: string | null
           source_url?: string | null
           unit_code?: string | null
+          unit_complementary_code?: string | null
+          unit_complementary_description?: string | null
           unit_description?: string | null
           updated_at?: string
           vat_rate?: number | null
@@ -417,6 +421,8 @@ export type Database = {
           source?: string | null
           source_url?: string | null
           unit_code?: string | null
+          unit_complementary_code?: string | null
+          unit_complementary_description?: string | null
           unit_description?: string | null
           updated_at?: string
           vat_rate?: number | null
@@ -1084,6 +1090,45 @@ export type Database = {
           stat_value?: number | null
           total_conversations?: number | null
           total_questions?: number | null
+        }
+        Relationships: []
+      }
+      tariff_notes: {
+        Row: {
+          anchor: string | null
+          chapter_number: string | null
+          country_code: string
+          created_at: string
+          id: number
+          note_text: string
+          note_type: string
+          page_number: number | null
+          source_extraction_id: number | null
+          source_pdf: string | null
+        }
+        Insert: {
+          anchor?: string | null
+          chapter_number?: string | null
+          country_code?: string
+          created_at?: string
+          id?: number
+          note_text: string
+          note_type: string
+          page_number?: number | null
+          source_extraction_id?: number | null
+          source_pdf?: string | null
+        }
+        Update: {
+          anchor?: string | null
+          chapter_number?: string | null
+          country_code?: string
+          created_at?: string
+          id?: number
+          note_text?: string
+          note_type?: string
+          page_number?: number | null
+          source_extraction_id?: number | null
+          source_pdf?: string | null
         }
         Relationships: []
       }
