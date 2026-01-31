@@ -28,6 +28,97 @@ export default function AdminUpload() {
   const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null);
   const { toast } = useToast();
   const processingRef = useRef(false);
+  
+  // Fonction batch avec callbacks dynamiques pour chaque fichier
+  const runBatchExtraction = useCallback(async (
+    pdfId: string,
+    filePath: string,
+    fileId: string,
+    fileName: string
+  ) => {
+    const BATCH_SIZE = 4;
+    const DELAY_BETWEEN_BATCHES = 2000;
+    const FETCH_TIMEOUT_MS = 300000; // 5 min
+    
+    let startPage = 1;
+    let runId: string | null = null;
+    let totalPages = 0;
+    let processedPages = 0;
+    let done = false;
+    
+    while (!done) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-pdf`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+              "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            },
+            body: JSON.stringify({
+              pdfId,
+              filePath,
+              previewOnly: false,
+              start_page: startPage,
+              max_pages: BATCH_SIZE,
+              extraction_run_id: runId,
+            }),
+            signal: controller.signal,
+          }
+        );
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
+        }
+        
+        const batchResult = await response.json();
+        
+        if (!runId) runId = batchResult.extraction_run_id;
+        totalPages = batchResult.total_pages || totalPages;
+        processedPages = batchResult.processed_pages || processedPages;
+        
+        // Calculer la progression (60% à 95%)
+        const progressPercent = totalPages > 0 
+          ? 60 + Math.round((processedPages / totalPages) * 35)
+          : 70;
+        
+        updateFileStatus(fileId, { 
+          progress: progressPercent,
+          error: `Page ${processedPages}/${totalPages}...`
+        });
+        
+        if (batchResult.done) {
+          done = true;
+          return {
+            success: true,
+            stats: batchResult.stats,
+            processedPages,
+            totalPages,
+          };
+        } else if (batchResult.next_page) {
+          startPage = batchResult.next_page;
+          // Attendre entre les batches
+          await new Promise(r => setTimeout(r, DELAY_BETWEEN_BATCHES));
+        } else {
+          throw new Error("Réponse batch invalide");
+        }
+        
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        throw err;
+      }
+    }
+    
+    return { success: true, stats: { tariff_lines_inserted: 0 }, processedPages, totalPages };
+  }, [updateFileStatus]);
 
   const detectDocumentType = (fileName: string): { category: string; label: string } => {
     const name = fileName.toLowerCase();
@@ -123,253 +214,82 @@ export default function AdminUpload() {
         filePath: filePath,
       });
 
-      // 3. Call AI analysis edge function - nouvelle architecture asynchrone
+      // 3. Utiliser le batch extraction automatique pour gérer les PDFs multi-pages
+      // Cela lance automatiquement tous les batches nécessaires jusqu'à la fin
       let analysisData = null;
       let analysisError = null;
-      const INITIAL_TIMEOUT_MS = 30000; // 30s pour la réponse initiale (processing marker)
-      const MAX_POLL_TIME_MS = 600000; // 10 minutes max de polling
-      const POLL_INTERVAL_MS = 5000; // Vérifier toutes les 5 secondes
       
       try {
-        // Appel initial - devrait répondre rapidement avec status: "processing"
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), INITIAL_TIMEOUT_MS);
-        
         updateFileStatus(fileId, { 
           progress: 65,
-          error: undefined
+          error: "Lancement de l'extraction batch..."
         });
         
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-pdf`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-              "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            },
-            body: JSON.stringify({ 
-              pdfId: pdfDoc.id,
-              filePath: filePath,
-              previewOnly: true
-            }),
-            signal: controller.signal,
-          }
+        // Utiliser le batch extraction qui gère automatiquement la boucle de pages
+        const batchResult = await runBatchExtraction(
+          pdfDoc.id,
+          filePath,
+          fileId,
+          file.name
         );
         
-        clearTimeout(timeoutId);
+        // Mettre à jour le statut pendant le traitement
+        updateFileStatus(fileId, { 
+          progress: 95,
+          error: `Extraction terminée: ${batchResult.stats?.tariff_lines_inserted || 0} lignes`
+        });
         
-        if (!response.ok) {
-          const errorText = await response.text();
-          if (response.status === 429 || response.status === 503) {
-            throw new Error("Service occupé, réessayez dans quelques instants");
-          }
-          throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
-        }
+        // Récupérer les données extraites depuis la DB
+        const { data: extraction } = await supabase
+          .from("pdf_extractions")
+          .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text, extracted_data")
+          .eq("pdf_id", pdfDoc.id)
+          .maybeSingle();
         
-        const initialResponse = await response.json();
-        
-        // Si on a déjà les données complètes (cache), les utiliser directement
-        if (initialResponse.summary && initialResponse.summary !== "__PROCESSING__" && !initialResponse.status) {
-          console.log("✅ Immediate response with cached data");
-          analysisData = initialResponse;
-        } 
-        // Si le traitement est asynchrone (status: "processing"), commencer le polling
-        else if (initialResponse.status === "processing") {
-          console.log("📡 Background processing started, polling for results...");
+        if (extraction && extraction.summary && extraction.summary !== "__PROCESSING__") {
+          const tariffChanges = extraction.detected_tariff_changes as any[] || [];
+          const hsCodesRaw = extraction.mentioned_hs_codes as string[] || [];
+          const extractedData = extraction.extracted_data as any || {};
           
-          updateFileStatus(fileId, { 
-            progress: 70,
-            error: "Analyse IA en cours (peut prendre 1-3 min pour les gros PDFs)..."
-          });
+          const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
           
-          // Polling jusqu'à ce que l'extraction soit complète
-          const pollStartTime = Date.now();
-          let pollCount = 0;
+          const hsCodes = hsCodesFull.length > 0 
+            ? hsCodesFull 
+            : hsCodesRaw.map((code: string) => ({
+                code: code,
+                code_clean: code.replace(/[^0-9]/g, ""),
+                description: "",
+                level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
+              }));
           
-          while (Date.now() - pollStartTime < MAX_POLL_TIME_MS) {
-            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-            pollCount++;
-            
-            const elapsedSec = Math.round((Date.now() - pollStartTime) / 1000);
-            updateFileStatus(fileId, { 
-              progress: 70 + Math.min(pollCount * 2, 25),
-              error: `Analyse IA en cours... (${elapsedSec}s)`
-            });
-            
-            // Vérifier si l'extraction est complète
-            const { data: extraction } = await supabase
-              .from("pdf_extractions")
-              .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text, extracted_data")
-              .eq("pdf_id", pdfDoc.id)
-              .maybeSingle();
-            
-            if (extraction && extraction.summary && extraction.summary !== "__PROCESSING__") {
-              // Vérifier si c'est une erreur
-              if (extraction.summary.startsWith("Erreur:")) {
-                throw new Error(extraction.summary);
-              }
-              
-              console.log(`✅ Extraction complete after ${elapsedSec}s`);
-              
-              const tariffChanges = extraction.detected_tariff_changes as any[] || [];
-              const hsCodesRaw = extraction.mentioned_hs_codes as string[] || [];
-              const extractedData = extraction.extracted_data as any || {};
-              
-              // Utiliser hs_codes_full depuis extracted_data (avec descriptions)
-              const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
-              
-              // Préférer hs_codes_full (avec descriptions) sinon fallback sur mentioned_hs_codes
-              const hsCodes = hsCodesFull.length > 0 
-                ? hsCodesFull 
-                : hsCodesRaw.map((code: string) => ({
-                    code: code,
-                    code_clean: code.replace(/[^0-9]/g, ""),
-                    description: "",
-                    level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
-                  }));
-              
-              analysisData = {
-                summary: extraction.summary,
-                key_points: extraction.key_points || [],
-                tariff_lines: tariffChanges,
-                hs_codes: hsCodes,
-                hs_codes_full: hsCodesFull,
-                chapter_info: extractedData.chapter_info,
-                document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
-                trade_agreements: extractedData.trade_agreements || [],
-                full_text: extraction.extracted_text || "",
-              };
-              break;
-            } else {
-              console.log(`⏳ Still processing... (poll ${pollCount}, ${elapsedSec}s elapsed)`);
-            }
-          }
-          
-          if (!analysisData) {
-            throw new Error("Timeout: L'analyse a pris trop de temps. Le PDF est peut-être trop volumineux.");
-          }
+          analysisData = {
+            summary: extraction.summary,
+            key_points: extraction.key_points || [],
+            tariff_lines: tariffChanges,
+            hs_codes: hsCodes,
+            hs_codes_full: hsCodesFull,
+            chapter_info: extractedData.chapter_info,
+            document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
+            trade_agreements: extractedData.trade_agreements || [],
+            full_text: extraction.extracted_text || "",
+          };
         } else {
-          // Réponse inattendue
-          console.warn("Unexpected response format:", initialResponse);
-          throw new Error("Réponse inattendue du serveur");
+          // Si pas d'extraction trouvée mais batch terminé avec succès, créer des données basiques
+          analysisData = {
+            summary: `Extraction batch terminée: ${batchResult.stats.tariff_lines_inserted} lignes tarifaires`,
+            key_points: [],
+            tariff_lines: [],
+            hs_codes: [],
+            hs_codes_full: [],
+            document_type: "tariff",
+            trade_agreements: [],
+            full_text: "",
+          };
         }
         
       } catch (err: any) {
-        // Gérer les erreurs de timeout/réseau en vérifiant la base
-        const isTimeout = err.name === "AbortError";
-        const isNetworkError = err.message?.includes("Failed to fetch") || 
-                                err.message?.includes("NetworkError");
-        
-        if (isTimeout || isNetworkError) {
-          updateFileStatus(fileId, { 
-            progress: 75,
-            error: "Connexion perdue, vérification en cours..."
-          });
-          
-          // Attendre un peu puis vérifier si le serveur a terminé
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          
-          const { data: recoveryCheck } = await supabase
-            .from("pdf_extractions")
-            .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text, extracted_data")
-            .eq("pdf_id", pdfDoc.id)
-            .maybeSingle();
-          
-          if (recoveryCheck && recoveryCheck.summary && 
-              recoveryCheck.summary !== "__PROCESSING__" && 
-              !recoveryCheck.summary.startsWith("Erreur:")) {
-            console.log("✅ Recovery: extraction found after network error");
-            
-            const tariffChanges = recoveryCheck.detected_tariff_changes as any[] || [];
-            const hsCodesRaw = recoveryCheck.mentioned_hs_codes as string[] || [];
-            const extractedData = recoveryCheck.extracted_data as any || {};
-            
-            // Utiliser hs_codes_full depuis extracted_data (avec descriptions)
-            const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
-            
-            // Préférer hs_codes_full (avec descriptions) sinon fallback sur mentioned_hs_codes
-            const hsCodes = hsCodesFull.length > 0 
-              ? hsCodesFull 
-              : hsCodesRaw.map((code: string) => ({
-                  code: code,
-                  code_clean: code.replace(/[^0-9]/g, ""),
-                  description: "",
-                  level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
-                }));
-            
-            analysisData = {
-              summary: recoveryCheck.summary,
-              key_points: recoveryCheck.key_points || [],
-              tariff_lines: tariffChanges,
-              hs_codes: hsCodes,
-              hs_codes_full: hsCodesFull,
-              chapter_info: extractedData.chapter_info,
-              document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
-              trade_agreements: extractedData.trade_agreements || [],
-              full_text: recoveryCheck.extracted_text || "",
-            };
-          } else if (recoveryCheck?.summary === "__PROCESSING__") {
-            // Commencer un polling étendu
-            const EXTENDED_POLL_TIME = 300000; // 5 minutes
-            const pollStartTime = Date.now();
-            
-            while (Date.now() - pollStartTime < EXTENDED_POLL_TIME) {
-              await new Promise(resolve => setTimeout(resolve, 10000));
-              
-              const elapsedSec = Math.round((Date.now() - pollStartTime) / 1000);
-              updateFileStatus(fileId, { 
-                progress: 80,
-                error: `Analyse en cours... (${elapsedSec}s)`
-              });
-              
-              const { data: pollCheck } = await supabase
-                .from("pdf_extractions")
-                .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text, extracted_data")
-                .eq("pdf_id", pdfDoc.id)
-                .maybeSingle();
-              
-              if (pollCheck && pollCheck.summary && 
-                  pollCheck.summary !== "__PROCESSING__" && 
-                  !pollCheck.summary.startsWith("Erreur:")) {
-                const tariffChanges = pollCheck.detected_tariff_changes as any[] || [];
-                const extractedData = pollCheck.extracted_data as any || {};
-                
-                // Utiliser hs_codes_full depuis extracted_data (avec descriptions)
-                const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
-                const hsCodesRaw = pollCheck.mentioned_hs_codes as string[] || [];
-                
-                // Préférer hs_codes_full (avec descriptions) sinon fallback sur mentioned_hs_codes
-                const hsCodes = hsCodesFull.length > 0 
-                  ? hsCodesFull 
-                  : hsCodesRaw.map((code: string) => ({
-                      code: code,
-                      code_clean: code.replace(/[^0-9]/g, ""),
-                      description: "",
-                      level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
-                    }));
-                
-                analysisData = {
-                  summary: pollCheck.summary,
-                  key_points: pollCheck.key_points || [],
-                  tariff_lines: tariffChanges,
-                  hs_codes: hsCodes,
-                  hs_codes_full: hsCodesFull,
-                  chapter_info: extractedData.chapter_info,
-                  document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
-                  trade_agreements: extractedData.trade_agreements || [],
-                  full_text: pollCheck.extracted_text || "",
-                };
-                break;
-              }
-            }
-          }
-        }
-        
-        if (!analysisData) {
-          analysisError = err;
-        }
+        console.error("Batch extraction error:", err);
+        analysisError = err;
       }
 
       // NOUVEAU: Après toutes les tentatives, vérifier une dernière fois si l'extraction existe
@@ -566,7 +486,7 @@ export default function AdminUpload() {
     setSelectedFile(null);
   };
 
-  // Relancer l'analyse d'un fichier en erreur
+  // Relancer l'analyse d'un fichier en erreur - utilise le batch extraction automatique
   const retryAnalysis = async (file: UploadedFile) => {
     if (!file.pdfId || !file.filePath) {
       toast({
@@ -577,11 +497,11 @@ export default function AdminUpload() {
       return;
     }
 
-    // Supprimer toute extraction existante (marqueur PROCESSING ou erreur)
-    await supabase
-      .from("pdf_extractions")
-      .delete()
-      .eq("pdf_id", file.pdfId);
+    // Supprimer toute extraction existante et runs précédents
+    await Promise.all([
+      supabase.from("pdf_extractions").delete().eq("pdf_id", file.pdfId),
+      supabase.from("pdf_extraction_runs").delete().eq("pdf_id", file.pdfId),
+    ]);
 
     // Mettre à jour le statut
     updateFileStatus(file.id, { 
@@ -591,149 +511,79 @@ export default function AdminUpload() {
     });
 
     toast({
-      title: "🔄 Relance de l'analyse",
-      description: "Analyse IA en cours...",
+      title: "🔄 Relance de l'analyse batch",
+      description: "Extraction automatique page par page...",
     });
 
-    const MAX_POLL_TIME_MS = 600000; // 10 minutes max
-    const POLL_INTERVAL_MS = 5000;
-
     try {
-      // Appel initial - devrait répondre rapidement
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-pdf`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-            "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          },
-          body: JSON.stringify({ 
-            pdfId: file.pdfId,
-            filePath: file.filePath,
-            previewOnly: true
-          }),
-          signal: controller.signal,
-        }
+      // Utiliser la fonction batch extraction avec callbacks dynamiques
+      const result = await runBatchExtraction(
+        file.pdfId,
+        file.filePath!,
+        file.id,
+        file.name
       );
 
-      clearTimeout(timeoutId);
+      // Récupérer les données extraites depuis la DB
+      const { data: extraction } = await supabase
+        .from("pdf_extractions")
+        .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text, extracted_data")
+        .eq("pdf_id", file.pdfId)
+        .maybeSingle();
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const initialResponse = await response.json();
-      let analysisData = null;
-
-      // Si données complètes retournées directement
-      if (initialResponse.summary && initialResponse.summary !== "__PROCESSING__" && !initialResponse.status) {
-        analysisData = initialResponse;
-      }
-      // Si traitement asynchrone
-      else if (initialResponse.status === "processing") {
-        updateFileStatus(file.id, { 
-          progress: 70,
-          error: "Analyse IA en cours..."
-        });
-
-        const pollStartTime = Date.now();
+      if (extraction && extraction.summary && extraction.summary !== "__PROCESSING__") {
+        const tariffChanges = extraction.detected_tariff_changes as any[] || [];
+        const hsCodesRaw = extraction.mentioned_hs_codes as string[] || [];
+        const extractedData = extraction.extracted_data as any || {};
         
-        while (Date.now() - pollStartTime < MAX_POLL_TIME_MS) {
-          await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-          
-          const elapsedSec = Math.round((Date.now() - pollStartTime) / 1000);
-          updateFileStatus(file.id, { 
-            progress: 70 + Math.min(Math.floor(elapsedSec / 10), 25),
-            error: `Analyse en cours... (${elapsedSec}s)`
-          });
-          
-          const { data: extraction } = await supabase
-            .from("pdf_extractions")
-            .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text, extracted_data")
-            .eq("pdf_id", file.pdfId)
-            .maybeSingle();
-          
-          if (extraction && extraction.summary && extraction.summary !== "__PROCESSING__") {
-            if (extraction.summary.startsWith("Erreur:")) {
-              throw new Error(extraction.summary);
-            }
-            
-            const tariffChanges = extraction.detected_tariff_changes as any[] || [];
-            const hsCodesRaw = extraction.mentioned_hs_codes as string[] || [];
-            const extractedData = extraction.extracted_data as any || {};
-            
-            // Utiliser hs_codes_full depuis extracted_data (avec descriptions)
-            const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
-            
-            // Préférer hs_codes_full (avec descriptions) sinon fallback sur mentioned_hs_codes
-            const hsCodes = hsCodesFull.length > 0 
-              ? hsCodesFull 
-              : hsCodesRaw.map((code: string) => ({
-                  code: code,
-                  code_clean: code.replace(/[^0-9]/g, ""),
-                  description: "",
-                  level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
-                }));
-            
-            analysisData = {
-              summary: extraction.summary,
-              key_points: extraction.key_points || [],
-              tariff_lines: tariffChanges,
-              hs_codes: hsCodes,
-              hs_codes_full: hsCodesFull,
-              chapter_info: extractedData.chapter_info,
-              document_type: extractedData.document_type || (tariffChanges.length > 0 ? "tariff" : "regulatory"),
-              trade_agreements: extractedData.trade_agreements || [],
-              full_text: extraction.extracted_text || "",
-            };
-            break;
-          }
-        }
+        const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
         
-        if (!analysisData) {
-          throw new Error("Timeout: L'analyse a pris trop de temps");
-        }
-      }
-
-      if (analysisData) {
-        const extractionData: ExtractionData = {
-          summary: analysisData.summary || "",
-          key_points: analysisData.key_points || [],
-          hs_codes: analysisData.hs_codes || [],
-          hs_codes_full: analysisData.hs_codes_full || [],
-          tariff_lines: analysisData.tariff_lines || [],
-          chapter_info: analysisData.chapter_info,
+        const hsCodes = hsCodesFull.length > 0 
+          ? hsCodesFull 
+          : hsCodesRaw.map((code: string) => ({
+              code: code,
+              code_clean: code.replace(/[^0-9]/g, ""),
+              description: "",
+              level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
+            }));
+        
+        const extractionDataResult: ExtractionData = {
+          summary: extraction.summary || "",
+          key_points: extraction.key_points as string[] || [],
+          hs_codes: hsCodes,
+          hs_codes_full: hsCodesFull,
+          tariff_lines: tariffChanges,
+          chapter_info: extractedData.chapter_info,
           pdfId: file.pdfId,
           pdfTitle: file.name,
           countryCode: "MA",
-          document_type: analysisData.document_type || "tariff",
-          trade_agreements: analysisData.trade_agreements || [],
-          full_text_length: analysisData.full_text?.length || 0,
+          document_type: extractedData.document_type || "tariff",
+          trade_agreements: extractedData.trade_agreements || [],
+          full_text_length: extraction.extracted_text?.length || 0,
         };
 
         updateFileStatus(file.id, {
           status: "preview",
           progress: 100,
-          analysis: extractionData,
+          analysis: extractionDataResult,
           error: undefined,
         });
 
         toast({
           title: "✅ Analyse terminée",
-          description: `${extractionData.hs_codes?.length || 0} codes SH et ${extractionData.tariff_lines?.length || 0} lignes détectées`,
+          description: `${result.stats?.tariff_lines_inserted || 0} lignes tarifaires insérées`,
         });
+      } else {
+        throw new Error("Extraction introuvable après batch");
       }
 
     } catch (err: any) {
+      console.error("Batch retry error:", err);
+      
       updateFileStatus(file.id, {
         status: "error",
         progress: 100,
-        error: err.message || "Erreur d'analyse",
+        error: err.message || "Erreur d'analyse batch",
       });
 
       toast({
