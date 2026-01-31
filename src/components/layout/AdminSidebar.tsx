@@ -6,8 +6,6 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import {
   Upload,
-  Globe,
-  Search,
   Package,
   FileText,
   LogOut,
@@ -24,8 +22,6 @@ type MenuItem =
 
 const menuItems: MenuItem[] = [
   { type: "link", icon: Upload, label: "Upload fichiers", href: "/admin/upload" },
-  { type: "link", icon: Globe, label: "Scraping WCO", href: "/admin/scraping" },
-  { type: "link", icon: Search, label: "Veille web", href: "/admin/veille" },
   { type: "separator" },
   { type: "link", icon: Package, label: "Codes SH", href: "/admin/hs-codes" },
   { type: "link", icon: FileText, label: "Documents", href: "/admin/documents" },
