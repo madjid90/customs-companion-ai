@@ -30,6 +30,7 @@ export default function AdminUpload() {
   const processingRef = useRef(false);
   
   // Fonction batch avec callbacks dynamiques pour chaque fichier
+  // Accumule les données de chaque batch pour prévisualisation avant insertion
   const runBatchExtraction = useCallback(async (
     pdfId: string,
     filePath: string,
@@ -45,6 +46,27 @@ export default function AdminUpload() {
     let totalPages = 0;
     let processedPages = 0;
     let done = false;
+    
+    // Accumulateurs pour les données de tous les batches
+    const accumulatedTariffLines: Array<{
+      national_code: string;
+      hs_code_6: string;
+      description: string;
+      duty_rate: number;
+      unit?: string;
+    }> = [];
+    const accumulatedHsCodes: Array<{
+      code: string;
+      code_clean: string;
+      description: string;
+      level: string;
+    }> = [];
+    const accumulatedNotes: Array<{
+      note_type: string;
+      anchor?: string;
+      note_text: string;
+      page_number?: number;
+    }> = [];
     
     while (!done) {
       const controller = new AbortController();
@@ -63,7 +85,7 @@ export default function AdminUpload() {
             body: JSON.stringify({
               pdfId,
               filePath,
-              previewOnly: false,
+              previewOnly: true,  // IMPORTANT: Ne pas insérer, juste extraire
               start_page: startPage,
               max_pages: BATCH_SIZE,
               extraction_run_id: runId,
@@ -85,6 +107,44 @@ export default function AdminUpload() {
         totalPages = batchResult.total_pages || totalPages;
         processedPages = batchResult.processed_pages || processedPages;
         
+        // Accumuler les données de ce batch
+        if (batchResult.tariff_lines && Array.isArray(batchResult.tariff_lines)) {
+          for (const line of batchResult.tariff_lines) {
+            accumulatedTariffLines.push({
+              national_code: line.national_code,
+              hs_code_6: line.hs_code_6,
+              description: line.description || "",
+              duty_rate: line.duty_rate || 0,
+              unit: line.unit_norm || line.unit || undefined,
+            });
+          }
+        }
+        
+        if (batchResult.hs_codes && Array.isArray(batchResult.hs_codes)) {
+          for (const hs of batchResult.hs_codes) {
+            // Éviter les doublons
+            if (!accumulatedHsCodes.some(h => h.code_clean === hs.code_clean)) {
+              accumulatedHsCodes.push({
+                code: hs.code,
+                code_clean: hs.code_clean,
+                description: hs.description || "",
+                level: hs.level || "subheading",
+              });
+            }
+          }
+        }
+        
+        if (batchResult.notes && Array.isArray(batchResult.notes)) {
+          for (const note of batchResult.notes) {
+            accumulatedNotes.push({
+              note_type: note.note_type,
+              anchor: note.anchor,
+              note_text: note.note_text,
+              page_number: note.page_number,
+            });
+          }
+        }
+        
         // Calculer la progression (60% à 95%)
         const progressPercent = totalPages > 0 
           ? 60 + Math.round((processedPages / totalPages) * 35)
@@ -92,7 +152,7 @@ export default function AdminUpload() {
         
         updateFileStatus(fileId, { 
           progress: progressPercent,
-          error: `Page ${processedPages}/${totalPages}...`
+          error: `Page ${processedPages}/${totalPages}... (${accumulatedTariffLines.length} lignes)`
         });
         
         if (batchResult.done) {
@@ -102,6 +162,10 @@ export default function AdminUpload() {
             stats: batchResult.stats,
             processedPages,
             totalPages,
+            // Retourner les données accumulées pour prévisualisation
+            tariff_lines: accumulatedTariffLines,
+            hs_codes: accumulatedHsCodes,
+            notes: accumulatedNotes,
           };
         } else if (batchResult.next_page) {
           startPage = batchResult.next_page;
@@ -117,7 +181,15 @@ export default function AdminUpload() {
       }
     }
     
-    return { success: true, stats: { tariff_lines_inserted: 0 }, processedPages, totalPages };
+    return { 
+      success: true, 
+      stats: { tariff_lines_inserted: 0 }, 
+      processedPages, 
+      totalPages,
+      tariff_lines: accumulatedTariffLines,
+      hs_codes: accumulatedHsCodes,
+      notes: accumulatedNotes,
+    };
   }, [updateFileStatus]);
 
   const detectDocumentType = (fileName: string): { category: string; label: string } => {
@@ -215,7 +287,7 @@ export default function AdminUpload() {
       });
 
       // 3. Utiliser le batch extraction automatique pour gérer les PDFs multi-pages
-      // Cela lance automatiquement tous les batches nécessaires jusqu'à la fin
+      // Les données sont accumulées côté client et présentées pour validation AVANT insertion
       let analysisData = null;
       let analysisError = null;
       
@@ -225,7 +297,7 @@ export default function AdminUpload() {
           error: "Lancement de l'extraction batch..."
         });
         
-        // Utiliser le batch extraction qui gère automatiquement la boucle de pages
+        // Utiliser le batch extraction qui accumule les données de toutes les pages
         const batchResult = await runBatchExtraction(
           pdfDoc.id,
           filePath,
@@ -233,116 +305,31 @@ export default function AdminUpload() {
           file.name
         );
         
-        // Mettre à jour le statut pendant le traitement
+        // Mettre à jour le statut 
         updateFileStatus(fileId, { 
           progress: 95,
-          error: `Extraction terminée: ${batchResult.stats?.tariff_lines_inserted || 0} lignes`
+          error: `Extraction terminée: ${batchResult.tariff_lines?.length || 0} lignes`
         });
         
-        // Récupérer les données extraites depuis la DB
-        const { data: extraction } = await supabase
-          .from("pdf_extractions")
-          .select("id, summary, key_points, mentioned_hs_codes, extracted_text, extracted_data")
-          .eq("pdf_id", pdfDoc.id)
-          .maybeSingle();
-        
-        // IMPORTANT: Récupérer les vraies données depuis country_tariffs et hs_codes
-        // car ces tables contiennent l'agrégation de TOUS les batches
-        const { data: realTariffs } = await supabase
-          .from("country_tariffs")
-          .select("national_code, hs_code_6, description_local, duty_rate, unit_code")
-          .eq("source_pdf", pdfDoc.id)
-          .order("national_code");
-        
-        const { data: realHsCodes } = await supabase
-          .from("hs_codes")
-          .select("code, code_clean, description_fr, level")
-          .in("code_clean", (realTariffs || []).map(t => t.hs_code_6).filter(Boolean));
-        
-        const tariffLines = (realTariffs || []).map(t => ({
-          national_code: t.national_code,
-          hs_code_6: t.hs_code_6,
-          description: t.description_local || "",
-          duty_rate: t.duty_rate || 0,
-          unit: t.unit_code || undefined,
-        }));
-        
-        const hsCodesFull = (realHsCodes || []).map(h => ({
-          code: h.code,
-          code_clean: h.code_clean,
-          description: h.description_fr || "",
-          level: h.level || "subheading",
-        }));
-        
-        const extractedData = extraction?.extracted_data as any || {};
+        // Utiliser les données accumulées directement (pas de requête DB car previewOnly=true)
+        const tariffLines = batchResult.tariff_lines || [];
+        const hsCodesFull = batchResult.hs_codes || [];
         const stats = batchResult.stats || {};
         
         analysisData = {
-          summary: extraction?.summary || `Extraction batch terminée: ${stats.tariff_lines_inserted || tariffLines.length} lignes tarifaires, ${stats.hs_codes_inserted || hsCodesFull.length} codes SH, ${stats.notes_inserted || 0} notes`,
-          key_points: extraction?.key_points || [],
+          summary: `Extraction terminée: ${tariffLines.length} lignes tarifaires, ${hsCodesFull.length} codes SH`,
+          key_points: [],
           tariff_lines: tariffLines,
           hs_codes: hsCodesFull,
           hs_codes_full: hsCodesFull,
-          chapter_info: extractedData.chapter_info,
           document_type: tariffLines.length > 0 ? "tariff" : "regulatory",
-          trade_agreements: extractedData.trade_agreements || [],
-          full_text: extraction?.extracted_text || "",
+          trade_agreements: [],
+          full_text: "",
         };
         
       } catch (err: any) {
         console.error("Batch extraction error:", err);
         analysisError = err;
-      }
-
-      // NOUVEAU: Après toutes les tentatives, vérifier une dernière fois si l'extraction existe
-      if ((analysisError || !analysisData)) {
-        updateFileStatus(fileId, { 
-          progress: 90,
-          error: `Vérification finale de l'extraction...`
-        });
-        
-        // Récupérer les vraies données depuis les tables (agrégation complète)
-        const { data: realTariffs } = await supabase
-          .from("country_tariffs")
-          .select("national_code, hs_code_6, description_local, duty_rate, unit_code")
-          .eq("source_pdf", pdfDoc.id)
-          .order("national_code");
-        
-        const { data: realHsCodes } = await supabase
-          .from("hs_codes")
-          .select("code, code_clean, description_fr, level")
-          .in("code_clean", (realTariffs || []).map(t => t.hs_code_6).filter(Boolean));
-        
-        if (realTariffs && realTariffs.length > 0) {
-          console.log("Extraction found via country_tariffs, recovering data...");
-          
-          const tariffLines = realTariffs.map(t => ({
-            national_code: t.national_code,
-            hs_code_6: t.hs_code_6,
-            description: t.description_local || "",
-            duty_rate: t.duty_rate || 0,
-            unit: t.unit_code || undefined,
-          }));
-          
-          const hsCodesFull = (realHsCodes || []).map(h => ({
-            code: h.code,
-            code_clean: h.code_clean,
-            description: h.description_fr || "",
-            level: h.level || "subheading",
-          }));
-          
-          analysisData = {
-            summary: `Extraction batch terminée: ${tariffLines.length} lignes tarifaires, ${hsCodesFull.length} codes SH`,
-            key_points: [],
-            tariff_lines: tariffLines,
-            hs_codes: hsCodesFull,
-            hs_codes_full: hsCodesFull,
-            document_type: "tariff",
-            trade_agreements: [],
-            full_text: "",
-          };
-          analysisError = null;
-        }
       }
 
       if (analysisError || !analysisData) {
