@@ -506,7 +506,7 @@ export default function ExtractionPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-5xl h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Database className="h-5 w-5" />
@@ -613,8 +613,8 @@ export default function ExtractionPreviewDialog({
             </div>
           </div>
 
-          <TabsContent value="tariffs" className="flex-1 overflow-hidden mt-4">
-            <ScrollArea className="h-[400px] border rounded-lg">
+          <TabsContent value="tariffs" className="flex-1 overflow-auto mt-4">
+            <ScrollArea className="h-full max-h-[calc(90vh-320px)] border rounded-lg">
               <Table>
                 <TableHeader className="sticky top-0 bg-background">
                   <TableRow>
@@ -725,8 +725,8 @@ export default function ExtractionPreviewDialog({
             </ScrollArea>
           </TabsContent>
 
-          <TabsContent value="hscodes" className="flex-1 overflow-hidden mt-4">
-            <ScrollArea className="h-[400px] border rounded-lg">
+          <TabsContent value="hscodes" className="flex-1 overflow-auto mt-4">
+            <ScrollArea className="h-full max-h-[calc(90vh-320px)] border rounded-lg">
               <Table>
                 <TableHeader className="sticky top-0 bg-background">
                   <TableRow>
@@ -827,8 +827,8 @@ export default function ExtractionPreviewDialog({
           </TabsContent>
 
           {/* Trade Agreements Tab */}
-          <TabsContent value="agreements" className="flex-1 overflow-hidden mt-4">
-            <ScrollArea className="h-[400px] border rounded-lg">
+          <TabsContent value="agreements" className="flex-1 overflow-auto mt-4">
+            <ScrollArea className="h-full max-h-[calc(90vh-320px)] border rounded-lg">
               <Table>
                 <TableHeader className="sticky top-0 bg-background">
                   <TableRow>
@@ -876,8 +876,8 @@ export default function ExtractionPreviewDialog({
           </TabsContent>
 
           {/* Preferential Rates Tab */}
-          <TabsContent value="preferential" className="flex-1 overflow-hidden mt-4">
-            <ScrollArea className="h-[400px] border rounded-lg">
+          <TabsContent value="preferential" className="flex-1 overflow-auto mt-4">
+            <ScrollArea className="h-full max-h-[calc(90vh-320px)] border rounded-lg">
               <Table>
                 <TableHeader className="sticky top-0 bg-background">
                   <TableRow>
@@ -925,8 +925,8 @@ export default function ExtractionPreviewDialog({
           </TabsContent>
 
           {/* Notes Tab - Definitions, chapter notes, footnotes */}
-          <TabsContent value="notes" className="flex-1 overflow-hidden mt-4">
-            <ScrollArea className="h-[400px]">
+          <TabsContent value="notes" className="flex-1 overflow-auto mt-4">
+            <ScrollArea className="h-full max-h-[calc(90vh-320px)]">
               <div className="space-y-3 pr-4">
                 {(extractionData?.notes || []).length > 0 ? (
                   extractionData?.notes?.map((note, index) => (
@@ -973,8 +973,8 @@ export default function ExtractionPreviewDialog({
           </TabsContent>
 
           {/* Regulatory Info Tab */}
-          <TabsContent value="regulatory" className="flex-1 overflow-hidden mt-4">
-            <ScrollArea className="h-[400px]">
+          <TabsContent value="regulatory" className="flex-1 overflow-auto mt-4">
+            <ScrollArea className="h-full max-h-[calc(90vh-320px)]">
               <div className="space-y-6 pr-4">
                 {/* En-tête du document */}
                 {(extractionData?.document_reference || extractionData?.issuing_authority) && (
