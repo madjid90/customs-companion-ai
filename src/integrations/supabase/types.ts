@@ -365,6 +365,10 @@ export type Database = {
           requires_license: boolean | null
           restriction_notes: string | null
           source: string | null
+          source_evidence: string | null
+          source_extraction_id: number | null
+          source_page: number | null
+          source_pdf: string | null
           source_url: string | null
           unit_code: string | null
           unit_complementary_code: string | null
@@ -392,6 +396,10 @@ export type Database = {
           requires_license?: boolean | null
           restriction_notes?: string | null
           source?: string | null
+          source_evidence?: string | null
+          source_extraction_id?: number | null
+          source_page?: number | null
+          source_pdf?: string | null
           source_url?: string | null
           unit_code?: string | null
           unit_complementary_code?: string | null
@@ -419,6 +427,10 @@ export type Database = {
           requires_license?: boolean | null
           restriction_notes?: string | null
           source?: string | null
+          source_evidence?: string | null
+          source_extraction_id?: number | null
+          source_page?: number | null
+          source_pdf?: string | null
           source_url?: string | null
           unit_code?: string | null
           unit_complementary_code?: string | null
@@ -505,6 +517,50 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      hs_evidence: {
+        Row: {
+          confidence: string | null
+          country_code: string
+          created_at: string
+          evidence_text: string
+          hs_code_6: string | null
+          id: number
+          national_code: string
+          page_number: number | null
+          source_id: number
+        }
+        Insert: {
+          confidence?: string | null
+          country_code?: string
+          created_at?: string
+          evidence_text: string
+          hs_code_6?: string | null
+          id?: number
+          national_code: string
+          page_number?: number | null
+          source_id: number
+        }
+        Update: {
+          confidence?: string | null
+          country_code?: string
+          created_at?: string
+          evidence_text?: string
+          hs_code_6?: string | null
+          id?: number
+          national_code?: string
+          page_number?: number | null
+          source_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hs_evidence_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "legal_sources"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       knowledge_documents: {
         Row: {
@@ -629,6 +685,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      legal_sources: {
+        Row: {
+          country_code: string
+          created_at: string
+          excerpt: string | null
+          full_text: string | null
+          id: number
+          issuer: string | null
+          source_date: string | null
+          source_ref: string
+          source_type: string
+          source_url: string | null
+          title: string | null
+        }
+        Insert: {
+          country_code?: string
+          created_at?: string
+          excerpt?: string | null
+          full_text?: string | null
+          id?: number
+          issuer?: string | null
+          source_date?: string | null
+          source_ref: string
+          source_type: string
+          source_url?: string | null
+          title?: string | null
+        }
+        Update: {
+          country_code?: string
+          created_at?: string
+          excerpt?: string | null
+          full_text?: string | null
+          id?: number
+          issuer?: string | null
+          source_date?: string | null
+          source_ref?: string
+          source_type?: string
+          source_url?: string | null
+          title?: string | null
+        }
+        Relationships: []
       }
       origin_rules: {
         Row: {
