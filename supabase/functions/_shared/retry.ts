@@ -1,5 +1,5 @@
 // ============================================================================
-// RETRY AVEC EXPONENTIAL BACKOFF
+// RETRY AVEC EXPONENTIAL BACKOFF - Production Hardening
 // ============================================================================
 
 export interface RetryConfig {
@@ -7,16 +7,38 @@ export interface RetryConfig {
   initialDelayMs: number;
   maxDelayMs: number;
   retryableStatuses: number[];
+  timeoutMs?: number;
 }
 
+export interface RetryResult<T> {
+  success: boolean;
+  data?: T;
+  attempts: number;
+  lastError?: string;
+  totalDurationMs: number;
+}
+
+// Configuration par défaut STRICTE pour production (2 retries max)
 const DEFAULT_CONFIG: RetryConfig = {
-  maxRetries: 3,
+  maxRetries: 2,  // PRODUCTION: 2 retries max (total 3 tentatives)
   initialDelayMs: 1000,
   maxDelayMs: 10000,
-  retryableStatuses: [429, 500, 502, 503, 504]
+  retryableStatuses: [429, 500, 502, 503, 504],
+  timeoutMs: 60000,
 };
 
-// Fonction générique de fetch avec retry
+// Configuration LLM spécifique
+const LLM_CONFIG: RetryConfig = {
+  maxRetries: 2,        // PRODUCTION: 2 retries max
+  initialDelayMs: 3000, // 3s entre les tentatives
+  maxDelayMs: 15000,    // Max 15s d'attente
+  retryableStatuses: [429, 500, 502, 503, 504, 529], // 529 = Anthropic overloaded
+  timeoutMs: 180000,    // 3 minutes pour les PDFs volumineux
+};
+
+/**
+ * Fonction générique de fetch avec retry et timeout
+ */
 export async function fetchWithRetry(
   url: string,
   options: RequestInit,
@@ -24,12 +46,24 @@ export async function fetchWithRetry(
 ): Promise<Response> {
   let lastError: Error | null = null;
   let delay = config.initialDelayMs;
+  const startTime = Date.now();
   
   for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
+    // Create abort controller for timeout
+    const controller = new AbortController();
+    const timeoutId = config.timeoutMs 
+      ? setTimeout(() => controller.abort(), config.timeoutMs)
+      : null;
+    
     try {
-      console.log(`[Retry] Attempt ${attempt + 1}/${config.maxRetries + 1} for ${url}`);
+      console.log(`[Retry] Attempt ${attempt + 1}/${config.maxRetries + 1} for ${url.split("?")[0]}`);
       
-      const response = await fetch(url, options);
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      
+      if (timeoutId) clearTimeout(timeoutId);
       
       // Si succès ou erreur non-retryable, retourner
       if (response.ok || !config.retryableStatuses.includes(response.status)) {
@@ -56,8 +90,12 @@ export async function fetchWithRetry(
       }
       
     } catch (error) {
+      if (timeoutId) clearTimeout(timeoutId);
       lastError = error as Error;
-      console.error(`[Retry] Attempt ${attempt + 1} error:`, error);
+      
+      const isAbort = (error as Error).name === "AbortError";
+      console.error(`[Retry] Attempt ${attempt + 1} ${isAbort ? "timeout" : "error"}:`, 
+        isAbort ? "Request timed out" : (error as Error).message);
       
       if (attempt < config.maxRetries) {
         await new Promise(r => setTimeout(r, delay));
@@ -66,49 +104,46 @@ export async function fetchWithRetry(
     }
   }
   
-  throw lastError || new Error("Max retries exceeded");
+  const duration = Date.now() - startTime;
+  throw new Error(`Max retries exceeded after ${duration}ms: ${lastError?.message || "Unknown error"}`);
 }
 
-// Fonction spécifique pour Anthropic
-// IMPORTANT: Timeout augmenté à 3 minutes pour les PDFs volumineux
+/**
+ * Fonction spécifique pour Anthropic avec timeout étendu
+ * PRODUCTION: 2 retries max, timeout 3 minutes
+ */
 export async function callAnthropicWithRetry(
   apiKey: string,
   body: object,
-  timeoutMs: number = 180000 // 3 minutes au lieu de 60s
+  timeoutMs: number = 180000 // 3 minutes par défaut
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  
-  try {
-    return await fetchWithRetry(
-      "https://api.anthropic.com/v1/messages",
-      {
-        method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
+  return await fetchWithRetry(
+    "https://api.anthropic.com/v1/messages",
+    {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
       },
-      {
-        maxRetries: 5,        // Plus de tentatives
-        initialDelayMs: 3000, // 3s entre les tentatives
-        maxDelayMs: 30000,    // Max 30s d'attente
-        retryableStatuses: [429, 500, 502, 503, 504, 529] // 529 = Anthropic overloaded
-      }
-    );
-  } finally {
-    clearTimeout(timeoutId);
-  }
+      body: JSON.stringify(body),
+    },
+    {
+      ...LLM_CONFIG,
+      timeoutMs,
+    }
+  );
 }
 
-// Fonction spécifique pour OpenAI
+/**
+ * Fonction spécifique pour OpenAI
+ * PRODUCTION: 2 retries max
+ */
 export async function callOpenAIWithRetry(
   apiKey: string,
   endpoint: string,
-  body: object
+  body: object,
+  timeoutMs: number = 60000
 ): Promise<Response> {
   return await fetchWithRetry(
     `https://api.openai.com/v1/${endpoint}`,
@@ -121,10 +156,42 @@ export async function callOpenAIWithRetry(
       body: JSON.stringify(body),
     },
     {
-      maxRetries: 3,
+      maxRetries: 2,
       initialDelayMs: 1000,
       maxDelayMs: 10000,
-      retryableStatuses: [429, 500, 502, 503]
+      retryableStatuses: [429, 500, 502, 503],
+      timeoutMs,
     }
   );
+}
+
+/**
+ * Wrapper pour appels LLM avec métriques d'observabilité
+ */
+export async function callLLMWithMetrics<T>(
+  name: string,
+  callFn: () => Promise<T>
+): Promise<{ result: T; metrics: { durationMs: number; success: boolean; error?: string } }> {
+  const startTime = Date.now();
+  
+  try {
+    const result = await callFn();
+    return {
+      result,
+      metrics: {
+        durationMs: Date.now() - startTime,
+        success: true,
+      },
+    };
+  } catch (error) {
+    const err = error as Error;
+    return {
+      result: null as T,
+      metrics: {
+        durationMs: Date.now() - startTime,
+        success: false,
+        error: err.message,
+      },
+    };
+  }
 }

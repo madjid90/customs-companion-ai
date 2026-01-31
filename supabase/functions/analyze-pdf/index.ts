@@ -9,7 +9,11 @@ import {
   errorResponse,
   successResponse,
 } from "../_shared/cors.ts";
-import { createLogger } from "../_shared/logger.ts";
+import { createLogger, Logger } from "../_shared/logger.ts";
+import { maskSensitiveData, safeLog } from "../_shared/masking.ts";
+import { parseJsonResilient } from "../_shared/json-resilient.ts";
+import { requireAuth, isProductionMode } from "../_shared/auth-check.ts";
+import { callLLMWithMetrics } from "../_shared/retry.ts";
 
 // =============================================================================
 // CONFIGURATION - ANTHROPIC CLAUDE (Native PDF Support)
@@ -25,6 +29,53 @@ const MIN_BATCH_SIZE = 1;
 
 // Page detection - Cache pour éviter les appels répétés
 const PAGE_COUNT_CACHE = new Map<string, number>();
+
+// =============================================================================
+// OBSERVABILITY METRICS
+// =============================================================================
+
+interface ObservabilityMetrics {
+  run_id: string;
+  function_name: string;
+  start_time: number;
+  pages_processed: number;
+  inserted_rows: number;
+  errors_count: number;
+  llm_calls: number;
+  llm_total_duration_ms: number;
+}
+
+function createMetrics(runId: string): ObservabilityMetrics {
+  return {
+    run_id: runId,
+    function_name: "analyze-pdf",
+    start_time: Date.now(),
+    pages_processed: 0,
+    inserted_rows: 0,
+    errors_count: 0,
+    llm_calls: 0,
+    llm_total_duration_ms: 0,
+  };
+}
+
+function logMetrics(metrics: ObservabilityMetrics, status: "processing" | "done" | "error"): void {
+  const duration = Date.now() - metrics.start_time;
+  console.log(JSON.stringify({
+    type: "metrics",
+    run_id: metrics.run_id,
+    function: metrics.function_name,
+    status,
+    duration_ms: duration,
+    pages_processed: metrics.pages_processed,
+    inserted_rows: metrics.inserted_rows,
+    errors_count: metrics.errors_count,
+    llm_calls: metrics.llm_calls,
+    llm_avg_duration_ms: metrics.llm_calls > 0 
+      ? Math.round(metrics.llm_total_duration_ms / metrics.llm_calls) 
+      : 0,
+    timestamp: new Date().toISOString(),
+  }));
+}
 
 // =============================================================================
 // INTERFACES
@@ -679,39 +730,19 @@ Pages texte = notes de chapitre, définitions, introductions, index.`
 // PARSE JSON ROBUSTE
 // =============================================================================
 
-function repairTruncatedJson(text: string): string {
-  let repaired = text.trim();
-  repaired = repaired.replace(/,\s*([}\]])/g, '$1');
-  
-  const openBraces = (repaired.match(/\{/g) || []).length;
-  const closeBraces = (repaired.match(/\}/g) || []).length;
-  const openBrackets = (repaired.match(/\[/g) || []).length;
-  const closeBrackets = (repaired.match(/\]/g) || []).length;
-  
-  for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += "]";
-  for (let i = 0; i < openBraces - closeBraces; i++) repaired += "}";
-  
-  return repaired;
-}
-
+/**
+ * Parse JSON using resilient parser with fallback
+ */
 function parseJsonRobust(text: string): any | null {
-  try {
-    return JSON.parse(text);
-  } catch {}
-  
-  const repaired = repairTruncatedJson(text);
-  try {
-    return JSON.parse(repaired);
-  } catch {}
-  
-  // Extraction du plus grand objet JSON
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      return JSON.parse(jsonMatch[0]);
-    } catch {}
+  const result = parseJsonResilient(text);
+  if (result.success && result.data) {
+    if (result.partial) {
+      safeLog("warn", "analyze-pdf", "JSON parsed with fallback", { 
+        recoveredFields: result.recoveredFields?.slice(0, 5) 
+      });
+    }
+    return result.data;
   }
-  
   return null;
 }
 
@@ -1076,6 +1107,26 @@ serve(async (req) => {
   }
   
   const logger = createLogger("analyze-pdf-batch", req);
+  const corsHeaders = getCorsHeaders(req);
+  
+  // ==========================================================================
+  // AUTHENTICATION CHECK (Production)
+  // ==========================================================================
+  if (isProductionMode()) {
+    const authResult = await requireAuth(req, corsHeaders);
+    if (authResult.error) {
+      safeLog("warn", "analyze-pdf", "Unauthorized request blocked", {
+        clientId: getClientId(req),
+      });
+      return authResult.error;
+    }
+    safeLog("info", "analyze-pdf", "Authenticated request", {
+      userId: authResult.auth?.userId,
+    });
+  }
+  
+  // Initialize observability metrics
+  let metrics: ObservabilityMetrics | null = null;
   
   try {
     const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
@@ -1118,9 +1169,18 @@ serve(async (req) => {
       return errorResponse(req, "pdfId est requis", 400);
     }
     
+    // Initialize metrics with run_id
+    metrics = createMetrics(extraction_run_id || pdfId);
+    
     const batchSize = Math.min(Math.max(max_pages, MIN_BATCH_SIZE), MAX_BATCH_SIZE);
     
-    logger.info(`Batch request: pdfId=${pdfId}, start_page=${start_page}, batch_size=${batchSize}, run_id=${extraction_run_id}`);
+    // Use masked logging for sensitive data
+    safeLog("info", "analyze-pdf", "Batch request started", {
+      pdfId: maskSensitiveData(pdfId),
+      start_page,
+      batch_size: batchSize,
+      run_id: extraction_run_id,
+    });
     
     // Récupérer le PDF
     let pdfPath = filePath;
@@ -1624,7 +1684,20 @@ serve(async (req) => {
       countryCode,
     };
     
-    console.log(`Response: done=${isDone}, next_page=${response.next_page}, processed=${newProcessedPages}/${totalPages}`);
+    // Update metrics
+    if (metrics) {
+      metrics.pages_processed = newProcessedPages;
+      metrics.inserted_rows = stats.tariff_lines_inserted + stats.hs_codes_inserted + stats.notes_inserted;
+      metrics.errors_count = stats.errors.length;
+      logMetrics(metrics, isDone ? "done" : "processing");
+    }
+    
+    safeLog("info", "analyze-pdf", "Batch completed", {
+      done: isDone,
+      next_page: response.next_page,
+      processed: newProcessedPages,
+      total: totalPages,
+    });
     
     return new Response(
       JSON.stringify(response),
@@ -1632,9 +1705,19 @@ serve(async (req) => {
     );
     
   } catch (error) {
-    logger.error("Analyze PDF batch error", error as Error);
+    // Log error with metrics
+    if (metrics) {
+      metrics.errors_count++;
+      logMetrics(metrics, "error");
+    }
+    
+    const errorMessage = error instanceof Error ? error.message : "Erreur d'analyse batch";
+    safeLog("error", "analyze-pdf", "Batch failed", {
+      error: maskSensitiveData(errorMessage),
+    });
+    
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Erreur d'analyse batch" }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   }

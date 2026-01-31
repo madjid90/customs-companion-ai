@@ -2,11 +2,16 @@
 // EDGE FUNCTION: ANALYZE DUM (Déclaration Unique de Marchandises)
 // ============================================================================
 // Parses DUM PDFs, extracts structured data, calculates taxes with source tracking
+// Production hardened: auth, masking, retries, observability
 // ============================================================================
 
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { maskSensitiveData, maskSensitiveObject, safeLog } from "../_shared/masking.ts";
+import { parseJsonResilient } from "../_shared/json-resilient.ts";
+import { requireAuth, isProductionMode } from "../_shared/auth-check.ts";
+import { callAnthropicWithRetry } from "../_shared/retry.ts";
 
 // ============================================================================
 // CORS & CONFIG
@@ -20,6 +25,48 @@ const corsHeaders = {
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+// ============================================================================
+// OBSERVABILITY METRICS
+// ============================================================================
+
+interface DumMetrics {
+  run_id: string;
+  start_time: number;
+  items_extracted: number;
+  taxes_calculated: boolean;
+  saved_to_db: boolean;
+  errors_count: number;
+  llm_duration_ms: number;
+}
+
+function createDumMetrics(): DumMetrics {
+  return {
+    run_id: crypto.randomUUID(),
+    start_time: Date.now(),
+    items_extracted: 0,
+    taxes_calculated: false,
+    saved_to_db: false,
+    errors_count: 0,
+    llm_duration_ms: 0,
+  };
+}
+
+function logDumMetrics(metrics: DumMetrics, status: "success" | "error"): void {
+  console.log(JSON.stringify({
+    type: "metrics",
+    function: "analyze-dum",
+    run_id: metrics.run_id,
+    status,
+    duration_ms: Date.now() - metrics.start_time,
+    items_extracted: metrics.items_extracted,
+    taxes_calculated: metrics.taxes_calculated,
+    saved_to_db: metrics.saved_to_db,
+    errors_count: metrics.errors_count,
+    llm_duration_ms: metrics.llm_duration_ms,
+    timestamp: new Date().toISOString(),
+  }));
+}
 
 // ============================================================================
 // TYPES
@@ -229,18 +276,19 @@ Retourne un JSON strict:
 }
 
 // ============================================================================
-// AI EXTRACTION
+// AI EXTRACTION WITH RETRY
 // ============================================================================
 
 async function extractDumData(
   contentBase64: string,
-  mediaType: string
+  mediaType: string,
+  metrics: DumMetrics
 ): Promise<ExtractedDum> {
   if (!ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY not configured");
   }
 
-  console.log("[analyze-dum] Calling Claude for extraction...");
+  safeLog("info", "analyze-dum", "Calling Claude for extraction", { mediaType });
 
   const documentContent = mediaType === "application/pdf"
     ? {
@@ -260,14 +308,12 @@ async function extractDumData(
         },
       };
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
+  const llmStart = Date.now();
+  
+  // Use retry wrapper for resilience
+  const response = await callAnthropicWithRetry(
+    ANTHROPIC_API_KEY,
+    {
       model: "claude-sonnet-4-20250514",
       max_tokens: 8192,
       system: getDumExtractionPrompt(),
@@ -283,31 +329,47 @@ async function extractDumData(
           ],
         },
       ],
-    }),
-  });
+    },
+    120000  // 2 minutes timeout for DUM
+  );
+
+  metrics.llm_duration_ms = Date.now() - llmStart;
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Claude API error: ${response.status} - ${errorText}`);
+    throw new Error(`Claude API error: ${response.status} - ${maskSensitiveData(errorText)}`);
   }
 
   const data = await response.json();
   const content = data.content?.[0]?.text || "";
 
-  // Parse JSON
-  const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) ||
-                    content.match(/\{[\s\S]*"items"[\s\S]*\}/);
+  // Use resilient JSON parser
+  const parseResult = parseJsonResilient(content);
+  
+  if (!parseResult.success || !parseResult.data) {
+    // Try legacy pattern matching as fallback
+    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) ||
+                      content.match(/\{[\s\S]*"items"[\s\S]*\}/);
 
-  if (!jsonMatch) {
-    throw new Error("No valid JSON in Claude response");
+    if (!jsonMatch) {
+      throw new Error("No valid JSON in Claude response after all fallbacks");
+    }
+    
+    try {
+      const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+      return normalizeExtractedDum(parsed);
+    } catch (e) {
+      throw new Error(`JSON parse error: ${e}`);
+    }
+  }
+  
+  if (parseResult.partial) {
+    safeLog("warn", "analyze-dum", "JSON parsed with fallback", {
+      recoveredFields: parseResult.recoveredFields?.slice(0, 5),
+    });
   }
 
-  try {
-    const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
-    return normalizeExtractedDum(parsed);
-  } catch (e) {
-    throw new Error(`JSON parse error: ${e}`);
-  }
+  return normalizeExtractedDum(parseResult.data);
 }
 
 function normalizeExtractedDum(raw: any): ExtractedDum {
@@ -652,7 +714,22 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const startTime = Date.now();
+  // Initialize metrics
+  const metrics = createDumMetrics();
+
+  // ==========================================================================
+  // AUTHENTICATION CHECK (Production)
+  // ==========================================================================
+  if (isProductionMode()) {
+    const authResult = await requireAuth(req, corsHeaders);
+    if (authResult.error) {
+      safeLog("warn", "analyze-dum", "Unauthorized request blocked", {});
+      return authResult.error;
+    }
+    safeLog("info", "analyze-dum", "Authenticated request", {
+      userId: authResult.auth?.userId,
+    });
+  }
 
   try {
     const body: AnalyzeDumRequest = await req.json();
@@ -670,17 +747,33 @@ serve(async (req) => {
     const countryCode = body.country_code || "MA";
     const saveToDb = body.save_to_db !== false;
 
-    console.log(`[analyze-dum] Analyzing DUM, media: ${mediaType}, save: ${saveToDb}`);
+    safeLog("info", "analyze-dum", "Analyzing DUM", { 
+      mediaType, 
+      saveToDb,
+      // Mask source name as it may contain sensitive info
+      source: body.source_pdf_name ? maskSensitiveData(body.source_pdf_name) : null,
+    });
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // 1. Extract data from document
-    const extracted = await extractDumData(contentBase64, mediaType);
-    console.log(`[analyze-dum] Extracted: ${extracted.items.length} items`);
+    // 1. Extract data from document (with retry)
+    const extracted = await extractDumData(contentBase64, mediaType, metrics);
+    metrics.items_extracted = extracted.items.length;
+    
+    safeLog("info", "analyze-dum", "Extraction complete", { 
+      items: extracted.items.length,
+      // Mask sensitive party names
+      importer: extracted.importer?.name ? maskSensitiveData(extracted.importer.name) : null,
+    });
 
     // 2. Calculate taxes
     const { items: itemsWithTaxes, totals } = await computeAllTaxes(supabase, extracted, countryCode);
-    console.log(`[analyze-dum] Calculated taxes, complete: ${totals.is_complete}`);
+    metrics.taxes_calculated = true;
+    
+    safeLog("info", "analyze-dum", "Taxes calculated", { 
+      complete: totals.is_complete,
+      missingRates: totals.missing_rates.length,
+    });
 
     // 3. Build sources list
     const sources = buildSourcesList(extracted);
@@ -696,12 +789,16 @@ serve(async (req) => {
         body.source_pdf_name || null,
         countryCode
       );
-      console.log(`[analyze-dum] Saved to DB, dum_id: ${dumId}`);
+      metrics.saved_to_db = true;
+      safeLog("info", "analyze-dum", "Saved to DB", { 
+        dumId: maskSensitiveData(dumId || ""),
+      });
     }
 
-    const duration = Date.now() - startTime;
-    console.log(`[analyze-dum] Completed in ${duration}ms`);
+    // Log success metrics
+    logDumMetrics(metrics, "success");
 
+    // Mask sensitive data in response for logging
     const response: AnalyzeDumResponse = {
       success: true,
       dum_id: dumId,
@@ -714,7 +811,13 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("[analyze-dum] Error:", error);
+    metrics.errors_count++;
+    logDumMetrics(metrics, "error");
+    
+    const errorMessage = error instanceof Error ? error.message : "Erreur interne";
+    safeLog("error", "analyze-dum", "Processing failed", {
+      error: maskSensitiveData(errorMessage),
+    });
 
     return new Response(
       JSON.stringify({
@@ -723,7 +826,7 @@ serve(async (req) => {
         extracted_json: null,
         computed_totals: null,
         sources: [],
-        error: error instanceof Error ? error.message : "Erreur interne",
+        error: errorMessage,
       }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
