@@ -578,59 +578,69 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
     
     // =========================================================================
     // RÉSOLUTION COL2/COL3 AVEC SCORING DÉTERMINISTE
+    // BUG FIX: Appliquer resolveCol2Col3 MÊME si national_code est fourni
     // =========================================================================
     
     let col2: string | null = null;
     let col3: string | null = null;
+    let nationalCode: string | null = null;
     
-    // Essayer d'abord d'extraire depuis national_code si fourni complet
+    // Extraire depuis national_code si fourni
     const ncFromLine = normalize10Strict(line.national_code);
-    if (ncFromLine) {
-      col2 = ncFromLine.slice(6, 8);
-      col3 = ncFromLine.slice(8, 10);
-    } else {
-      // Appliquer la résolution col2/col3 sur les colonnes brutes
-      const rawCol2 = line.col2;
-      const rawCol3 = line.col3;
-      
-      // Si les deux colonnes sont des digits valides, appliquer le scoring
-      const resolution = resolveCol2Col3(pos6, rawCol2 ?? null, rawCol3 ?? null, col2Col3Ctx);
+    const col2FromNc = ncFromLine ? ncFromLine.slice(6, 8) : null;
+    const col3FromNc = ncFromLine ? ncFromLine.slice(8, 10) : null;
+    
+    // SÉCURITÉ: Vérifier cohérence pos6 vs national_code fourni
+    if (ncFromLine && ncFromLine.slice(0, 6) !== pos6) {
+      debug.parsingWarnings.push(`Line ${i}: national_code prefix "${ncFromLine.slice(0, 6)}" differs from pos6 "${pos6}", using pos6`);
+    }
+    
+    // Choisir les candidats: priorité aux colonnes brutes, sinon depuis national_code
+    const candA = normalize2Strict(line.col2) ?? col2FromNc;
+    const candB = normalize2Strict(line.col3) ?? col3FromNc;
+    
+    // TOUJOURS passer par resolveCol2Col3 dès qu'on a 2 blocs de 2 digits
+    if (candA && candB) {
+      const resolution = resolveCol2Col3(pos6, candA, candB, col2Col3Ctx);
       
       if (resolution) {
         col2 = resolution.col2;
         col3 = resolution.col3;
+        // IMPORTANT: Reconstruire nationalCode depuis pos6 + résolution
+        nationalCode = pos6 + col2 + col3;
         
         if (resolution.swapApplied) {
           debug.swappedCol2Col3Count++;
           if (debug.swappedCol2Col3Samples.length < 15) {
+            const source = ncFromLine ? "from_nc" : "from_cols";
             debug.swappedCol2Col3Samples.push({
               pos6,
-              original: { col2: rawCol2 || "", col3: rawCol3 || "" },
+              original: { col2: candA, col3: candB },
               resolved: { col2, col3 },
-              reason: resolution.reason
+              reason: `${resolution.reason} [${source}]`
             });
           }
-          console.log(`[COL-SWAP] pos6=${pos6} | "${rawCol2},${rawCol3}" -> "${col2},${col3}" | ${resolution.reason}`);
+          const source = ncFromLine ? "[NC]" : "[COL]";
+          console.log(`[COL-SWAP] ${source} pos6=${pos6} | "${candA},${candB}" -> "${col2},${col3}" | ${resolution.reason}`);
         }
       } else {
-        // Fallback: héritage classique si la résolution échoue
-        col2 = normalize2Strict(rawCol2);
-        col3 = normalize2Strict(rawCol3);
-        
-        if (!col2 && col2Col3Ctx.lastCol2) col2 = col2Col3Ctx.lastCol2;
-        if (!col3 && col2Col3Ctx.lastCol3) col3 = col2Col3Ctx.lastCol3;
+        // Résolution a retourné null (ex: digits invalides) -> utiliser tels quels
+        col2 = candA;
+        col3 = candB;
+        nationalCode = pos6 + col2 + col3;
+      }
+    } else {
+      // Fallback: héritage classique si pas assez de données
+      col2 = candA ?? (col2Col3Ctx.lastCol2 || null);
+      col3 = candB ?? (col2Col3Ctx.lastCol3 || null);
+      
+      if (col2 && col3) {
+        nationalCode = pos6 + col2 + col3;
+        debug.linesFromFallback++;
       }
     }
     
-    // Construire national_code
-    let nationalCode: string | null = null;
-    
-    if (ncFromLine) {
-      nationalCode = ncFromLine;
-    } else if (col2 && col3) {
-      nationalCode = pos6 + col2 + col3;
-    }
-    
+    // Validation finale du national_code
     if (!nationalCode || nationalCode.length !== 10 || !/^\d{10}$/.test(nationalCode)) {
       debug.parsingWarnings.push(`Line ${i}: Invalid national_code "${nationalCode}", skipped (NO PADDING)`);
       debug.skippedLines++;
