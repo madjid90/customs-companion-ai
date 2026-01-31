@@ -1,0 +1,389 @@
+// ============================================================================
+// SOURCE VALIDATION MODULE - DB-ONLY EVIDENCE
+// ============================================================================
+// Validates that sources cited by AI are actually backed by database evidence
+// ============================================================================
+
+import { cleanHSCode } from "./hs-utils.ts";
+
+// =============================================================================
+// TYPES
+// =============================================================================
+
+export interface ValidatedSource {
+  id: string;
+  type: "tariff" | "note" | "legal" | "evidence" | "pdf";
+  title: string;
+  reference?: string;
+  download_url: string | null;
+  chapter?: string;
+  evidence_text?: string;
+  matched_by: "hs_code" | "keyword" | "chapter" | "direct";
+  confidence: "high" | "medium" | "low";
+}
+
+export interface SourceValidationResult {
+  sources_validated: ValidatedSource[];
+  sources_rejected: Array<{ id: string; reason: string }>;
+  has_evidence: boolean;
+  message?: string;
+}
+
+export interface DBEvidence {
+  tariffs: any[];
+  notes: any[];
+  evidence: any[];
+  pdfSummaries: any[];
+  legalRefs: any[];
+}
+
+// =============================================================================
+// VALIDATION FUNCTIONS
+// =============================================================================
+
+/**
+ * Extract HS codes mentioned in AI response - PRIORITIZE codes in the ANSWER section
+ * This extracts codes that the AI actually recommended, not all codes in context
+ */
+export function extractCodesFromResponse(responseText: string): string[] {
+  const codes: string[] = [];
+  
+  // Look for patterns that indicate the AI's actual recommendation
+  // Pattern: "**XXXX.XX**" or "Code SH: XXXX.XX" or "correspond au code"
+  const recommendedPatterns = [
+    /\*\*(\d{4}\.\d{2})\*\*/g,                    // **2815.20**
+    /\*\*(\d{4})\.(\d{2})\.(\d{2})\*\*/g,         // **2815.20.00**
+    /Code\s+(?:SH\s*)?:?\s*\*?\*?(\d{4}\.?\d{0,6})/gi,
+    /correspond(?:re)?.*?(\d{4}\.\d{2})/gi,
+    /position\s+(?:tarifaire\s+)?(\d{4}\.\d{2})/gi,
+    /hydroxyde.*?(\d{4}\.\d{2})/gi,
+  ];
+  
+  for (const pattern of recommendedPatterns) {
+    const matches = responseText.matchAll(pattern);
+    for (const match of matches) {
+      const codeRaw = match[1] || match[0];
+      const code = codeRaw.replace(/[^0-9]/g, "");
+      // Validate it looks like a real HS code (chapters 01-99)
+      if (code.length >= 4) {
+        const chapter = parseInt(code.substring(0, 2));
+        if (chapter >= 1 && chapter <= 99) {
+          codes.push(code);
+        }
+      }
+    }
+  }
+  
+  // If no strongly recommended codes found, fall back to any codes
+  if (codes.length === 0) {
+    const fallbackPatterns = [
+      /\b(\d{4})\.(\d{2})\.(\d{2})\.(\d{2})\b/g,  // 8301.30.00.00
+      /\b(\d{4})\.(\d{2})\.(\d{2})\b/g,           // 8301.30.00
+      /\b(\d{4})\.(\d{2})\b/g,                     // 8301.30
+    ];
+    
+    for (const pattern of fallbackPatterns) {
+      const matches = responseText.matchAll(pattern);
+      for (const match of matches) {
+        const code = match[0].replace(/\./g, "");
+        const chapter = parseInt(code.substring(0, 2));
+        if (chapter >= 1 && chapter <= 99) {
+          codes.push(code);
+        }
+      }
+    }
+  }
+  
+  return [...new Set(codes)];
+}
+
+/**
+ * Extract product keywords from question for matching
+ */
+export function extractProductKeywords(question: string): string[] {
+  // Remove common question words and keep product-related terms
+  const stopWords = new Set([
+    "quel", "quelle", "quels", "quelles", "est", "sont", "le", "la", "les", "un", "une", "des",
+    "pour", "sur", "dans", "par", "avec", "sans", "que", "qui", "quoi", "comment", "pourquoi",
+    "code", "sh", "tarif", "droit", "douane", "importation", "exportation", "taux", "taxe",
+    "maroc", "marocain", "marocaine", "import", "export", "importer", "exporter",
+  ]);
+  
+  const words = question
+    .toLowerCase()
+    .replace(/[^\p{L}\s]/gu, " ")
+    .split(/\s+/)
+    .filter(w => w.length > 3 && !stopWords.has(w));
+  
+  return words;
+}
+
+/**
+ * Validates sources against DB evidence
+ * Returns only sources that have actual DB backing for the detected codes
+ */
+export async function validateSourcesForCodes(
+  supabase: any,
+  detectedCodes: string[],
+  keywords: string[],
+  dbEvidence: DBEvidence,
+  supabaseUrl: string
+): Promise<SourceValidationResult> {
+  const validated: ValidatedSource[] = [];
+  const rejected: Array<{ id: string; reason: string }> = [];
+  
+  if (detectedCodes.length === 0 && keywords.length === 0) {
+    return {
+      sources_validated: [],
+      sources_rejected: [],
+      has_evidence: false,
+      message: "Aucun code SH détecté dans la réponse.",
+    };
+  }
+
+  // Extract chapters from detected codes
+  const detectedChapters = new Set<string>();
+  for (const code of detectedCodes) {
+    const clean = cleanHSCode(code);
+    if (clean.length >= 2) {
+      detectedChapters.add(clean.substring(0, 2).padStart(2, "0"));
+    }
+  }
+  
+  const keywordsLower = keywords.map(k => k.toLowerCase());
+
+  // 1. Validate tariffs - must match detected codes
+  for (const tariff of dbEvidence.tariffs) {
+    const tariffCode = cleanHSCode(tariff.national_code || tariff.hs_code_6 || "");
+    const tariffChapter = tariffCode.substring(0, 2).padStart(2, "0");
+    
+    // Check if tariff matches any detected code
+    let matched = false;
+    let matchedBy: "hs_code" | "chapter" | "keyword" = "chapter";
+    
+    for (const code of detectedCodes) {
+      const cleanCode = cleanHSCode(code);
+      if (tariffCode.startsWith(cleanCode) || cleanCode.startsWith(tariffCode.substring(0, 6))) {
+        matched = true;
+        matchedBy = "hs_code";
+        break;
+      }
+    }
+    
+    // Also accept if chapter matches AND keywords match description
+    if (!matched && detectedChapters.has(tariffChapter)) {
+      const desc = (tariff.description_local || "").toLowerCase();
+      if (keywordsLower.some(kw => desc.includes(kw))) {
+        matched = true;
+        matchedBy = "keyword";
+      }
+    }
+    
+    if (matched) {
+      validated.push({
+        id: `tariff:${tariff.country_code}:${tariff.national_code}`,
+        type: "tariff",
+        title: tariff.description_local || `Code ${tariff.national_code}`,
+        reference: tariff.national_code,
+        download_url: tariff.source_pdf 
+          ? `${supabaseUrl}/storage/v1/object/public/pdf-documents/${tariff.source_pdf}`
+          : null,
+        chapter: tariffChapter,
+        evidence_text: tariff.source_evidence,
+        matched_by: matchedBy,
+        confidence: matchedBy === "hs_code" ? "high" : "medium",
+      });
+    }
+  }
+
+  // 2. Validate PDF sources - must contain detected chapter codes
+  for (const pdf of dbEvidence.pdfSummaries) {
+    const pdfChapter = String(pdf.chapter_number || "").padStart(2, "0");
+    const mentionedCodes: string[] = Array.isArray(pdf.mentioned_codes) 
+      ? pdf.mentioned_codes 
+      : [];
+    
+    // Check if PDF chapter matches any detected chapter
+    let matched = false;
+    let matchedBy: "hs_code" | "chapter" | "keyword" = "chapter";
+    
+    // Direct chapter match
+    if (detectedChapters.has(pdfChapter)) {
+      matched = true;
+      matchedBy = "chapter";
+    }
+    
+    // Check if PDF mentions any of our detected codes
+    if (!matched) {
+      for (const code of detectedCodes) {
+        const cleanCode = cleanHSCode(code);
+        if (mentionedCodes.some(m => cleanHSCode(m).startsWith(cleanCode.substring(0, 4)))) {
+          matched = true;
+          matchedBy = "hs_code";
+          break;
+        }
+      }
+    }
+    
+    // Check keywords in PDF content/summary
+    if (!matched) {
+      const pdfText = ((pdf.summary || "") + " " + (pdf.full_text || "")).toLowerCase();
+      if (keywordsLower.some(kw => pdfText.includes(kw))) {
+        // Only accept if also has chapter match
+        if (detectedChapters.has(pdfChapter)) {
+          matched = true;
+          matchedBy = "keyword";
+        }
+      }
+    }
+    
+    if (matched) {
+      validated.push({
+        id: pdf.pdf_id || pdf.id || `pdf:${pdfChapter}`,
+        type: "pdf",
+        title: pdf.title || `Chapitre ${parseInt(pdfChapter)}`,
+        reference: `Chapitre ${parseInt(pdfChapter)}`,
+        download_url: pdf.download_url || null,
+        chapter: pdfChapter,
+        matched_by: matchedBy,
+        confidence: matchedBy === "hs_code" ? "high" : matchedBy === "chapter" ? "medium" : "low",
+      });
+    } else if (pdf.title) {
+      rejected.push({
+        id: pdf.pdf_id || pdf.id || pdf.title,
+        reason: `Chapitre ${pdfChapter} ne correspond pas aux codes détectés (${Array.from(detectedChapters).join(", ")})`,
+      });
+    }
+  }
+
+  // 3. Validate legal references - must be related to detected codes/chapters
+  for (const ref of dbEvidence.legalRefs) {
+    const context = (ref.context || "").toLowerCase();
+    const title = (ref.title || "").toLowerCase();
+    
+    let matched = false;
+    let matchedBy: "hs_code" | "keyword" | "direct" = "keyword";
+    
+    // Check if reference mentions any detected code
+    for (const code of detectedCodes) {
+      const cleanCode = cleanHSCode(code);
+      if (context.includes(cleanCode) || context.includes(cleanCode.substring(0, 4))) {
+        matched = true;
+        matchedBy = "hs_code";
+        break;
+      }
+    }
+    
+    // Check keywords
+    if (!matched && keywordsLower.some(kw => context.includes(kw) || title.includes(kw))) {
+      matched = true;
+      matchedBy = "keyword";
+    }
+    
+    if (matched && ref.reference_number) {
+      validated.push({
+        id: ref.id,
+        type: "legal",
+        title: ref.title || `${ref.reference_type} ${ref.reference_number}`,
+        reference: ref.reference_number,
+        download_url: ref.download_url || null,
+        matched_by: matchedBy,
+        confidence: matchedBy === "hs_code" ? "high" : "medium",
+      });
+    }
+  }
+
+  // 4. Validate HS evidence
+  for (const ev of dbEvidence.evidence) {
+    const evCode = cleanHSCode(ev.national_code || "");
+    
+    let matched = false;
+    for (const code of detectedCodes) {
+      const cleanCode = cleanHSCode(code);
+      if (evCode.startsWith(cleanCode.substring(0, 6)) || cleanCode.startsWith(evCode.substring(0, 6))) {
+        matched = true;
+        break;
+      }
+    }
+    
+    if (matched) {
+      validated.push({
+        id: `evidence:${ev.id}`,
+        type: "evidence",
+        title: `Preuve pour ${ev.national_code}`,
+        reference: ev.national_code,
+        download_url: null,
+        evidence_text: ev.evidence_text,
+        matched_by: "hs_code",
+        confidence: ev.confidence === "auto_detected_10" ? "high" : "medium",
+      });
+    }
+  }
+
+  // Deduplicate by ID
+  const uniqueValidated = validated.filter(
+    (v, i, arr) => arr.findIndex(x => x.id === v.id) === i
+  );
+
+  // Sort by confidence
+  uniqueValidated.sort((a, b) => {
+    const order = { high: 0, medium: 1, low: 2 };
+    return order[a.confidence] - order[b.confidence];
+  });
+
+  const hasEvidence = uniqueValidated.length > 0;
+  
+  return {
+    sources_validated: uniqueValidated.slice(0, 10),
+    sources_rejected: rejected,
+    has_evidence: hasEvidence,
+    message: hasEvidence 
+      ? undefined 
+      : "Aucune source interne ne prouve ce code. Considérez lancer une ingestion de documents.",
+  };
+}
+
+/**
+ * Filters cited circulars to only those with DB evidence for the codes
+ */
+export function filterCitedCirculars(
+  citedCirculars: any[],
+  validatedSources: ValidatedSource[],
+  detectedCodes: string[]
+): any[] {
+  if (detectedCodes.length === 0) {
+    return [];
+  }
+
+  // Get chapters from detected codes
+  const validChapters = new Set<string>();
+  for (const code of detectedCodes) {
+    const clean = cleanHSCode(code);
+    if (clean.length >= 2) {
+      validChapters.add(clean.substring(0, 2).padStart(2, "0"));
+    }
+  }
+
+  // Get validated source IDs and chapters
+  const validatedIds = new Set(validatedSources.map(s => s.id));
+  const validatedChapters = new Set(validatedSources.map(s => s.chapter).filter(Boolean));
+
+  return citedCirculars.filter(circ => {
+    // Direct ID match
+    if (validatedIds.has(circ.id)) {
+      return true;
+    }
+
+    // For tariffs, check chapter
+    if (circ.reference_type === "Tarif") {
+      const chapterMatch = circ.reference_number?.match(/Chapitre\s*(\d+)/i);
+      if (chapterMatch) {
+        const chapter = chapterMatch[1].padStart(2, "0");
+        return validChapters.has(chapter) || validatedChapters.has(chapter);
+      }
+    }
+
+    // For legal refs, must have been validated
+    return validatedIds.has(`legal:${circ.id}`) || validatedIds.has(circ.id);
+  });
+}

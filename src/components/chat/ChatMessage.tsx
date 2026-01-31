@@ -40,6 +40,8 @@ interface Message {
   context?: MessageContext;
   attachedFiles?: AttachedFile[];
   citedCirculars?: CircularReference[];
+  hasDbEvidence?: boolean;
+  validationMessage?: string;
 }
 
 interface ChatMessageProps {
@@ -462,12 +464,14 @@ export function ChatMessage({
               {processedContent}
             </ReactMarkdown>
             
-            {/* Display cited circulars */}
-            {message.citedCirculars && message.citedCirculars.length > 0 && (
+            {/* Display validated sources - always show if there are citations OR if there's a validation message */}
+            {(message.citedCirculars || message.validationMessage) && (
               <CitedCirculars
-                circulars={message.citedCirculars}
+                circulars={message.citedCirculars || []}
                 onDocumentClick={handleLinkClick}
                 isSearchingDoc={isSearchingDoc}
+                hasDbEvidence={message.hasDbEvidence}
+                validationMessage={message.validationMessage}
               />
             )}
           </div>

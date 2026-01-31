@@ -1,4 +1,4 @@
-import { FileText, Download, ExternalLink } from "lucide-react";
+import { FileText, ExternalLink, AlertCircle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface CircularReference {
@@ -9,16 +9,47 @@ export interface CircularReference {
   reference_date?: string;
   download_url?: string;
   pdf_title?: string;
+  validated?: boolean;
 }
 
 interface CitedCircularsProps {
   circulars: CircularReference[];
   onDocumentClick: (url: string, title: string) => void;
   isSearchingDoc?: boolean;
+  hasDbEvidence?: boolean;
+  validationMessage?: string;
 }
 
-export function CitedCirculars({ circulars, onDocumentClick, isSearchingDoc }: CitedCircularsProps) {
-  if (!circulars || circulars.length === 0) return null;
+export function CitedCirculars({ 
+  circulars, 
+  onDocumentClick, 
+  isSearchingDoc,
+  hasDbEvidence = true,
+  validationMessage 
+}: CitedCircularsProps) {
+  // Show message if no DB evidence
+  if (!hasDbEvidence && validationMessage) {
+    return (
+      <div className="mt-4 pt-3 border-t border-border/30">
+        <div className="flex items-center gap-2 mb-2">
+          <AlertCircle className="h-4 w-4 text-warning" />
+          <span className="text-xs font-semibold text-foreground uppercase tracking-wide">
+            Sources
+          </span>
+        </div>
+        <div className="p-3 rounded-lg bg-warning/10 border border-warning/20">
+          <p className="text-xs text-warning-foreground flex items-start gap-2">
+            <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+            <span>{validationMessage}</span>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!circulars || circulars.length === 0) {
+    return null;
+  }
 
   // Deduplicate by reference_number
   const uniqueCirculars = circulars.reduce((acc, curr) => {
@@ -34,9 +65,12 @@ export function CitedCirculars({ circulars, onDocumentClick, isSearchingDoc }: C
   return (
     <div className="mt-4 pt-3 border-t border-border/30">
       <div className="flex items-center gap-2 mb-2">
-        <FileText className="h-4 w-4 text-primary" />
+        <CheckCircle2 className="h-4 w-4 text-success" />
         <span className="text-xs font-semibold text-foreground uppercase tracking-wide">
-          Sources réglementaires citées
+          Sources utilisées
+        </span>
+        <span className="text-xs text-muted-foreground">
+          ({uniqueCirculars.length} validée{uniqueCirculars.length > 1 ? "s" : ""})
         </span>
       </div>
       <div className="space-y-2">
@@ -71,6 +105,10 @@ export function CitedCirculars({ circulars, onDocumentClick, isSearchingDoc }: C
                     "text-xs font-medium px-1.5 py-0.5 rounded",
                     circular.reference_type === "Tarif" 
                       ? "bg-primary/15 text-primary" 
+                      : circular.reference_type === "Ligne tarifaire"
+                      ? "bg-success/15 text-success"
+                      : circular.reference_type === "Preuve"
+                      ? "bg-warning/15 text-warning"
                       : "bg-accent/15 text-accent"
                   )}>
                     {circular.reference_type || "Document"}
@@ -115,7 +153,7 @@ export function CitedCirculars({ circulars, onDocumentClick, isSearchingDoc }: C
         })}
         {uniqueCirculars.length > 5 && (
           <p className="text-xs text-muted-foreground text-center py-1">
-            + {uniqueCirculars.length - 5} autre(s) référence(s)
+            + {uniqueCirculars.length - 5} autre(s) source(s)
           </p>
         )}
       </div>

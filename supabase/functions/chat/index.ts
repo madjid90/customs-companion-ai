@@ -49,6 +49,14 @@ import {
   type TariffWithInheritance,
 } from "./context-builder.ts";
 import { buildSystemPrompt, determineConfidence } from "./prompt-builder.ts";
+import {
+  validateSourcesForCodes,
+  extractCodesFromResponse,
+  extractProductKeywords,
+  filterCitedCirculars,
+  type DBEvidence,
+  type ValidatedSource,
+} from "./source-validator.ts";
 
 // =============================================================================
 // CONFIGURATION
@@ -768,6 +776,89 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     const confidence = determineConfidence(responseText, context);
     console.info(`Final confidence: ${confidence}`);
 
+    // =========================================================================
+    // POST-RESPONSE SOURCE VALIDATION (DB-only evidence)
+    // =========================================================================
+    // STRICT: Extract codes from AI RESPONSE ONLY and validate against DB
+    // This ensures sources match what the AI actually recommended
+    const responseCodes = extractCodesFromResponse(responseText);
+    const questionKeywords = extractProductKeywords(question || enrichedQuestion);
+    
+    // STRICT: Use ONLY codes from the AI response for validation
+    // Not the full context (which may contain unrelated codes)
+    const codesForValidation = responseCodes.length > 0 
+      ? responseCodes 
+      : analysis.detectedCodes.slice(0, 5); // Fallback to top analyzed codes only
+    
+    console.log("Source validation - response codes:", responseCodes);
+    console.log("Source validation - codes for validation:", codesForValidation);
+    console.log("Source validation - keywords:", questionKeywords.slice(0, 5));
+    
+    // Get chapters from response codes (for filtering sources)
+    const responseChapters = new Set<string>();
+    for (const code of codesForValidation) {
+      const clean = String(code).replace(/\D/g, '');
+      if (clean.length >= 2) {
+        responseChapters.add(clean.substring(0, 2).padStart(2, "0"));
+      }
+    }
+    console.log("Source validation - response chapters:", Array.from(responseChapters));
+    
+    // Build DB evidence object - filter to only relevant chapters
+    const filteredTariffs = [
+      ...context.tariffs,
+      ...context.tariffs_with_inheritance.map((t: TariffWithInheritance) => ({
+        country_code: analysis.country,
+        national_code: t.code_clean,
+        description_local: t.description,
+        duty_rate: t.duty_rate,
+        source_pdf: null,
+        source_evidence: t.legal_notes.join("; "),
+      })),
+    ].filter(t => {
+      const code = String(t.national_code || t.hs_code_6 || '').replace(/\D/g, '');
+      if (code.length < 2) return false;
+      const chapter = code.substring(0, 2).padStart(2, "0");
+      return responseChapters.has(chapter);
+    });
+    
+    const filteredPdfs = context.pdf_summaries.filter((p: any) => {
+      const chapter = String(p.chapter_number || '').padStart(2, "0");
+      return responseChapters.has(chapter);
+    });
+    
+    const dbEvidence: DBEvidence = {
+      tariffs: filteredTariffs,
+      notes: [],
+      evidence: [],
+      pdfSummaries: filteredPdfs,
+      legalRefs: context.legal_references.filter((ref: any) => {
+        // Keep legal refs that mention any of the response codes
+        const context = (ref.context || "").toLowerCase();
+        return codesForValidation.some(code => {
+          const clean = String(code).replace(/\D/g, '');
+          return context.includes(clean) || context.includes(clean.substring(0, 4));
+        });
+      }),
+    };
+    
+    // Validate sources - STRICT mode
+    const sourceValidation = await validateSourcesForCodes(
+      supabase,
+      codesForValidation,
+      questionKeywords,
+      dbEvidence,
+      SUPABASE_URL!
+    );
+    
+    console.log("Source validation result:", {
+      validated: sourceValidation.sources_validated.length,
+      rejected: sourceValidation.sources_rejected.length,
+      has_evidence: sourceValidation.has_evidence,
+      filteredTariffs: filteredTariffs.length,
+      filteredPdfs: filteredPdfs.length,
+    });
+
     // Save conversation
     const contextUsed = {
       tariffs_with_inheritance: context.tariffs_with_inheritance.length,
@@ -778,6 +869,8 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       pdfs: context.pdf_summaries.length,
       veille: veilleDocuments.length,
       semantic_search_used: useSemanticSearch,
+      sources_validated: sourceValidation.sources_validated.length,
+      sources_rejected: sourceValidation.sources_rejected.length,
     };
 
     const { data: conversation } = await supabase
@@ -787,7 +880,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         question: question,
         response: responseText,
         detected_intent: analysis.intent,
-        detected_hs_codes: context.hs_codes.map(c => c.code || c.code_clean),
+        detected_hs_codes: codesForValidation,
         context_used: contextUsed,
         pdfs_used: context.pdf_summaries.map(p => p.title),
         confidence_level: confidence,
@@ -808,8 +901,10 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       ).catch((err) => console.error("Cache save error:", err));
     }
 
-    // Prepare cited sources for frontend display
-    // Priority: real legal references, then tariff PDFs based on detected HS codes
+    // =========================================================================
+    // BUILD VALIDATED CITATIONS (DB-only)
+    // =========================================================================
+    // Only include sources that passed validation
     const citedCirculars: Array<{
       id: string;
       reference_type: string;
@@ -818,76 +913,34 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       reference_date: string | null;
       download_url: string | null;
       pdf_title: string | null;
+      validated: boolean;
     }> = [];
     
-    // 1. Add real legal references (with actual reference numbers)
-    const realLegalRefs = context.legal_references.filter((ref: any) => 
-      ref.reference_number && ref.reference_number.trim() !== ''
-    );
-    for (const ref of realLegalRefs.slice(0, 5)) {
+    // Convert validated sources to cited circulars format
+    for (const validSource of sourceValidation.sources_validated.slice(0, 8)) {
       citedCirculars.push({
-        id: ref.id,
-        reference_type: ref.reference_type || "Circulaire",
-        reference_number: ref.reference_number,
-        title: ref.title || ref.pdf_title || "",
-        reference_date: ref.reference_date || null,
-        download_url: ref.download_url || null,
-        pdf_title: ref.pdf_title || null,
+        id: validSource.id,
+        reference_type: validSource.type === "pdf" ? "Tarif" : 
+                        validSource.type === "legal" ? "Circulaire" :
+                        validSource.type === "tariff" ? "Ligne tarifaire" : "Preuve",
+        reference_number: validSource.reference || validSource.chapter || "",
+        title: validSource.title,
+        reference_date: null,
+        download_url: validSource.download_url,
+        pdf_title: validSource.title,
+        validated: true,
       });
     }
-    
-    // 2. Add tariff chapter PDFs based on detected HS codes
-    const detectedChapters = new Set<string>();
-    const codesForChapters = [
-      ...analysis.detectedCodes,
-      ...context.hs_codes.map((c: any) => c.code || c.code_clean),
-      ...context.tariffs_with_inheritance.map((t: any) => t.code_clean),
-    ];
-    
-    for (const code of codesForChapters) {
-      const cleanCode = String(code).replace(/\D/g, '');
-      if (cleanCode.length >= 2) {
-        const chapter = cleanCode.substring(0, 2).padStart(2, '0');
-        if (parseInt(chapter) > 0 && parseInt(chapter) <= 99) {
-          detectedChapters.add(chapter);
-        }
-      }
-    }
-    
-    // Fetch tariff PDFs for detected chapters
-    if (detectedChapters.size > 0 && citedCirculars.length < 5) {
-      const chapterPatterns = Array.from(detectedChapters).slice(0, 5);
-      for (const chapter of chapterPatterns) {
-        if (citedCirculars.length >= 5) break;
-        
-        const exactFileName = `SH_CODE_${chapter}.pdf`;
-        const { data: chapterPdf } = await supabase
-          .from('pdf_documents')
-          .select('id, title, file_path, file_name')
-          .eq('is_active', true)
-          .eq('category', 'tarif')
-          .eq('file_name', exactFileName)
-          .maybeSingle();
-        
-        if (chapterPdf && !citedCirculars.find(c => c.id === chapterPdf.id)) {
-          citedCirculars.push({
-            id: chapterPdf.id,
-            reference_type: "Tarif",
-            reference_number: `Chapitre ${parseInt(chapter)}`,
-            title: chapterPdf.title || `Nomenclature Chapitre ${parseInt(chapter)}`,
-            reference_date: null,
-            download_url: chapterPdf.file_path 
-              ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${chapterPdf.file_path}`
-              : null,
-            pdf_title: chapterPdf.title,
-          });
-        }
-      }
+
+    // Add message if no evidence found
+    let responseWithValidation = responseText;
+    if (!sourceValidation.has_evidence && codesForValidation.length > 0) {
+      responseWithValidation += "\n\n---\n⚠️ **Note**: Aucune source interne ne confirme ce code SH. Cette classification est indicative et nécessite vérification auprès des autorités douanières.";
     }
 
     return new Response(
       JSON.stringify({
-        response: responseText,
+        response: responseWithValidation,
         confidence: confidence,
         conversationId: conversation?.id,
         context: {
@@ -900,7 +953,12 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           veille_docs: veilleDocuments.length,
           legal_references_found: context.legal_references.length,
         },
+        // New: validated sources only
         cited_circulars: citedCirculars,
+        sources_validated: sourceValidation.sources_validated,
+        sources_rejected_count: sourceValidation.sources_rejected.length,
+        has_db_evidence: sourceValidation.has_evidence,
+        validation_message: sourceValidation.message,
         metadata: {
           intent: analysis.intent,
           country: analysis.country,
@@ -908,6 +966,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           inheritance_used: context.tariffs_with_inheritance.length > 0,
           semantic_search_used: useSemanticSearch,
           cached: false,
+          detected_codes: codesForValidation.slice(0, 10),
         }
       }),
       { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
