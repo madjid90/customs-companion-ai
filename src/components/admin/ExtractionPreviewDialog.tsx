@@ -127,24 +127,18 @@ export default function ExtractionPreviewDialog({
   const [tariffLines, setTariffLines] = useState<TariffLine[]>([]);
   const [editingHsIndex, setEditingHsIndex] = useState<number | null>(null);
   const [editingTariffIndex, setEditingTariffIndex] = useState<number | null>(null);
+  const [lastPdfId, setLastPdfId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize state when dialog opens - prefer hs_codes_full for descriptions
-  useState(() => {
-    if (extractionData) {
-      const hsSource = extractionData.hs_codes_full || extractionData.hs_codes || [];
-      setHsCodes(hsSource);
-      setTariffLines(extractionData.tariff_lines || []);
-    }
-  });
-
-  // Reset state when extraction data changes - prefer hs_codes_full for descriptions
-  const hsCodesSource = extractionData?.hs_codes_full || extractionData?.hs_codes || [];
-  if (extractionData && hsCodes.length === 0 && hsCodesSource.length > 0) {
-    setHsCodes([...hsCodesSource]);
-  }
-  if (extractionData && tariffLines.length === 0 && extractionData.tariff_lines?.length > 0) {
-    setTariffLines([...extractionData.tariff_lines]);
+  // FIXED: Reset state when pdfId changes (new extraction) to avoid stale cache
+  // This ensures each new extraction gets fresh data
+  if (pdfId && pdfId !== lastPdfId) {
+    const hsSource = extractionData?.hs_codes_full || extractionData?.hs_codes || [];
+    setHsCodes([...hsSource]);
+    setTariffLines([...(extractionData?.tariff_lines || [])]);
+    setLastPdfId(pdfId);
+    setEditingHsIndex(null);
+    setEditingTariffIndex(null);
   }
 
   const validateNationalCode = (code: string): { valid: boolean; error?: string } => {
