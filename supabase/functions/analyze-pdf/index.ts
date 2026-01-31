@@ -229,8 +229,12 @@ function normalizeRate(value: string | number | null | undefined): number | null
 
 function isUnit(val: string | number | null | undefined): boolean {
   if (val === null || val === undefined) return false;
-  const str = String(val).trim();
-  if (str === "-" || str === "–" || str === "—") return true;
+  const str = String(val).trim().toUpperCase();
+  if (str === "-" || str === "–" || str === "—" || str === "") return true;
+  // Unités courantes marocaines
+  const commonUnits = ["U", "KG", "KGN", "M", "M2", "M3", "L", "N", "P", "PR", "CT", "GR", "T", "1000U", "1000P", "K"];
+  if (commonUnits.includes(str)) return true;
+  // Pattern général: 1-5 lettres + optionnellement 0-2 chiffres
   return /^[A-Za-z]{1,5}\d{0,2}$/i.test(str);
 }
 
@@ -238,6 +242,8 @@ function isNumberLike(val: string | number | null | undefined): boolean {
   if (val === null || val === undefined) return false;
   if (typeof val === "number") return !isNaN(val);
   const str = String(val).trim();
+  if (str === "" || str === "-" || str === "–" || str === "—") return false;
+  // Accepter virgule ou point comme séparateur décimal, et % optionnel
   return /^\d+([.,]\d+)?%?$/.test(str);
 }
 
@@ -251,25 +257,38 @@ function fixRateUnitSwap(
   let unitNorm = originalUnit;
   let swapped = false;
   
+  // Cas 1: duty_rate ressemble à une unité ET unit_norm ressemble à un nombre
   if (isUnit(dutyRate) && isNumberLike(unitNorm)) {
     dutyRate = unitNorm;
     unitNorm = String(originalDuty);
     swapped = true;
     debug.detectedSwaps++;
-    if (debug.swappedSamples.length < 5) {
+    if (debug.swappedSamples.length < 10) {
       debug.swappedSamples.push({
         national_code: line.national_code || "unknown",
         before: { duty_rate: originalDuty, unit_norm: originalUnit as string | null },
         after: { duty_rate: normalizeRate(dutyRate), unit_norm: unitNorm }
       });
     }
+    console.log(`[SWAP] ${line.national_code}: duty="${originalDuty}" ↔ unit="${originalUnit}"`);
   }
   
+  // Cas 2: duty_rate est un tiret et unit_norm est numérique
   if ((dutyRate === "-" || dutyRate === "–" || dutyRate === "—") && isNumberLike(unitNorm)) {
     dutyRate = unitNorm;
     unitNorm = "-";
     swapped = true;
     debug.detectedSwaps++;
+    console.log(`[SWAP-DASH] ${line.national_code}: duty="${originalDuty}" ↔ unit="${originalUnit}"`);
+  }
+  
+  // Cas 3: duty_rate est null/vide mais unit_norm contient un nombre
+  if ((dutyRate === null || dutyRate === undefined || String(dutyRate).trim() === "") && isNumberLike(unitNorm)) {
+    dutyRate = unitNorm;
+    unitNorm = null;
+    swapped = true;
+    debug.detectedSwaps++;
+    console.log(`[SWAP-NULL] ${line.national_code}: duty=null ↔ unit="${originalUnit}"`);
   }
   
   return {
