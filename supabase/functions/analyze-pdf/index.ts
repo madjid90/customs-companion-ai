@@ -458,9 +458,31 @@ function updateCol2Stats(ctx: Col2Col3Context, pos6: string, col2: string): void
 
 const getPageTariffPrompt = (title: string, pageNumber: number, totalPages: number) => `Expert en tarifs douaniers marocains. Analyse cette PAGE ${pageNumber}/${totalPages} du PDF "${title}".
 
-=== STRUCTURE DU TARIF MAROCAIN ===
+=== STRUCTURE EXACTE DU CODE NATIONAL MAROCAIN (10 CHIFFRES) ===
 
-Les codes nationaux ont TOUJOURS 10 chiffres.
+Le code national est composé de EXACTEMENT 10 chiffres, dans cet ordre STRICT:
+
+  Position SH (6 chiffres) + Sous-position (2 chiffres) + Détail national (2 chiffres)
+  
+  ┌──────────────┬────────────┬──────────────────┐
+  │ position_6   │    col2    │       col3       │
+  │  6 chiffres  │ 2 chiffres │   2 chiffres     │
+  │  (ex: 8903.11)│ (ex: 10)   │   (souvent 00)   │
+  └──────────────┴────────────┴──────────────────┘
+  
+  EXEMPLE VISUEL: Dans le tableau du tarif, les colonnes apparaissent ainsi:
+  
+  | Position | Col2 | Col3 |  Désignation  | Droit | Unité |
+  |----------|------|------|---------------|-------|-------|
+  | 8903.11  |  10  |  00  | Bateaux...    | 2,5   |  u    |
+  | 8903.11  |  90  |  00  | Autres...     | 2,5   |  u    |
+  |          |      |  10  | Spécifique... | 10    |  u    |
+  
+  RÈGLE CLEF: 
+  - col2 = Sous-position (VARIABLE: 10, 20, 30, 80, 90, etc.)
+  - col3 = Détail national (SOUVENT "00", parfois 10, 20, etc.)
+  
+  Si tu vois "10 00", alors col2="10" et col3="00", PAS l'inverse!
 
 ⚠️ RÈGLE CRITIQUE: IGNORER LE CHIFFRE D'ALIGNEMENT ⚠️
 
@@ -469,10 +491,10 @@ Ce chiffre est un REPÈRE D'ALIGNEMENT et NE FAIT PAS PARTIE DU CODE SH.
 IL FAUT L'IGNORER COMPLÈTEMENT.
 
 Exemple:
-"8 8903.11 00 00 ... 2,5 u" 
+"8 8903.11 10 00 ... 2,5 u" 
 → Le "8" au début est un repère à IGNORER
-→ Position = 8903.11, Col2 = 00, Col3 = 00
-→ national_code = 8903110000
+→ position_6 = "8903.11", col2 = "10", col3 = "00"
+→ national_code = 8903111000
 
 === RÈGLES D'HÉRITAGE (CARRY-FORWARD) ===
 
@@ -490,9 +512,9 @@ Les tableaux sont hiérarchiques. Tu DOIS maintenir l'héritage:
     {
       "prefix_col": "8",
       "position_6": "8903.11",
-      "col2": "00",
+      "col2": "10",
       "col3": "00",
-      "national_code": "8903110000",
+      "national_code": "8903111000",
       "hs_code_6": "890311",
       "description": "Description du produit",
       "duty_rate": "2,5",
@@ -518,6 +540,7 @@ Si la page ne contient PAS de tableau tarifaire (que du texte/notes):
   "notes": [...]
 }
 
+RAPPEL: col2 est la sous-position (variable), col3 est le détail national (souvent 00).
 RÉPONDS UNIQUEMENT AVEC LE JSON, RIEN D'AUTRE.`;
 
 // =============================================================================
