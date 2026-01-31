@@ -636,6 +636,50 @@ export type Database = {
           },
         ]
       }
+      legal_chunks: {
+        Row: {
+          char_end: number | null
+          char_start: number | null
+          chunk_index: number
+          chunk_text: string
+          created_at: string
+          embedding: string | null
+          id: number
+          page_number: number | null
+          source_id: number
+        }
+        Insert: {
+          char_end?: number | null
+          char_start?: number | null
+          chunk_index?: number
+          chunk_text: string
+          created_at?: string
+          embedding?: string | null
+          id?: number
+          page_number?: number | null
+          source_id: number
+        }
+        Update: {
+          char_end?: number | null
+          char_start?: number | null
+          chunk_index?: number
+          chunk_text?: string
+          created_at?: string
+          embedding?: string | null
+          id?: number
+          page_number?: number | null
+          source_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "legal_chunks_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "legal_sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       legal_references: {
         Row: {
           context: string | null
@@ -1790,6 +1834,23 @@ export type Database = {
           similarity: number
           summary: string
           title: string
+        }[]
+      }
+      search_legal_chunks_semantic: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          chunk_text: string
+          id: number
+          issuer: string
+          page_number: number
+          similarity: number
+          source_id: number
+          source_ref: string
+          source_type: string
         }[]
       }
       search_legal_references: {
