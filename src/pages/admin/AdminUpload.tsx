@@ -314,14 +314,16 @@ export default function AdminUpload() {
         // Utiliser les données accumulées directement (pas de requête DB car previewOnly=true)
         const tariffLines = batchResult.tariff_lines || [];
         const hsCodesFull = batchResult.hs_codes || [];
+        const notes = batchResult.notes || [];
         const stats = batchResult.stats || {};
         
         analysisData = {
-          summary: `Extraction terminée: ${tariffLines.length} lignes tarifaires, ${hsCodesFull.length} codes SH`,
+          summary: `Extraction terminée: ${tariffLines.length} lignes tarifaires, ${hsCodesFull.length} codes SH, ${notes.length} notes`,
           key_points: [],
           tariff_lines: tariffLines,
           hs_codes: hsCodesFull,
           hs_codes_full: hsCodesFull,
+          notes: notes,
           document_type: tariffLines.length > 0 ? "tariff" : "regulatory",
           trade_agreements: [],
           full_text: "",
@@ -352,6 +354,7 @@ export default function AdminUpload() {
           hs_codes: analysisData?.hs_codes || [],
           hs_codes_full: analysisData?.hs_codes_full || [],
           tariff_lines: analysisData?.tariff_lines || [],
+          notes: analysisData?.notes || [],
           chapter_info: analysisData?.chapter_info,
           pdfId: pdfDoc.id,
           pdfTitle: pdfTitle,
@@ -521,14 +524,16 @@ export default function AdminUpload() {
       // (pas de requête DB car previewOnly=true ne persiste pas les données)
       const tariffLines = result.tariff_lines || [];
       const hsCodesFull = result.hs_codes || [];
+      const notes = result.notes || [];
       
       if (tariffLines.length > 0 || hsCodesFull.length > 0) {
         const extractionDataResult: ExtractionData = {
-          summary: `Extraction terminée: ${tariffLines.length} lignes tarifaires, ${hsCodesFull.length} codes SH`,
+          summary: `Extraction terminée: ${tariffLines.length} lignes tarifaires, ${hsCodesFull.length} codes SH, ${notes.length} notes`,
           key_points: [],
           hs_codes: hsCodesFull,
           hs_codes_full: hsCodesFull,
           tariff_lines: tariffLines,
+          notes: notes,
           chapter_info: undefined,
           pdfId: file.pdfId,
           pdfTitle: file.name,

@@ -79,12 +79,20 @@ interface IssuingAuthority {
   signatory?: string;
 }
 
+interface ExtractedNote {
+  note_type: string;
+  anchor?: string;
+  note_text: string;
+  page_number?: number;
+}
+
 interface ExtractionData {
   summary: string;
   key_points: string[];
   hs_codes: HSCodeEntry[];
   hs_codes_full?: HSCodeEntry[]; // Full HS codes with descriptions from Claude
   tariff_lines: TariffLine[];
+  notes?: ExtractedNote[]; // Notes extraites (définitions, notes de chapitre, etc.)
   chapter_info?: { number: number; title: string };
   trade_agreements?: TradeAgreementMention[];
   preferential_rates?: PreferentialRate[];
@@ -290,6 +298,45 @@ export default function ExtractionPreviewDialog({
         }
       }
 
+      // Insert notes into tariff_notes
+      const notes = extractionData?.notes || [];
+      let notesInserted = 0;
+      if (notes.length > 0) {
+        // Extract chapter number from pdfTitle or first HS code
+        const chapterMatch = pdfTitle.match(/chapitre\s*(\d+)/i) || pdfTitle.match(/SH_CODE_(\d+)/i);
+        let chapterNum: string | null = chapterMatch ? chapterMatch[1] : null;
+        
+        // Fallback: derive from first HS code
+        if (!chapterNum && uniqueHsCodes.length > 0) {
+          const firstCode = uniqueHsCodes[0].code_clean;
+          if (firstCode && firstCode.length >= 2) {
+            chapterNum = firstCode.slice(0, 2);
+          }
+        }
+
+        const noteRows = notes.map(note => ({
+          country_code: countryCode,
+          chapter_number: chapterNum,
+          note_type: note.note_type,
+          anchor: note.anchor || null,
+          note_text: note.note_text,
+          page_number: note.page_number || null,
+          source_pdf: pdfTitle,
+        }));
+
+        const { error: noteError } = await supabase
+          .from("tariff_notes")
+          .insert(noteRows);
+
+        if (noteError) {
+          console.error("Notes insert error:", noteError);
+          // Non-blocking: just log and continue
+        } else {
+          notesInserted = noteRows.length;
+          console.log(`✅ Inserted ${noteRows.length} notes`);
+        }
+      }
+
       // Save extraction record (upsert pour éviter les doublons si un record existe déjà)
       const { error: extractionError } = await supabase
         .from("pdf_extractions")
@@ -303,6 +350,7 @@ export default function ExtractionPreviewDialog({
             chapter_info: extractionData?.chapter_info || null,
             tariff_lines_count: uniqueTariffLines.length,
             hs_codes_count: uniqueHsCodes.length,
+            notes_count: notesInserted,
           })),
           extraction_model: "claude-sonnet-4-20250514",
           extraction_confidence: 0.90,
@@ -324,7 +372,7 @@ export default function ExtractionPreviewDialog({
 
       toast({
         title: "✅ Données insérées avec succès",
-        description: `${uniqueHsCodes.length} codes SH et ${uniqueTariffLines.length} lignes tarifaires`,
+        description: `${uniqueHsCodes.length} codes SH, ${uniqueTariffLines.length} lignes tarifaires, ${notesInserted} notes`,
       });
 
       onInsertComplete();
@@ -502,6 +550,16 @@ export default function ExtractionPreviewDialog({
                   Taux préf.
                   <Badge className="text-xs">
                     {extractionData?.preferential_rates?.length || 0}
+                  </Badge>
+                </TabsTrigger>
+              )}
+              {/* Onglet Notes pour les définitions et notes de chapitre */}
+              {(extractionData?.notes?.length || 0) > 0 && (
+                <TabsTrigger value="notes" className="flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Notes
+                  <Badge className="text-xs bg-warning/20 text-warning-foreground">
+                    {extractionData?.notes?.length || 0}
                   </Badge>
                 </TabsTrigger>
               )}
@@ -852,6 +910,54 @@ export default function ExtractionPreviewDialog({
                   )}
                 </TableBody>
               </Table>
+            </ScrollArea>
+          </TabsContent>
+
+          {/* Notes Tab - Definitions, chapter notes, footnotes */}
+          <TabsContent value="notes" className="flex-1 overflow-hidden mt-4">
+            <ScrollArea className="h-[400px]">
+              <div className="space-y-3 pr-4">
+                {(extractionData?.notes || []).length > 0 ? (
+                  extractionData?.notes?.map((note, index) => (
+                    <div 
+                      key={index} 
+                      className={`p-3 border rounded-lg ${
+                        note.note_type === 'definition' ? 'bg-accent/10 border-accent/30' :
+                        note.note_type === 'chapter_note' ? 'bg-warning/10 border-warning/30' :
+                        note.note_type === 'section_note' ? 'bg-success/10 border-success/30' :
+                        note.note_type === 'footnote' ? 'bg-muted border-border' :
+                        'bg-muted/30'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <Badge variant="outline" className="text-xs">
+                          {note.note_type === 'definition' ? '📖 Définition' :
+                           note.note_type === 'chapter_note' ? '📋 Note de chapitre' :
+                           note.note_type === 'section_note' ? '📑 Note de section' :
+                           note.note_type === 'footnote' ? '📝 Note de bas de page' :
+                           note.note_type === 'exclusion' ? '⛔ Exclusion' :
+                           '💡 Remarque'}
+                        </Badge>
+                        {note.anchor && (
+                          <span className="text-xs font-mono text-muted-foreground">
+                            {note.anchor}
+                          </span>
+                        )}
+                        {note.page_number && (
+                          <span className="text-xs text-muted-foreground">
+                            Page {note.page_number}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm">{note.note_text}</p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-muted-foreground py-8">
+                    Aucune note extraite de ce document
+                  </div>
+                )}
+              </div>
             </ScrollArea>
           </TabsContent>
 
