@@ -366,17 +366,29 @@ function resolveCol2Col3(
     return null; // Invalide, sera géré par l'héritage
   }
   
-  // Candidat A: col2=a, col3=b (Claude order)
-  // Candidat B: col2=b, col3=a (swapped)
-  let scoreA = 0;
-  let scoreB = 0;
-  const reasons: string[] = [];
+  // =========================================================================
+  // RÈGLE 0: Si aucun des deux n'est "00", on garde l'ordre Claude
+  // Seule la présence de "00" est un signal fiable pour décider.
+  // Sans "00", on ne peut pas savoir qui est col2 vs col3 → garder A.
+  // =========================================================================
+  if (col2A !== "00" && col2B !== "00") {
+    return {
+      col2: col2A,
+      col3: col2B,
+      swapApplied: false,
+      reason: `KEEP(no-00) both=${col2A},${col2B}`
+    };
+  }
   
   // =========================================================================
   // RÈGLE 1: Heuristique "00 appartient à col3" (poids TRÈS FORT)
   // Dans le tarif marocain, col3 (détail national) est souvent 00.
   // Si Claude met 00 en col2, c'est probablement inversé.
   // =========================================================================
+  let scoreA = 0;
+  let scoreB = 0;
+  const reasons: string[] = [];
+  
   if (col2B === "00" && col2A !== "00") {
     // Candidat A a col3=00 → correct
     scoreA += 5;
@@ -389,37 +401,31 @@ function resolveCol2Col3(
   }
   
   // =========================================================================
-  // RÈGLE 2: Cohérence héritage (poids moyen)
-  // Si col2 = lastCol2, ça confirme qu'on est sur la bonne piste
+  // RÈGLE 2: Cohérence héritage (traçabilité uniquement, pas de score)
   // =========================================================================
   if (ctx.lastCol2) {
     if (col2A === ctx.lastCol2) {
-      scoreA += 3;
       reasons.push(`A:inherit(${col2A}==last)`);
     }
     if (col2B === ctx.lastCol2) {
-      scoreB += 3;
       reasons.push(`B:inherit(${col2B}==last)`);
     }
   }
   
   // =========================================================================
-  // RÈGLE 3: Statistiques locales par pos6 (poids faible)
+  // RÈGLE 3: Statistiques locales (traçabilité uniquement, pas de score)
   // =========================================================================
   const pos6Stats = ctx.pos6Col2Counts.get(pos6);
   if (pos6Stats) {
     const countA = pos6Stats.get(col2A) || 0;
     const countB = pos6Stats.get(col2B) || 0;
-    // Cap à 2 points max
-    scoreA += Math.min(countA, 2);
-    scoreB += Math.min(countB, 2);
     if (countA > 0 || countB > 0) {
       reasons.push(`stats(A:${countA},B:${countB})`);
     }
   }
   
   // =========================================================================
-  // RÈGLE 4: Égalité → garder A (normal)
+  // DÉCISION: Seule la règle "00 en col3" décide du swap
   // =========================================================================
   const swapApplied = scoreB > scoreA;
   
