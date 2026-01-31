@@ -43,12 +43,20 @@ export interface IssuingAuthority {
   signatory?: string;
 }
 
+export interface ExtractedNote {
+  note_type: string;
+  anchor?: string;
+  note_text: string;
+  page_number?: number;
+}
+
 export interface ExtractionData {
   summary: string;
   key_points: string[];
   hs_codes: HSCodeEntry[];
   hs_codes_full?: HSCodeEntry[]; // Full HS codes with descriptions from Claude
   tariff_lines: TariffLine[];
+  notes?: ExtractedNote[]; // Notes extraites (définitions, notes de chapitre, etc.)
   chapter_info?: { number: number; title: string };
   pdfId?: string;
   pdfTitle?: string;
