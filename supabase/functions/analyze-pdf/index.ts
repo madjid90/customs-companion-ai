@@ -146,6 +146,14 @@ interface RawTableDebug {
   skippedLines: number;
   notesCount: number;
   linesFromFallback: number;
+  // Col2/Col3 swap detection
+  swappedCol2Col3Count: number;
+  swappedCol2Col3Samples: Array<{
+    pos6: string;
+    original: { col2: string; col3: string };
+    resolved: { col2: string; col3: string };
+    reason: string;
+  }>;
 }
 
 interface BatchStats {
@@ -318,6 +326,108 @@ function isValidCleanCode(codeClean: string): boolean {
 }
 
 // =============================================================================
+// CONTEXTE POUR RÉSOLUTION COL2/COL3
+// =============================================================================
+
+interface Col2Col3Context {
+  lastCol2: string | null;
+  lastCol3: string | null;
+  pos6Col2Counts: Map<string, Map<string, number>>; // pos6 -> (col2Value -> count)
+}
+
+interface Col2Col3Resolution {
+  col2: string;
+  col3: string;
+  swapApplied: boolean;
+  reason: string;
+}
+
+/**
+ * Résout l'inversion col2/col3 de manière déterministe.
+ * Construit 2 candidats (normal vs swapped) et choisit le meilleur score.
+ */
+function resolveCol2Col3(
+  pos6: string,
+  a: string | null, // Premier candidat (col2 brut)
+  b: string | null, // Deuxième candidat (col3 brut)
+  ctx: Col2Col3Context
+): Col2Col3Resolution | null {
+  // Validation stricte: a et b doivent être exactement 2 digits
+  const col2A = normalize2Strict(a);
+  const col2B = normalize2Strict(b);
+  
+  if (!col2A || !col2B) {
+    return null; // Invalide, sera géré par l'héritage
+  }
+  
+  // Candidat A: col2=a, col3=b (normal)
+  // Candidat B: col2=b, col3=a (swapped)
+  let scoreA = 0;
+  let scoreB = 0;
+  const reasons: string[] = [];
+  
+  // 1) Cohérence héritage (poids fort)
+  if (ctx.lastCol2) {
+    if (col2A === ctx.lastCol2) {
+      scoreA += 3;
+      reasons.push(`A:inherit(${col2A}==last)`);
+    }
+    if (col2B === ctx.lastCol2) {
+      scoreB += 3;
+      reasons.push(`B:inherit(${col2B}==last)`);
+    }
+  }
+  
+  // 2) Heuristique "col3 national detail souvent 00"
+  if (col2B === "00" && col2A !== "00") {
+    scoreA += 2;
+    reasons.push("A:col3=00");
+  }
+  if (col2A === "00" && col2B !== "00") {
+    scoreB += 2;
+    reasons.push("B:col3=00");
+  }
+  
+  // 3) Statistiques locales par pos6
+  const pos6Stats = ctx.pos6Col2Counts.get(pos6);
+  if (pos6Stats) {
+    const countA = pos6Stats.get(col2A) || 0;
+    const countB = pos6Stats.get(col2B) || 0;
+    // Cap à 2 points max
+    scoreA += Math.min(countA, 2);
+    scoreB += Math.min(countB, 2);
+    if (countA > 0 || countB > 0) {
+      reasons.push(`stats(A:${countA},B:${countB})`);
+    }
+  }
+  
+  // 4) Égalité -> garder A (normal)
+  const swapApplied = scoreB > scoreA;
+  
+  const finalReason = swapApplied 
+    ? `SWAP(B:${scoreB}>A:${scoreA}) ${reasons.join(", ")}`
+    : `KEEP(A:${scoreA}>=B:${scoreB}) ${reasons.join(", ")}`;
+  
+  return {
+    col2: swapApplied ? col2B : col2A,
+    col3: swapApplied ? col2A : col2B,
+    swapApplied,
+    reason: finalReason
+  };
+}
+
+/**
+ * Met à jour les statistiques de col2 pour une position donnée.
+ */
+function updateCol2Stats(ctx: Col2Col3Context, pos6: string, col2: string): void {
+  if (!ctx.pos6Col2Counts.has(pos6)) {
+    ctx.pos6Col2Counts.set(pos6, new Map<string, number>());
+  }
+  const stats = ctx.pos6Col2Counts.get(pos6)!;
+  stats.set(col2, (stats.get(col2) || 0) + 1);
+}
+
+// =============================================================================
 // PROMPTS
 // =============================================================================
 
@@ -397,12 +507,19 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
     parsingWarnings: [],
     skippedLines: 0,
     notesCount: 0,
-    linesFromFallback: 0
+    linesFromFallback: 0,
+    swappedCol2Col3Count: 0,
+    swappedCol2Col3Samples: []
+  };
+  
+  // Contexte pour la résolution col2/col3
+  const col2Col3Ctx: Col2Col3Context = {
+    lastCol2: null,
+    lastCol3: null,
+    pos6Col2Counts: new Map()
   };
   
   let lastPos6: string | null = null;
-  let lastCol2: string | null = null;
-  let lastCol3: string | null = null;
   
   for (let i = 0; i < rawLines.length; i++) {
     const line = rawLines[i];
@@ -440,33 +557,60 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
     
     if (line.position_6) lastPos6 = pos6;
     
-    let col2 = normalize2Strict(line.col2);
-    if (!col2) {
-      if (line.national_code) {
-        const nc = normalize10Strict(line.national_code);
-        if (nc) col2 = nc.slice(6, 8);
+    // =========================================================================
+    // RÉSOLUTION COL2/COL3 AVEC SCORING DÉTERMINISTE
+    // =========================================================================
+    
+    let col2: string | null = null;
+    let col3: string | null = null;
+    
+    // Essayer d'abord d'extraire depuis national_code si fourni complet
+    const ncFromLine = normalize10Strict(line.national_code);
+    if (ncFromLine) {
+      col2 = ncFromLine.slice(6, 8);
+      col3 = ncFromLine.slice(8, 10);
+    } else {
+      // Appliquer la résolution col2/col3 sur les colonnes brutes
+      const rawCol2 = line.col2;
+      const rawCol3 = line.col3;
+      
+      // Si les deux colonnes sont des digits valides, appliquer le scoring
+      const resolution = resolveCol2Col3(pos6, rawCol2 ?? null, rawCol3 ?? null, col2Col3Ctx);
+      
+      if (resolution) {
+        col2 = resolution.col2;
+        col3 = resolution.col3;
+        
+        if (resolution.swapApplied) {
+          debug.swappedCol2Col3Count++;
+          if (debug.swappedCol2Col3Samples.length < 15) {
+            debug.swappedCol2Col3Samples.push({
+              pos6,
+              original: { col2: rawCol2 || "", col3: rawCol3 || "" },
+              resolved: { col2, col3 },
+              reason: resolution.reason
+            });
+          }
+          console.log(`[COL-SWAP] pos6=${pos6} | "${rawCol2},${rawCol3}" -> "${col2},${col3}" | ${resolution.reason}`);
+        }
+      } else {
+        // Fallback: héritage classique si la résolution échoue
+        col2 = normalize2Strict(rawCol2);
+        col3 = normalize2Strict(rawCol3);
+        
+        if (!col2 && col2Col3Ctx.lastCol2) col2 = col2Col3Ctx.lastCol2;
+        if (!col3 && col2Col3Ctx.lastCol3) col3 = col2Col3Ctx.lastCol3;
       }
-      if (!col2 && lastCol2) col2 = lastCol2;
     }
     
-    if (line.col2 && normalize2Strict(line.col2)) lastCol2 = normalize2Strict(line.col2);
-    
-    let col3 = normalize2Strict(line.col3);
-    if (!col3) {
-      if (line.national_code) {
-        const nc = normalize10Strict(line.national_code);
-        if (nc) col3 = nc.slice(8, 10);
-      }
-      if (!col3 && lastCol3) col3 = lastCol3;
-    }
-    
-    if (line.col3 && normalize2Strict(line.col3)) lastCol3 = normalize2Strict(line.col3);
-    
+    // Construire national_code
     let nationalCode: string | null = null;
     
-    if (line.national_code) nationalCode = normalize10Strict(line.national_code);
-    
-    if (!nationalCode && col2 && col3) nationalCode = pos6 + col2 + col3;
+    if (ncFromLine) {
+      nationalCode = ncFromLine;
+    } else if (col2 && col3) {
+      nationalCode = pos6 + col2 + col3;
+    }
     
     if (!nationalCode || nationalCode.length !== 10 || !/^\d{10}$/.test(nationalCode)) {
       debug.parsingWarnings.push(`Line ${i}: Invalid national_code "${nationalCode}", skipped (NO PADDING)`);
@@ -477,9 +621,13 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
     const { duty_rate, unit_norm, swapped } = fixRateUnitSwap(line, debug);
     
     if (duty_rate === null) {
+      // Mettre à jour le contexte même si on skip cette ligne
       if (pos6) lastPos6 = pos6;
-      if (col2) lastCol2 = col2;
-      if (col3) lastCol3 = col3;
+      if (col2) {
+        col2Col3Ctx.lastCol2 = col2;
+        updateCol2Stats(col2Col3Ctx, pos6, col2);
+      }
+      if (col3) col2Col3Ctx.lastCol3 = col3;
       continue;
     }
     
@@ -498,9 +646,16 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
       page_number: line.page_number || null
     });
     
+    // Mettre à jour le contexte après validation
     lastPos6 = pos6;
-    lastCol2 = col2;
-    lastCol3 = col3;
+    col2Col3Ctx.lastCol2 = col2;
+    col2Col3Ctx.lastCol3 = col3;
+    if (col2) updateCol2Stats(col2Col3Ctx, pos6, col2);
+  }
+  
+  // Log récapitulatif des swaps col2/col3
+  if (debug.swappedCol2Col3Count > 0) {
+    console.log(`[COL-SWAP-SUMMARY] Total: ${debug.swappedCol2Col3Count} swaps applied`);
   }
   
   return { tariffLines: results, debug };
