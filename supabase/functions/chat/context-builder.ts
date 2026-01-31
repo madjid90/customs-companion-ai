@@ -42,6 +42,7 @@ export interface RAGContext {
   pdf_summaries: any[];
   legal_references: any[];
   regulatory_procedures: any[];
+  tariff_notes: any[]; // Notes de chapitre, définitions, exclusions
 }
 
 // ============================================================================
@@ -266,7 +267,42 @@ export function createEmptyContext(): RAGContext {
     pdf_summaries: [],
     legal_references: [],
     regulatory_procedures: [],
+    tariff_notes: [],
   };
+}
+
+/**
+ * Formate les notes tarifaires pour le contexte RAG
+ */
+export function formatTariffNotesForRAG(notes: any[]): string {
+  if (!notes || notes.length === 0) return "";
+
+  const grouped = notes.reduce((acc: Record<string, any[]>, note) => {
+    const key = note.chapter_number || "Général";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(note);
+    return acc;
+  }, {});
+
+  let text = "## Notes et Définitions Tarifaires\n\n";
+
+  for (const [chapter, chapterNotes] of Object.entries(grouped)) {
+    text += `### Chapitre ${chapter}\n`;
+    
+    for (const note of chapterNotes as any[]) {
+      const typeLabel = note.note_type === "definition" ? "📖 Définition" :
+                        note.note_type === "chapter_note" ? "📋 Note" :
+                        note.note_type === "exclusion" ? "⛔ Exclusion" :
+                        note.note_type === "subheading_note" ? "📌 Note de sous-position" :
+                        "ℹ️ Information";
+      
+      text += `**${typeLabel}**`;
+      if (note.anchor) text += ` (${note.anchor})`;
+      text += `:\n${note.note_text}\n\n`;
+    }
+  }
+
+  return text;
 }
 
 /**

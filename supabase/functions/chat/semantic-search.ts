@@ -625,3 +625,148 @@ export async function searchVeilleHybrid(
 
   return results.sort((a: any, b: any) => (b.effective_similarity || b.similarity) - (a.effective_similarity || a.similarity)).slice(0, limit);
 }
+
+// ============================================================================
+// TARIFF NOTES SEARCH (NEW)
+// ============================================================================
+
+/**
+ * Recherche sémantique des notes tarifaires (définitions, notes de chapitre)
+ */
+export async function searchTariffNotesSemantic(
+  supabase: any,
+  queryEmbedding: number[],
+  threshold: number = 0.65,
+  limit: number = 8
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.rpc("search_tariff_notes_semantic", {
+      query_embedding: `[${queryEmbedding.join(",")}]`,
+      match_threshold: threshold,
+      match_count: limit,
+    });
+
+    if (error) {
+      console.error("Semantic tariff notes search error:", error);
+      return [];
+    }
+
+    return (data || []).map((note: any) => ({
+      ...note,
+      source: "semantic",
+    }));
+  } catch (error) {
+    console.error("Semantic tariff notes search failed:", error);
+    return [];
+  }
+}
+
+/**
+ * Recherche FTS des notes tarifaires - fallback
+ */
+export async function searchTariffNotesFTS(
+  supabase: any,
+  searchQuery: string,
+  chapterNumber?: string,
+  limit: number = 8
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.rpc("search_tariff_notes_fts", {
+      search_query: searchQuery,
+      chapter_filter: chapterNumber || null,
+      match_count: limit,
+    });
+
+    if (error) {
+      console.error("FTS tariff notes search error:", error);
+      return [];
+    }
+
+    return (data || []).map((note: any) => ({
+      ...note,
+      similarity: Math.min(note.relevance_score / 5, 1),
+      source: "fts",
+    }));
+  } catch (error) {
+    console.error("FTS tariff notes search failed:", error);
+    return [];
+  }
+}
+
+/**
+ * Recherche hybride des notes tarifaires: sémantique + FTS fallback
+ */
+export async function searchTariffNotesHybrid(
+  supabase: any,
+  queryEmbedding: number[] | null,
+  searchText: string,
+  chapterNumbers?: string[],
+  limit: number = 8
+): Promise<any[]> {
+  let results: any[] = [];
+
+  // 1. Try semantic search first if embedding available
+  if (queryEmbedding) {
+    results = await searchTariffNotesSemantic(supabase, queryEmbedding, 0.65, limit);
+  }
+
+  // 2. Fallback to FTS if not enough results
+  if (results.length < 3 && searchText) {
+    console.log(`Tariff notes: only ${results.length} semantic results, adding FTS fallback`);
+    
+    // Try FTS for each chapter if specified, otherwise general search
+    const chapters = chapterNumbers && chapterNumbers.length > 0 ? chapterNumbers : [undefined];
+    
+    for (const chapter of chapters) {
+      const ftsResults = await searchTariffNotesFTS(supabase, searchText, chapter, limit);
+      
+      // Merge and deduplicate by id
+      const seenIds = new Set(results.map((r) => r.id));
+      for (const fr of ftsResults) {
+        if (!seenIds.has(fr.id)) {
+          results.push(fr);
+          seenIds.add(fr.id);
+        }
+      }
+    }
+  }
+
+  // Sort by similarity/relevance
+  return results
+    .sort((a: any, b: any) => (b.similarity || 0) - (a.similarity || 0))
+    .slice(0, limit);
+}
+
+/**
+ * Recherche directe des notes par numéro de chapitre (lookup rapide)
+ */
+export async function searchTariffNotesByChapter(
+  supabase: any,
+  chapterNumbers: string[],
+  limit: number = 20
+): Promise<any[]> {
+  if (!chapterNumbers || chapterNumbers.length === 0) return [];
+
+  try {
+    const { data, error } = await supabase
+      .from("tariff_notes")
+      .select("id, note_type, note_text, chapter_number, anchor, page_number, country_code")
+      .in("chapter_number", chapterNumbers)
+      .order("note_type")
+      .limit(limit);
+
+    if (error) {
+      console.error("Chapter notes lookup error:", error);
+      return [];
+    }
+
+    return (data || []).map((note: any) => ({
+      ...note,
+      similarity: 1.0,
+      source: "direct_lookup",
+    }));
+  } catch (error) {
+    console.error("Chapter notes lookup failed:", error);
+    return [];
+  }
+}
