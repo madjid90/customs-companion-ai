@@ -28,16 +28,17 @@ const MIN_BATCH_SIZE = 1;
 // =============================================================================
 
 interface RawTariffLine {
-  prefix_col?: string | null;
-  position_6?: string | null;
-  col2?: string | null;
-  col3?: string | null;
-  national_code?: string | null;
-  hs_code_6?: string | null;
+  prefix_col?: string | null;       // Chiffre d'alignement à IGNORER
+  position_6?: string | null;       // Ex: "8903.11" ou "890311"
+  col2?: string | null;             // 2 digits
+  col3?: string | null;             // 2 digits
+  national_code?: string | null;    // 10 digits (peut être reconstruit)
+  hs_code_6?: string | null;        // 6 digits (peut être reconstruit)
   description?: string | null;
   duty_rate?: string | number | null;
-  unit_norm?: string | null;
-  unit_comp?: string | null;
+  unit_norm?: string | null;        // Unité quantité normalisée
+  unit_comp?: string | null;        // Unité complémentaire
+  page_number?: number | null;      // Source page
 }
 
 interface ExtractedNote {
@@ -56,6 +57,7 @@ interface TariffLine {
   unit_norm: string | null;
   unit_comp: string | null;
   is_inherited: boolean;
+  page_number?: number | null;
 }
 
 interface HSCodeEntry {
@@ -74,6 +76,8 @@ interface RawTableDebug {
   }>;
   parsingWarnings: string[];
   skippedLines: number;
+  notesCount: number;
+  linesFromFallback: number;
 }
 
 interface BatchStats {
@@ -300,7 +304,9 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
     detectedSwaps: 0,
     swappedSamples: [],
     parsingWarnings: [],
-    skippedLines: 0
+    skippedLines: 0,
+    notesCount: 0,
+    linesFromFallback: 0
   };
   
   let lastPos6: string | null = null;
@@ -397,7 +403,8 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
       duty_note: dutyNote,
       unit_norm: unit_norm,
       unit_comp: line.unit_comp || null,
-      is_inherited: swapped || !line.national_code
+      is_inherited: swapped || !line.national_code,
+      page_number: line.page_number || null
     });
     
     lastPos6 = pos6;
@@ -506,6 +513,159 @@ function parseJsonRobust(text: string): any | null {
 }
 
 // =============================================================================
+// FALLBACK: Convertir ancien format col1..col5 vers RawTariffLine
+// =============================================================================
+
+function convertLegacyToRawTariffLine(legacy: any, pageNumber?: number): RawTariffLine | null {
+  if (!legacy) return null;
+  
+  // Ancien format col1..col5
+  if (legacy.col1 !== undefined) {
+    const col1 = String(legacy.col1 || "").trim();
+    const col2 = String(legacy.col2 || "").trim();
+    const col3 = String(legacy.col3 || "").trim();
+    const col4 = String(legacy.col4 || "").trim();
+    const col5 = String(legacy.col5 || "").trim();
+    
+    // Détecter si col1 est un préfixe numérique (1 chiffre avant la position)
+    let prefixCol: string | null = null;
+    let position6: string | null = null;
+    
+    if (/^\d$/.test(col1) && /^\d{4}(\.\d{2})?$/.test(col2)) {
+      // col1 = préfixe, col2 = position
+      prefixCol = col1;
+      position6 = col2;
+    } else if (/^\d{4}(\.\d{2})?$/.test(col1) || /^\d{6}$/.test(col1)) {
+      position6 = col1;
+    }
+    
+    // Trouver description (champ texte le plus long)
+    const textFields = [col3, col4, col5, legacy.description || ""];
+    const description = textFields.reduce((a, b) => 
+      (String(a).length > String(b).length) ? a : b, ""
+    );
+    
+    // Trouver duty et unit
+    let dutyRate: string | number | null = null;
+    let unitNorm: string | null = null;
+    let unitComp: string | null = null;
+    
+    for (const field of [col4, col5, legacy.duty_rate]) {
+      if (isNumberLike(field) && dutyRate === null) dutyRate = field;
+      else if (isUnit(field) && unitNorm === null) unitNorm = String(field);
+    }
+    
+    if (legacy.unit_norm) unitNorm = String(legacy.unit_norm);
+    if (legacy.unit_comp) unitComp = String(legacy.unit_comp);
+    
+    return {
+      prefix_col: prefixCol,
+      position_6: position6,
+      col2: normalize2Strict(legacy.col6 || null),
+      col3: normalize2Strict(legacy.col7 || null),
+      national_code: normalize10Strict(digitsOnly(col1 + col2 + col3)),
+      description,
+      duty_rate: dutyRate,
+      unit_norm: unitNorm,
+      unit_comp: unitComp,
+      page_number: pageNumber
+    };
+  }
+  
+  // Déjà au bon format
+  return {
+    ...legacy,
+    page_number: legacy.page_number || pageNumber
+  } as RawTariffLine;
+}
+
+// =============================================================================
+// FALLBACK: Extraction agressive des lignes depuis texte brut
+// =============================================================================
+
+function extractRawLinesAggressively(text: string, pageNumber?: number): RawTariffLine[] {
+  const results: RawTariffLine[] = [];
+  
+  // Pattern pour détecter les lignes tarifaires
+  // Format: [préfixe?] XXXX.XX [XX] [XX] [description] [taux] [unité]
+  const linePattern = /^(?:(\d)\s+)?(\d{4}[.\s]\d{2})\s+(\d{2})?\s*(\d{2})?\s+(.+?)(?:\s+(\d+(?:[,.]\d+)?%?)\s*([A-Za-z]{1,5}\d{0,2})?)?$/gm;
+  
+  let match;
+  while ((match = linePattern.exec(text)) !== null) {
+    const [, prefix, pos6, col2, col3, desc, rate, unit] = match;
+    
+    results.push({
+      prefix_col: prefix || null,
+      position_6: pos6?.replace(/\s/g, ""),
+      col2: col2 || null,
+      col3: col3 || null,
+      description: desc?.trim() || null,
+      duty_rate: rate || null,
+      unit_norm: unit || null,
+      page_number: pageNumber
+    });
+  }
+  
+  return results;
+}
+
+// =============================================================================
+// NOTES: Extraction heuristique depuis texte
+// =============================================================================
+
+function extractNotesFromText(text: string, pageNumber?: number): ExtractedNote[] {
+  const notes: ExtractedNote[] = [];
+  const seen = new Set<string>();
+  
+  // Définitions (BRT : ...)
+  const defPattern = /([A-Z]{2,5})\s*:\s*([^.\n]{10,80})/g;
+  let match;
+  while ((match = defPattern.exec(text)) !== null) {
+    const key = match[1] + ":" + match[2].slice(0, 20);
+    if (!seen.has(key)) {
+      seen.add(key);
+      notes.push({
+        note_type: "definition",
+        anchor: match[1],
+        note_text: `${match[1]} : ${match[2].trim()}`,
+        page_number: pageNumber
+      });
+    }
+  }
+  
+  // Notes de chapitre/section
+  const notePattern = /(NOTE[S]?\s*(?:DE\s+)?(?:CHAPITRE|SECTION)?)\s*[:\-]?\s*([^\n]{10,200})/gi;
+  while ((match = notePattern.exec(text)) !== null) {
+    const key = match[2].slice(0, 30);
+    if (!seen.has(key)) {
+      seen.add(key);
+      notes.push({
+        note_type: match[1].toLowerCase().includes("chapitre") ? "chapter_note" : "section_note",
+        note_text: match[2].trim(),
+        page_number: pageNumber
+      });
+    }
+  }
+  
+  // Footnotes (1), (2), etc.
+  const footnotePattern = /\((\d)\)\s*([^()\n]{10,150})/g;
+  while ((match = footnotePattern.exec(text)) !== null) {
+    const key = "fn" + match[1] + ":" + match[2].slice(0, 20);
+    if (!seen.has(key)) {
+      seen.add(key);
+      notes.push({
+        note_type: "footnote",
+        anchor: `(${match[1]})`,
+        note_text: match[2].trim(),
+        page_number: pageNumber
+      });
+    }
+  }
+  
+  return notes;
+}
+
+// =============================================================================
 // ANALYSE D'UNE PAGE VIA CLAUDE
 // =============================================================================
 
@@ -590,17 +750,45 @@ async function analyzePageWithClaude(
     const parsed = parseJsonRobust(cleanedResponse);
     
     if (!parsed) {
-      console.warn(`[Page ${pageNumber}] Failed to parse JSON`);
-      return { raw_lines: [], notes: [], has_tariff_table: false, error: "JSON parse failed" };
+      console.warn(`[Page ${pageNumber}] Failed to parse JSON, trying fallback extraction`);
+      // Fallback: extraction agressive depuis le texte brut
+      const fallbackLines = extractRawLinesAggressively(responseText, pageNumber);
+      const fallbackNotes = extractNotesFromText(responseText, pageNumber);
+      console.log(`[Page ${pageNumber}] Fallback: ${fallbackLines.length} lines, ${fallbackNotes.length} notes`);
+      return { 
+        raw_lines: fallbackLines, 
+        notes: fallbackNotes, 
+        has_tariff_table: fallbackLines.length > 0, 
+        error: "JSON parse failed, used fallback" 
+      };
     }
     
-    const rawLines = parsed.raw_lines || [];
-    const notes = (parsed.notes || []).map((n: any) => ({
+    // Convertir les lignes (support ancien format col1..col5)
+    let rawLines: RawTariffLine[] = [];
+    if (Array.isArray(parsed.raw_lines)) {
+      rawLines = parsed.raw_lines.map((line: any) => {
+        // Si ancien format col1..col5, convertir
+        if (line.col1 !== undefined && line.position_6 === undefined) {
+          return convertLegacyToRawTariffLine(line, pageNumber);
+        }
+        // Ajouter page_number
+        return { ...line, page_number: line.page_number || pageNumber } as RawTariffLine;
+      }).filter(Boolean) as RawTariffLine[];
+    }
+    
+    // Notes depuis la réponse LLM
+    let notes: ExtractedNote[] = (parsed.notes || []).map((n: any) => ({
       note_type: n.note_type || "remark",
       anchor: n.anchor || undefined,
       note_text: n.note_text || "",
       page_number: pageNumber
     }));
+    
+    // Fallback heuristique pour les notes si aucune trouvée
+    if (notes.length === 0) {
+      notes = extractNotesFromText(responseText, pageNumber);
+    }
+    
     const hasTariffTable = parsed.has_tariff_table !== false && rawLines.length > 0;
     
     console.log(`[Page ${pageNumber}] Found ${rawLines.length} lines, ${notes.length} notes, tariff=${hasTariffTable}`);
@@ -862,6 +1050,9 @@ serve(async (req) => {
     const { tariffLines, debug } = processRawLines(allRawLines);
     const hsCodeEntries = extractHSCodesFromTariffLines(tariffLines);
     
+    // Enrichir le debug
+    debug.notesCount = allNotes.length;
+    
     console.log(`Processed: ${tariffLines.length} valid tariff lines, ${hsCodeEntries.length} HS codes`);
     
     // Insérer les données en DB si pas en mode preview
@@ -979,6 +1170,9 @@ serve(async (req) => {
         .eq("pdf_id", pdfId)
         .maybeSingle();
       
+      // Construire notes_text pour RAG
+      const notesText = allNotes.map(n => n.note_text).join("\n\n");
+      
       const extractionData = {
         pdf_id: pdfId,
         summary: `Extraction batch terminée: ${stats.tariff_lines_inserted} lignes tarifaires, ${stats.hs_codes_inserted} codes HS, ${stats.notes_inserted} notes`,
@@ -993,8 +1187,9 @@ serve(async (req) => {
         extracted_data: {
           batch_run_id: runId,
           stats: stats,
-          debug: debug,
-          extracted_notes: allNotes,
+          raw_table_debug: debug,
+          notes: allNotes,
+          notes_text: notesText,
         },
         extraction_model: CLAUDE_MODEL,
         extraction_confidence: 0.92,
