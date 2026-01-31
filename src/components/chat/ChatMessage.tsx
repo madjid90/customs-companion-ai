@@ -290,17 +290,22 @@ export function ChatMessage({
           .from("pdf-documents")
           .getPublicUrl(doc.file_path);
 
-        console.log("Document found:", doc.title, "file:", doc.file_name, "URL:", urlData?.publicUrl);
+        // Build display title based on chapter number, not file name
+        const displayTitle = paddedChapter 
+          ? `Chapitre SH ${paddedChapter}` 
+          : (doc.title || sourceTitle);
+        
+        console.log("Document found:", displayTitle, "file:", doc.file_name, "URL:", urlData?.publicUrl);
 
         if (urlData?.publicUrl) {
           setPreviewDoc({
             url: urlData.publicUrl,
-            title: doc.title || doc.file_name || sourceTitle
+            title: displayTitle
           });
         } else {
           setPreviewDoc({
             url: '',
-            title: `Document non trouvé: Chapitre ${paddedChapter}`
+            title: `Document non trouvé: Chapitre SH ${paddedChapter}`
           });
         }
       } else {
