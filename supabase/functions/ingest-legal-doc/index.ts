@@ -8,6 +8,14 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { 
+  normalize10Strict, 
+  normalize6Strict, 
+  extractHS6,
+  digitsOnly,
+  parseDetectedCode,
+  type ParsedHSCode
+} from "../_shared/hs-code-utils.ts";
 
 // ============================================================================
 // CORS & CONFIG
@@ -66,8 +74,9 @@ interface TextChunk {
 }
 
 interface DetectedCode {
-  code: string;
-  code_normalized: string;
+  code: string;              // Raw code as found in text
+  hs_code_6: string | null;  // Validated 6-digit HS code (null if < 6 digits)
+  national_code: string | null; // Validated 10-digit code (null if not exactly 10)
   context: string;
   page_number: number | null;
 }
@@ -264,9 +273,13 @@ function detectHSCodes(pages: ExtractedPage[]): DetectedCode[] {
         const end = Math.min(text.length, match.index + match[0].length + 50);
         const context = text.slice(start, end).replace(/\s+/g, " ").trim();
 
+        // Use strict normalization - NO PADDING
+        const parsed = parseDetectedCode(normalized);
+        
         detected.push({
           code: raw,
-          code_normalized: normalized.padEnd(10, "0").slice(0, 10),
+          hs_code_6: parsed.hs_code_6,      // null if < 6 digits
+          national_code: parsed.national_code, // null if not exactly 10 digits
           context,
           page_number: page.page_number,
         });
@@ -406,23 +419,36 @@ async function insertHSEvidence(
 ): Promise<number> {
   if (detectedCodes.length === 0) return 0;
 
-  // Deduplicate by normalized code
+  // Filter: only keep codes that have at least hs_code_6
+  // Skip codes that couldn't be validated (< 6 digits)
+  const validCodes = detectedCodes.filter(code => code.hs_code_6 !== null);
+  
+  if (validCodes.length === 0) {
+    console.log("[ingest-legal-doc] No valid HS codes (>= 6 digits) detected");
+    return 0;
+  }
+
+  // Deduplicate by hs_code_6 (since national_code may be null for 6-digit codes)
   const uniqueCodes = new Map<string, DetectedCode>();
-  for (const code of detectedCodes) {
-    const key = code.code_normalized;
+  for (const code of validCodes) {
+    // Use national_code as key if available (10 digits), otherwise hs_code_6
+    const key = code.national_code || code.hs_code_6!;
     if (!uniqueCodes.has(key) || (code.context.length > (uniqueCodes.get(key)?.context.length || 0))) {
       uniqueCodes.set(key, code);
     }
   }
 
+  // IMPORTANT: Only insert evidence for codes with valid national_code (10 digits)
+  // OR create evidence with hs_code_6 only when national_code is null
   const rows = Array.from(uniqueCodes.values()).map((code) => ({
     country_code: countryCode,
-    national_code: code.code_normalized,
-    hs_code_6: code.code_normalized.slice(0, 6),
+    // national_code: only if we have a REAL 10-digit code, otherwise leave empty
+    national_code: code.national_code || code.hs_code_6 || "",  // Fallback to hs_code_6 for partial matches
+    hs_code_6: code.hs_code_6,
     source_id: sourceId,
     page_number: code.page_number,
     evidence_text: code.context,
-    confidence: "auto_detected",
+    confidence: code.national_code ? "auto_detected_10" : "auto_detected_6",  // Track precision
   }));
 
   const { error, data } = await supabase
