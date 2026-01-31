@@ -25,6 +25,7 @@ interface CircularReference {
   reference_date?: string;
   download_url?: string;
   pdf_title?: string;
+  validated?: boolean;
 }
 
 interface Message {
@@ -36,6 +37,8 @@ interface Message {
   conversationId?: string;
   attachedFiles?: AttachedFile[];
   citedCirculars?: CircularReference[];
+  hasDbEvidence?: boolean;
+  validationMessage?: string;
   context?: {
     hs_codes_found: number;
     tariffs_found: number;
@@ -43,6 +46,7 @@ interface Message {
     documents_found: number;
     pdfs_used: number;
     legal_references_found?: number;
+    sources_validated?: number;
   };
 }
 
@@ -308,8 +312,13 @@ export default function Chat() {
         content: data.response,
         confidence: data.confidence as "high" | "medium" | "low",
         conversationId: data.conversationId,
-        context: data.context,
+        context: {
+          ...data.context,
+          sources_validated: data.sources_validated?.length || 0,
+        },
         citedCirculars: data.cited_circulars || [],
+        hasDbEvidence: data.has_db_evidence ?? true,
+        validationMessage: data.validation_message,
       };
 
       setMessages((prev) => [...prev, aiMessage]);
