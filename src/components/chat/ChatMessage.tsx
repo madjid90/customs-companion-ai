@@ -292,7 +292,7 @@ export function ChatMessage({
 
         // Build display title based on chapter number, not file name
         const displayTitle = paddedChapter 
-          ? `Chapitre SH ${paddedChapter}` 
+          ? `Chapitre ${paddedChapter}` 
           : (doc.title || sourceTitle);
         
         console.log("Document found:", displayTitle, "file:", doc.file_name, "URL:", urlData?.publicUrl);
@@ -305,7 +305,7 @@ export function ChatMessage({
         } else {
           setPreviewDoc({
             url: '',
-            title: `Document non trouvé: Chapitre SH ${paddedChapter}`
+            title: `Document non trouvé: Chapitre ${paddedChapter}`
           });
         }
       } else {
@@ -313,7 +313,7 @@ export function ChatMessage({
         console.log("Document not found for chapter:", chapter, "padded:", paddedChapter, "title:", sourceTitle);
         setPreviewDoc({
           url: '',
-          title: `Document non trouvé: Chapitre SH ${paddedChapter}`
+          title: `Document non trouvé: Chapitre ${paddedChapter}`
         });
       }
     } catch (err) {
