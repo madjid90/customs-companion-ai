@@ -345,11 +345,17 @@ interface Col2Col3Resolution {
 /**
  * Résout l'inversion col2/col3 de manière déterministe.
  * Construit 2 candidats (normal vs swapped) et choisit le meilleur score.
+ * 
+ * RÈGLE FONDAMENTALE du tarif marocain:
+ * - col2 = sous-position (varie: 10, 20, 80, etc.)
+ * - col3 = détail national (souvent 00)
+ * 
+ * Donc si on voit "00" et "20", le "00" doit être en col3, pas col2.
  */
 function resolveCol2Col3(
   pos6: string,
-  a: string | null, // Premier candidat (col2 brut)
-  b: string | null, // Deuxième candidat (col3 brut)
+  a: string | null, // Premier candidat (col2 brut extrait par Claude)
+  b: string | null, // Deuxième candidat (col3 brut extrait par Claude)
   ctx: Col2Col3Context
 ): Col2Col3Resolution | null {
   // Validation stricte: a et b doivent être exactement 2 digits
@@ -360,13 +366,32 @@ function resolveCol2Col3(
     return null; // Invalide, sera géré par l'héritage
   }
   
-  // Candidat A: col2=a, col3=b (normal)
+  // Candidat A: col2=a, col3=b (Claude order)
   // Candidat B: col2=b, col3=a (swapped)
   let scoreA = 0;
   let scoreB = 0;
   const reasons: string[] = [];
   
-  // 1) Cohérence héritage (poids fort)
+  // =========================================================================
+  // RÈGLE 1: Heuristique "00 appartient à col3" (poids TRÈS FORT)
+  // Dans le tarif marocain, col3 (détail national) est souvent 00.
+  // Si Claude met 00 en col2, c'est probablement inversé.
+  // =========================================================================
+  if (col2B === "00" && col2A !== "00") {
+    // Candidat A a col3=00 → correct
+    scoreA += 5;
+    reasons.push("A:col3=00(+5)");
+  }
+  if (col2A === "00" && col2B !== "00") {
+    // Candidat B aurait col3=00 → correct si on swap
+    scoreB += 5;
+    reasons.push("B:col3=00(+5)");
+  }
+  
+  // =========================================================================
+  // RÈGLE 2: Cohérence héritage (poids moyen)
+  // Si col2 = lastCol2, ça confirme qu'on est sur la bonne piste
+  // =========================================================================
   if (ctx.lastCol2) {
     if (col2A === ctx.lastCol2) {
       scoreA += 3;
@@ -378,17 +403,9 @@ function resolveCol2Col3(
     }
   }
   
-  // 2) Heuristique "col3 national detail souvent 00"
-  if (col2B === "00" && col2A !== "00") {
-    scoreA += 2;
-    reasons.push("A:col3=00");
-  }
-  if (col2A === "00" && col2B !== "00") {
-    scoreB += 2;
-    reasons.push("B:col3=00");
-  }
-  
-  // 3) Statistiques locales par pos6
+  // =========================================================================
+  // RÈGLE 3: Statistiques locales par pos6 (poids faible)
+  // =========================================================================
   const pos6Stats = ctx.pos6Col2Counts.get(pos6);
   if (pos6Stats) {
     const countA = pos6Stats.get(col2A) || 0;
@@ -401,7 +418,9 @@ function resolveCol2Col3(
     }
   }
   
-  // 4) Égalité -> garder A (normal)
+  // =========================================================================
+  // RÈGLE 4: Égalité → garder A (normal)
+  // =========================================================================
   const swapApplied = scoreB > scoreA;
   
   const finalReason = swapApplied 
