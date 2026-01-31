@@ -509,6 +509,7 @@ export default function AdminUpload() {
 
     try {
       // Utiliser la fonction batch extraction avec callbacks dynamiques
+      // Le résultat contient directement les données accumulées (previewOnly=true)
       const result = await runBatchExtraction(
         file.pdfId,
         file.filePath!,
@@ -516,42 +517,25 @@ export default function AdminUpload() {
         file.name
       );
 
-      // Récupérer les données extraites depuis la DB
-      const { data: extraction } = await supabase
-        .from("pdf_extractions")
-        .select("id, summary, key_points, detected_tariff_changes, mentioned_hs_codes, extracted_text, extracted_data")
-        .eq("pdf_id", file.pdfId)
-        .maybeSingle();
-
-      if (extraction && extraction.summary && extraction.summary !== "__PROCESSING__") {
-        const tariffChanges = extraction.detected_tariff_changes as any[] || [];
-        const hsCodesRaw = extraction.mentioned_hs_codes as string[] || [];
-        const extractedData = extraction.extracted_data as any || {};
-        
-        const hsCodesFull = extractedData.hs_codes_full as Array<{code: string; code_clean: string; description: string; level: string}> || [];
-        
-        const hsCodes = hsCodesFull.length > 0 
-          ? hsCodesFull 
-          : hsCodesRaw.map((code: string) => ({
-              code: code,
-              code_clean: code.replace(/[^0-9]/g, ""),
-              description: "",
-              level: code.length <= 4 ? "chapter" : code.length <= 6 ? "heading" : "subheading"
-            }));
-        
+      // Utiliser les données accumulées directement depuis le résultat du batch
+      // (pas de requête DB car previewOnly=true ne persiste pas les données)
+      const tariffLines = result.tariff_lines || [];
+      const hsCodesFull = result.hs_codes || [];
+      
+      if (tariffLines.length > 0 || hsCodesFull.length > 0) {
         const extractionDataResult: ExtractionData = {
-          summary: extraction.summary || "",
-          key_points: extraction.key_points as string[] || [],
-          hs_codes: hsCodes,
+          summary: `Extraction terminée: ${tariffLines.length} lignes tarifaires, ${hsCodesFull.length} codes SH`,
+          key_points: [],
+          hs_codes: hsCodesFull,
           hs_codes_full: hsCodesFull,
-          tariff_lines: tariffChanges,
-          chapter_info: extractedData.chapter_info,
+          tariff_lines: tariffLines,
+          chapter_info: undefined,
           pdfId: file.pdfId,
           pdfTitle: file.name,
           countryCode: "MA",
-          document_type: extractedData.document_type || "tariff",
-          trade_agreements: extractedData.trade_agreements || [],
-          full_text_length: extraction.extracted_text?.length || 0,
+          document_type: tariffLines.length > 0 ? "tariff" : "regulatory",
+          trade_agreements: [],
+          full_text_length: 0,
         };
 
         updateFileStatus(file.id, {
@@ -563,10 +547,10 @@ export default function AdminUpload() {
 
         toast({
           title: "✅ Analyse terminée",
-          description: `${result.stats?.tariff_lines_inserted || 0} lignes tarifaires insérées`,
+          description: `${tariffLines.length} lignes tarifaires extraites`,
         });
       } else {
-        throw new Error("Extraction introuvable après batch");
+        throw new Error("Aucune donnée tarifaire extraite");
       }
 
     } catch (err: any) {
