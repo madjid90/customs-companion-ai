@@ -431,6 +431,12 @@ function updateCol2Stats(ctx: Col2Col3Context, pos6: string, col2: string): void
 
 const getPageTariffPrompt = (title: string, pageNumber: number, totalPages: number) => `Expert en tarifs douaniers marocains. Analyse cette PAGE ${pageNumber}/${totalPages} du PDF "${title}".
 
+=== RÈGLE FONDAMENTALE: LECTURE HORIZONTALE STRICTE ===
+
+⚠️ CRITIQUE: Lis CHAQUE LIGNE HORIZONTALEMENT, de gauche à droite.
+Les valeurs sur une même ligne appartiennent TOUTES à cette ligne.
+NE JAMAIS mélanger les valeurs de lignes différentes.
+
 === STRUCTURE EXACTE DU CODE NATIONAL MAROCAIN (10 CHIFFRES) ===
 
 Le code national est composé de EXACTEMENT 10 chiffres, dans cet ordre STRICT:
@@ -440,22 +446,38 @@ Le code national est composé de EXACTEMENT 10 chiffres, dans cet ordre STRICT:
   ┌──────────────┬────────────┬──────────────────┐
   │ position_6   │    col2    │       col3       │
   │  6 chiffres  │ 2 chiffres │   2 chiffres     │
-  │  (ex: 8903.11)│ (ex: 10)   │   (souvent 00)   │
+  │  (ex: 0301.99)│ (ex: 15)   │   (ex: 00)       │
   └──────────────┴────────────┴──────────────────┘
-  
-  EXEMPLE VISUEL: Dans le tableau du tarif, les colonnes apparaissent ainsi:
-  
-  | Position | Col2 | Col3 |  Désignation  | Droit | Unité |
-  |----------|------|------|---------------|-------|-------|
-  | 8903.11  |  10  |  00  | Bateaux...    | 2,5   |  u    |
-  | 8903.11  |  90  |  00  | Autres...     | 2,5   |  u    |
-  |          |      |  10  | Spécifique... | 10    |  u    |
-  
-  RÈGLE CLEF: 
-  - col2 = Sous-position (VARIABLE: 10, 20, 30, 80, 90, etc.)
-  - col3 = Détail national (SOUVENT "00", parfois 10, 20, etc.)
-  
-  Si tu vois "10 00", alors col2="10" et col3="00", PAS l'inverse!
+
+=== EXEMPLE RÉEL DÉTAILLÉ (CAS COMPLEXE) ===
+
+Voici un exemple typique du tarif marocain avec hiérarchie:
+
+  | Position | Col2 | Col3 | Désignation                                | Droit | Unité |
+  |----------|------|------|--------------------------------------------|-------|-------|
+  | 0301.99  |      |      | -- Autres                                  |       |       |
+  |          |      |      | --- d'eau douce :                          |       |       |
+  |          | 15   | 00   | ---- destinés au repeuplement              | 10    | kg    |
+  |          | 19   |      | ---- autres :                              |       |       |
+  |          |      | 10   | ----- saumons et corégones                 | 10    | kg    |
+  |          |      | 20   | ----- autres salmonidés                    | 10    | kg    |
+
+EXTRACTION CORRECTE ligne par ligne:
+- Ligne "destinés au repeuplement": col2=15, col3=00 → national_code=0301991500
+- Ligne "saumons et corégones": col2=19 (hérité), col3=10 → national_code=0301991910
+- Ligne "autres salmonidés": col2=19 (hérité), col3=20 → national_code=0301991920
+
+⚠️ ERREUR À ÉVITER:
+- NE PAS lire col2=19 et col3=15 pour "destinés au repeuplement" 
+  → C'est FAUX car 19 est sur une AUTRE ligne!
+
+=== RÈGLE: DEUX COLONNES ADJACENTES ===
+
+Sur une même ligne, s'il y a DEUX groupes de 2 chiffres côte à côte:
+- Le PREMIER groupe = col2
+- Le SECOND groupe = col3
+
+Exemple: "15 00" sur la même ligne → col2=15, col3=00
 
 ⚠️ RÈGLE CRITIQUE: IGNORER LE CHIFFRE D'ALIGNEMENT ⚠️
 
@@ -463,18 +485,12 @@ Certaines lignes contiennent un chiffre JUSTE AVANT la Position SH (1, 3, 4, 5, 
 Ce chiffre est un REPÈRE D'ALIGNEMENT et NE FAIT PAS PARTIE DU CODE SH.
 IL FAUT L'IGNORER COMPLÈTEMENT.
 
-Exemple:
-"8 8903.11 10 00 ... 2,5 u" 
-→ Le "8" au début est un repère à IGNORER
-→ position_6 = "8903.11", col2 = "10", col3 = "00"
-→ national_code = 8903111000
-
 === RÈGLES D'HÉRITAGE (CARRY-FORWARD) ===
 
 Les tableaux sont hiérarchiques. Tu DOIS maintenir l'héritage:
-- Si position_6 est vide → hériter du parent
-- Si col2 est vide → hériter du parent
-- Si col3 est vide → hériter du parent
+- Si position_6 est vide sur cette ligne → hériter de la ligne précédente
+- Si col2 est vide sur cette ligne → hériter de la ligne précédente
+- Si col3 est vide sur cette ligne → utiliser "00" par défaut OU hériter si la ligne parente existe
 
 === FORMAT JSON STRICT ===
 
