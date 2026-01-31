@@ -20,8 +20,11 @@ const CLAUDE_MODEL = "claude-sonnet-4-20250514";
 
 // Configuration BATCH par défaut
 const DEFAULT_BATCH_SIZE = 4;  // Pages par appel
-const MAX_BATCH_SIZE = 10;
+const MAX_BATCH_SIZE = 15;
 const MIN_BATCH_SIZE = 1;
+
+// Page detection - Cache pour éviter les appels répétés
+const PAGE_COUNT_CACHE = new Map<string, number>();
 
 // =============================================================================
 // INTERFACES
@@ -484,6 +487,192 @@ function pageContainsTariffTable(pageText: string): boolean {
   
   // Au moins 2 marqueurs = probablement une page tarifaire
   return matchCount >= 2;
+}
+
+// =============================================================================
+// DÉTECTION DU NOMBRE DE PAGES VIA CLAUDE (appel léger)
+// =============================================================================
+
+async function detectPdfPageCount(
+  base64Pdf: string,
+  apiKey: string,
+  pdfId: string
+): Promise<number> {
+  // Vérifier le cache
+  if (PAGE_COUNT_CACHE.has(pdfId)) {
+    return PAGE_COUNT_CACHE.get(pdfId)!;
+  }
+  
+  console.log("[Page Detection] Calling Claude to detect page count...");
+  
+  const requestBody = {
+    model: CLAUDE_MODEL,
+    max_tokens: 100,
+    system: "Réponds uniquement avec un nombre entier.",
+    messages: [{
+      role: "user",
+      content: [
+        { 
+          type: "document", 
+          source: { type: "base64", media_type: "application/pdf", data: base64Pdf },
+        },
+        { type: "text", text: "Combien de pages contient ce document PDF ? Réponds UNIQUEMENT avec le nombre (ex: 27)." }
+      ]
+    }],
+  };
+  
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s max
+    
+    const response = await fetch(ANTHROPIC_API_URL, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "pdfs-2024-09-25",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      console.warn("[Page Detection] API error, using fallback estimation");
+      return 0; // Retourne 0 pour signaler l'utilisation du fallback
+    }
+    
+    const data = await response.json();
+    const responseText = data.content?.[0]?.text || "";
+    
+    // Extraire le nombre
+    const match = responseText.match(/\d+/);
+    if (match) {
+      const pageCount = parseInt(match[0], 10);
+      if (pageCount > 0 && pageCount < 5000) {
+        console.log(`[Page Detection] Detected ${pageCount} pages`);
+        PAGE_COUNT_CACHE.set(pdfId, pageCount);
+        return pageCount;
+      }
+    }
+    
+    console.warn("[Page Detection] Could not parse response, using fallback");
+    return 0;
+    
+  } catch (err: any) {
+    console.warn("[Page Detection] Error:", err.message);
+    return 0;
+  }
+}
+
+// =============================================================================
+// PRÉ-ANALYSE LÉGÈRE: Scan rapide pour détecter pages tarifaires
+// =============================================================================
+
+async function scanPagesForTariffContent(
+  base64Pdf: string,
+  startPage: number,
+  endPage: number,
+  apiKey: string
+): Promise<{ pagesToProcess: number[]; pagesSkipped: number[] }> {
+  console.log(`[Page Scan] Quick scan pages ${startPage}-${endPage} for tariff content...`);
+  
+  const requestBody = {
+    model: CLAUDE_MODEL,
+    max_tokens: 500,
+    system: "Tu analyses des PDF tarifaires. Réponds en JSON uniquement.",
+    messages: [{
+      role: "user",
+      content: [
+        { 
+          type: "document", 
+          source: { type: "base64", media_type: "application/pdf", data: base64Pdf },
+        },
+        { 
+          type: "text", 
+          text: `Analyse les pages ${startPage} à ${endPage} de ce PDF.
+Pour chaque page, détermine si elle contient un TABLEAU TARIFAIRE (colonnes avec codes SH, descriptions, taux) ou juste du texte/notes.
+
+Réponds UNIQUEMENT avec ce JSON:
+{
+  "tariff_pages": [${startPage}, ...],  
+  "text_only_pages": [...]
+}
+
+Pages avec tableau tarifaire = ont des colonnes de codes (XXXX.XX XX XX), descriptions produits, taux en %.
+Pages texte = notes de chapitre, définitions, introductions, index.`
+        }
+      ]
+    }],
+  };
+  
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
+    
+    const response = await fetch(ANTHROPIC_API_URL, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "pdfs-2024-09-25",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      console.warn("[Page Scan] API error, processing all pages");
+      // Fallback: traiter toutes les pages
+      const allPages: number[] = [];
+      for (let i = startPage; i <= endPage; i++) allPages.push(i);
+      return { pagesToProcess: allPages, pagesSkipped: [] };
+    }
+    
+    const data = await response.json();
+    let responseText = data.content?.[0]?.text || "{}";
+    
+    // Nettoyer le JSON
+    if (responseText.includes("```json")) {
+      const jsonStart = responseText.indexOf("```json") + 7;
+      const jsonEnd = responseText.indexOf("```", jsonStart);
+      if (jsonEnd > jsonStart) responseText = responseText.slice(jsonStart, jsonEnd).trim();
+    }
+    
+    const parsed = parseJsonRobust(responseText);
+    
+    if (parsed && Array.isArray(parsed.tariff_pages)) {
+      const tariffPages = parsed.tariff_pages.filter((p: any) => 
+        typeof p === 'number' && p >= startPage && p <= endPage
+      );
+      const textOnlyPages = parsed.text_only_pages?.filter((p: any) => 
+        typeof p === 'number' && p >= startPage && p <= endPage
+      ) || [];
+      
+      console.log(`[Page Scan] Found ${tariffPages.length} tariff pages, ${textOnlyPages.length} text-only pages`);
+      
+      return { 
+        pagesToProcess: tariffPages, 
+        pagesSkipped: textOnlyPages 
+      };
+    }
+    
+    // Fallback si parsing échoue
+    const allPages: number[] = [];
+    for (let i = startPage; i <= endPage; i++) allPages.push(i);
+    return { pagesToProcess: allPages, pagesSkipped: [] };
+    
+  } catch (err: any) {
+    console.warn("[Page Scan] Error:", err.message);
+    const allPages: number[] = [];
+    for (let i = startPage; i <= endPage; i++) allPages.push(i);
+    return { pagesToProcess: allPages, pagesSkipped: [] };
+  }
 }
 
 // =============================================================================
@@ -979,13 +1168,21 @@ serve(async (req) => {
     const category = pdfDoc?.category || "tarif";
     const countryCode = pdfDoc?.country_code || "MA";
     
-    // Estimer le nombre total de pages (approximation basée sur la taille)
-    // Note: Claude native PDF ne donne pas le nombre de pages directement
-    // On estime ~50KB par page en moyenne pour un PDF texte/tableau
+    // Détecter le nombre réel de pages via Claude (appel léger)
     const fileSizeBytes = bytes.length;
-    const estimatedTotalPages = Math.max(1, Math.ceil(fileSizeBytes / 50000));
+    let totalPagesDetected = 0;
     
-    console.log(`PDF size: ${fileSizeBytes} bytes, estimated pages: ${estimatedTotalPages}`);
+    // Premier appel : détecter le nombre de pages
+    if (!extraction_run_id) {
+      totalPagesDetected = await detectPdfPageCount(base64Pdf, ANTHROPIC_API_KEY, pdfId);
+      if (totalPagesDetected === 0) {
+        // Fallback: estimation basée sur la taille (~50KB par page pour PDF tarifaire)
+        totalPagesDetected = Math.max(1, Math.ceil(fileSizeBytes / 50000));
+        console.log(`[Fallback] Estimated ${totalPagesDetected} pages from file size ${fileSizeBytes} bytes`);
+      }
+    }
+    
+    console.log(`PDF size: ${fileSizeBytes} bytes, detected pages: ${totalPagesDetected || "from existing run"}`);
     
     // Gérer le run d'extraction
     let runId = extraction_run_id;
@@ -1006,14 +1203,14 @@ serve(async (req) => {
     }
     
     if (!runData) {
-      // Créer un nouveau run
+      // Créer un nouveau run avec le vrai nombre de pages
       const { data: newRun, error: createError } = await supabase
         .from("pdf_extraction_runs")
         .insert({
           pdf_id: pdfId,
           status: "processing",
           current_page: start_page,
-          total_pages: estimatedTotalPages,
+          total_pages: totalPagesDetected,
           processed_pages: 0,
           file_name: title,
           country_code: countryCode,
@@ -1037,7 +1234,7 @@ serve(async (req) => {
       
       runData = newRun;
       runId = newRun.id;
-      console.log(`Created new run ${runId}`);
+      console.log(`Created new run ${runId} with ${totalPagesDetected} pages`);
     }
     
     const stats: BatchStats = runData.stats || {
@@ -1049,8 +1246,10 @@ serve(async (req) => {
     };
     
     const startPage = runData.current_page || start_page;
-    const totalPages = runData.total_pages || estimatedTotalPages;
+    const totalPages = runData.total_pages || totalPagesDetected;
     const endPage = Math.min(startPage + batchSize - 1, totalPages);
+    
+    console.log(`Processing pages ${startPage} to ${endPage} of ${totalPages}`);
     
     console.log(`Processing pages ${startPage} to ${endPage} of ${totalPages}`);
     
@@ -1060,8 +1259,36 @@ serve(async (req) => {
     let pagesProcessed = 0;
     let pagesSkipped = 0;
     
-    // Traitement page par page
-    for (let page = startPage; page <= endPage; page++) {
+    // Pré-scan intelligent pour identifier les pages avec tableaux tarifaires
+    // (Économise des appels LLM coûteux sur les pages de texte pur)
+    let pagesToProcess: number[] = [];
+    let preSkippedPages: number[] = [];
+    
+    // Activer le pré-scan seulement si batch assez grand (>= 3 pages)
+    const usePreScan = batchSize >= 3;
+    
+    if (usePreScan) {
+      const scanResult = await scanPagesForTariffContent(
+        base64Pdf,
+        startPage,
+        endPage,
+        ANTHROPIC_API_KEY
+      );
+      pagesToProcess = scanResult.pagesToProcess;
+      preSkippedPages = scanResult.pagesSkipped;
+      
+      if (preSkippedPages.length > 0) {
+        console.log(`[Pre-scan] Skipping ${preSkippedPages.length} text-only pages: ${preSkippedPages.join(", ")}`);
+        pagesSkipped += preSkippedPages.length;
+        stats.pages_skipped += preSkippedPages.length;
+      }
+    } else {
+      // Pas de pré-scan, traiter toutes les pages
+      for (let i = startPage; i <= endPage; i++) pagesToProcess.push(i);
+    }
+    
+    // Traitement des pages identifiées comme tarifaires
+    for (const page of pagesToProcess) {
       console.log(`--- Processing page ${page}/${totalPages} ---`);
       
       const pageResult = await analyzePageWithClaude(
@@ -1077,6 +1304,8 @@ serve(async (req) => {
         if (pageResult.error === "Rate limit exceeded") {
           // Arrêter le batch, on reprendra plus tard
           console.warn(`Rate limit hit at page ${page}, stopping batch`);
+          // Recalculer le nombre de pages traitées dans ce batch
+          pagesProcessed = pagesToProcess.indexOf(page) + preSkippedPages.filter(p => p < page).length;
           break;
         }
       }
@@ -1096,12 +1325,15 @@ serve(async (req) => {
       pagesProcessed++;
       
       // Petite pause entre les pages pour éviter le rate limiting
-      if (page < endPage) {
+      if (pagesToProcess.indexOf(page) < pagesToProcess.length - 1) {
         await delay(500);
       }
     }
     
-    console.log(`Batch complete: ${pagesProcessed} pages, ${allRawLines.length} raw lines, ${allNotes.length} notes`);
+    // Ajouter les pages pré-skippées au compteur
+    pagesProcessed += preSkippedPages.length;
+    
+    console.log(`Batch complete: ${pagesProcessed} pages (${preSkippedPages.length} pre-skipped), ${allRawLines.length} raw lines, ${allNotes.length} notes`);
     
     // Traiter les lignes brutes
     const { tariffLines, debug } = processRawLines(allRawLines);
