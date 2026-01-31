@@ -449,6 +449,188 @@ export type Database = {
           },
         ]
       }
+      dum_documents: {
+        Row: {
+          bureau_code: string | null
+          bureau_name: string | null
+          cif_value: number | null
+          country_code: string
+          created_at: string
+          currency_code: string | null
+          dum_date: string | null
+          dum_number: string | null
+          exporter_country: string | null
+          exporter_name: string | null
+          extracted_json: Json | null
+          freight_value: number | null
+          grand_total: number | null
+          id: string
+          importer_id: string | null
+          importer_name: string | null
+          incoterm: string | null
+          insurance_value: number | null
+          invoice_value: number | null
+          is_complete: boolean | null
+          missing_rates: string[] | null
+          regime_code: string | null
+          source_page_count: number | null
+          source_pdf: string | null
+          total_duty: number | null
+          total_other_taxes: number | null
+          total_vat: number | null
+          updated_at: string
+          validation_warnings: string[] | null
+        }
+        Insert: {
+          bureau_code?: string | null
+          bureau_name?: string | null
+          cif_value?: number | null
+          country_code?: string
+          created_at?: string
+          currency_code?: string | null
+          dum_date?: string | null
+          dum_number?: string | null
+          exporter_country?: string | null
+          exporter_name?: string | null
+          extracted_json?: Json | null
+          freight_value?: number | null
+          grand_total?: number | null
+          id?: string
+          importer_id?: string | null
+          importer_name?: string | null
+          incoterm?: string | null
+          insurance_value?: number | null
+          invoice_value?: number | null
+          is_complete?: boolean | null
+          missing_rates?: string[] | null
+          regime_code?: string | null
+          source_page_count?: number | null
+          source_pdf?: string | null
+          total_duty?: number | null
+          total_other_taxes?: number | null
+          total_vat?: number | null
+          updated_at?: string
+          validation_warnings?: string[] | null
+        }
+        Update: {
+          bureau_code?: string | null
+          bureau_name?: string | null
+          cif_value?: number | null
+          country_code?: string
+          created_at?: string
+          currency_code?: string | null
+          dum_date?: string | null
+          dum_number?: string | null
+          exporter_country?: string | null
+          exporter_name?: string | null
+          extracted_json?: Json | null
+          freight_value?: number | null
+          grand_total?: number | null
+          id?: string
+          importer_id?: string | null
+          importer_name?: string | null
+          incoterm?: string | null
+          insurance_value?: number | null
+          invoice_value?: number | null
+          is_complete?: boolean | null
+          missing_rates?: string[] | null
+          regime_code?: string | null
+          source_page_count?: number | null
+          source_pdf?: string | null
+          total_duty?: number | null
+          total_other_taxes?: number | null
+          total_vat?: number | null
+          updated_at?: string
+          validation_warnings?: string[] | null
+        }
+        Relationships: []
+      }
+      dum_items: {
+        Row: {
+          created_at: string
+          description: string | null
+          dum_id: string
+          duty_amount: number | null
+          duty_rate: number | null
+          duty_rate_source: string | null
+          extraction_confidence: string | null
+          hs_code: string | null
+          hs_code_normalized: string | null
+          id: string
+          line_no: number
+          origin_country: string | null
+          other_taxes: Json | null
+          other_taxes_amount: number | null
+          quantity: number | null
+          source_evidence: string | null
+          source_page: number | null
+          total_taxes: number | null
+          unit: string | null
+          unit_price: number | null
+          value: number | null
+          vat_amount: number | null
+          vat_rate: number | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          dum_id: string
+          duty_amount?: number | null
+          duty_rate?: number | null
+          duty_rate_source?: string | null
+          extraction_confidence?: string | null
+          hs_code?: string | null
+          hs_code_normalized?: string | null
+          id?: string
+          line_no: number
+          origin_country?: string | null
+          other_taxes?: Json | null
+          other_taxes_amount?: number | null
+          quantity?: number | null
+          source_evidence?: string | null
+          source_page?: number | null
+          total_taxes?: number | null
+          unit?: string | null
+          unit_price?: number | null
+          value?: number | null
+          vat_amount?: number | null
+          vat_rate?: number | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          dum_id?: string
+          duty_amount?: number | null
+          duty_rate?: number | null
+          duty_rate_source?: string | null
+          extraction_confidence?: string | null
+          hs_code?: string | null
+          hs_code_normalized?: string | null
+          id?: string
+          line_no?: number
+          origin_country?: string | null
+          other_taxes?: Json | null
+          other_taxes_amount?: number | null
+          quantity?: number | null
+          source_evidence?: string | null
+          source_page?: number | null
+          total_taxes?: number | null
+          unit?: string | null
+          unit_price?: number | null
+          value?: number | null
+          vat_amount?: number | null
+          vat_rate?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dum_items_dum_id_fkey"
+            columns: ["dum_id"]
+            isOneToOne: false
+            referencedRelation: "dum_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       hs_codes: {
         Row: {
           chapter_number: number | null
@@ -1731,6 +1913,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      calculate_dum_item_taxes: {
+        Args: {
+          p_cif_value: number
+          p_duty_rate: number
+          p_other_taxes?: Json
+          p_vat_rate?: number
+        }
+        Returns: Json
+      }
       cleanup_expired_cache: { Args: never; Returns: number }
       cleanup_old_rate_limits: { Args: never; Returns: number }
       find_cached_response: {
