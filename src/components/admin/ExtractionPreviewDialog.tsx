@@ -506,8 +506,8 @@ export default function ExtractionPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl h-[90vh] flex flex-col overflow-hidden">
-        <DialogHeader>
+      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Database className="h-5 w-5" />
             Prévisualisation de l'extraction
@@ -516,7 +516,7 @@ export default function ExtractionPreviewDialog({
         </DialogHeader>
 
         {extractionData?.summary && (
-          <div className="p-4 bg-accent/50 border border-border rounded-lg">
+          <div className="p-4 bg-accent/50 border border-border rounded-lg shrink-0 max-h-32 overflow-auto">
             <div className="flex items-start gap-3">
               <FileText className="h-5 w-5 text-primary mt-0.5 shrink-0" />
               <div className="text-sm space-y-1.5">
@@ -531,7 +531,7 @@ export default function ExtractionPreviewDialog({
           </div>
         )}
 
-        <Tabs defaultValue="tariffs" className="flex-1 overflow-hidden flex flex-col">
+        <Tabs defaultValue="tariffs" className="flex-1 min-h-0 flex flex-col">
           <div className="flex items-center justify-between shrink-0">
             <TabsList>
               <TabsTrigger value="tariffs" className="flex items-center gap-2">
@@ -613,8 +613,8 @@ export default function ExtractionPreviewDialog({
             </div>
           </div>
 
-          <TabsContent value="tariffs" className="flex-1 overflow-auto mt-4">
-            <ScrollArea className="h-full max-h-[calc(90vh-320px)] border rounded-lg">
+          <TabsContent value="tariffs" className="flex-1 min-h-0 mt-4 overflow-hidden">
+            <ScrollArea className="h-full border rounded-lg">
               <Table>
                 <TableHeader className="sticky top-0 bg-background">
                   <TableRow>
@@ -725,8 +725,8 @@ export default function ExtractionPreviewDialog({
             </ScrollArea>
           </TabsContent>
 
-          <TabsContent value="hscodes" className="flex-1 overflow-auto mt-4">
-            <ScrollArea className="h-full max-h-[calc(90vh-320px)] border rounded-lg">
+          <TabsContent value="hscodes" className="flex-1 min-h-0 mt-4 overflow-hidden">
+            <ScrollArea className="h-full border rounded-lg">
               <Table>
                 <TableHeader className="sticky top-0 bg-background">
                   <TableRow>
@@ -827,8 +827,8 @@ export default function ExtractionPreviewDialog({
           </TabsContent>
 
           {/* Trade Agreements Tab */}
-          <TabsContent value="agreements" className="flex-1 overflow-auto mt-4">
-            <ScrollArea className="h-full max-h-[calc(90vh-320px)] border rounded-lg">
+          <TabsContent value="agreements" className="flex-1 min-h-0 mt-4 overflow-hidden">
+            <ScrollArea className="h-full border rounded-lg">
               <Table>
                 <TableHeader className="sticky top-0 bg-background">
                   <TableRow>
@@ -876,8 +876,8 @@ export default function ExtractionPreviewDialog({
           </TabsContent>
 
           {/* Preferential Rates Tab */}
-          <TabsContent value="preferential" className="flex-1 overflow-auto mt-4">
-            <ScrollArea className="h-full max-h-[calc(90vh-320px)] border rounded-lg">
+          <TabsContent value="preferential" className="flex-1 min-h-0 mt-4 overflow-hidden">
+            <ScrollArea className="h-full border rounded-lg">
               <Table>
                 <TableHeader className="sticky top-0 bg-background">
                   <TableRow>
@@ -925,8 +925,8 @@ export default function ExtractionPreviewDialog({
           </TabsContent>
 
           {/* Notes Tab - Definitions, chapter notes, footnotes */}
-          <TabsContent value="notes" className="flex-1 overflow-auto mt-4">
-            <ScrollArea className="h-full max-h-[calc(90vh-320px)]">
+          <TabsContent value="notes" className="flex-1 min-h-0 mt-4 overflow-hidden">
+            <ScrollArea className="h-full">
               <div className="space-y-3 pr-4">
                 {(extractionData?.notes || []).length > 0 ? (
                   extractionData?.notes?.map((note, index) => (
@@ -973,8 +973,8 @@ export default function ExtractionPreviewDialog({
           </TabsContent>
 
           {/* Regulatory Info Tab */}
-          <TabsContent value="regulatory" className="flex-1 overflow-auto mt-4">
-            <ScrollArea className="h-full max-h-[calc(90vh-320px)]">
+          <TabsContent value="regulatory" className="flex-1 min-h-0 mt-4 overflow-hidden">
+            <ScrollArea className="h-full">
               <div className="space-y-6 pr-4">
                 {/* En-tête du document */}
                 {(extractionData?.document_reference || extractionData?.issuing_authority) && (
