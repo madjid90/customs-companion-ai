@@ -347,16 +347,17 @@ interface Col2Col3Resolution {
 /**
  * Résout l'inversion col2/col3 de manière déterministe.
  * 
- * RÈGLE FONDAMENTALE du tarif marocain (CORRIGÉE):
+ * RÈGLE FONDAMENTALE du tarif marocain (CORRIGÉE v3):
  * - col2 = sous-position de la position SH (peut être 00 pour ligne parente, ou 10/20/90 pour sous-positions)
  * - col3 = détail national (peut être 00 si pas de détail, ou 10/20/90 pour détails)
  * 
  * IMPORTANT: col2=00 est VALIDE pour les lignes parentes (ex: 3502.11 00 = "Séchée")
  * Donc on ne doit PAS swapper quand le LLM retourne col2=00.
  * 
- * Le swap ne s'applique QUE si:
- * - col2 est un détail (10, 20, 90...) ET col3=00
- * - Car cela suggère que le vrai col2 devrait être 00 et le vrai col3 le détail
+ * CAS CRITIQUE AJOUTÉ (v3):
+ * Si l'IA retourne col2=XX (non-00) et col3=00, ET que la dernière ligne parente avait col2=00,
+ * alors c'est très probablement une inversion: le XX est en fait col3 (détail), et col2 devrait être hérité (00).
+ * Ex: Parente 4302.19|00 suivie de enfant col2=10|col3=00 → devrait être col2=00|col3=10
  */
 function resolveCol2Col3(
   pos6: string,
@@ -388,7 +389,24 @@ function resolveCol2Col3(
   }
   
   // =========================================================================
-  // RÈGLE 1: Si aucun des deux n'est "00", garder l'ordre Claude
+  // RÈGLE 1 (NOUVELLE): Si col2A est un détail (10/20/90) ET col3B=00
+  // ET le dernier col2 hérité était "00" (ligne parente)
+  // → C'est une inversion! Le vrai col2=00 (hérité), col3=col2A (le détail)
+  // Ex: Parente 4302.19|00, enfant extrait col2=10|col3=00 
+  //     → Correction: col2=00, col3=10 → 4302190010
+  // =========================================================================
+  if (col2A !== "00" && col2B === "00" && ctx.lastCol2 === "00") {
+    console.log(`[COL-SWAP-INHERIT] Detected inheritance pattern: col2=${col2A},col3=${col2B} with parent col2=00 → SWAP to col2=00,col3=${col2A}`);
+    return {
+      col2: "00",       // Hérite du parent
+      col3: col2A,      // Le détail fourni par l'IA est en fait col3
+      swapApplied: true,
+      reason: `SWAP(inherit-from-parent-00) ${col2A},${col2B}->00,${col2A}`
+    };
+  }
+  
+  // =========================================================================
+  // RÈGLE 2: Si aucun des deux n'est "00", garder l'ordre Claude
   // Sans "00", on ne peut pas savoir qui est col2 vs col3 → garder A.
   // =========================================================================
   if (col2A !== "00" && col2B !== "00") {
@@ -401,13 +419,9 @@ function resolveCol2Col3(
   }
   
   // =========================================================================
-  // RÈGLE 2: col2 est un détail (10/20/90) et col3=00
-  // Ceci suggère une inversion: le vrai col2 devrait être 00, col3 le détail.
-  // MAIS: ce cas est ambigu. Dans le tarif, on peut avoir:
-  //   - 3502.11 | 10 | 00 = sous-position 10, pas de détail national
-  // Donc on ne swappe PAS ici non plus. On fait confiance au LLM.
+  // RÈGLE 3: col2 est un détail (10/20/90) et col3=00, mais parent n'était pas 00
+  // Dans ce cas, on fait confiance au LLM: col2=détail, col3=00 (pas de détail national)
   // =========================================================================
-  // col2B === "00" && col2A !== "00" → on garde l'ordre, col2=détail, col3=00
   return {
     col2: col2A,
     col3: col2B,
