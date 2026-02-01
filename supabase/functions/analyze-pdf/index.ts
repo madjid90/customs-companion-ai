@@ -454,9 +454,10 @@ function resolveCol2Col3(
  * Claude remplit parfois ce "10" dans col2 au lieu de col3.
  * Résultat: national_code devient pos6 + 10 + 00 (FAUX) au lieu de pos6 + 00 + 10 (VRAI).
  * 
- * RÈGLES DE RÉSOLUTION:
- * 1. Si ctx.lastPos6 === pos6 ET ctx.lastCol2 existe ET single ∈ ["10","20","30","40","50","60","70","80","90"]
- *    → Interpréter comme col3 (détail national), hériter col2 du contexte
+ * RÈGLES DE RÉSOLUTION (v2 - FIX):
+ * 1. Si lastCol2 === "00" (ligne parente précédente) ET single ∈ ["10","20","30",...,"90"]
+ *    → Interpréter TOUJOURS comme col3 (détail national), garder col2="00"
+ *    NOTE: On ne vérifie plus samePos6 car le contexte n'est pas encore à jour au moment de l'appel
  * 2. Si description est fortement indentée (---/-----/–––) ET lastCol2 existe
  *    → Interpréter comme col3
  * 3. Sinon fallback: interpréter comme col2 avec col3="00"
@@ -483,10 +484,30 @@ function resolveCol2Col3Single(
   const typicalCol3Values = ["10", "20", "30", "40", "50", "60", "70", "80", "90"];
   const isTypicalCol3 = typicalCol3Values.includes(normalized);
   
-  // RÈGLE 1: Même pos6 + lastCol2 existe + valeur typique de col3
-  // → C'est probablement un détail national (col3), pas une sous-position (col2)
+  // =========================================================================
+  // RÈGLE 1 (CORRIGÉE v2): Si lastCol2 === "00" (ligne parente) + valeur typique de col3
+  // → C'est TOUJOURS un détail national (col3), pas une sous-position (col2)
+  // 
+  // L'ancienne version vérifiait aussi ctx.lastPos6 === pos6, mais le problème
+  // est que ctx.lastPos6 n'est mis à jour qu'APRÈS le traitement de la ligne.
+  // Donc pour la première ligne enfant, cette condition était toujours false.
+  //
+  // NOUVELLE LOGIQUE: Si la ligne parente avait col2="00", alors toute valeur
+  // typique (10, 20, ..., 90) sur une ligne sans col2 explicite est un col3.
+  // =========================================================================
+  if (ctx.lastCol2 === "00" && isTypicalCol3) {
+    return {
+      col2: "00",
+      col3: normalized,
+      usedAs: "col3",
+      reason: `SINGLE-AS-COL3(lastCol2=00+typical) col2=00,col3=${normalized}`
+    };
+  }
+  
+  // RÈGLE 1b: Même pos6 + lastCol2 existe (non-null, non-00) + valeur typique
+  // → C'est probablement un col3 sous la même sous-position
   const samePos6 = ctx.lastPos6 === pos6;
-  if (samePos6 && ctx.lastCol2 !== null && isTypicalCol3) {
+  if (samePos6 && ctx.lastCol2 !== null && ctx.lastCol2 !== "00" && isTypicalCol3) {
     return {
       col2: ctx.lastCol2,
       col3: normalized,
@@ -714,7 +735,13 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
       continue;
     }
     
-    if (line.position_6) lastPos6 = pos6;
+    // Mettre à jour IMMÉDIATEMENT le contexte pos6 pour les résolutions col2/col3
+    // BUG FIX: L'ancien code mettait à jour col2Col3Ctx.lastPos6 seulement APRÈS le traitement complet,
+    // donc resolveCol2Col3Single ne pouvait pas détecter correctement les lignes enfants.
+    if (line.position_6) {
+      lastPos6 = pos6;
+      col2Col3Ctx.lastPos6 = pos6; // Mise à jour immédiate du contexte!
+    }
     
     // =========================================================================
     // RÉSOLUTION COL2/COL3 AVEC SCORING DÉTERMINISTE
