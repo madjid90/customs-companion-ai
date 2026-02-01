@@ -514,29 +514,55 @@ function resolveCol2Col3Single(
   const isTypicalCol3 = typicalCol3Values.includes(normalized);
   
   // =========================================================================
-  // RÈGLE 0b (NOUVELLE): Valeurs atypiques comme "11", "12", "19", etc.
-  // → Plus susceptibles d'être col2 que col3 (structure sous-position)
-  // Sauf si on a un contexte fort de col2 non-00
+  // NOUVELLE DÉTECTION: Valeurs atypiques comme "11", "12", "18", "19", etc.
+  // Ces valeurs peuvent être soit col2 (nouvelle sous-position) 
+  // soit col3 (détail sous une sous-position existante)
   // =========================================================================
   const isAtypicalValue = !isTypicalCol3 && normalized !== "00";
   
   // =========================================================================
-  // RÈGLE 1: Si même pos6 + lastCol2 existe et non-00 + valeur typique (10,20..90)
-  // → C'est un col3 sous la même sous-position
-  // Ex: pos6=410419 + lastCol2=10 + normalized=30 → col2=10, col3=30
+  // RÈGLE 1: Si même pos6 + lastCol2 existe et non-00
+  // → C'est un col3 sous la même sous-position (que ce soit typique OU atypique)
+  // 
+  // EXEMPLE CRUCIAL (page 4 du PDF chapitre 41):
+  //   4104.41       -- Pleine fleur, non refendue; côtés fleur
+  //            10   --- cuirs et peaux entiers de bovins... (header, col2=10)
+  //              10    ---- de veaux                        (détail, col3=10 sous col2=10)
+  //              20 00 ---- cuirs de pleine épaisseur       (détail, col3=20)
+  //              30    ---- autres :                        (header, col2=10, nouveau lastCol2=30???)
+  //                                                         NON! C'est col3=30 sous col2=10
+  //                12     ----- cuirs sciés                 (détail, col3=12 sous col2=30)
+  //                18     ----- autres                      (détail, col3=18 sous col2=30)
+  //
+  // Le PROBLÈME: Quand on est sous col2=10 et on voit "30", on ne doit PAS le traiter
+  // comme un nouveau col2 si c'est un header (pas de taux). 
+  // MAIS les valeurs ATYPIQUES (12, 18) avec taux doivent hériter col2 et être col3.
   // =========================================================================
   const samePos6 = ctx.lastPos6 === pos6;
+  
+  // RÈGLE 1a: Valeur TYPIQUE (10,20,30..90) sous col2 non-00 → toujours col3
   if (samePos6 && ctx.lastCol2 !== null && ctx.lastCol2 !== "00" && isTypicalCol3) {
     return {
       col2: ctx.lastCol2,
       col3: normalized,
       usedAs: "col3",
-      reason: `SINGLE-AS-COL3(same-pos6+inherit-col2=${ctx.lastCol2})`
+      reason: `SINGLE-AS-COL3(same-pos6+inherit-col2=${ctx.lastCol2}+typical)`
+    };
+  }
+  
+  // RÈGLE 1b: Valeur ATYPIQUE (11,12,18,19...) avec duty_rate + sous col2 non-00 → col3
+  // C'est LE FIX CRUCIAL: les 12, 18 etc. sont des détails sous col2=30, pas des nouveaux col2
+  if (samePos6 && ctx.lastCol2 !== null && ctx.lastCol2 !== "00" && isAtypicalValue) {
+    return {
+      col2: ctx.lastCol2,
+      col3: normalized,
+      usedAs: "col3",
+      reason: `SINGLE-AS-COL3(same-pos6+inherit-col2=${ctx.lastCol2}+atypical-as-detail)`
     };
   }
   
   // =========================================================================
-  // RÈGLE 1b: Si lastCol2 === "00" + valeur typique + HAS duty_rate
+  // RÈGLE 2: Si lastCol2 === "00" + valeur typique + HAS duty_rate
   // → C'est un détail national (col3) sous position racine
   // =========================================================================
   if (ctx.lastCol2 === "00" && isTypicalCol3) {
@@ -549,7 +575,7 @@ function resolveCol2Col3Single(
   }
   
   // =========================================================================
-  // RÈGLE 2: Description fortement indentée (indicateur de sous-ligne)
+  // RÈGLE 3: Description fortement indentée (indicateur de sous-ligne)
   // Patterns: "---", "-----", "– – –", "— — —", ou plus de 3 tirets
   // → Hériter col2, placer la valeur en col3
   // =========================================================================
@@ -564,15 +590,16 @@ function resolveCol2Col3Single(
   }
   
   // =========================================================================
-  // RÈGLE 3: Valeurs atypiques (11, 12, 19, 21, etc.) → probablement col2
-  // Ces valeurs structurées sont typiquement des sous-positions
+  // RÈGLE 4: Valeurs atypiques (11, 12, 19, 21, etc.) SANS contexte col2 non-00
+  // → Interpréter comme nouveau col2 (sous-position)
+  // Cette règle s'applique seulement si aucune des règles précédentes n'a matché
   // =========================================================================
   if (isAtypicalValue) {
     return {
       col2: normalized,
       col3: "00",
       usedAs: "col2",
-      reason: `SINGLE-AS-COL2(atypical-value=${normalized})->new-subposition`
+      reason: `SINGLE-AS-COL2(atypical-no-parent-col2) col2=${normalized},col3=00`
     };
   }
   
