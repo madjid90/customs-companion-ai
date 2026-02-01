@@ -21,23 +21,23 @@ const cleanMarkdown = (text: string): string => {
     .trim();
 };
 
-// Filter out options that look like tariff data, not question choices
+// Filter out options that look like tariff DATA display, not question choices
+// Allow options that ARE about choosing between different rates
 const isValidQuestionOption = (option: string): boolean => {
-  // Skip lines that look like tariff data, not question options
-  const invalidPatterns = [
-    /^ddi\s*:/i,                    // DDI: 40%
-    /^tva\s*:/i,                    // TVA: 20%
-    /ddi\s*:\s*\d+%/i,              // Contains DDI: XX%
-    /tva\s*:\s*\d+%/i,              // Contains TVA: XX%
-    /^unité\s*:/i,                  // Unité: Kg
-    /^\d{4,}/,                      // Starts with 4+ digits (HS code line)
-    /^source\s*:/i,                 // Source:
-    /^confiance/i,                  // Confiance...
-    /^\*\*\d{4}/,                   // **8544 (HS code in bold)
-    /^\*\*code/i,                   // **Code
+  // These patterns are DATA display lines, not question options
+  const dataDisplayPatterns = [
+    /^ddi\s*:\s*\d+%\s*\|\s*tva/i,  // "DDI: 40% | TVA: 20%" - data line
+    /^-?\s*ddi\s*:\s*\d+%$/i,       // "DDI: 40%" alone - data line
+    /^-?\s*tva\s*:\s*\d+%$/i,       // "TVA: 20%" alone - data line
+    /^unité\s*:\s*/i,               // "Unité: Kg" - data line
+    /^\d{4}\.\d{2}/,                // Starts with HS code like "0707.00" - data line
+    /^\*\*\d{4}\./,                 // Bold HS code "**0707.00" - data line
+    /^source\s*:/i,                 // "Source:" - attribution line
+    /^confiance\s+(élevée|moyenne|faible)/i, // Confidence indicator
   ];
   
-  return !invalidPatterns.some(pattern => pattern.test(option));
+  // If it matches a data pattern, it's NOT a valid option
+  return !dataDisplayPatterns.some(pattern => pattern.test(option.trim()));
 };
 
 interface InteractiveQuestionsProps {
