@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { FileText, ExternalLink, AlertCircle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +21,7 @@ interface CitedCircularsProps {
   validationMessage?: string;
 }
 
-export function CitedCirculars({ 
+export const CitedCirculars = forwardRef<HTMLDivElement, CitedCircularsProps>(function CitedCirculars({
   circulars, 
   onDocumentClick, 
   isSearchingDoc,
@@ -159,4 +160,6 @@ export function CitedCirculars({
       </div>
     </div>
   );
-}
+});
+
+CitedCirculars.displayName = "CitedCirculars";
