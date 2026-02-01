@@ -42,12 +42,14 @@ export function parseQuestionsFromResponse(content: string): Question[] {
     // Skip empty lines
     if (!line) continue;
     
-    // Check if this line is followed by a list of options (lines starting with -)
+    // Check if this line is followed by a list of options (lines starting with -, •, or *)
     const options: string[] = [];
     for (let j = i + 1; j < lines.length; j++) {
       const nextLine = lines[j].trim();
-      if (nextLine.startsWith('- ') || nextLine.startsWith('• ')) {
-        const optionText = nextLine.slice(2).trim();
+      // Check for various list markers: -, •, * (with optional spaces)
+      const listMatch = nextLine.match(/^[-•*]\s+(.+)$/);
+      if (listMatch) {
+        const optionText = listMatch[1].trim();
         // Filter out very long options or empty ones
         if (optionText.length > 0 && optionText.length < 80) {
           options.push(optionText);
