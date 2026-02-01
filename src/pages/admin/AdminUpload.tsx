@@ -71,33 +71,61 @@ export default function AdminUpload() {
     // Résumé généré au premier batch
     let documentSummary = "";
     
-    while (!done) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-      
-      try {
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-pdf`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-              "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            },
-            body: JSON.stringify({
-              pdfId,
-              filePath,
-              previewOnly: true,  // IMPORTANT: Ne pas insérer, juste extraire
-              start_page: startPage,
-              max_pages: BATCH_SIZE,
-              extraction_run_id: runId,
-            }),
-            signal: controller.signal,
-          }
-        );
+    // Helper: fetch with retry
+    const fetchWithRetry = async (body: object, maxRetries = 3): Promise<Response> => {
+      let lastError: Error | null = null;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
         
-        clearTimeout(timeoutId);
+        try {
+          updateFileStatus(fileId, { 
+            error: attempt > 0 
+              ? `Tentative ${attempt + 1}/${maxRetries}...` 
+              : `Page ${startPage}...`
+          });
+          
+          const response = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-pdf`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+                "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+              },
+              body: JSON.stringify(body),
+              signal: controller.signal,
+            }
+          );
+          
+          clearTimeout(timeoutId);
+          return response;
+        } catch (err: any) {
+          clearTimeout(timeoutId);
+          lastError = err;
+          console.warn(`[Retry] Attempt ${attempt + 1} failed:`, err.message);
+          
+          if (attempt < maxRetries - 1) {
+            // Exponential backoff: 3s, 6s, 12s
+            const delay = 3000 * Math.pow(2, attempt);
+            await new Promise(r => setTimeout(r, delay));
+          }
+        }
+      }
+      throw lastError || new Error("Fetch failed after retries");
+    };
+    
+    while (!done) {
+      try {
+        const response = await fetchWithRetry({
+          pdfId,
+          filePath,
+          previewOnly: true,
+          start_page: startPage,
+          max_pages: BATCH_SIZE,
+          extraction_run_id: runId,
+        });
         
         if (!response.ok) {
           const errorText = await response.text();
@@ -187,7 +215,6 @@ export default function AdminUpload() {
         }
         
       } catch (err: any) {
-        clearTimeout(timeoutId);
         throw err;
       }
     }
