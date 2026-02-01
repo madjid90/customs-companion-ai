@@ -21,6 +21,25 @@ const cleanMarkdown = (text: string): string => {
     .trim();
 };
 
+// Filter out options that look like tariff data, not question choices
+const isValidQuestionOption = (option: string): boolean => {
+  // Skip lines that look like tariff data, not question options
+  const invalidPatterns = [
+    /^ddi\s*:/i,                    // DDI: 40%
+    /^tva\s*:/i,                    // TVA: 20%
+    /ddi\s*:\s*\d+%/i,              // Contains DDI: XX%
+    /tva\s*:\s*\d+%/i,              // Contains TVA: XX%
+    /^unité\s*:/i,                  // Unité: Kg
+    /^\d{4,}/,                      // Starts with 4+ digits (HS code line)
+    /^source\s*:/i,                 // Source:
+    /^confiance/i,                  // Confiance...
+    /^\*\*\d{4}/,                   // **8544 (HS code in bold)
+    /^\*\*code/i,                   // **Code
+  ];
+  
+  return !invalidPatterns.some(pattern => pattern.test(option));
+};
+
 interface InteractiveQuestionsProps {
   questions: Question[];
   onAnswer: (questionId: string, answer: string) => void;
@@ -31,92 +50,74 @@ interface InteractiveQuestionsProps {
 export function parseQuestionsFromResponse(content: string): Question[] {
   const questions: Question[] = [];
   
-  // Split content into lines
-  const lines = content.split('\n');
+  // Look specifically for **[Question]** pattern
+  const questionBlockPattern = /\*\*\[Question\]\*\*\s*([\s\S]*?)(?=\*\*Confiance|\n\n---|\n\nSource|$)/gi;
+  const matches = [...content.matchAll(questionBlockPattern)];
   
   let questionIndex = 0;
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    
-    // Skip empty lines
-    if (!line) continue;
-    
-    // Check if this line is followed by a list of options (lines starting with -, •, or *)
+  for (const match of matches) {
+    const optionsText = match[1];
+    const lines = optionsText.split('\n');
     const options: string[] = [];
-    for (let j = i + 1; j < lines.length; j++) {
-      const nextLine = lines[j].trim();
-      // Check for various list markers: -, •, * (with optional spaces)
-      const listMatch = nextLine.match(/^[-•*]\s+(.+)$/);
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const listMatch = trimmed.match(/^[-•*]\s+(.+)$/);
       if (listMatch) {
         const optionText = listMatch[1].trim();
-        // Filter out very long options or empty ones
-        if (optionText.length > 0 && optionText.length < 80) {
+        // Filter out tariff data and keep only real question options
+        if (optionText.length > 0 && optionText.length < 80 && isValidQuestionOption(optionText)) {
           options.push(optionText);
         }
-      } else if (nextLine === '') {
-        continue; // Skip empty lines between options
-      } else {
-        break; // Stop when we hit a non-option line
       }
     }
     
-    // If we found at least 2 options and the current line looks like a question
     if (options.length >= 2) {
-      // Check various question patterns:
-      // 1. Line ends with ?
-      // 2. Line is in bold: **Question**
-      // 3. Line contains a colon before options
-      const isQuestion = 
-        line.endsWith('?') || 
-        line.match(/^\*\*[^*]+\*\*/) ||
-        (line.includes(':') && !line.startsWith('-'));
+      questions.push({
+        id: `q${questionIndex}`,
+        label: "Précisez le type de produit",
+        options: options.slice(0, 6),
+      });
+      questionIndex++;
+    }
+  }
+  
+  // Fallback: Look for any question ending with ? followed by options
+  if (questions.length === 0) {
+    const lines = content.split('\n');
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
       
-      if (isQuestion) {
-        // Extract clean question label
-        let label = line
-          .replace(/^\*\*|\*\*$/g, '') // Remove bold markers
-          .replace(/\?$/, '') // Remove trailing ?
-          .replace(/:$/, '') // Remove trailing :
-          .trim();
-        
-        // Don't add if label is too short or too long
+      if (!line || !line.endsWith('?')) continue;
+      
+      const options: string[] = [];
+      for (let j = i + 1; j < lines.length; j++) {
+        const nextLine = lines[j].trim();
+        const listMatch = nextLine.match(/^[-•*]\s+(.+)$/);
+        if (listMatch) {
+          const optionText = listMatch[1].trim();
+          if (optionText.length > 0 && optionText.length < 80 && isValidQuestionOption(optionText)) {
+            options.push(optionText);
+          }
+        } else if (nextLine === '') {
+          continue;
+        } else {
+          break;
+        }
+      }
+      
+      if (options.length >= 2) {
+        const label = line.replace(/\?$/, '').trim();
         if (label.length > 5 && label.length < 200) {
           questions.push({
             id: `q${questionIndex}`,
             label,
-            options: options.slice(0, 6), // Max 6 options
+            options: options.slice(0, 6),
           });
           questionIndex++;
-          
-          // Skip past the options we just processed
           i = i + options.length;
         }
-      }
-    }
-  }
-  
-  // Fallback: Pattern for inline options after dash
-  // e.g., "1. **Type spécifique** - Smartphone, téléphone basique, téléphone satellite ?"
-  if (questions.length === 0) {
-    const numberedPattern = /(\d+)\.\s*\*?\*?([^*\n-]+)\*?\*?\s*[-–:]\s*([^?\n]+)\?/g;
-    let match;
-    
-    while ((match = numberedPattern.exec(content)) !== null) {
-      const label = match[2].trim();
-      const optionsText = match[3].trim();
-      
-      const options = optionsText
-        .split(/,|(?:\s+ou\s+)/)
-        .map(opt => opt.trim())
-        .filter(opt => opt.length > 0 && opt.length < 60);
-      
-      if (options.length >= 2) {
-        questions.push({
-          id: `q${match[1]}`,
-          label,
-          options,
-        });
       }
     }
   }
