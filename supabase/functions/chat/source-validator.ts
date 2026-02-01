@@ -49,14 +49,18 @@ export function extractCodesFromResponse(responseText: string): string[] {
   const codes: string[] = [];
   
   // Look for patterns that indicate the AI's actual recommendation
-  // Pattern: "**XXXX.XX**" or "Code SH: XXXX.XX" or "correspond au code"
+  // Supports both 4-digit headings (07.02) and full codes (0702.10.00)
   const recommendedPatterns = [
-    /\*\*(\d{4}\.\d{2})\*\*/g,                    // **2815.20**
-    /\*\*(\d{4})\.(\d{2})\.(\d{2})\*\*/g,         // **2815.20.00**
-    /Code\s+(?:SH\s*)?:?\s*\*?\*?(\d{4}\.?\d{0,6})/gi,
-    /correspond(?:re)?.*?(\d{4}\.\d{2})/gi,
-    /position\s+(?:tarifaire\s+)?(\d{4}\.\d{2})/gi,
-    /hydroxyde.*?(\d{4}\.\d{2})/gi,
+    // Full codes: **2815.20** or **0702.10.00**
+    /\*\*(\d{4}\.\d{2}(?:\.\d{2})?(?:\.\d{2})?)\*\*/g,
+    // Short chapter.position format: **07.02** (common in French responses)
+    /\*\*(\d{2}\.\d{2})\*\*/g,
+    // Code SH: patterns
+    /Code\s+(?:SH\s*)?:?\s*\*?\*?(\d{2,4}\.?\d{0,6})/gi,
+    // "correspond au code" patterns  
+    /correspond(?:re)?.*?(\d{2,4}\.\d{2})/gi,
+    // "position tarifaire" patterns
+    /position\s+(?:tarifaire\s+)?(\d{2,4}\.\d{2})/gi,
   ];
   
   for (const pattern of recommendedPatterns) {
@@ -65,6 +69,7 @@ export function extractCodesFromResponse(responseText: string): string[] {
       const codeRaw = match[1] || match[0];
       const code = codeRaw.replace(/[^0-9]/g, "");
       // Validate it looks like a real HS code (chapters 01-99)
+      // Accept codes with 4+ digits (heading level minimum)
       if (code.length >= 4) {
         const chapter = parseInt(code.substring(0, 2));
         if (chapter >= 1 && chapter <= 99) {
@@ -74,21 +79,33 @@ export function extractCodesFromResponse(responseText: string): string[] {
     }
   }
   
-  // If no strongly recommended codes found, fall back to any codes
+  // If no strongly recommended codes found, fall back to any codes in text
   if (codes.length === 0) {
     const fallbackPatterns = [
       /\b(\d{4})\.(\d{2})\.(\d{2})\.(\d{2})\b/g,  // 8301.30.00.00
       /\b(\d{4})\.(\d{2})\.(\d{2})\b/g,           // 8301.30.00
       /\b(\d{4})\.(\d{2})\b/g,                     // 8301.30
+      /\b(\d{2})\.(\d{2})\b/g,                     // 07.02 (chapter.position)
     ];
     
     for (const pattern of fallbackPatterns) {
       const matches = responseText.matchAll(pattern);
       for (const match of matches) {
-        const code = match[0].replace(/\./g, "");
-        const chapter = parseInt(code.substring(0, 2));
-        if (chapter >= 1 && chapter <= 99) {
-          codes.push(code);
+        let code = match[0].replace(/\./g, "");
+        
+        // For short format (XX.XX), expand to XXXX format
+        if (code.length === 4 && match[0].match(/^\d{2}\.\d{2}$/)) {
+          // This is chapter.position format like "07.02" -> "0702"
+          // Validate chapter range
+          const chapter = parseInt(code.substring(0, 2));
+          if (chapter >= 1 && chapter <= 99) {
+            codes.push(code);
+          }
+        } else if (code.length >= 4) {
+          const chapter = parseInt(code.substring(0, 2));
+          if (chapter >= 1 && chapter <= 99) {
+            codes.push(code);
+          }
         }
       }
     }
