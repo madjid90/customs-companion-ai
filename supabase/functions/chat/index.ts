@@ -309,9 +309,90 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     
     context.hs_codes = [...new Map(context.hs_codes.map(item => [item.code, item])).values()].slice(0, 30);
 
-    // 3. Get tariffs for found codes
+    // 2b. FALLBACK: Si hs_codes est vide, chercher DIRECTEMENT dans country_tariffs par description
+    // C'est ici que des produits comme "tomate" seront trouvés car la table country_tariffs
+    // contient des descriptions en français comme "tomates", "Jus de tomate", etc.
+    if (context.hs_codes.length === 0 && context.tariffs_with_inheritance.length === 0 && analysis.keywords.length > 0) {
+      console.log("hs_codes empty, searching country_tariffs by keywords:", analysis.keywords);
+      
+      // Build OR conditions for keyword search with fuzzy matching
+      const keywordsToSearch = analysis.keywords.slice(0, 5).filter(k => k.length >= 3);
+      
+      if (keywordsToSearch.length > 0) {
+        // Search with each keyword independently to cast wider net
+        for (const keyword of keywordsToSearch) {
+          const escapedKeyword = escapeSearchTerm(keyword);
+          const { data: tariffsByKeyword, error: tariffError } = await supabase
+            .from('country_tariffs')
+            .select('hs_code_6, national_code, description_local, duty_rate, vat_rate, other_taxes, is_prohibited, is_restricted, source_pdf')
+            .eq('country_code', analysis.country)
+            .ilike('description_local', `%${escapedKeyword}%`)
+            .eq('is_active', true)
+            .limit(10);
+          
+          if (tariffError) {
+            console.error("Error searching tariffs by keyword:", tariffError);
+          } else if (tariffsByKeyword && tariffsByKeyword.length > 0) {
+            console.log(`Found ${tariffsByKeyword.length} tariffs for keyword "${keyword}":`, 
+              tariffsByKeyword.map(t => `${t.national_code}: ${t.description_local}`).slice(0, 3));
+            
+            // Convert tariffs to hs_codes format for use by the rest of the pipeline
+            for (const tariff of tariffsByKeyword) {
+              const code = tariff.national_code || tariff.hs_code_6;
+              const cleanCode = cleanHSCode(code);
+              
+              // Add to hs_codes
+              context.hs_codes.push({
+                code: code,
+                code_clean: cleanCode,
+                description_fr: tariff.description_local || '',
+                chapter_number: parseInt(cleanCode.substring(0, 2)) || 0,
+                level: cleanCode.length >= 10 ? 'subheading' : 
+                       cleanCode.length >= 6 ? 'heading' : 
+                       cleanCode.length >= 4 ? 'position' : 'chapter',
+              });
+              
+              // Also build TariffWithInheritance for precise display
+              const tariffWithInheritance: TariffWithInheritance = {
+                found: true,
+                code: code,
+                code_clean: cleanCode,
+                description: tariff.description_local || '',
+                chapter: parseInt(cleanCode.substring(0, 2)) || 0,
+                level: cleanCode.length >= 10 ? 'subheading' : 
+                       cleanCode.length >= 6 ? 'heading' : 
+                       cleanCode.length >= 4 ? 'position' : 'chapter',
+                duty_rate: tariff.duty_rate,
+                vat_rate: tariff.vat_rate || 20,
+                rate_source: "direct",
+                children_count: 0,
+                is_prohibited: tariff.is_prohibited || false,
+                is_restricted: tariff.is_restricted || false,
+                has_children_prohibited: false,
+                has_children_restricted: false,
+                legal_notes: [],
+                controls: [],
+              };
+              context.tariffs_with_inheritance.push(tariffWithInheritance);
+            }
+            
+            // Also add to tariffs for backwards compatibility
+            context.tariffs.push(...tariffsByKeyword);
+          }
+        }
+        
+        // Deduplicate
+        context.hs_codes = [...new Map(context.hs_codes.map(item => [item.code, item])).values()].slice(0, 30);
+        context.tariffs_with_inheritance = [...new Map(context.tariffs_with_inheritance.map(item => [item.code, item])).values()].slice(0, 20);
+        context.tariffs = [...new Map(context.tariffs.map(item => [item.national_code, item])).values()].slice(0, 20);
+        
+        console.log(`After keyword fallback: hs_codes=${context.hs_codes.length}, tariffs_with_inheritance=${context.tariffs_with_inheritance.length}`);
+      }
+    }
+
+    // 3. Get tariffs for found codes (if not already populated by fallback)
     const codes6 = [...new Set(context.hs_codes.map(c => cleanHSCode(c.code || c.code_clean).substring(0, 6)))];
-    if (codes6.length > 0 && context.tariffs_with_inheritance.length === 0) {
+    if (codes6.length > 0 && context.tariffs_with_inheritance.length === 0 && context.tariffs.length === 0) {
       const { data } = await supabase
         .from('country_tariffs')
         .select('hs_code_6, national_code, description_local, duty_rate, vat_rate, other_taxes, is_prohibited, is_restricted')
