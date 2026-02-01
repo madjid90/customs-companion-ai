@@ -509,27 +509,22 @@ function resolveCol2Col3Single(
   }
   
   // Détection des valeurs typiques de col3 (détails nationaux)
+  // CAS SPÉCIAL: "00" n'est PAS un col3 typique, c'est généralement un col2 racine
   const typicalCol3Values = ["10", "20", "30", "40", "50", "60", "70", "80", "90"];
   const isTypicalCol3 = typicalCol3Values.includes(normalized);
   
   // =========================================================================
-  // RÈGLE 1 (CORRIGÉE v3): Si lastCol2 === "00" (ligne parente) + valeur typique + HAS duty_rate
-  // → C'est un détail national (col3), pas une sous-position (col2)
-  // 
-  // MAIS on vérifie d'abord si le lastCol2 précédent était aussi "00" - dans ce cas
-  // c'est que le PDF n'a pas de sous-positions et tout est directement col3.
+  // RÈGLE 0b (NOUVELLE): Valeurs atypiques comme "11", "12", "19", etc.
+  // → Plus susceptibles d'être col2 que col3 (structure sous-position)
+  // Sauf si on a un contexte fort de col2 non-00
   // =========================================================================
-  if (ctx.lastCol2 === "00" && isTypicalCol3) {
-    return {
-      col2: "00",
-      col3: normalized,
-      usedAs: "col3",
-      reason: `SINGLE-AS-COL3(lastCol2=00+typical+has-rate) col2=00,col3=${normalized}`
-    };
-  }
+  const isAtypicalValue = !isTypicalCol3 && normalized !== "00";
   
-  // RÈGLE 1b: Même pos6 + lastCol2 existe (non-null, non-00) + valeur typique
-  // → C'est probablement un col3 sous la même sous-position
+  // =========================================================================
+  // RÈGLE 1: Si même pos6 + lastCol2 existe et non-00 + valeur typique (10,20..90)
+  // → C'est un col3 sous la même sous-position
+  // Ex: pos6=410419 + lastCol2=10 + normalized=30 → col2=10, col3=30
+  // =========================================================================
   const samePos6 = ctx.lastPos6 === pos6;
   if (samePos6 && ctx.lastCol2 !== null && ctx.lastCol2 !== "00" && isTypicalCol3) {
     return {
@@ -540,10 +535,26 @@ function resolveCol2Col3Single(
     };
   }
   
+  // =========================================================================
+  // RÈGLE 1b: Si lastCol2 === "00" + valeur typique + HAS duty_rate
+  // → C'est un détail national (col3) sous position racine
+  // =========================================================================
+  if (ctx.lastCol2 === "00" && isTypicalCol3) {
+    return {
+      col2: "00",
+      col3: normalized,
+      usedAs: "col3",
+      reason: `SINGLE-AS-COL3(lastCol2=00+typical+has-rate) col2=00,col3=${normalized}`
+    };
+  }
+  
+  // =========================================================================
   // RÈGLE 2: Description fortement indentée (indicateur de sous-ligne)
-  // Patterns: "---", "-----", "– – –", "— — —"
-  const stronglyIndented = description && /^(\s*[-–—]{2,}|\s*[–—]\s+[–—]\s+[–—])/.test(description);
-  if (stronglyIndented && ctx.lastCol2 !== null) {
+  // Patterns: "---", "-----", "– – –", "— — —", ou plus de 3 tirets
+  // → Hériter col2, placer la valeur en col3
+  // =========================================================================
+  const stronglyIndented = description && /^(\s*[-–—]{3,}|\s*[–—]\s+[–—]\s+[–—])/.test(description);
+  if (stronglyIndented && ctx.lastCol2 !== null && isTypicalCol3) {
     return {
       col2: ctx.lastCol2,
       col3: normalized,
@@ -552,8 +563,23 @@ function resolveCol2Col3Single(
     };
   }
   
-  // RÈGLE 3: Fallback - interpréter comme col2 avec col3="00"
+  // =========================================================================
+  // RÈGLE 3: Valeurs atypiques (11, 12, 19, 21, etc.) → probablement col2
+  // Ces valeurs structurées sont typiquement des sous-positions
+  // =========================================================================
+  if (isAtypicalValue) {
+    return {
+      col2: normalized,
+      col3: "00",
+      usedAs: "col2",
+      reason: `SINGLE-AS-COL2(atypical-value=${normalized})->new-subposition`
+    };
+  }
+  
+  // =========================================================================
+  // RÈGLE 4: Fallback - interpréter comme col2 avec col3="00"
   // C'est le comportement par défaut quand on n'a pas assez de contexte
+  // =========================================================================
   return {
     col2: normalized,
     col3: "00",
@@ -714,6 +740,12 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
     swappedCol2Col3Count: 0,
     swappedCol2Col3Samples: []
   };
+  
+  // =========================================================================
+  // DÉDOUBLONNAGE: Tracker les codes déjà vus pour éviter les doublons
+  // Clé = national_code, Valeur = description (pour détecter si c'est vraiment un doublon)
+  // =========================================================================
+  const seenCodes = new Map<string, { description: string; index: number }>();
   
   // Contexte pour la résolution col2/col3
   const col2Col3Ctx: Col2Col3Context = {
@@ -911,11 +943,34 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
     
     const dutyNote = extractDutyNote(line.duty_rate ?? null);
     const hsCode6 = nationalCode.slice(0, 6);
+    const cleanDescription = (line.description || "").replace(/^[–\-\s]+/, "").trim();
+    
+    // =========================================================================
+    // DÉDOUBLONNAGE: Vérifier si ce code a déjà été vu
+    // Si oui avec même description → skip (vrai doublon)
+    // Si oui avec description différente → avertissement mais garder
+    // =========================================================================
+    const existingEntry = seenCodes.get(nationalCode);
+    if (existingEntry) {
+      if (existingEntry.description === cleanDescription) {
+        // Vrai doublon, skip
+        debug.parsingWarnings.push(`Line ${i}: Duplicate code ${nationalCode} with same description, skipped`);
+        debug.skippedLines++;
+        continue;
+      } else {
+        // Même code mais description différente - peut indiquer un problème d'extraction
+        debug.parsingWarnings.push(`Line ${i}: Code ${nationalCode} already seen at index ${existingEntry.index} with different description: "${existingEntry.description}" vs "${cleanDescription}"`);
+        console.log(`[DUPLICATE-WARN] ${nationalCode}: desc1="${existingEntry.description.substring(0, 40)}" vs desc2="${cleanDescription.substring(0, 40)}"`);
+      }
+    }
+    
+    // Marquer ce code comme vu
+    seenCodes.set(nationalCode, { description: cleanDescription, index: i });
     
     results.push({
       national_code: nationalCode,
       hs_code_6: hsCode6,
-      description: (line.description || "").replace(/^[–\-\s]+/, "").trim(),
+      description: cleanDescription,
       duty_rate: duty_rate,
       duty_note: dutyNote,
       unit_norm: unit_norm,
@@ -936,6 +991,9 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
   if (debug.swappedCol2Col3Count > 0) {
     console.log(`[COL-SWAP-SUMMARY] Total: ${debug.swappedCol2Col3Count} swaps applied`);
   }
+  
+  // Log récapitulatif des doublons
+  console.log(`[DEDUP-SUMMARY] Total unique codes: ${seenCodes.size}, Total lines processed: ${rawLines.length}`);
   
   return { tariffLines: results, debug };
 }
