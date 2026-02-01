@@ -356,20 +356,38 @@ interface Col2Col3SingleResolution {
   reason: string;
 }
 
+// =============================================================================
+// HELPERS POUR LE SCORING COL2/COL3
+// =============================================================================
+
+const DETAIL_SET = new Set(["10", "20", "30", "40", "50", "60", "70", "80", "90"]);
+
+function isTypicalDetail(x: string | null): boolean {
+  return x !== null && DETAIL_SET.has(x);
+}
+
+function isAtypical(x: string | null): boolean {
+  return x !== null && x !== "00" && !DETAIL_SET.has(x);
+}
+
+function getCol2Count(ctx: Col2Col3Context, pos6: string, col2: string): number {
+  return ctx.pos6Col2Counts.get(pos6)?.get(col2) ?? 0;
+}
+
 /**
- * Résout l'inversion col2/col3 de manière déterministe.
+ * Résout l'inversion col2/col3 via SCORING SYMÉTRIQUE.
  * 
- * RÈGLE FONDAMENTALE du tarif marocain (CORRIGÉE v3):
- * - col2 = sous-position de la position SH (peut être 00 pour ligne parente, ou 10/20/90 pour sous-positions)
- * - col3 = détail national (peut être 00 si pas de détail, ou 10/20/90 pour détails)
+ * PRINCIPE: On évalue deux candidats et on choisit le meilleur selon des signaux contextuels.
+ *   - Candidat A: (col2=a, col3=b) - ordre original
+ *   - Candidat B: (col2=b, col3=a) - ordre swappé
  * 
- * IMPORTANT: col2=00 est VALIDE pour les lignes parentes (ex: 3502.11 00 = "Séchée")
- * Donc on ne doit PAS swapper quand le LLM retourne col2=00.
- * 
- * CAS CRITIQUE AJOUTÉ (v3):
- * Si l'IA retourne col2=XX (non-00) et col3=00, ET que la dernière ligne parente avait col2=00,
- * alors c'est très probablement une inversion: le XX est en fait col3 (détail), et col2 devrait être hérité (00).
- * Ex: Parente 4302.19|00 suivie de enfant col2=10|col3=00 → devrait être col2=00|col3=10
+ * SIGNAUX UTILISÉS:
+ *   - Cohérence avec lastCol2 (très fort)
+ *   - Cohérence avec lastCol3 (moyen)
+ *   - Stats locales pos6Col2Counts (moyen)
+ *   - Valeurs "détail national" 10..90 en col3 (moyen)
+ *   - Valeurs atypiques 11/12/19/21 en col2 (faible)
+ *   - Pattern fréquent d'inversion 00/XX (fort)
  */
 function resolveCol2Col3(
   pos6: string,
@@ -385,64 +403,122 @@ function resolveCol2Col3(
     return null; // Invalide, sera géré par l'héritage
   }
   
+  // Définir les deux candidats
+  const candA = { col2: col2A, col3: col2B }; // Ordre original
+  const candB = { col2: col2B, col3: col2A }; // Ordre swappé
+  
+  let scoreA = 0;
+  let scoreB = 0;
+  const triggers: string[] = [];
+  
   // =========================================================================
-  // RÈGLE 0: Si col2 (a) = "00", c'est une ligne parente → NE JAMAIS SWAPPER
-  // col2=00 est parfaitement valide pour les positions parentes.
-  // Ex: 3502.11 | 00 | (vide) = "Séchée" → col2=00 est correct
-  //            |    | 10     = "impropre..." → col2=00 (hérité), col3=10
+  // (a) Cohérence héritage col2 - TRÈS FORT signal (+5)
   // =========================================================================
-  if (col2A === "00") {
-    return {
-      col2: col2A,
-      col3: col2B,
-      swapApplied: false,
-      reason: `KEEP(col2=00-parent) col2=${col2A},col3=${col2B}`
-    };
+  if (candA.col2 === ctx.lastCol2) {
+    scoreA += 5;
+    triggers.push(`A.col2=${candA.col2}==lastCol2`);
+  }
+  if (candB.col2 === ctx.lastCol2) {
+    scoreB += 5;
+    triggers.push(`B.col2=${candB.col2}==lastCol2`);
   }
   
   // =========================================================================
-  // RÈGLE 1 (SUPPRIMÉE v5): L'ancienne règle d'héritage causait des inversions.
-  // 
-  // NOUVELLE APPROCHE: Faire confiance au LLM pour l'ordre col2/col3.
-  // Le prompt Claude est explicite sur la structure et l'IA retourne 
-  // correctement col2=10/20/90, col3=00 pour les sous-positions.
-  //
-  // On ne SWAP que si le LLM a clairement inversé: col2=00 mais col3 est un 
-  // détail ET col3 n'est pas "00". Ce cas est rare et géré par la Règle 0.
+  // (b) Cohérence héritage col3 - signal moyen (+2)
   // =========================================================================
-  
-  // RÈGLE 1: Si col2 est un détail (non-00) et col3 est "00", c'est normal
-  // → Les lignes enfants ont col2=10/20/90 et col3=00 (pas de détail national)
-  if (col2A !== "00" && col2B === "00") {
-    return {
-      col2: col2A,
-      col3: col2B,
-      swapApplied: false,
-      reason: `KEEP(detail-no-national) col2=${col2A},col3=${col2B}`
-    };
+  if (candA.col3 === ctx.lastCol3) {
+    scoreA += 2;
+    triggers.push(`A.col3=${candA.col3}==lastCol3`);
+  }
+  if (candB.col3 === ctx.lastCol3) {
+    scoreB += 2;
+    triggers.push(`B.col3=${candB.col3}==lastCol3`);
   }
   
   // =========================================================================
-  // RÈGLE 2: Si aucun des deux n'est "00", garder l'ordre Claude
-  // Sans "00", on ne peut pas savoir qui est col2 vs col3 → garder A.
+  // (c) Stats locales col2 (pos6Col2Counts) - signal moyen (max +3)
   // =========================================================================
-  if (col2A !== "00" && col2B !== "00") {
-    return {
-      col2: col2A,
-      col3: col2B,
-      swapApplied: false,
-      reason: `KEEP(no-00) both=${col2A},${col2B}`
-    };
+  const countA = Math.min(getCol2Count(ctx, pos6, candA.col2), 3);
+  const countB = Math.min(getCol2Count(ctx, pos6, candB.col2), 3);
+  scoreA += countA;
+  scoreB += countB;
+  if (countA > 0) triggers.push(`A.stats=${countA}`);
+  if (countB > 0) triggers.push(`B.stats=${countB}`);
+  
+  // =========================================================================
+  // (d) Heuristique "détail national" en col3 - signal moyen (+2)
+  // Les valeurs 10/20/30/.../90 sont typiquement des détails nationaux
+  // =========================================================================
+  if (isTypicalDetail(candA.col3)) {
+    scoreA += 2;
+    triggers.push(`A.col3=${candA.col3}∈DETAIL`);
+  }
+  if (isTypicalDetail(candB.col3)) {
+    scoreB += 2;
+    triggers.push(`B.col3=${candB.col3}∈DETAIL`);
   }
   
   // =========================================================================
-  // RÈGLE 3: Cas par défaut - faire confiance au LLM
+  // (e) Heuristique "valeur atypique" en col2 - signal faible (+1)
+  // Les valeurs 11/12/19/21 etc. sont plus souvent des sous-positions
   // =========================================================================
+  if (isAtypical(candA.col2)) {
+    scoreA += 1;
+    triggers.push(`A.col2=${candA.col2}=atypical`);
+  }
+  if (isAtypical(candB.col2)) {
+    scoreB += 1;
+    triggers.push(`B.col2=${candB.col2}=atypical`);
+  }
+  
+  // =========================================================================
+  // (f) Cas fréquent à corriger: inversion 00/XX quand lastCol2=00
+  // Si on est dans la même pos6, lastCol2=00, et on voit (XX, 00) où XX∈DETAIL
+  // => C'est probablement inversé: col2 doit rester 00, XX doit aller en col3
+  // =========================================================================
+  const samePos6 = ctx.lastPos6 === pos6;
+  
+  if (samePos6 && ctx.lastCol2 === "00") {
+    // Pattern: (XX, 00) où XX est un détail typique => devrait être (00, XX)
+    if (col2A !== "00" && col2B === "00" && isTypicalDetail(col2A)) {
+      scoreB += 6;
+      triggers.push(`PATTERN(lastCol2=00+${col2A}∈DETAIL→swap)`);
+    }
+    // Pattern inverse: (00, XX) où XX est un détail => c'est déjà correct
+    if (col2A === "00" && col2B !== "00" && isTypicalDetail(col2B)) {
+      scoreA += 6;
+      triggers.push(`PATTERN(00+${col2B}∈DETAIL→keep)`);
+    }
+  }
+  
+  // =========================================================================
+  // (g) Cas: col2 devrait être une valeur atypique (sous-position) + col3=00
+  // Si on a (00, XX) où XX est atypique => probablement inversé
+  // =========================================================================
+  if (samePos6 && col2A === "00" && isAtypical(col2B)) {
+    scoreB += 4;
+    triggers.push(`PATTERN(00+${col2B}=atypical→swap)`);
+  }
+  if (samePos6 && col2B === "00" && isAtypical(col2A)) {
+    scoreA += 4;
+    triggers.push(`PATTERN(${col2A}=atypical+00→keep)`);
+  }
+  
+  // =========================================================================
+  // DÉCISION: Choisir le candidat avec le meilleur score
+  // En cas d'égalité, garder l'ordre original (stable)
+  // =========================================================================
+  const swapApplied = scoreB > scoreA;
+  const winner = swapApplied ? candB : candA;
+  const winnerLabel = swapApplied ? "B" : "A";
+  
+  const reason = `${swapApplied ? "SWAP" : "KEEP"}(${winnerLabel}:${swapApplied ? scoreB : scoreA}>${swapApplied ? scoreA : scoreB}) ${triggers.slice(0, 4).join(" ")}`;
+  
   return {
-    col2: col2A,
-    col3: col2B,
-    swapApplied: false,
-    reason: `KEEP(trust-llm) col2=${col2A},col3=${col2B}`
+    col2: winner.col2,
+    col3: winner.col3,
+    swapApplied,
+    reason
   };
 }
 
