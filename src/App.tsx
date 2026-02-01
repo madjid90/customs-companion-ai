@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -21,9 +22,11 @@ import AdminUpload from "@/pages/admin/AdminUpload";
 import AdminDocuments from "@/pages/admin/AdminDocuments";
 import NotFound from "@/pages/NotFound";
 
-const queryClient = new QueryClient();
+const App = () => {
+  // Create QueryClient inside component to avoid HMR issues
+  const [queryClient] = useState(() => new QueryClient());
 
-const App = () => (
+  return (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
@@ -64,6 +67,7 @@ const App = () => (
       </AuthProvider>
     </QueryClientProvider>
   </ErrorBoundary>
-);
+  );
+};
 
 export default App;
