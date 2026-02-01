@@ -590,21 +590,38 @@ function resolveCol2Col3Single(
   }
   
   // =========================================================================
-  // RÈGLE 4: Valeurs atypiques (11, 12, 19, 21, etc.) SANS contexte col2 non-00
+  // RÈGLE 4: Valeurs atypiques (11, 12, 19, 21, etc.) SANS contexte col2 non-00 actif
   // → Interpréter comme nouveau col2 (sous-position)
-  // Cette règle s'applique seulement si aucune des règles précédentes n'a matché
+  // Cette règle s'applique seulement si:
+  //   - Aucune des règles précédentes n'a matché (pas sous col2 existant)
+  //   - Ou si pos6 a changé (nouvelle position SH = reset du contexte)
   // =========================================================================
-  if (isAtypicalValue) {
+  const noActiveCol2Context = !samePos6 || ctx.lastCol2 === null || ctx.lastCol2 === "00";
+  if (isAtypicalValue && noActiveCol2Context) {
     return {
       col2: normalized,
       col3: "00",
       usedAs: "col2",
-      reason: `SINGLE-AS-COL2(atypical-no-parent-col2) col2=${normalized},col3=00`
+      reason: `SINGLE-AS-COL2(atypical+noActiveCol2) col2=${normalized},col3=00`
     };
   }
   
   // =========================================================================
-  // RÈGLE 4: Fallback - interpréter comme col2 avec col3="00"
+  // RÈGLE 5: Valeurs typiques sans contexte clair
+  // Si on est dans une nouvelle position (samePos6=false) ou lastCol2=null
+  // → Interpréter comme nouveau col2
+  // =========================================================================
+  if (!samePos6 || ctx.lastCol2 === null) {
+    return {
+      col2: normalized,
+      col3: "00",
+      usedAs: "col2",
+      reason: `SINGLE-AS-COL2(new-pos6-or-no-ctx) col2=${normalized},col3=00`
+    };
+  }
+  
+  // =========================================================================
+  // RÈGLE 6: Fallback - interpréter comme col2 avec col3="00"
   // C'est le comportement par défaut quand on n'a pas assez de contexte
   // =========================================================================
   return {
