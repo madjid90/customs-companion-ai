@@ -390,23 +390,24 @@ function resolveCol2Col3(
   }
   
   // =========================================================================
-  // RÈGLE 1 (CORRIGÉE v4): Si col2A est un détail (10/20/90) ET col3B=00
-  // ET le dernier col2 hérité était "00" (ligne parente)
-  // ET on est toujours dans la MÊME sous-position (pos6)
-  // → C'est une inversion! Le vrai col2=00 (hérité), col3=col2A (le détail)
+  // RÈGLE 1 (SUPPRIMÉE v5): L'ancienne règle d'héritage causait des inversions.
+  // 
+  // NOUVELLE APPROCHE: Faire confiance au LLM pour l'ordre col2/col3.
+  // Le prompt Claude est explicite sur la structure et l'IA retourne 
+  // correctement col2=10/20/90, col3=00 pour les sous-positions.
   //
-  // IMPORTANT: Si on change de pos6 (ex: 4202.91 → 4202.92), on NE SWAP PAS
-  // car c'est une nouvelle sous-position avec ses propres valeurs col2/col3
+  // On ne SWAP que si le LLM a clairement inversé: col2=00 mais col3 est un 
+  // détail ET col3 n'est pas "00". Ce cas est rare et géré par la Règle 0.
   // =========================================================================
-  const samePos6 = ctx.lastPos6 === pos6;
   
-  if (col2A !== "00" && col2B === "00" && ctx.lastCol2 === "00" && samePos6) {
-    console.log(`[COL-SWAP-INHERIT] Same pos6=${pos6}: col2=${col2A},col3=${col2B} with parent col2=00 → SWAP to col2=00,col3=${col2A}`);
+  // RÈGLE 1: Si col2 est un détail (non-00) et col3 est "00", c'est normal
+  // → Les lignes enfants ont col2=10/20/90 et col3=00 (pas de détail national)
+  if (col2A !== "00" && col2B === "00") {
     return {
-      col2: "00",       // Hérite du parent
-      col3: col2A,      // Le détail fourni par l'IA est en fait col3
-      swapApplied: true,
-      reason: `SWAP(inherit-from-parent-00) ${col2A},${col2B}->00,${col2A}`
+      col2: col2A,
+      col3: col2B,
+      swapApplied: false,
+      reason: `KEEP(detail-no-national) col2=${col2A},col3=${col2B}`
     };
   }
   
@@ -424,8 +425,7 @@ function resolveCol2Col3(
   }
   
   // =========================================================================
-  // RÈGLE 3: col2 est un détail (10/20/90) et col3=00, mais parent n'était pas 00
-  // Dans ce cas, on fait confiance au LLM: col2=détail, col3=00 (pas de détail national)
+  // RÈGLE 3: Cas par défaut - faire confiance au LLM
   // =========================================================================
   return {
     col2: col2A,
