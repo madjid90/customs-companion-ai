@@ -469,7 +469,19 @@ export function ChatMessage({
               {processedContent}
             </ReactMarkdown>
             
-            {/* Interactive questions disabled - now using direct structured responses */}
+            {/* Interactive questions for clarification */}
+            {isLastMessage && !isLoading && (() => {
+              const questions = parseQuestionsFromResponse(message.content);
+              return questions.length > 0 ? (
+                <InteractiveQuestions
+                  questions={questions}
+                  onAnswer={(questionId, answer) => {
+                    onAnswer(answer);
+                  }}
+                  disabled={isLoading}
+                />
+              ) : null;
+            })()}
             
             {/* Display validated sources - always show if there are citations OR if there's a validation message */}
             {(message.citedCirculars || message.validationMessage) && (
