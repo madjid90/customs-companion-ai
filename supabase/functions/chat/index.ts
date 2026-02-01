@@ -846,7 +846,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     console.log("Source validation - response chapters:", Array.from(responseChapters));
     
     // Build DB evidence object - filter to only relevant chapters
-    const filteredTariffs = [
+    let filteredTariffs = [
       ...context.tariffs,
       ...context.tariffs_with_inheritance.map((t: TariffWithInheritance) => ({
         country_code: analysis.country,
@@ -863,6 +863,36 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       return responseChapters.has(chapter);
     });
     
+    // FALLBACK: If no codes detected AND no tariffs matched, search by keywords directly
+    if (filteredTariffs.length === 0 && codesForValidation.length === 0 && questionKeywords.length > 0) {
+      console.log("Source validation - No codes detected, searching tariffs by keywords...");
+      const keywordSearchTerms = questionKeywords.slice(0, 3).filter(k => k.length >= 4);
+      
+      if (keywordSearchTerms.length > 0) {
+        // Search tariffs by keyword in description
+        const { data: keywordTariffs } = await supabase
+          .from('country_tariffs')
+          .select('national_code, hs_code_6, description_local, duty_rate, vat_rate, source_pdf, source_evidence')
+          .eq('country_code', analysis.country)
+          .eq('is_active', true)
+          .or(keywordSearchTerms.map(kw => `description_local.ilike.%${kw}%`).join(','))
+          .limit(10);
+        
+        if (keywordTariffs && keywordTariffs.length > 0) {
+          console.log(`Source validation - Found ${keywordTariffs.length} tariffs by keywords`);
+          filteredTariffs = keywordTariffs;
+          
+          // Also add their chapters to responseChapters for PDF lookup
+          for (const t of keywordTariffs) {
+            const code = String(t.national_code || t.hs_code_6 || '').replace(/\D/g, '');
+            if (code.length >= 2) {
+              responseChapters.add(code.substring(0, 2).padStart(2, "0"));
+            }
+          }
+        }
+      }
+    }
+    
     const filteredPdfs = context.pdf_summaries.filter((p: any) => {
       const chapter = String(p.chapter_number || '').padStart(2, "0");
       return responseChapters.has(chapter);
@@ -874,12 +904,26 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       evidence: [],
       pdfSummaries: filteredPdfs,
       legalRefs: context.legal_references.filter((ref: any) => {
-        // Keep legal refs that mention any of the response codes
-        const context = (ref.context || "").toLowerCase();
-        return codesForValidation.some(code => {
+        // Keep legal refs that mention any of the response codes OR keywords
+        const refContext = (ref.context || "").toLowerCase();
+        const refTitle = (ref.title || "").toLowerCase();
+        
+        // Match by code
+        if (codesForValidation.some(code => {
           const clean = String(code).replace(/\D/g, '');
-          return context.includes(clean) || context.includes(clean.substring(0, 4));
-        });
+          return refContext.includes(clean) || refContext.includes(clean.substring(0, 4));
+        })) {
+          return true;
+        }
+        
+        // Match by keyword if no codes
+        if (codesForValidation.length === 0) {
+          return questionKeywords.some(kw => 
+            kw.length >= 4 && (refContext.includes(kw.toLowerCase()) || refTitle.includes(kw.toLowerCase()))
+          );
+        }
+        
+        return false;
       }),
     };
     
