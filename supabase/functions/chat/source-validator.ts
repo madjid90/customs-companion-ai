@@ -228,60 +228,66 @@ export async function validateSourcesForCodes(
 
   // 1b. NEW: If we have matching tariffs but no PDF link, try to find chapter PDF directly
   if (validated.length > 0 && detectedChapters.size > 0) {
-    const chaptersNeedingPdf = [...detectedChapters];
-    
-    // Build search patterns for chapter PDFs
-    const searchPatterns = chaptersNeedingPdf.flatMap(ch => {
+    for (const ch of detectedChapters) {
       const chNum = parseInt(ch, 10);
-      return [
-        `Chapitre${chNum}`,
-        `Chapitre ${chNum}`,
-        `SH CODE ${chNum}`,
-        `SH_CODE_${chNum}`,
-        `chapitre${chNum}`,
-      ];
-    });
-    
-    // Search for chapter PDFs directly in pdf_documents
-    for (const pattern of searchPatterns.slice(0, 5)) {
-      const { data: chapterPdfs } = await supabase
-        .from('pdf_documents')
-        .select('id, title, file_path, category')
-        .eq('category', 'tarif')
-        .or(`title.ilike.%${pattern}%,file_name.ilike.%${pattern}%`)
-        .eq('is_active', true)
-        .limit(1);
       
-      if (chapterPdfs && chapterPdfs.length > 0) {
-        const pdf = chapterPdfs[0];
-        const downloadUrl = pdf.file_path 
-          ? `${supabaseUrl}/storage/v1/object/public/pdf-documents/${pdf.file_path}`
-          : null;
+      // Build search patterns - handle various naming conventions
+      const searchPatterns = [
+        `Chapitre${chNum}`,       // "Chapitre7" (no space)
+        `Chapitre ${chNum}`,      // "Chapitre 7"
+        `Chapitre${ch}`,          // "Chapitre07"
+        `SH CODE ${chNum}`,       // "SH CODE 7"
+        `SH CODE ${ch}`,          // "SH CODE 07" 
+        `SH_CODE_${chNum}`,
+        `SH_CODE_${ch}`,
+      ];
+      
+      let foundPdf = false;
+      
+      for (const pattern of searchPatterns) {
+        if (foundPdf) break;
         
-        // Extract chapter number from title
-        const chapterMatch = pdf.title.match(/(\d+)/);
-        const pdfChapter = chapterMatch ? chapterMatch[1].padStart(2, "0") : null;
+        const { data: chapterPdfs } = await supabase
+          .from('pdf_documents')
+          .select('id, title, file_path, category')
+          .eq('category', 'tarif')
+          .eq('is_active', true)
+          .or(`title.ilike.%${pattern}%,file_name.ilike.%${pattern}%`)
+          .limit(1);
         
-        if (pdfChapter && detectedChapters.has(pdfChapter)) {
-          // Check if we already have this PDF
-          const existingPdf = validated.find(v => v.id === pdf.id || v.id === `pdf:${pdfChapter}`);
-          if (!existingPdf) {
-            validated.push({
-              id: pdf.id,
-              type: "pdf",
-              title: pdf.title || `Chapitre ${parseInt(pdfChapter)}`,
-              reference: `Chapitre ${parseInt(pdfChapter)}`,
-              download_url: downloadUrl,
-              chapter: pdfChapter,
-              matched_by: "chapter",
-              confidence: "medium",
-            });
-          }
+        if (chapterPdfs && chapterPdfs.length > 0) {
+          const pdf = chapterPdfs[0];
+          const downloadUrl = pdf.file_path 
+            ? `${supabaseUrl}/storage/v1/object/public/pdf-documents/${pdf.file_path}`
+            : null;
           
-          // Also update tariff sources that don't have download_url
-          for (const source of validated) {
-            if (source.type === "tariff" && source.chapter === pdfChapter && !source.download_url) {
-              source.download_url = downloadUrl;
+          // Extract chapter number from title
+          const chapterMatch = pdf.title.match(/(\d+)/);
+          const pdfChapter = chapterMatch ? chapterMatch[1].padStart(2, "0") : null;
+          
+          if (pdfChapter && detectedChapters.has(pdfChapter)) {
+            foundPdf = true;
+            
+            // Check if we already have this PDF
+            const existingPdf = validated.find(v => v.id === pdf.id || v.id === `pdf:${pdfChapter}`);
+            if (!existingPdf) {
+              validated.push({
+                id: pdf.id,
+                type: "pdf",
+                title: pdf.title || `Chapitre ${parseInt(pdfChapter)}`,
+                reference: `Chapitre ${parseInt(pdfChapter)}`,
+                download_url: downloadUrl,
+                chapter: pdfChapter,
+                matched_by: "chapter",
+                confidence: "medium",
+              });
+            }
+            
+            // Also update tariff sources that don't have download_url
+            for (const source of validated) {
+              if (source.type === "tariff" && source.chapter === pdfChapter && !source.download_url) {
+                source.download_url = downloadUrl;
+              }
             }
           }
         }
