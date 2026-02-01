@@ -93,6 +93,7 @@ interface RawTariffLine {
   unit_norm?: string | null;        // Unité quantité normalisée
   unit_comp?: string | null;        // Unité complémentaire
   page_number?: number | null;      // Source page
+  source_text?: string | null;      // Fragment exact de la ligne PDF pour preuve col2/col3
 }
 
 interface ExtractedNote {
@@ -153,6 +154,7 @@ interface RawTableDebug {
     original: { col2: string; col3: string };
     resolved: { col2: string; col3: string };
     reason: string;
+    source_text?: string | null;
   }>;
 }
 
@@ -372,6 +374,145 @@ function isAtypical(x: string | null): boolean {
 
 function getCol2Count(ctx: Col2Col3Context, pos6: string, col2: string): number {
   return ctx.pos6Col2Counts.get(pos6)?.get(col2) ?? 0;
+}
+
+// =============================================================================
+// RÉSOLUTION DÉTERMINISTE VIA SOURCE_TEXT (PREUVE TEXTE)
+// =============================================================================
+
+interface SourceTextTokens {
+  hasPrefix: boolean;         // source_text commence par 1 digit + espace (ex: "3 10")
+  tokens2: string[];          // Tous les tokens de 2 digits détectés dans l'ordre
+}
+
+/**
+ * Extrait les tokens 2-digits du source_text et détecte si préfixe présent
+ * Ex: "5 12 00" → { hasPrefix: true, tokens2: ["12", "00"] }
+ * Ex: "18" → { hasPrefix: false, tokens2: ["18"] }
+ * Ex: "3 10" → { hasPrefix: true, tokens2: ["10"] }
+ */
+function normalizeTokensFromSourceText(sourceText: string | null | undefined): SourceTextTokens | null {
+  if (!sourceText || sourceText.trim() === "") return null;
+  
+  const text = sourceText.trim();
+  
+  // Détecter préfixe: commence par 1 chiffre suivi d'un espace
+  const hasPrefix = /^\d\s/.test(text);
+  
+  // Extraire tous les tokens de exactement 2 chiffres
+  const matches = text.match(/\b\d{2}\b/g);
+  const tokens2 = matches || [];
+  
+  if (tokens2.length === 0) return null;
+  
+  return { hasPrefix, tokens2 };
+}
+
+interface EvidenceResolution {
+  col2: string;
+  col3: string;
+  reason: string;
+  usedEvidence: boolean;
+}
+
+/**
+ * Résolution DÉTERMINISTE basée sur source_text (priorité sur scoring)
+ * 
+ * RÈGLES:
+ * 1. DOUBLE (2 tokens): l'ordre dans source_text fait foi
+ * 2. SINGLE avec préfixe: token = col3 (détail), col2 hérité
+ * 3. SINGLE sans préfixe: token = col2 (nouveau groupe), col3 hérité ou "00"
+ * 
+ * Retourne null si source_text inutilisable → fallback scoring
+ */
+function resolveCol2Col3FromEvidence(
+  sourceText: string | null | undefined,
+  col2Raw: string | null,
+  col3Raw: string | null,
+  ctx: Col2Col3Context
+): EvidenceResolution | null {
+  const parsed = normalizeTokensFromSourceText(sourceText);
+  if (!parsed) return null;
+  
+  const { hasPrefix, tokens2 } = parsed;
+  const col2A = normalize2Strict(col2Raw);
+  const col2B = normalize2Strict(col3Raw);
+  
+  // ===========================================================================
+  // CAS 1: DOUBLE - 2 tokens 2-digits détectés
+  // L'ordre dans source_text est la preuve définitive
+  // ===========================================================================
+  if (tokens2.length >= 2) {
+    const first = tokens2[0];
+    const second = tokens2[1];
+    
+    // Vérifier que les tokens correspondent aux candidats (dans un ordre ou l'autre)
+    const matchAB = (first === col2A && second === col2B);
+    const matchBA = (first === col2B && second === col2A);
+    
+    if (matchAB) {
+      // Ordre original correct
+      return {
+        col2: first,
+        col3: second,
+        reason: `evidence-double(source="${sourceText?.substring(0, 20)}" → ${first},${second})`,
+        usedEvidence: true
+      };
+    }
+    
+    if (matchBA) {
+      // INVERSION DÉTECTÉE - source_text dit B,A mais on a reçu A,B
+      return {
+        col2: first,  // Le premier dans source_text est le vrai col2
+        col3: second, // Le second dans source_text est le vrai col3
+        reason: `evidence-double-SWAP(source="${sourceText?.substring(0, 20)}" → ${first},${second})`,
+        usedEvidence: true
+      };
+    }
+    
+    // Les tokens ne correspondent pas exactement aux candidats - fallback
+    console.log(`[EVIDENCE-MISMATCH] tokens=${tokens2.join(",")} vs candidates=${col2A},${col2B}`);
+    return null;
+  }
+  
+  // ===========================================================================
+  // CAS 2: SINGLE - 1 seul token 2-digits détecté
+  // ===========================================================================
+  if (tokens2.length === 1) {
+    const token = tokens2[0];
+    
+    // Vérifier que le token correspond à l'un des candidats
+    const isCol2A = token === col2A;
+    const isCol2B = token === col2B;
+    
+    if (!isCol2A && !isCol2B) {
+      // Token ne correspond à aucun candidat
+      console.log(`[EVIDENCE-NOMATCH] token=${token} vs candidates=${col2A},${col2B}`);
+      return null;
+    }
+    
+    // RÈGLE 2a: Préfixe présent (ex: "3 10") → token est col3 (détail national)
+    if (hasPrefix) {
+      const inheritedCol2 = ctx.lastCol2 || "00";
+      return {
+        col2: inheritedCol2,
+        col3: token,
+        reason: `evidence-single-prefix(source="${sourceText?.substring(0, 15)}" hasPrefix → col3=${token})`,
+        usedEvidence: true
+      };
+    }
+    
+    // RÈGLE 2b: Pas de préfixe (ex: "18 ...") → token est col2 (nouveau groupe)
+    const inheritedCol3 = ctx.lastCol3 || "00";
+    return {
+      col2: token,
+      col3: inheritedCol3,
+      reason: `evidence-single-noprefix(source="${sourceText?.substring(0, 15)}" → col2=${token})`,
+      usedEvidence: true
+    };
+  }
+  
+  return null;
 }
 
 /**
@@ -743,6 +884,16 @@ Le code national est composé de EXACTEMENT 10 chiffres, dans cet ordre STRICT:
   │  (ex: 0301.99)│ (ex: 15)   │   (ex: 00)       │
   └──────────────┴────────────┴──────────────────┘
 
+=== NOUVEAU CHAMP OBLIGATOIRE: source_text ===
+
+Pour CHAQUE ligne extraite, tu DOIS fournir "source_text":
+- Le fragment EXACT de texte de la ligne PDF autour des colonnes col2/col3
+- Exemples: "5 12 00", "18", "3 10", "15 00", "10"
+- NE JAMAIS INVENTER - copie le texte tel quel du PDF
+- Si tu ne peux pas extraire ce fragment, mets null
+
+Ce champ permet de vérifier l'ordre réel des tokens col2/col3.
+
 === EXEMPLE RÉEL DÉTAILLÉ (CAS COMPLEXE) ===
 
 Voici un exemple typique du tarif marocain avec hiérarchie:
@@ -813,7 +964,8 @@ Types de notes acceptés: "chapter_note", "section_note", "definition", "exclusi
       "description": "Description du produit",
       "duty_rate": "2,5",
       "unit_norm": "u",
-      "unit_comp": "N"
+      "unit_comp": "N",
+      "source_text": "10 00"
     }
   ],
   "notes": [
@@ -920,13 +1072,13 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
     }
     
     // =========================================================================
-    // RÉSOLUTION COL2/COL3 AVEC SCORING DÉTERMINISTE
-    // BUG FIX: Appliquer resolveCol2Col3 MÊME si national_code est fourni
+    // RÉSOLUTION COL2/COL3 - PRIORITÉ: EVIDENCE (source_text) > SCORING
     // =========================================================================
     
     let col2: string | null = null;
     let col3: string | null = null;
     let nationalCode: string | null = null;
+    let resolutionReason: string = "";
     
     // Extraire depuis national_code si fourni
     const ncFromLine = normalize10Strict(line.national_code);
@@ -942,8 +1094,48 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
     const candA = normalize2Strict(line.col2) ?? col2FromNc;
     const candB = normalize2Strict(line.col3) ?? col3FromNc;
     
-    // TOUJOURS passer par resolveCol2Col3 dès qu'on a 2 blocs de 2 digits
-    if (candA && candB) {
+    // =========================================================================
+    // ÉTAPE 1: ESSAYER RÉSOLUTION DÉTERMINISTE VIA source_text (PRIORITÉ ABSOLUE)
+    // =========================================================================
+    const evidenceResolution = resolveCol2Col3FromEvidence(
+      line.source_text,
+      candA,
+      candB,
+      col2Col3Ctx
+    );
+    
+    if (evidenceResolution && evidenceResolution.usedEvidence) {
+      // PREUVE TEXTE TROUVÉE - utiliser directement
+      col2 = evidenceResolution.col2;
+      col3 = evidenceResolution.col3;
+      nationalCode = pos6 + col2 + col3;
+      resolutionReason = evidenceResolution.reason;
+      
+      // Tracker si swap détecté par evidence
+      const originalOrder = candA && candB ? `${candA},${candB}` : candA || candB || "?";
+      const resolvedOrder = `${col2},${col3}`;
+      const wasSwapped = originalOrder !== resolvedOrder && candA && candB;
+      
+      if (wasSwapped) {
+        debug.swappedCol2Col3Count++;
+        if (debug.swappedCol2Col3Samples.length < 15) {
+          debug.swappedCol2Col3Samples.push({
+            pos6,
+            original: { col2: candA || "?", col3: candB || "?" },
+            resolved: { col2, col3 },
+            reason: resolutionReason,
+            source_text: line.source_text
+          });
+        }
+        console.log(`[EVIDENCE-SWAP] pos6=${pos6} | "${candA},${candB}" -> "${col2},${col3}" | ${resolutionReason}`);
+      } else {
+        console.log(`[EVIDENCE-OK] pos6=${pos6} | col2=${col2},col3=${col3} | ${resolutionReason}`);
+      }
+    }
+    // =========================================================================
+    // ÉTAPE 2: FALLBACK - SCORING SI PAS DE PREUVE TEXTE
+    // =========================================================================
+    else if (candA && candB) {
       const resolution = resolveCol2Col3(pos6, candA, candB, col2Col3Ctx);
       
       if (resolution) {
@@ -951,6 +1143,7 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
         col3 = resolution.col3;
         // IMPORTANT: Reconstruire nationalCode depuis pos6 + résolution
         nationalCode = pos6 + col2 + col3;
+        resolutionReason = resolution.reason;
         
         if (resolution.swapApplied) {
           debug.swappedCol2Col3Count++;
@@ -960,7 +1153,8 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
               pos6,
               original: { col2: candA, col3: candB },
               resolved: { col2, col3 },
-              reason: `${resolution.reason} [${source}]`
+              reason: `fallback-scoring: ${resolution.reason} [${source}]`,
+              source_text: line.source_text
             });
           }
           const source = ncFromLine ? "[NC]" : "[COL]";
@@ -971,47 +1165,81 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
         col2 = candA;
         col3 = candB;
         nationalCode = pos6 + col2 + col3;
+        resolutionReason = "fallback-null-resolution";
       }
     } else {
       // =========================================================================
       // CAS: UN SEUL CANDIDAT OU AUCUN - RÉSOLUTION "SINGLE"
+      // AUSSI: Essayer evidence pour single
       // =========================================================================
       
-      // CAS 1: !candA && candB → col2 hérité, candB est col3
+      // CAS 1: !candA && candB → essayer evidence single, sinon col2 hérité
       if (!candA && candB) {
-        col2 = col2Col3Ctx.lastCol2 || "00";
-        col3 = candB;
-        nationalCode = pos6 + col2 + col3;
-        debug.linesFromFallback++;
-        console.log(`[COL-SINGLE-B] pos6=${pos6} | candB="${candB}" → col2=${col2}(inherited),col3=${col3}`);
-      }
-      // CAS 2: candA && !candB → Appeler resolveCol2Col3Single pour déterminer si c'est col2 ou col3
-      else if (candA && !candB) {
-        // IMPORTANT: Vérifier si la ligne a un duty_rate pour distinguer headers vs détails
-        // - Une ligne SANS taux est un header intermédiaire → candA est toujours un nouveau col2
-        // - Une ligne AVEC taux est un détail → candA pourrait être col3 si contexte le suggère
-        const rawDutyRate = line.duty_rate;
-        const hasDutyRate = rawDutyRate !== null && rawDutyRate !== undefined && String(rawDutyRate).trim() !== "";
-        
-        const singleRes = resolveCol2Col3Single(pos6, candA, col2Col3Ctx, line.description, hasDutyRate);
-        col2 = singleRes.col2;
-        col3 = singleRes.col3;
-        nationalCode = pos6 + col2 + col3;
-        
-        // Si usedAs="col3", c'est un swap implicite (candA placé en col3 au lieu de col2)
-        if (singleRes.usedAs === "col3") {
-          debug.swappedCol2Col3Count++;
-          if (debug.swappedCol2Col3Samples.length < 15) {
-            debug.swappedCol2Col3Samples.push({
-              pos6,
-              original: { col2: candA, col3: "(empty)" },
-              resolved: { col2, col3 },
-              reason: `SINGLE: ${singleRes.reason}`
-            });
-          }
-          console.log(`[COL-SWAP-SINGLE] pos6=${pos6} | candA="${candA}" → col2=${col2},col3=${col3} | ${singleRes.reason}`);
+        // Essayer evidence pour single candB
+        const singleEvidence = resolveCol2Col3FromEvidence(line.source_text, null, candB, col2Col3Ctx);
+        if (singleEvidence && singleEvidence.usedEvidence) {
+          col2 = singleEvidence.col2;
+          col3 = singleEvidence.col3;
+          nationalCode = pos6 + col2 + col3;
+          console.log(`[EVIDENCE-SINGLE-B] pos6=${pos6} | candB="${candB}" → col2=${col2},col3=${col3} | ${singleEvidence.reason}`);
         } else {
-          console.log(`[COL-SINGLE-A] pos6=${pos6} | candA="${candA}" → col2=${col2},col3=${col3} | hasDutyRate=${hasDutyRate} | ${singleRes.reason}`);
+          col2 = col2Col3Ctx.lastCol2 || "00";
+          col3 = candB;
+          nationalCode = pos6 + col2 + col3;
+          console.log(`[COL-SINGLE-B] pos6=${pos6} | candB="${candB}" → col2=${col2}(inherited),col3=${col3}`);
+        }
+        debug.linesFromFallback++;
+      }
+      // CAS 2: candA && !candB → Essayer evidence, sinon resolveCol2Col3Single
+      else if (candA && !candB) {
+        // Essayer evidence pour single candA
+        const singleEvidence = resolveCol2Col3FromEvidence(line.source_text, candA, null, col2Col3Ctx);
+        if (singleEvidence && singleEvidence.usedEvidence) {
+          col2 = singleEvidence.col2;
+          col3 = singleEvidence.col3;
+          nationalCode = pos6 + col2 + col3;
+          
+          // Tracker si swap
+          const wasCol3 = col3 === candA;
+          if (wasCol3) {
+            debug.swappedCol2Col3Count++;
+            if (debug.swappedCol2Col3Samples.length < 15) {
+              debug.swappedCol2Col3Samples.push({
+                pos6,
+                original: { col2: candA, col3: "(empty)" },
+                resolved: { col2, col3 },
+                reason: singleEvidence.reason,
+                source_text: line.source_text
+              });
+            }
+          }
+          console.log(`[EVIDENCE-SINGLE-A] pos6=${pos6} | candA="${candA}" → col2=${col2},col3=${col3} | ${singleEvidence.reason}`);
+        } else {
+          // Fallback: resolveCol2Col3Single (heuristiques)
+          const rawDutyRate = line.duty_rate;
+          const hasDutyRate = rawDutyRate !== null && rawDutyRate !== undefined && String(rawDutyRate).trim() !== "";
+          
+          const singleRes = resolveCol2Col3Single(pos6, candA, col2Col3Ctx, line.description, hasDutyRate);
+          col2 = singleRes.col2;
+          col3 = singleRes.col3;
+          nationalCode = pos6 + col2 + col3;
+          
+          // Si usedAs="col3", c'est un swap implicite (candA placé en col3 au lieu de col2)
+          if (singleRes.usedAs === "col3") {
+            debug.swappedCol2Col3Count++;
+            if (debug.swappedCol2Col3Samples.length < 15) {
+              debug.swappedCol2Col3Samples.push({
+                pos6,
+                original: { col2: candA, col3: "(empty)" },
+                resolved: { col2, col3 },
+                reason: `fallback-single: ${singleRes.reason}`,
+                source_text: line.source_text
+              });
+            }
+            console.log(`[COL-SWAP-SINGLE] pos6=${pos6} | candA="${candA}" → col2=${col2},col3=${col3} | ${singleRes.reason}`);
+          } else {
+            console.log(`[COL-SINGLE-A] pos6=${pos6} | candA="${candA}" → col2=${col2},col3=${col3} | hasDutyRate=${hasDutyRate} | ${singleRes.reason}`);
+          }
         }
         debug.linesFromFallback++;
       }
