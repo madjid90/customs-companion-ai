@@ -1151,7 +1151,7 @@ export default function ExtractionPreviewDialog({
           </TabsContent>
         </Tabs>
 
-        <DialogFooter className="gap-2 sm:gap-0">
+        <DialogFooter className="gap-2 sm:gap-0 border-t bg-background pt-4 mt-4 sticky bottom-0 z-50">
           <div className="flex-1 text-sm text-muted-foreground">
             {validHs + validTariff < hsCodes.length + tariffLines.length && (
               <span className="flex items-center gap-1 text-warning">
