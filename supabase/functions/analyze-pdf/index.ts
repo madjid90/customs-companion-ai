@@ -346,6 +346,17 @@ interface Col2Col3Resolution {
 }
 
 /**
+ * Résultat de la résolution quand UNE SEULE paire de 2 chiffres est présente.
+ * Ex: col2 absent mais col3=10, ou col2=10 mais col3 absent.
+ */
+interface Col2Col3SingleResolution {
+  col2: string;
+  col3: string;
+  usedAs: "col2" | "col3";
+  reason: string;
+}
+
+/**
  * Résout l'inversion col2/col3 de manière déterministe.
  * 
  * RÈGLE FONDAMENTALE du tarif marocain (CORRIGÉE v3):
@@ -432,6 +443,77 @@ function resolveCol2Col3(
     col3: col2B,
     swapApplied: false,
     reason: `KEEP(trust-llm) col2=${col2A},col3=${col2B}`
+  };
+}
+
+/**
+ * Résout le cas où UNE SEULE paire de 2 chiffres est présente (candA sans candB ou inverse).
+ * 
+ * CONTEXTE:
+ * Dans les PDF tarifaires, certaines lignes ont col2 vide (héritée) et seulement col3 présent.
+ * Claude remplit parfois ce "10" dans col2 au lieu de col3.
+ * Résultat: national_code devient pos6 + 10 + 00 (FAUX) au lieu de pos6 + 00 + 10 (VRAI).
+ * 
+ * RÈGLES DE RÉSOLUTION:
+ * 1. Si ctx.lastPos6 === pos6 ET ctx.lastCol2 existe ET single ∈ ["10","20","30","40","50","60","70","80","90"]
+ *    → Interpréter comme col3 (détail national), hériter col2 du contexte
+ * 2. Si description est fortement indentée (---/-----/–––) ET lastCol2 existe
+ *    → Interpréter comme col3
+ * 3. Sinon fallback: interpréter comme col2 avec col3="00"
+ */
+function resolveCol2Col3Single(
+  pos6: string,
+  single: string,
+  ctx: Col2Col3Context,
+  description?: string | null
+): Col2Col3SingleResolution {
+  // Normaliser le single en 2 digits stricts
+  const normalized = normalize2Strict(single);
+  if (!normalized) {
+    // Si invalide, fallback basique
+    return {
+      col2: "00",
+      col3: "00",
+      usedAs: "col2",
+      reason: `INVALID(single="${single}")->fallback-zeros`
+    };
+  }
+  
+  // Détection des valeurs typiques de col3 (détails nationaux)
+  const typicalCol3Values = ["10", "20", "30", "40", "50", "60", "70", "80", "90"];
+  const isTypicalCol3 = typicalCol3Values.includes(normalized);
+  
+  // RÈGLE 1: Même pos6 + lastCol2 existe + valeur typique de col3
+  // → C'est probablement un détail national (col3), pas une sous-position (col2)
+  const samePos6 = ctx.lastPos6 === pos6;
+  if (samePos6 && ctx.lastCol2 !== null && isTypicalCol3) {
+    return {
+      col2: ctx.lastCol2,
+      col3: normalized,
+      usedAs: "col3",
+      reason: `SINGLE-AS-COL3(same-pos6+inherit-col2=${ctx.lastCol2})`
+    };
+  }
+  
+  // RÈGLE 2: Description fortement indentée (indicateur de sous-ligne)
+  // Patterns: "---", "-----", "– – –", "— — —"
+  const stronglyIndented = description && /^(\s*[-–—]{2,}|\s*[–—]\s+[–—]\s+[–—])/.test(description);
+  if (stronglyIndented && ctx.lastCol2 !== null) {
+    return {
+      col2: ctx.lastCol2,
+      col3: normalized,
+      usedAs: "col3",
+      reason: `SINGLE-AS-COL3(indented+inherit-col2=${ctx.lastCol2})`
+    };
+  }
+  
+  // RÈGLE 3: Fallback - interpréter comme col2 avec col3="00"
+  // C'est le comportement par défaut quand on n'a pas assez de contexte
+  return {
+    col2: normalized,
+    col3: "00",
+    usedAs: "col2",
+    reason: `SINGLE-AS-COL2(fallback) col2=${normalized},col3=00`
   };
 }
 
@@ -688,13 +770,51 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
         nationalCode = pos6 + col2 + col3;
       }
     } else {
-      // Fallback: héritage classique si pas assez de données
-      col2 = candA ?? (col2Col3Ctx.lastCol2 || null);
-      col3 = candB ?? (col2Col3Ctx.lastCol3 || null);
+      // =========================================================================
+      // CAS: UN SEUL CANDIDAT OU AUCUN - RÉSOLUTION "SINGLE"
+      // =========================================================================
       
-      if (col2 && col3) {
+      // CAS 1: !candA && candB → col2 hérité, candB est col3
+      if (!candA && candB) {
+        col2 = col2Col3Ctx.lastCol2 || "00";
+        col3 = candB;
         nationalCode = pos6 + col2 + col3;
         debug.linesFromFallback++;
+        console.log(`[COL-SINGLE-B] pos6=${pos6} | candB="${candB}" → col2=${col2}(inherited),col3=${col3}`);
+      }
+      // CAS 2: candA && !candB → Appeler resolveCol2Col3Single pour déterminer si c'est col2 ou col3
+      else if (candA && !candB) {
+        const singleRes = resolveCol2Col3Single(pos6, candA, col2Col3Ctx, line.description);
+        col2 = singleRes.col2;
+        col3 = singleRes.col3;
+        nationalCode = pos6 + col2 + col3;
+        
+        // Si usedAs="col3", c'est un swap implicite (candA placé en col3 au lieu de col2)
+        if (singleRes.usedAs === "col3") {
+          debug.swappedCol2Col3Count++;
+          if (debug.swappedCol2Col3Samples.length < 15) {
+            debug.swappedCol2Col3Samples.push({
+              pos6,
+              original: { col2: candA, col3: "(empty)" },
+              resolved: { col2, col3 },
+              reason: `SINGLE: ${singleRes.reason}`
+            });
+          }
+          console.log(`[COL-SWAP-SINGLE] pos6=${pos6} | candA="${candA}" → col2=${col2},col3=${col3} | ${singleRes.reason}`);
+        } else {
+          console.log(`[COL-SINGLE-A] pos6=${pos6} | candA="${candA}" → col2=${col2},col3=${col3} | ${singleRes.reason}`);
+        }
+        debug.linesFromFallback++;
+      }
+      // CAS 3: Aucun candidat → héritage total
+      else {
+        col2 = col2Col3Ctx.lastCol2 || null;
+        col3 = col2Col3Ctx.lastCol3 || null;
+        
+        if (col2 && col3) {
+          nationalCode = pos6 + col2 + col3;
+          debug.linesFromFallback++;
+        }
       }
     }
     
