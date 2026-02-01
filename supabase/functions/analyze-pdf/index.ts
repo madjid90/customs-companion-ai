@@ -894,6 +894,30 @@ Pour CHAQUE ligne extraite, tu DOIS fournir "source_text":
 
 Ce champ permet de vérifier l'ordre réel des tokens col2/col3.
 
+=== RÈGLE CRUCIALE: INCLURE LES LIGNES "HEADER" INTERMÉDIAIRES ===
+
+⚠️ TRÈS IMPORTANT: Inclure dans raw_lines TOUTES les lignes de hiérarchie (headers), 
+MÊME SI ELLES N'ONT PAS DE TAUX NI D'UNITÉ.
+
+Ces lignes sont critiques car elles définissent le contexte col2/col3 pour les lignes enfants.
+
+EXEMPLES DE HEADERS À INCLURE OBLIGATOIREMENT:
+- "18 – – – – autres :" → col2="18", duty_rate=null
+- "90 – – – autres :" → col2="90", duty_rate=null
+- "10 – – – anhydride phosphorique" → col2="10", duty_rate=null
+- "80 – – – – – frais ou salés verts :" → col2="80" ou col3="80" selon le contexte
+
+Pour ces lignes header:
+- duty_rate = null (pas de taux)
+- unit_norm = null (pas d'unité)
+- unit_comp = null
+- position_6 = la dernière position_6 vue sur cette page (héritage)
+- col2 et/ou col3 = le code 2 chiffres présent sur la ligne
+- description = le texte descriptif (ex: "autres :", "de bois tropicaux :", etc.)
+- source_text = le fragment exact (ex: "80" ou "18 – – – autres")
+
+SI TU OMETS CES HEADERS, les lignes enfants auront un code INCORRECT!
+
 === EXEMPLE RÉEL DÉTAILLÉ (CAS COMPLEXE) ===
 
 Voici un exemple typique du tarif marocain avec hiérarchie:
@@ -903,18 +927,20 @@ Voici un exemple typique du tarif marocain avec hiérarchie:
   | 0301.99  |      |      | -- Autres                                  |       |       |
   |          |      |      | --- d'eau douce :                          |       |       |
   |          | 15   | 00   | ---- destinés au repeuplement              | 10    | kg    |
-  |          | 19   |      | ---- autres :                              |       |       |
+  |          | 19   |      | ---- autres :                              |       |       |  ← HEADER: col2=19, duty_rate=null À INCLURE!
   |          |      | 10   | ----- saumons et corégones                 | 10    | kg    |
   |          |      | 20   | ----- autres salmonidés                    | 10    | kg    |
 
 EXTRACTION CORRECTE ligne par ligne:
 - Ligne "destinés au repeuplement": col2=15, col3=00 → national_code=0301991500
-- Ligne "saumons et corégones": col2=19 (hérité), col3=10 → national_code=0301991910
+- Ligne "autres :" (HEADER): col2=19, col3=null, duty_rate=null → inclure pour contexte!
+- Ligne "saumons et corégones": col2=19 (hérité du header), col3=10 → national_code=0301991910
 - Ligne "autres salmonidés": col2=19 (hérité), col3=20 → national_code=0301991920
 
 ⚠️ ERREUR À ÉVITER:
 - NE PAS lire col2=19 et col3=15 pour "destinés au repeuplement" 
   → C'est FAUX car 19 est sur une AUTRE ligne!
+- NE PAS OMETTRE la ligne "autres :" avec col2=19 car elle définit le contexte!
 
 === RÈGLE: DEUX COLONNES ADJACENTES ===
 
@@ -1272,6 +1298,10 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
     // Ex: ligne "18" sans taux → col2=18 → les enfants doivent hériter col2=18
     
     if (duty_rate === null) {
+      // FIX: carry-forward headers - Log détaillé pour le debug
+      const descPreview = (line.description || "").substring(0, 40);
+      console.log(`[HEADER-LINE] page=${line.page_number || "?"} pos6=${pos6 || "(inherited)"} col2=${col2 || "null"} col3=${col3 || "null"} desc="${descPreview}..."`);
+      
       // Mettre à jour le contexte AVANT de skip
       if (pos6) {
         lastPos6 = pos6;
@@ -1776,12 +1806,13 @@ function convertLegacyToRawTariffLine(legacy: any, pageNumber?: number): RawTari
 
 // =============================================================================
 // FALLBACK: Extraction agressive des lignes depuis texte brut
+// FIX: carry-forward headers - Ajout d'un 2ème pattern pour détecter les headers sans position_6
 // =============================================================================
 
 function extractRawLinesAggressively(text: string, pageNumber?: number): RawTariffLine[] {
   const results: RawTariffLine[] = [];
   
-  // Pattern pour détecter les lignes tarifaires
+  // Pattern 1: Lignes tarifaires complètes avec position_6
   // Format: [préfixe?] XXXX.XX [XX] [XX] [description] [taux] [unité]
   const linePattern = /^(?:(\d)\s+)?(\d{4}[.\s]\d{2})\s+(\d{2})?\s*(\d{2})?\s+(.+?)(?:\s+(\d+(?:[,.]\d+)?%?)\s*([A-Za-z]{1,5}\d{0,2})?)?$/gm;
   
@@ -1797,7 +1828,47 @@ function extractRawLinesAggressively(text: string, pageNumber?: number): RawTari
       description: desc?.trim() || null,
       duty_rate: rate || null,
       unit_norm: unit || null,
-      page_number: pageNumber
+      page_number: pageNumber,
+      source_text: `${col2 || ""} ${col3 || ""}`.trim() || null
+    });
+  }
+  
+  // =========================================================================
+  // FIX: Pattern 2 - HEADER LINES sans position_6
+  // Détecte les lignes du type "18 – – – – autres :" ou "90 – – – autres :"
+  // Ces lignes définissent un nouveau col2 pour les lignes enfants
+  // =========================================================================
+  
+  // Pattern: ligne commençant par 2 chiffres suivis de tirets/séparateurs et texte
+  // Ex: "18 – – – – autres :" ou "90 – – – autres :" ou "10 – – – acide …"
+  const headerPattern = /^(\d{2})\s*[–\-—]+(?:\s*[–\-—]+)*\s*(.+?)$/gm;
+  
+  let headerMatch;
+  while ((headerMatch = headerPattern.exec(text)) !== null) {
+    const [fullMatch, col2Value, descText] = headerMatch;
+    
+    // Vérifier que ce n'est pas une ligne déjà capturée par le premier pattern
+    // (les lignes avec position_6 ne matchent pas ce pattern car elles ont plus de chiffres)
+    const normalizedCol2 = normalize2Strict(col2Value);
+    if (!normalizedCol2) continue;
+    
+    // Ne pas capturer les lignes qui ressemblent à des taux (ex: "10 – texte – 25 KG")
+    const hasRatePattern = /\d+(?:[,.]\d+)?%?\s*[A-Za-z]{1,5}\d{0,2}\s*$/;
+    if (hasRatePattern.test(fullMatch)) continue;
+    
+    console.log(`[HEADER-FALLBACK] page=${pageNumber} col2=${normalizedCol2} desc="${descText.substring(0, 30)}..."`);
+    
+    results.push({
+      prefix_col: null,
+      position_6: null,  // Sera hérité par processRawLines
+      col2: normalizedCol2,
+      col3: null,
+      description: descText?.trim() || null,
+      duty_rate: null,  // Pas de taux = header
+      unit_norm: null,
+      unit_comp: null,
+      page_number: pageNumber,
+      source_text: col2Value
     });
   }
   
