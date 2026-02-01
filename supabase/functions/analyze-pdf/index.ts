@@ -884,13 +884,27 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
     
     const { duty_rate, unit_norm, swapped } = fixRateUnitSwap(line, debug);
     
+    // =========================================================================
+    // IMPORTANT: MISE À JOUR DU CONTEXTE AVANT LE SKIP (HEADERS INTERMÉDIAIRES)
+    // =========================================================================
+    // Les lignes sans taux (headers intermédiaires) définissent un NOUVEAU col2
+    // Le contexte DOIT être mis à jour AVANT le continue pour que les enfants héritent correctement
+    // Ex: ligne "18" sans taux → col2=18 → les enfants doivent hériter col2=18
+    
     if (duty_rate === null) {
-      // Mettre à jour le contexte même si on skip cette ligne
-      if (pos6) lastPos6 = pos6;
+      // Mettre à jour le contexte AVANT de skip
+      if (pos6) {
+        lastPos6 = pos6;
+        col2Col3Ctx.lastPos6 = pos6;  // CRITICAL: Tracker le pos6 aussi!
+      }
+      // CRITICAL: Le col2 de cette ligne header DEVIENT le contexte pour les enfants
       if (col2) {
+        console.log(`[CTX-UPDATE-HEADER] pos6=${pos6} | Setting lastCol2=${col2} (from header line without duty_rate)`);
         col2Col3Ctx.lastCol2 = col2;
         updateCol2Stats(col2Col3Ctx, pos6, col2);
       }
+      // Pour les headers, on reset col3 à null pour forcer les enfants à fournir leur propre col3
+      // Non, gardons col3 pour l'héritage si nécessaire
       if (col3) col2Col3Ctx.lastCol3 = col3;
       continue;
     }
