@@ -334,6 +334,7 @@ function isValidCleanCode(codeClean: string): boolean {
 interface Col2Col3Context {
   lastCol2: string | null;
   lastCol3: string | null;
+  lastPos6: string | null;  // NOUVEAU: Tracker la position pour détecter les changements
   pos6Col2Counts: Map<string, Map<string, number>>; // pos6 -> (col2Value -> count)
 }
 
@@ -389,14 +390,18 @@ function resolveCol2Col3(
   }
   
   // =========================================================================
-  // RÈGLE 1 (NOUVELLE): Si col2A est un détail (10/20/90) ET col3B=00
+  // RÈGLE 1 (CORRIGÉE v4): Si col2A est un détail (10/20/90) ET col3B=00
   // ET le dernier col2 hérité était "00" (ligne parente)
+  // ET on est toujours dans la MÊME sous-position (pos6)
   // → C'est une inversion! Le vrai col2=00 (hérité), col3=col2A (le détail)
-  // Ex: Parente 4302.19|00, enfant extrait col2=10|col3=00 
-  //     → Correction: col2=00, col3=10 → 4302190010
+  //
+  // IMPORTANT: Si on change de pos6 (ex: 4202.91 → 4202.92), on NE SWAP PAS
+  // car c'est une nouvelle sous-position avec ses propres valeurs col2/col3
   // =========================================================================
-  if (col2A !== "00" && col2B === "00" && ctx.lastCol2 === "00") {
-    console.log(`[COL-SWAP-INHERIT] Detected inheritance pattern: col2=${col2A},col3=${col2B} with parent col2=00 → SWAP to col2=00,col3=${col2A}`);
+  const samePos6 = ctx.lastPos6 === pos6;
+  
+  if (col2A !== "00" && col2B === "00" && ctx.lastCol2 === "00" && samePos6) {
+    console.log(`[COL-SWAP-INHERIT] Same pos6=${pos6}: col2=${col2A},col3=${col2B} with parent col2=00 → SWAP to col2=00,col3=${col2A}`);
     return {
       col2: "00",       // Hérite du parent
       col3: col2A,      // Le détail fourni par l'IA est en fait col3
@@ -587,6 +592,7 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
   const col2Col3Ctx: Col2Col3Context = {
     lastCol2: null,
     lastCol3: null,
+    lastPos6: null,
     pos6Col2Counts: new Map()
   };
   
@@ -729,6 +735,7 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
     
     // Mettre à jour le contexte après validation
     lastPos6 = pos6;
+    col2Col3Ctx.lastPos6 = pos6;  // IMPORTANT: Tracker le changement de pos6 pour l'héritage
     col2Col3Ctx.lastCol2 = col2;
     col2Col3Ctx.lastCol3 = col3;
     if (col2) updateCol2Stats(col2Col3Ctx, pos6, col2);
