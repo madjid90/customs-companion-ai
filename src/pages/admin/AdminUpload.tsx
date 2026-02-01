@@ -238,23 +238,43 @@ export default function AdminUpload() {
     updateFileStatus(fileId, { status: "uploading", progress: 10 });
 
     try {
-      // 0. Check for duplicates based on file name
+      // 0. Check for duplicates based on file name - DELETE old version to allow replacement
       const pdfTitle = file.name.replace(".pdf", "").replace(/_/g, " ");
       const { data: existingDocs } = await supabase
         .from("pdf_documents")
-        .select("id, title, file_name")
+        .select("id, title, file_name, file_path")
         .or(`file_name.eq.${file.name},title.ilike.${pdfTitle}`)
         .eq("is_active", true)
         .limit(1);
       
       if (existingDocs && existingDocs.length > 0) {
         const existing = existingDocs[0];
+        console.log(`[Replace] Removing old document: ${existing.id} - ${existing.title}`);
         updateFileStatus(fileId, { 
-          status: "error", 
-          progress: 0,
-          error: `⚠️ Doublon détecté: "${existing.title}" existe déjà. Supprimez-le d'abord si vous voulez le remplacer.`
+          progress: 5,
+          error: `♻️ Remplacement de "${existing.title}"...`
         });
-        return;
+        
+        // Delete old file from storage if exists
+        if (existing.file_path) {
+          await supabase.storage.from("pdf-documents").remove([existing.file_path]);
+        }
+        
+        // Delete related extractions
+        await supabase.from("pdf_extractions").delete().eq("pdf_id", existing.id);
+        
+        // Delete related extraction runs
+        await supabase.from("pdf_extraction_runs").delete().eq("pdf_id", existing.id);
+        
+        // Delete the old document record
+        await supabase.from("pdf_documents").delete().eq("id", existing.id);
+        
+        // Also clean up old tariff data for this document
+        await supabase.from("country_tariffs")
+          .delete()
+          .eq("source_pdf", existing.file_path);
+        
+        console.log(`[Replace] Old document ${existing.id} deleted, proceeding with new upload`);
       }
       
       updateFileStatus(fileId, { progress: 15 });
