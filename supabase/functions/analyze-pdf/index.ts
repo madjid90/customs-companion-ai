@@ -394,14 +394,19 @@ interface SourceTextTokens {
 function normalizeTokensFromSourceText(sourceText: string | null | undefined): SourceTextTokens | null {
   if (!sourceText || sourceText.trim() === "") return null;
   
-  const text = sourceText.trim();
+  let text = sourceText.trim();
   
-  // Détecter préfixe: commence par 1 chiffre suivi d'un espace
-  const hasPrefix = /^\d\s/.test(text);
+  // 1) Détecter si le premier chiffre est un REPÈRE D'ALIGNEMENT avant une position (ex: "8 9701.21 ...")
+  // Si oui, on le retire pour éviter hasPrefix=true par erreur.
+  if (/^\d\s+\d{4}\.\d{2}\b/.test(text) || /^\d\s+\d{6}\b/.test(text)) {
+    text = text.replace(/^\d\s+/, "");
+  }
   
-  // Extraire tous les tokens de exactement 2 chiffres
-  const matches = text.match(/\b\d{2}\b/g);
-  const tokens2 = matches || [];
+  // 2) hasPrefix = vrai seulement si on a "3 10" (digit + espace) SANS position juste derrière
+  const hasPrefix = /^\d\s/.test(text) && !/^\d\s+\d{4}\.\d{2}\b/.test(text) && !/^\d\s+\d{6}\b/.test(text);
+  
+  // 3) Extraire tous les tokens 2 digits
+  const tokens2 = text.match(/\b\d{2}\b/g) || [];
   
   if (tokens2.length === 0) return null;
   
@@ -419,17 +424,20 @@ interface EvidenceResolution {
  * Résolution DÉTERMINISTE basée sur source_text (priorité sur scoring)
  * 
  * RÈGLES:
- * 1. DOUBLE (2 tokens): l'ordre dans source_text fait foi
+ * 1. DOUBLE (2 tokens): Scanner toutes les paires adjacentes pour trouver un match
  * 2. SINGLE avec préfixe: token = col3 (détail), col2 hérité
- * 3. SINGLE sans préfixe: token = col2 (nouveau groupe), col3 hérité ou "00"
+ * 3. SINGLE sans préfixe ET sans taux: token = col2 (header), col3 = "00"
+ * 4. SINGLE sans préfixe ET avec taux: return null → laisser resolveCol2Col3Single trancher
  * 
+ * @param hasDutyRate - indique si la ligne a un taux (true) ou non (false = header)
  * Retourne null si source_text inutilisable → fallback scoring
  */
 function resolveCol2Col3FromEvidence(
   sourceText: string | null | undefined,
   col2Raw: string | null,
   col3Raw: string | null,
-  ctx: Col2Col3Context
+  ctx: Col2Col3Context,
+  hasDutyRate: boolean = true
 ): EvidenceResolution | null {
   const parsed = normalizeTokensFromSourceText(sourceText);
   if (!parsed) return null;
@@ -439,38 +447,39 @@ function resolveCol2Col3FromEvidence(
   const col2B = normalize2Strict(col3Raw);
   
   // ===========================================================================
-  // CAS 1: DOUBLE - 2 tokens 2-digits détectés
-  // L'ordre dans source_text est la preuve définitive
+  // CAS 1: DOUBLE - 2+ tokens 2-digits détectés
+  // Scanner toutes les paires adjacentes pour trouver une paire qui matche
   // ===========================================================================
-  if (tokens2.length >= 2) {
-    const first = tokens2[0];
-    const second = tokens2[1];
-    
-    // Vérifier que les tokens correspondent aux candidats (dans un ordre ou l'autre)
-    const matchAB = (first === col2A && second === col2B);
-    const matchBA = (first === col2B && second === col2A);
-    
-    if (matchAB) {
-      // Ordre original correct
-      return {
-        col2: first,
-        col3: second,
-        reason: `evidence-double(source="${sourceText?.substring(0, 20)}" → ${first},${second})`,
-        usedEvidence: true
-      };
+  if (tokens2.length >= 2 && col2A && col2B) {
+    for (let i = 0; i < tokens2.length - 1; i++) {
+      const first = tokens2[i];
+      const second = tokens2[i + 1];
+      
+      const matchAB = (first === col2A && second === col2B);
+      const matchBA = (first === col2B && second === col2A);
+      
+      if (matchAB) {
+        // Ordre original correct
+        return {
+          col2: first,
+          col3: second,
+          reason: `evidence-double(pair=${first},${second})`,
+          usedEvidence: true
+        };
+      }
+      
+      if (matchBA) {
+        // INVERSION DÉTECTÉE - source_text dit B,A mais on a reçu A,B
+        return {
+          col2: first,
+          col3: second,
+          reason: `evidence-double-SWAP(pair=${first},${second})`,
+          usedEvidence: true
+        };
+      }
     }
     
-    if (matchBA) {
-      // INVERSION DÉTECTÉE - source_text dit B,A mais on a reçu A,B
-      return {
-        col2: first,  // Le premier dans source_text est le vrai col2
-        col3: second, // Le second dans source_text est le vrai col3
-        reason: `evidence-double-SWAP(source="${sourceText?.substring(0, 20)}" → ${first},${second})`,
-        usedEvidence: true
-      };
-    }
-    
-    // Les tokens ne correspondent pas exactement aux candidats - fallback
+    // Aucune paire ne matche les candidats - fallback
     console.log(`[EVIDENCE-MISMATCH] tokens=${tokens2.join(",")} vs candidates=${col2A},${col2B}`);
     return null;
   }
@@ -497,19 +506,25 @@ function resolveCol2Col3FromEvidence(
       return {
         col2: inheritedCol2,
         col3: token,
-        reason: `evidence-single-prefix(source="${sourceText?.substring(0, 15)}" hasPrefix → col3=${token})`,
+        reason: `evidence-single-prefix(col3=${token})`,
         usedEvidence: true
       };
     }
     
-    // RÈGLE 2b: Pas de préfixe (ex: "18 ...") → token est col2 (nouveau groupe)
-    const inheritedCol3 = ctx.lastCol3 || "00";
-    return {
-      col2: token,
-      col3: inheritedCol3,
-      reason: `evidence-single-noprefix(source="${sourceText?.substring(0, 15)}" → col2=${token})`,
-      usedEvidence: true
-    };
+    // RÈGLE 2b: Pas de préfixe ET pas de taux → c'est un header → token = col2
+    if (!hasDutyRate) {
+      return {
+        col2: token,
+        col3: "00",
+        reason: `evidence-single-header-no-rate(col2=${token})`,
+        usedEvidence: true
+      };
+    }
+    
+    // RÈGLE 2c: Pas de préfixe ET a un taux → NE PAS décider ici
+    // Laisser resolveCol2Col3Single() trancher avec ses heuristiques
+    console.log(`[EVIDENCE-DEFER] token=${token} has duty_rate, deferring to single resolver`);
+    return null;
   }
   
   return null;
@@ -1121,13 +1136,20 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
     const candB = normalize2Strict(line.col3) ?? col3FromNc;
     
     // =========================================================================
+    // CALCUL hasDutyRate UNE FOIS pour toutes les résolutions
+    // =========================================================================
+    const rawDutyRate = line.duty_rate;
+    const hasDutyRate = rawDutyRate !== null && rawDutyRate !== undefined && String(rawDutyRate).trim() !== "";
+    
+    // =========================================================================
     // ÉTAPE 1: ESSAYER RÉSOLUTION DÉTERMINISTE VIA source_text (PRIORITÉ ABSOLUE)
     // =========================================================================
     const evidenceResolution = resolveCol2Col3FromEvidence(
       line.source_text,
       candA,
       candB,
-      col2Col3Ctx
+      col2Col3Ctx,
+      hasDutyRate
     );
     
     if (evidenceResolution && evidenceResolution.usedEvidence) {
@@ -1202,7 +1224,7 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
       // CAS 1: !candA && candB → essayer evidence single, sinon col2 hérité
       if (!candA && candB) {
         // Essayer evidence pour single candB
-        const singleEvidence = resolveCol2Col3FromEvidence(line.source_text, null, candB, col2Col3Ctx);
+        const singleEvidence = resolveCol2Col3FromEvidence(line.source_text, null, candB, col2Col3Ctx, hasDutyRate);
         if (singleEvidence && singleEvidence.usedEvidence) {
           col2 = singleEvidence.col2;
           col3 = singleEvidence.col3;
@@ -1219,7 +1241,7 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
       // CAS 2: candA && !candB → Essayer evidence, sinon resolveCol2Col3Single
       else if (candA && !candB) {
         // Essayer evidence pour single candA
-        const singleEvidence = resolveCol2Col3FromEvidence(line.source_text, candA, null, col2Col3Ctx);
+        const singleEvidence = resolveCol2Col3FromEvidence(line.source_text, candA, null, col2Col3Ctx, hasDutyRate);
         if (singleEvidence && singleEvidence.usedEvidence) {
           col2 = singleEvidence.col2;
           col3 = singleEvidence.col3;
@@ -1241,10 +1263,7 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
           }
           console.log(`[EVIDENCE-SINGLE-A] pos6=${pos6} | candA="${candA}" → col2=${col2},col3=${col3} | ${singleEvidence.reason}`);
         } else {
-          // Fallback: resolveCol2Col3Single (heuristiques)
-          const rawDutyRate = line.duty_rate;
-          const hasDutyRate = rawDutyRate !== null && rawDutyRate !== undefined && String(rawDutyRate).trim() !== "";
-          
+          // Fallback: resolveCol2Col3Single (heuristiques) - hasDutyRate déjà calculé plus haut
           const singleRes = resolveCol2Col3Single(pos6, candA, col2Col3Ctx, line.description, hasDutyRate);
           col2 = singleRes.col2;
           col3 = singleRes.col3;
