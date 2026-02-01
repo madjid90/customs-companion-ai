@@ -17,12 +17,13 @@ import {
   Database,
   Eye,
   Clock,
-  RotateCcw
+  RotateCcw,
+  Trash2
 } from "lucide-react";
 import ExtractionPreviewDialog from "@/components/admin/ExtractionPreviewDialog";
 
 export default function AdminUpload() {
-  const { files, updateFileStatus, queueFile, processNext, isProcessing, setIsProcessing } = useUploadState();
+  const { files, setFiles, updateFileStatus, queueFile, processNext, isProcessing, setIsProcessing } = useUploadState();
   const [isDragging, setIsDragging] = useState(false);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null);
@@ -731,6 +732,44 @@ export default function AdminUpload() {
   // Count queued files
   const queuedCount = files.filter(f => f.status === "queued").length;
 
+  // Remove a file from the list (and cleanup storage/DB if already uploaded)
+  const removeFile = useCallback(async (fileToRemove: UploadedFile) => {
+    // If file was already uploaded to DB/storage, clean up
+    if (fileToRemove.pdfId) {
+      try {
+        // Delete from storage
+        if (fileToRemove.filePath) {
+          await supabase.storage.from("pdf-documents").remove([fileToRemove.filePath]);
+        }
+        
+        // Delete related data
+        await supabase.from("pdf_extractions").delete().eq("pdf_id", fileToRemove.pdfId);
+        await supabase.from("pdf_extraction_runs").delete().eq("pdf_id", fileToRemove.pdfId);
+        await supabase.from("pdf_documents").delete().eq("id", fileToRemove.pdfId);
+        
+        // Clean up tariff data if exists
+        if (fileToRemove.filePath) {
+          await supabase.from("country_tariffs").delete().eq("source_pdf", fileToRemove.filePath);
+        }
+        
+        toast({
+          title: "Document supprimé",
+          description: `${fileToRemove.name} a été supprimé de la base de données.`,
+        });
+      } catch (error) {
+        console.error("Error cleaning up file:", error);
+        toast({
+          title: "Erreur de suppression",
+          description: "Le fichier a été retiré de la liste mais des données peuvent persister.",
+          variant: "destructive",
+        });
+      }
+    }
+    
+    // Remove from local state
+    setFiles(prev => prev.filter(f => f.id !== fileToRemove.id));
+  }, [setFiles, toast]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -872,6 +911,18 @@ export default function AdminUpload() {
                           >
                             {getStatusLabel(file.status)}
                           </Badge>
+                          {/* Delete button - only show when not actively processing */}
+                          {file.status !== "uploading" && file.status !== "analyzing" && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => removeFile(file)}
+                              title="Supprimer de la liste"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
 
