@@ -152,7 +152,7 @@ export async function validateSourcesForCodes(
   
   const keywordsLower = keywords.map(k => k.toLowerCase());
 
-  // 1. Validate tariffs - must match detected codes
+  // 1. Validate tariffs - must match detected codes OR keywords (when no codes detected)
   // IMPORTANT: Tariffs are valid sources even without source_pdf
   for (const tariff of dbEvidence.tariffs) {
     const tariffCode = cleanHSCode(tariff.national_code || tariff.hs_code_6 || "");
@@ -177,6 +177,18 @@ export async function validateSourcesForCodes(
       if (keywordsLower.some(kw => desc.includes(kw))) {
         matched = true;
         matchedBy = "keyword";
+      }
+    }
+    
+    // FALLBACK: If NO codes were detected at all, match purely by keywords in description
+    // This handles cases where AI asks for clarification without citing codes
+    if (!matched && detectedCodes.length === 0 && keywordsLower.length > 0) {
+      const desc = (tariff.description_local || "").toLowerCase();
+      if (keywordsLower.some(kw => kw.length >= 4 && desc.includes(kw))) {
+        matched = true;
+        matchedBy = "keyword";
+        // Also add this chapter to detected chapters for PDF lookup
+        detectedChapters.add(tariffChapter);
       }
     }
     
