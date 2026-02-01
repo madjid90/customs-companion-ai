@@ -295,13 +295,25 @@ ${context.tariff_notes && context.tariff_notes.length > 0
   : "Aucune note de chapitre trouvée"}
 
 ---
-## RAPPELS CRITIQUES:
+## RAPPELS CRITIQUES AVANT DE RÉPONDRE:
 
+**⚠️ OBLIGATION ABSOLUE: TU DOIS LISTER LES CODES SH DANS TA RÉPONSE ⚠️**
+
+Pour CHAQUE produit mentionné, tu DOIS écrire:
+
+**XXXX.XX.XX.XX** - Description du produit
+- DDI: XX% | TVA: XX%
+- Unité: XX
+
+Si tu ne listes pas les codes SH avec leurs taux, ta réponse est INCORRECTE.
+
+### Autres règles:
 1. **AUCUN EMOJI** - N'utilise JAMAIS d'emojis
-2. **PAS DE QUESTIONS** - Réponds directement avec toutes les options
+2. **CODES COMPLETS** - Toujours 10 chiffres (format XXXX.XX.XX.XX)
 3. **PAS DE TABLEAUX** - Utilise des listes claires avec tirets
 4. **PAS DE LIENS** - Écris juste "Source: Tarif douanier marocain - Chapitre XX"
-5. **INDICATEUR DE CONFIANCE** obligatoire en fin de réponse`;
+5. **INDICATEUR DE CONFIANCE** obligatoire en fin de réponse
+6. **QUESTIONS PERMISES** - Tu peux poser des questions APRÈS avoir listé les codes`;
 }
 
 /**
