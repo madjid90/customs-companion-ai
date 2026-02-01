@@ -37,9 +37,9 @@ export default function AdminUpload() {
     fileId: string,
     fileName: string
   ) => {
-    const BATCH_SIZE = 4;
-    const DELAY_BETWEEN_BATCHES = 2000;
-    const FETCH_TIMEOUT_MS = 300000; // 5 min
+    const BATCH_SIZE = 2; // Reduced from 4 to avoid browser timeouts
+    const DELAY_BETWEEN_BATCHES = 1500;
+    const FETCH_TIMEOUT_MS = 180000; // 3 min (reduced to detect issues faster)
     
     let startPage = 1;
     let runId: string | null = null;
