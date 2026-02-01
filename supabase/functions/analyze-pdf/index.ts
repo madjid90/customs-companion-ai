@@ -454,19 +454,25 @@ function resolveCol2Col3(
  * Claude remplit parfois ce "10" dans col2 au lieu de col3.
  * Résultat: national_code devient pos6 + 10 + 00 (FAUX) au lieu de pos6 + 00 + 10 (VRAI).
  * 
- * RÈGLES DE RÉSOLUTION (v2 - FIX):
- * 1. Si lastCol2 === "00" (ligne parente précédente) ET single ∈ ["10","20","30",...,"90"]
- *    → Interpréter TOUJOURS comme col3 (détail national), garder col2="00"
- *    NOTE: On ne vérifie plus samePos6 car le contexte n'est pas encore à jour au moment de l'appel
- * 2. Si description est fortement indentée (---/-----/–––) ET lastCol2 existe
+ * RÈGLES DE RÉSOLUTION (v3 - FIX HEADER DETECTION):
+ * 0. SI hasDutyRate === false (ligne header intermédiaire SANS taux)
+ *    → C'est TOUJOURS un nouveau col2 (sous-position), jamais un col3
+ *    EXEMPLE: Ligne "10" avec description mais sans taux = header de groupe
+ * 
+ * 1. Si lastCol2 === "00" (ligne parente précédente) ET single ∈ ["10","20","30",...,"90"] ET hasDutyRate
+ *    → Interpréter comme col3 (détail national), garder col2="00"
+ * 
+ * 2. Si description est fortement indentée (---/-----/–––) ET lastCol2 existe ET hasDutyRate
  *    → Interpréter comme col3
+ * 
  * 3. Sinon fallback: interpréter comme col2 avec col3="00"
  */
 function resolveCol2Col3Single(
   pos6: string,
   single: string,
   ctx: Col2Col3Context,
-  description?: string | null
+  description?: string | null,
+  hasDutyRate: boolean = true  // NOUVEAU PARAMÈTRE: ligne a-t-elle un taux?
 ): Col2Col3SingleResolution {
   // Normaliser le single en 2 digits stricts
   const normalized = normalize2Strict(single);
@@ -480,27 +486,45 @@ function resolveCol2Col3Single(
     };
   }
   
+  // =========================================================================
+  // RÈGLE 0 (NOUVELLE): Si la ligne N'A PAS de duty_rate, c'est un header intermédiaire
+  // → Un header intermédiaire définit toujours un nouveau col2 (sous-position)
+  // 
+  // EXEMPLE dans le PDF:
+  //   4104.19       -- Autres
+  //              10    ---- cuirs et peaux de bovins... (SANS taux = header)
+  //              30    ------ de veaux                  (AVEC taux = détail)
+  //              80    ------ d'autres bovins           (AVEC taux = détail)
+  //
+  // La ligne "10" sans taux est un HEADER → col2=10, col3=00
+  // Les lignes "30" et "80" avec taux sont des DÉTAILS sous col2=10 → col3=30, col3=80
+  // =========================================================================
+  if (!hasDutyRate) {
+    return {
+      col2: normalized,
+      col3: "00",
+      usedAs: "col2",
+      reason: `SINGLE-AS-COL2(header-no-rate) col2=${normalized},col3=00`
+    };
+  }
+  
   // Détection des valeurs typiques de col3 (détails nationaux)
   const typicalCol3Values = ["10", "20", "30", "40", "50", "60", "70", "80", "90"];
   const isTypicalCol3 = typicalCol3Values.includes(normalized);
   
   // =========================================================================
-  // RÈGLE 1 (CORRIGÉE v2): Si lastCol2 === "00" (ligne parente) + valeur typique de col3
-  // → C'est TOUJOURS un détail national (col3), pas une sous-position (col2)
+  // RÈGLE 1 (CORRIGÉE v3): Si lastCol2 === "00" (ligne parente) + valeur typique + HAS duty_rate
+  // → C'est un détail national (col3), pas une sous-position (col2)
   // 
-  // L'ancienne version vérifiait aussi ctx.lastPos6 === pos6, mais le problème
-  // est que ctx.lastPos6 n'est mis à jour qu'APRÈS le traitement de la ligne.
-  // Donc pour la première ligne enfant, cette condition était toujours false.
-  //
-  // NOUVELLE LOGIQUE: Si la ligne parente avait col2="00", alors toute valeur
-  // typique (10, 20, ..., 90) sur une ligne sans col2 explicite est un col3.
+  // MAIS on vérifie d'abord si le lastCol2 précédent était aussi "00" - dans ce cas
+  // c'est que le PDF n'a pas de sous-positions et tout est directement col3.
   // =========================================================================
   if (ctx.lastCol2 === "00" && isTypicalCol3) {
     return {
       col2: "00",
       col3: normalized,
       usedAs: "col3",
-      reason: `SINGLE-AS-COL3(lastCol2=00+typical) col2=00,col3=${normalized}`
+      reason: `SINGLE-AS-COL3(lastCol2=00+typical+has-rate) col2=00,col3=${normalized}`
     };
   }
   
@@ -811,7 +835,13 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
       }
       // CAS 2: candA && !candB → Appeler resolveCol2Col3Single pour déterminer si c'est col2 ou col3
       else if (candA && !candB) {
-        const singleRes = resolveCol2Col3Single(pos6, candA, col2Col3Ctx, line.description);
+        // IMPORTANT: Vérifier si la ligne a un duty_rate pour distinguer headers vs détails
+        // - Une ligne SANS taux est un header intermédiaire → candA est toujours un nouveau col2
+        // - Une ligne AVEC taux est un détail → candA pourrait être col3 si contexte le suggère
+        const rawDutyRate = line.duty_rate;
+        const hasDutyRate = rawDutyRate !== null && rawDutyRate !== undefined && String(rawDutyRate).trim() !== "";
+        
+        const singleRes = resolveCol2Col3Single(pos6, candA, col2Col3Ctx, line.description, hasDutyRate);
         col2 = singleRes.col2;
         col3 = singleRes.col3;
         nationalCode = pos6 + col2 + col3;
@@ -829,7 +859,7 @@ function processRawLines(rawLines: RawTariffLine[]): { tariffLines: TariffLine[]
           }
           console.log(`[COL-SWAP-SINGLE] pos6=${pos6} | candA="${candA}" → col2=${col2},col3=${col3} | ${singleRes.reason}`);
         } else {
-          console.log(`[COL-SINGLE-A] pos6=${pos6} | candA="${candA}" → col2=${col2},col3=${col3} | ${singleRes.reason}`);
+          console.log(`[COL-SINGLE-A] pos6=${pos6} | candA="${candA}" → col2=${col2},col3=${col3} | hasDutyRate=${hasDutyRate} | ${singleRes.reason}`);
         }
         debug.linesFromFallback++;
       }
