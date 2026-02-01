@@ -506,7 +506,7 @@ export default function ExtractionPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Database className="h-5 w-5" />
@@ -531,7 +531,7 @@ export default function ExtractionPreviewDialog({
           </div>
         )}
 
-        <Tabs defaultValue="tariffs" className="flex-1 min-h-0 flex flex-col">
+        <Tabs defaultValue="tariffs" className="flex-1 min-h-0 flex flex-col overflow-hidden">
           <div className="flex items-center justify-between shrink-0">
             <TabsList>
               <TabsTrigger value="tariffs" className="flex items-center gap-2">
@@ -1151,7 +1151,7 @@ export default function ExtractionPreviewDialog({
           </TabsContent>
         </Tabs>
 
-        <DialogFooter className="gap-2 sm:gap-0 border-t bg-background pt-4 mt-4 sticky bottom-0 z-50">
+        <DialogFooter className="shrink-0 gap-2 sm:gap-0 border-t bg-background pt-4 mt-4">
           <div className="flex-1 text-sm text-muted-foreground">
             {validHs + validTariff < hsCodes.length + tariffLines.length && (
               <span className="flex items-center gap-1 text-warning">
