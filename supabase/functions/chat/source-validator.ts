@@ -153,6 +153,7 @@ export async function validateSourcesForCodes(
   const keywordsLower = keywords.map(k => k.toLowerCase());
 
   // 1. Validate tariffs - must match detected codes
+  // IMPORTANT: Tariffs are valid sources even without source_pdf
   for (const tariff of dbEvidence.tariffs) {
     const tariffCode = cleanHSCode(tariff.national_code || tariff.hs_code_6 || "");
     const tariffChapter = tariffCode.substring(0, 2).padStart(2, "0");
@@ -181,7 +182,7 @@ export async function validateSourcesForCodes(
     
     if (matched) {
       validated.push({
-        id: `tariff:${tariff.country_code}:${tariff.national_code}`,
+        id: `tariff:${tariff.country_code || "MA"}:${tariff.national_code}`,
         type: "tariff",
         title: tariff.description_local || `Code ${tariff.national_code}`,
         reference: tariff.national_code,
@@ -193,6 +194,69 @@ export async function validateSourcesForCodes(
         matched_by: matchedBy,
         confidence: matchedBy === "hs_code" ? "high" : "medium",
       });
+    }
+  }
+
+  // 1b. NEW: If we have matching tariffs but no PDF link, try to find chapter PDF directly
+  if (validated.length > 0 && detectedChapters.size > 0) {
+    const chaptersNeedingPdf = [...detectedChapters];
+    
+    // Build search patterns for chapter PDFs
+    const searchPatterns = chaptersNeedingPdf.flatMap(ch => {
+      const chNum = parseInt(ch, 10);
+      return [
+        `Chapitre${chNum}`,
+        `Chapitre ${chNum}`,
+        `SH CODE ${chNum}`,
+        `SH_CODE_${chNum}`,
+        `chapitre${chNum}`,
+      ];
+    });
+    
+    // Search for chapter PDFs directly in pdf_documents
+    for (const pattern of searchPatterns.slice(0, 5)) {
+      const { data: chapterPdfs } = await supabase
+        .from('pdf_documents')
+        .select('id, title, file_path, category')
+        .eq('category', 'tarif')
+        .or(`title.ilike.%${pattern}%,file_name.ilike.%${pattern}%`)
+        .eq('is_active', true)
+        .limit(1);
+      
+      if (chapterPdfs && chapterPdfs.length > 0) {
+        const pdf = chapterPdfs[0];
+        const downloadUrl = pdf.file_path 
+          ? `${supabaseUrl}/storage/v1/object/public/pdf-documents/${pdf.file_path}`
+          : null;
+        
+        // Extract chapter number from title
+        const chapterMatch = pdf.title.match(/(\d+)/);
+        const pdfChapter = chapterMatch ? chapterMatch[1].padStart(2, "0") : null;
+        
+        if (pdfChapter && detectedChapters.has(pdfChapter)) {
+          // Check if we already have this PDF
+          const existingPdf = validated.find(v => v.id === pdf.id || v.id === `pdf:${pdfChapter}`);
+          if (!existingPdf) {
+            validated.push({
+              id: pdf.id,
+              type: "pdf",
+              title: pdf.title || `Chapitre ${parseInt(pdfChapter)}`,
+              reference: `Chapitre ${parseInt(pdfChapter)}`,
+              download_url: downloadUrl,
+              chapter: pdfChapter,
+              matched_by: "chapter",
+              confidence: "medium",
+            });
+          }
+          
+          // Also update tariff sources that don't have download_url
+          for (const source of validated) {
+            if (source.type === "tariff" && source.chapter === pdfChapter && !source.download_url) {
+              source.download_url = downloadUrl;
+            }
+          }
+        }
+      }
     }
   }
 
