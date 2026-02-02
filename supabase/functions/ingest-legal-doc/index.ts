@@ -68,9 +68,27 @@ interface IngestRequest {
   detect_hs_codes?: boolean;
 }
 
+interface ExtractedTable {
+  table_index: number;
+  markdown: string;           // Table in Markdown format
+  description: string;        // Brief description of table content
+  has_rates: boolean;         // Contains duty rates or percentages
+  has_hs_codes: boolean;      // Contains HS codes
+}
+
+interface ExtractedImage {
+  image_index: number;
+  description: string;        // AI-generated description of image content
+  image_type: "form" | "diagram" | "stamp" | "logo" | "photo" | "other";
+  extracted_text?: string;    // Any text visible in the image
+}
+
 interface ExtractedPage {
   page_number: number;
   text: string;
+  tables?: ExtractedTable[];
+  images?: ExtractedImage[];
+  has_form?: boolean;         // Page contains a form/template
 }
 
 interface TextChunk {
@@ -195,21 +213,53 @@ async function extractTextFromPDFChunk(chunkBase64: string, startPage: number): 
 
   const requestBody = {
     model: "claude-sonnet-4-20250514", // Supports PDF input
-    max_tokens: 4000, // Reduced for single page
-    system: `Tu es un extracteur de texte multilingue (français, arabe, anglais). 
-Extrais le texte intégral de chaque page du document PDF.
+    max_tokens: 8000, // Increased for tables and image descriptions
+    system: `Tu es un extracteur de documents réglementaires multilingue (français, arabe, anglais).
+أنت مستخرج وثائق تنظيمية متعدد اللغات.
 
-أنت مستخرج نصوص متعدد اللغات. استخرج النص الكامل من كل صفحة في وثيقة PDF.
+MISSION: Extraire EXHAUSTIVEMENT le contenu de chaque page:
+1. **TEXTE**: Tout le texte, articles, paragraphes (préserver structure)
+2. **TABLEAUX**: Convertir en Markdown avec | colonnes | - OBLIGATOIRE si présents
+3. **IMAGES**: Décrire le contenu (formulaires, diagrammes, tampons, logos)
 
-Retourne un JSON strict / أرجع JSON صارم:
+المهمة: استخراج شامل لمحتوى كل صفحة:
+1. النص: كل النص والمواد والفقرات
+2. الجداول: تحويل إلى Markdown
+3. الصور: وصف المحتوى
+
+FORMAT JSON STRICT:
 {
   "pages": [
-    {"page_number": 1, "text": "...contenu page 1 / محتوى الصفحة 1..."},
-    {"page_number": 2, "text": "...contenu page 2 / محتوى الصفحة 2..."}
+    {
+      "page_number": 1,
+      "text": "Contenu textuel de la page...",
+      "tables": [
+        {
+          "table_index": 0,
+          "markdown": "| Col1 | Col2 |\\n|---|---|\\n| val1 | val2 |",
+          "description": "Tableau des taux de droits",
+          "has_rates": true,
+          "has_hs_codes": false
+        }
+      ],
+      "images": [
+        {
+          "image_index": 0,
+          "description": "Formulaire d'engagement sur l'honneur ANRT",
+          "image_type": "form",
+          "extracted_text": "Nom: ___ Prénom: ___"
+        }
+      ],
+      "has_form": true
+    }
   ]
 }
-Préserve la structure, les numéros d'articles, les références. Ne résume pas, extrais tout le texte.
-حافظ على البنية وأرقام المواد والمراجع. لا تلخص، استخرج كل النص.`,
+
+RÈGLES CRITIQUES:
+- Tableaux: TOUJOURS convertir en Markdown avec entêtes
+- Images de formulaires: Extraire tous les champs visibles
+- Ne jamais résumer, extraire TOUT
+- Codes SH (6-10 chiffres): les repérer dans tableaux et texte`,
     messages: [
       {
         role: "user",
@@ -224,8 +274,12 @@ Préserve la structure, les numéros d'articles, les références. Ne résume pa
           },
           {
             type: "text",
-            text: `Extrais le texte intégral de toutes les pages de ce document PDF (français ou arabe). JSON strict uniquement.
-استخرج النص الكامل من جميع صفحات وثيقة PDF (فرنسية أو عربية). JSON صارم فقط.`,
+            text: `Analyse cette page PDF et extrais:
+1. Tout le texte (articles, paragraphes)
+2. Tous les tableaux en format Markdown
+3. Description de toutes les images/formulaires
+
+Réponds en JSON strict uniquement.`,
           },
         ],
       },
@@ -258,11 +312,40 @@ Préserve la structure, les numéros d'articles, les références. Ne résume pa
 
   try {
     const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
-    // Adjust page numbers to absolute values
-    return (parsed.pages || []).map((p: any, idx: number) => ({
-      page_number: startPage + idx,
-      text: p.text || "",
-    }));
+    // Adjust page numbers to absolute values and preserve all extracted data
+    return (parsed.pages || []).map((p: any, idx: number) => {
+      const page: ExtractedPage = {
+        page_number: startPage + idx,
+        text: p.text || "",
+        tables: Array.isArray(p.tables) ? p.tables.map((t: any, tIdx: number) => ({
+          table_index: t.table_index ?? tIdx,
+          markdown: t.markdown || "",
+          description: t.description || "",
+          has_rates: Boolean(t.has_rates),
+          has_hs_codes: Boolean(t.has_hs_codes),
+        })) : undefined,
+        images: Array.isArray(p.images) ? p.images.map((img: any, imgIdx: number) => ({
+          image_index: img.image_index ?? imgIdx,
+          description: img.description || "",
+          image_type: img.image_type || "other",
+          extracted_text: img.extracted_text,
+        })) : undefined,
+        has_form: Boolean(p.has_form),
+      };
+      
+      // Log extracted structured content
+      if (page.tables?.length) {
+        console.log(`[ingest-legal-doc] Page ${page.page_number}: ${page.tables.length} table(s) extracted`);
+      }
+      if (page.images?.length) {
+        console.log(`[ingest-legal-doc] Page ${page.page_number}: ${page.images.length} image(s) described`);
+      }
+      if (page.has_form) {
+        console.log(`[ingest-legal-doc] Page ${page.page_number}: Form detected`);
+      }
+      
+      return page;
+    });
   } catch (e) {
     console.warn("[ingest-legal-doc] JSON parse failed, using raw text");
     return [{ page_number: startPage, text: content }];
@@ -490,6 +573,64 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
   let parentSection: string | null = null;
 
   for (const page of pages) {
+    // 1. FIRST: Process tables as separate chunks (they have high semantic value)
+    if (page.tables && page.tables.length > 0) {
+      for (const table of page.tables) {
+        if (table.markdown && table.markdown.length >= 50) {
+          // Create a chunk for each table with full context
+          const tableText = `[TABLEAU: ${table.description}]\n\n${table.markdown}`;
+          const tableHsCodes = table.has_hs_codes ? extractMentionedHSCodes(table.markdown) : [];
+          
+          chunks.push({
+            chunk_index: chunkIndex++,
+            text: tableText,
+            page_number: page.page_number,
+            char_start: 0,
+            char_end: tableText.length,
+            article_number: null,
+            section_title: table.description || currentSection,
+            parent_section: parentSection,
+            chunk_type: "table",
+            hierarchy_path: buildHierarchyPath(currentSection, null),
+            keywords: table.has_rates ? ["taux", "droit", "pourcentage"] : extractKeywords(table.markdown),
+            mentioned_hs_codes: tableHsCodes,
+          });
+          
+          console.log(`[ingest-legal-doc] Created table chunk: "${table.description}" (${table.markdown.length} chars)`);
+        }
+      }
+    }
+
+    // 2. SECOND: Process images/forms as metadata chunks
+    if (page.images && page.images.length > 0) {
+      for (const img of page.images) {
+        if (img.description && img.description.length >= 20) {
+          // Create a chunk for form/image descriptions
+          const imgText = `[${img.image_type.toUpperCase()}: ${img.description}]${img.extracted_text ? `\n\nContenu:\n${img.extracted_text}` : ''}`;
+          
+          if (imgText.length >= MIN_CHUNK_SIZE) {
+            chunks.push({
+              chunk_index: chunkIndex++,
+              text: imgText,
+              page_number: page.page_number,
+              char_start: 0,
+              char_end: imgText.length,
+              article_number: null,
+              section_title: img.description.substring(0, 100),
+              parent_section: parentSection,
+              chunk_type: img.image_type === "form" ? "form" : "image",
+              hierarchy_path: buildHierarchyPath(currentSection, null),
+              keywords: img.image_type === "form" ? ["formulaire", "modèle", "template"] : [],
+              mentioned_hs_codes: img.extracted_text ? extractMentionedHSCodes(img.extracted_text) : [],
+            });
+            
+            console.log(`[ingest-legal-doc] Created ${img.image_type} chunk: "${img.description.substring(0, 50)}..."`);
+          }
+        }
+      }
+    }
+
+    // 3. THIRD: Process regular text content
     const text = page.text.trim();
     if (!text) continue;
 
@@ -563,6 +704,12 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
       });
     }
   }
+
+  // Log summary
+  const tableChunks = chunks.filter(c => c.chunk_type === "table").length;
+  const formChunks = chunks.filter(c => c.chunk_type === "form").length;
+  const imageChunks = chunks.filter(c => c.chunk_type === "image").length;
+  console.log(`[ingest-legal-doc] Chunks created: ${chunks.length} total (${tableChunks} tables, ${formChunks} forms, ${imageChunks} images)`);
 
   return chunks;
 }
