@@ -65,8 +65,11 @@ export function parseQuestionsFromResponse(content: string): Question[] {
       const listMatch = trimmed.match(/^[-•*]\s+(.+)$/);
       if (listMatch) {
         const optionText = listMatch[1].trim();
-        // Filter out tariff data and keep only real question options
-        if (optionText.length > 0 && optionText.length < 80 && isValidQuestionOption(optionText)) {
+        // Filter out tariff data and questions (lines ending with ?)
+        // Keep only real CHOICE options (short, no question mark, not data)
+        const isQuestion = optionText.endsWith('?');
+        const isTooLong = optionText.length > 60; // Shorter limit for real options
+        if (optionText.length > 0 && !isQuestion && !isTooLong && isValidQuestionOption(optionText)) {
           options.push(optionText);
         }
       }
@@ -82,7 +85,7 @@ export function parseQuestionsFromResponse(content: string): Question[] {
     }
   }
   
-  // Fallback: Look for any question ending with ? followed by options
+  // Fallback: Look for any question ending with ? followed by OPTIONS (not sub-questions)
   if (questions.length === 0) {
     const lines = content.split('\n');
     
@@ -97,7 +100,10 @@ export function parseQuestionsFromResponse(content: string): Question[] {
         const listMatch = nextLine.match(/^[-•*]\s+(.+)$/);
         if (listMatch) {
           const optionText = listMatch[1].trim();
-          if (optionText.length > 0 && optionText.length < 80 && isValidQuestionOption(optionText)) {
+          // Skip if it's a sub-question (ends with ?) or too long
+          const isSubQuestion = optionText.endsWith('?');
+          const isTooLong = optionText.length > 60;
+          if (optionText.length > 0 && !isSubQuestion && !isTooLong && isValidQuestionOption(optionText)) {
             options.push(optionText);
           }
         } else if (nextLine === '') {
