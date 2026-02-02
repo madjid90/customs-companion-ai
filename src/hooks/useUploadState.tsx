@@ -93,9 +93,10 @@ export interface UploadedFile {
   analysis?: ExtractionData;
 }
 
-interface QueuedFile {
+export interface QueuedFile {
   file: File;
   fileId: string;
+  documentType?: DocumentType;
 }
 
 // Clé de stockage localStorage
@@ -160,7 +161,7 @@ interface UploadStateContextType {
   clearAll: () => void;
   removeFile: (id: string) => void;
   pendingCount: number;
-  queueFile: (file: File, uploadedFile: UploadedFile) => void;
+  queueFile: (file: File, uploadedFile: UploadedFile, documentType?: DocumentType) => void;
   processNext: () => QueuedFile | null;
   isProcessing: boolean;
   setIsProcessing: (value: boolean) => void;
@@ -223,8 +224,8 @@ export function UploadStateProvider({ children }: { children: ReactNode }) {
     queueRef.current = queueRef.current.filter((q) => q.fileId !== id);
   }, []);
 
-  const queueFile = useCallback((file: File, uploadedFile: UploadedFile) => {
-    queueRef.current.push({ file, fileId: uploadedFile.id });
+  const queueFile = useCallback((file: File, uploadedFile: UploadedFile, documentType?: DocumentType) => {
+    queueRef.current.push({ file, fileId: uploadedFile.id, documentType: documentType || uploadedFile.documentType });
     addFile(uploadedFile);
   }, [addFile]);
 

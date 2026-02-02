@@ -709,9 +709,8 @@ export default function AdminUpload() {
     processingRef.current = true;
     setIsProcessing(true);
     
-    // Get the document type from the queued file state
-    const queuedFileState = files.find(f => f.id === nextItem.fileId);
-    const docType = queuedFileState?.documentType;
+    // Use the document type stored directly in the queue item (guaranteed to be the one selected at queue time)
+    const docType = nextItem.documentType;
     
     await processFile(nextItem.file, nextItem.fileId, docType);
     
@@ -721,7 +720,7 @@ export default function AdminUpload() {
     setTimeout(() => {
       processQueue();
     }, 500);
-  }, [processNext, setIsProcessing, files]);
+  }, [processNext, setIsProcessing]);
 
   // Start processing when files are queued
   useEffect(() => {
