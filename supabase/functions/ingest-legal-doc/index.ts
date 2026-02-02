@@ -97,7 +97,7 @@ interface IngestResponse {
 // ============================================================================
 
 const MAX_PAGES_PER_BATCH = 5; // Very small batches for extremely dense legal docs
-const CLAUDE_TIMEOUT_MS = 180000; // 3 minute timeout per batch
+const CLAUDE_TIMEOUT_MS = 50000; // 50 second timeout - must be < Edge Function limit (~60s)
 
 // Split a PDF into a subset of pages using pdf-lib
 async function splitPdfPages(
