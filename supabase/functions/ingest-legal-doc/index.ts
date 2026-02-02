@@ -106,8 +106,8 @@ interface IngestResponse {
 // PDF TEXT EXTRACTION (via Claude) - With batch support for large PDFs
 // ============================================================================
 
-const MAX_PAGES_PER_BATCH = 3; // Ultra-small batches for extremely dense legal docs
-const CLAUDE_TIMEOUT_MS = 45000; // 45 second timeout - must be < Edge Function limit (~60s)
+const MAX_PAGES_PER_BATCH = 2; // Minimal batches for very dense legal docs
+const CLAUDE_TIMEOUT_MS = 50000; // 50 second timeout - must be < Edge Function limit (~60s)
 
 // Split a PDF into a subset of pages using pdf-lib
 async function splitPdfPages(
@@ -198,7 +198,7 @@ async function extractTextFromPDFChunk(chunkBase64: string, startPage: number): 
       },
       signal: controller.signal,
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-3-5-sonnet-20241022", // Faster model for text extraction
         max_tokens: 8000, // Lower for faster responses
         system: `Tu es un extracteur de texte. Extrais le texte intégral de chaque page du document PDF.
 Retourne un JSON strict:
