@@ -18,9 +18,10 @@ import { callLLMWithMetrics } from "../_shared/retry.ts";
 
 // =============================================================================
 // PDF UTILITIES - Split large PDFs for Claude's 100 page limit
+// REDUCED window size to 40 pages to avoid CPU timeout on Edge Functions
 // =============================================================================
 
-const MAX_PAGES_FOR_CLAUDE = 80; // Stay under Claude's 100 page limit with margin
+const MAX_PAGES_FOR_CLAUDE = 40; // Reduced from 80 to prevent CPU timeout
 
 // Cache for PDF page counts to avoid re-parsing
 const PDF_PAGE_COUNT_CACHE = new Map<string, number>();
@@ -171,8 +172,9 @@ const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const CLAUDE_MODEL = "claude-sonnet-4-20250514";
 
 // Configuration BATCH par défaut
-const DEFAULT_BATCH_SIZE = 4;  // Pages par appel
-const MAX_BATCH_SIZE = 15;
+// REDUCED to 1 to avoid CPU time exceeded errors on Edge Functions
+const DEFAULT_BATCH_SIZE = 1;  // Pages par appel - kept at 1 to avoid WORKER_LIMIT errors
+const MAX_BATCH_SIZE = 2;      // Maximum reduced to prevent CPU overload
 const MIN_BATCH_SIZE = 1;
 
 // Page detection - Cache pour éviter les appels répétés
@@ -2485,10 +2487,15 @@ serve(async (req) => {
       }
     }
     
-    // Générer un résumé du document au premier batch
+    // Générer un résumé du document au premier batch - ONLY for smaller PDFs
+    // For large PDFs (>50 pages), skip summary to avoid CPU timeout
     let documentSummary = "";
-    if (!extraction_run_id && start_page === 1) {
+    const SUMMARY_PAGE_THRESHOLD = 50;
+    if (!extraction_run_id && start_page === 1 && totalPagesDetected <= SUMMARY_PAGE_THRESHOLD) {
       documentSummary = await generateDocumentSummary(base64Pdf, title, ANTHROPIC_API_KEY, pdfId, totalPagesDetected);
+    } else if (!extraction_run_id && start_page === 1 && totalPagesDetected > SUMMARY_PAGE_THRESHOLD) {
+      documentSummary = `Document volumineux (${totalPagesDetected} pages) - résumé différé pour éviter timeout`;
+      console.log(`[Summary] Skipped for large PDF (${totalPagesDetected} pages > ${SUMMARY_PAGE_THRESHOLD})`);
     }
     
     console.log(`PDF size: ${fileSizeBytes} bytes, detected pages: ${totalPagesDetected || "from existing run"}, summary: ${documentSummary ? "yes" : "no"}`);
