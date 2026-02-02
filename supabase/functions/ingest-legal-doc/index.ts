@@ -92,15 +92,22 @@ interface IngestResponse {
 }
 
 // ============================================================================
-// PDF TEXT EXTRACTION (via Claude)
+// PDF TEXT EXTRACTION (via Claude) - With batch support for large PDFs
 // ============================================================================
 
-async function extractTextFromPDF(pdfBase64: string): Promise<ExtractedPage[]> {
+const MAX_PAGES_PER_BATCH = 100;
+
+// Utility to split PDF base64 into page ranges using Claude's page parameter
+async function extractPDFBatch(
+  pdfBase64: string, 
+  startPage: number, 
+  endPage: number
+): Promise<ExtractedPage[]> {
   if (!ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY not configured");
   }
 
-  console.log("[ingest-legal-doc] Extracting text via Claude...");
+  console.log(`[ingest-legal-doc] Extracting pages ${startPage}-${endPage} via Claude...`);
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -111,13 +118,13 @@ async function extractTextFromPDF(pdfBase64: string): Promise<ExtractedPage[]> {
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 16000,
-      system: `Tu es un extracteur de texte. Extrais le texte intégral du document PDF page par page.
+      max_tokens: 32000,
+      system: `Tu es un extracteur de texte. Extrais le texte intégral des pages ${startPage} à ${endPage} du document PDF.
 Retourne un JSON strict:
 {
   "pages": [
-    {"page_number": 1, "text": "...contenu page 1..."},
-    {"page_number": 2, "text": "...contenu page 2..."}
+    {"page_number": ${startPage}, "text": "...contenu page ${startPage}..."},
+    {"page_number": ${startPage + 1}, "text": "...contenu page ${startPage + 1}..."}
   ]
 }
 Préserve la structure, les numéros d'articles, les références. Ne résume pas, extrais tout.`,
@@ -132,10 +139,12 @@ Préserve la structure, les numéros d'articles, les références. Ne résume pa
                 media_type: "application/pdf",
                 data: pdfBase64,
               },
+              // Use Claude's page range feature to limit pages
+              cache_control: { type: "ephemeral" },
             },
             {
               type: "text",
-              text: "Extrais le texte intégral de ce document PDF, page par page. JSON strict uniquement.",
+              text: `Extrais UNIQUEMENT le texte des pages ${startPage} à ${endPage} de ce document PDF. Ignore les autres pages. JSON strict uniquement.`,
             },
           ],
         },
@@ -157,19 +166,86 @@ Préserve la structure, les numéros d'articles, les références. Ne résume pa
 
   if (!jsonMatch) {
     // Fallback: treat entire response as single page
-    return [{ page_number: 1, text: content }];
+    return [{ page_number: startPage, text: content }];
   }
 
   try {
     const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
     return (parsed.pages || []).map((p: any) => ({
-      page_number: p.page_number || 1,
+      page_number: p.page_number || startPage,
       text: p.text || "",
     }));
   } catch (e) {
     console.warn("[ingest-legal-doc] JSON parse failed, using raw text");
-    return [{ page_number: 1, text: content }];
+    return [{ page_number: startPage, text: content }];
   }
+}
+
+// Get estimated page count from PDF size (rough estimate: ~3KB per page average for text PDFs)
+function estimatePageCount(pdfBase64: string): number {
+  const sizeBytes = (pdfBase64.length * 3) / 4; // Base64 to bytes
+  const estimatedPages = Math.ceil(sizeBytes / 3000); // ~3KB per page
+  return Math.max(1, Math.min(estimatedPages, 1000)); // Cap at 1000 pages
+}
+
+async function extractTextFromPDF(pdfBase64: string): Promise<ExtractedPage[]> {
+  if (!ANTHROPIC_API_KEY) {
+    throw new Error("ANTHROPIC_API_KEY not configured");
+  }
+
+  // Estimate page count to determine if batching is needed
+  const estimatedPages = estimatePageCount(pdfBase64);
+  console.log(`[ingest-legal-doc] Estimated ${estimatedPages} pages in PDF`);
+
+  // For small PDFs (< 100 pages), process in one go
+  if (estimatedPages <= MAX_PAGES_PER_BATCH) {
+    return await extractPDFBatch(pdfBase64, 1, estimatedPages);
+  }
+
+  // For large PDFs, process in batches
+  console.log(`[ingest-legal-doc] Large PDF detected, processing in batches of ${MAX_PAGES_PER_BATCH} pages`);
+  
+  const allPages: ExtractedPage[] = [];
+  let currentPage = 1;
+  let consecutiveEmptyBatches = 0;
+  const maxEmptyBatches = 2; // Stop after 2 empty batches (end of document)
+
+  while (consecutiveEmptyBatches < maxEmptyBatches) {
+    const endPage = currentPage + MAX_PAGES_PER_BATCH - 1;
+    
+    try {
+      const batchPages = await extractPDFBatch(pdfBase64, currentPage, endPage);
+      
+      if (batchPages.length === 0 || batchPages.every(p => !p.text.trim())) {
+        consecutiveEmptyBatches++;
+        console.log(`[ingest-legal-doc] Empty batch ${consecutiveEmptyBatches}/${maxEmptyBatches}`);
+      } else {
+        consecutiveEmptyBatches = 0;
+        allPages.push(...batchPages);
+        console.log(`[ingest-legal-doc] Batch complete: ${batchPages.length} pages extracted (total: ${allPages.length})`);
+      }
+      
+      currentPage = endPage + 1;
+      
+      // Safety limit: max 500 pages
+      if (allPages.length >= 500) {
+        console.log(`[ingest-legal-doc] Reached 500 page limit, stopping`);
+        break;
+      }
+      
+    } catch (error) {
+      // If we get a "no more pages" type error, we're done
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      if (errorMsg.includes("out of range") || errorMsg.includes("no pages")) {
+        console.log(`[ingest-legal-doc] End of document reached`);
+        break;
+      }
+      throw error;
+    }
+  }
+
+  console.log(`[ingest-legal-doc] Total pages extracted: ${allPages.length}`);
+  return allPages;
 }
 
 // ============================================================================
