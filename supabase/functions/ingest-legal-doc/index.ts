@@ -96,7 +96,8 @@ interface IngestResponse {
 // PDF TEXT EXTRACTION (via Claude) - With batch support for large PDFs
 // ============================================================================
 
-const MAX_PAGES_PER_BATCH = 40; // Conservative batch size for large legal docs
+const MAX_PAGES_PER_BATCH = 15; // Small batches for dense legal docs to avoid timeout
+const CLAUDE_TIMEOUT_MS = 120000; // 2 minute timeout per batch
 
 // Split a PDF into a subset of pages using pdf-lib
 async function splitPdfPages(
@@ -173,17 +174,23 @@ async function extractTextFromPDFChunk(chunkBase64: string, startPage: number): 
     throw new Error(`Chunk too large (${chunkSizeKB.toFixed(0)}KB) - likely split failed`);
   }
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 16000, // Reduced to stay within context limit
-      system: `Tu es un extracteur de texte. Extrais le texte intégral de chaque page du document PDF.
+  // Use AbortController for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS);
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 8000, // Lower for faster responses
+        system: `Tu es un extracteur de texte. Extrais le texte intégral de chaque page du document PDF.
 Retourne un JSON strict:
 {
   "pages": [
@@ -192,56 +199,64 @@ Retourne un JSON strict:
   ]
 }
 Préserve la structure, les numéros d'articles, les références. Ne résume pas, extrais tout le texte.`,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "document",
-              source: {
-                type: "base64",
-                media_type: "application/pdf",
-                data: chunkBase64,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "document",
+                source: {
+                  type: "base64",
+                  media_type: "application/pdf",
+                  data: chunkBase64,
+                },
               },
-              cache_control: { type: "ephemeral" },
-            },
-            {
-              type: "text",
-              text: `Extrais le texte intégral de toutes les pages de ce document PDF. JSON strict uniquement.`,
-            },
-          ],
-        },
-      ],
-    }),
-  });
+              {
+                type: "text",
+                text: `Extrais le texte intégral de toutes les pages de ce document PDF. JSON strict uniquement.`,
+              },
+            ],
+          },
+        ],
+      }),
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Claude API error: ${response.status} - ${errorText}`);
-  }
+    clearTimeout(timeoutId);
 
-  const data = await response.json();
-  const content = data.content?.[0]?.text || "";
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Claude API error: ${response.status} - ${errorText}`);
+    }
 
-  // Parse JSON response
-  const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) ||
-                    content.match(/\{[\s\S]*"pages"[\s\S]*\}/);
+    const data = await response.json();
+    const content = data.content?.[0]?.text || "";
 
-  if (!jsonMatch) {
-    // Fallback: treat entire response as single page
-    return [{ page_number: startPage, text: content }];
-  }
+    // Parse JSON response
+    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) ||
+                      content.match(/\{[\s\S]*"pages"[\s\S]*\}/);
 
-  try {
-    const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
-    // Adjust page numbers to absolute values
-    return (parsed.pages || []).map((p: any, idx: number) => ({
-      page_number: startPage + idx,
-      text: p.text || "",
-    }));
-  } catch (e) {
-    console.warn("[ingest-legal-doc] JSON parse failed, using raw text");
-    return [{ page_number: startPage, text: content }];
+    if (!jsonMatch) {
+      // Fallback: treat entire response as single page
+      return [{ page_number: startPage, text: content }];
+    }
+
+    try {
+      const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+      // Adjust page numbers to absolute values
+      return (parsed.pages || []).map((p: any, idx: number) => ({
+        page_number: startPage + idx,
+        text: p.text || "",
+      }));
+    } catch (e) {
+      console.warn("[ingest-legal-doc] JSON parse failed, using raw text");
+      return [{ page_number: startPage, text: content }];
+    }
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Claude API timeout after ${CLAUDE_TIMEOUT_MS / 1000}s`);
+    }
+    throw error;
   }
 }
 
