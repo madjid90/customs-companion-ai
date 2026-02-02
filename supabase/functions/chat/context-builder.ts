@@ -306,7 +306,8 @@ export function formatTariffNotesForRAG(notes: any[]): string {
 }
 
 /**
- * Construit les sources disponibles pour les citations
+ * Construit la liste des sources disponibles avec leurs URLs de téléchargement
+ * Format optimisé pour que l'IA puisse facilement les citer
  */
 export function buildAvailableSources(
   context: RAGContext,
@@ -314,23 +315,107 @@ export function buildAvailableSources(
 ): string[] {
   const availableSources: string[] = [];
   
-  // Add PDF sources
+  // 1. Sources PDF (tarif, circulaires, etc.)
   if (context.pdf_summaries.length > 0) {
-    context.pdf_summaries.forEach((pdf: any) => {
-      if (pdf.title && pdf.download_url) {
-        availableSources.push(`DOCUMENT: "${pdf.title}"\nURL_TÉLÉCHARGEMENT: ${pdf.download_url}`);
+    context.pdf_summaries.forEach((pdf: any, index: number) => {
+      if (pdf.title || pdf.chapter_number) {
+        const title = pdf.title || `Chapitre ${pdf.chapter_number}`;
+        const downloadUrl = pdf.download_url || 
+          (pdf.file_path ? `${supabaseUrl}/storage/v1/object/public/pdf-documents/${pdf.file_path}` : null);
+        
+        if (downloadUrl) {
+          availableSources.push(
+            `📄 DOCUMENT #${index + 1}:\n` +
+            `   Titre: "${title}"\n` +
+            `   Chapitre: ${pdf.chapter_number || 'N/A'}\n` +
+            `   Catégorie: ${pdf.category || 'tarif'}\n` +
+            `   🔗 URL: ${downloadUrl}`
+          );
+        }
       }
     });
   }
   
-  // Add legal reference sources
-  if (context.legal_references.length > 0) {
-    context.legal_references.forEach((ref: any) => {
-      if (ref.download_url) {
-        availableSources.push(`DOCUMENT: "${ref.reference_type} ${ref.reference_number} - ${ref.title || 'Document officiel'}"\nURL_TÉLÉCHARGEMENT: ${ref.download_url}`);
+  // 2. Références légales (circulaires, notes, etc.)
+  if (context.legal_references && context.legal_references.length > 0) {
+    context.legal_references.forEach((ref: any, index: number) => {
+      const title = ref.title || `${ref.reference_type} ${ref.reference_number}`;
+      const downloadUrl = ref.download_url || 
+        (ref.pdf_documents?.file_path ? `${supabaseUrl}/storage/v1/object/public/pdf-documents/${ref.pdf_documents.file_path}` : null);
+      
+      if (downloadUrl) {
+        availableSources.push(
+          `📜 RÉFÉRENCE LÉGALE #${index + 1}:\n` +
+          `   Type: ${ref.reference_type || 'Document'}\n` +
+          `   Numéro: ${ref.reference_number || 'N/A'}\n` +
+          `   Titre: "${title}"\n` +
+          `   Date: ${ref.reference_date || 'N/A'}\n` +
+          `   🔗 URL: ${downloadUrl}`
+        );
       }
     });
   }
-  
+
+  // 3. Documents de veille / knowledge
+  if (context.knowledge_documents && context.knowledge_documents.length > 0) {
+    context.knowledge_documents.forEach((doc: any) => {
+      if (doc.source_url) {
+        availableSources.push(
+          `📰 DOCUMENT DE RÉFÉRENCE:\n` +
+          `   Titre: "${doc.title}"\n` +
+          `   Catégorie: ${doc.category || 'général'}\n` +
+          `   🔗 URL: ${doc.source_url}`
+        );
+      }
+    });
+  }
+
+  // Message par défaut si aucune source
+  if (availableSources.length === 0) {
+    availableSources.push(
+      `ℹ️ Aucun document source disponible dans la base.\n` +
+      `   Recommandation: Consulter www.douane.gov.ma pour les documents officiels.`
+    );
+  }
+
   return availableSources;
+}
+
+/**
+ * Formate les notes tarifaires pour le contexte avec meilleure structure
+ */
+export function formatTariffNotesForContext(notes: any[]): string {
+  if (!notes || notes.length === 0) {
+    return "Aucune note de chapitre disponible.";
+  }
+
+  // Grouper par chapitre
+  const byChapter = new Map<string, any[]>();
+  
+  for (const note of notes) {
+    const chapter = note.chapter_number || 'général';
+    if (!byChapter.has(chapter)) {
+      byChapter.set(chapter, []);
+    }
+    byChapter.get(chapter)!.push(note);
+  }
+
+  // Formater
+  const sections: string[] = [];
+  
+  for (const [chapter, chapterNotes] of byChapter) {
+    const header = chapter === 'général' 
+      ? '### Notes générales'
+      : `### Notes du Chapitre ${chapter}`;
+    
+    const notesText = chapterNotes.map((n: any) => {
+      const type = n.note_type || 'Note';
+      const text = n.note_text?.substring(0, 500) || '';
+      return `**${type}:** ${text}${text.length >= 500 ? '...' : ''}`;
+    }).join('\n\n');
+
+    sections.push(`${header}\n${notesText}`);
+  }
+
+  return sections.join('\n\n---\n\n');
 }
