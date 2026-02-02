@@ -77,6 +77,8 @@ export interface ExtractionData {
   modifies?: string[];
 }
 
+export type DocumentType = "tarif" | "accord" | "reglementation" | "circulaire";
+
 export interface UploadedFile {
   id: string;
   name: string;
@@ -87,6 +89,7 @@ export interface UploadedFile {
   pdfId?: string;
   filePath?: string;
   countryCode?: string;
+  documentType?: DocumentType;
   analysis?: ExtractionData;
 }
 

@@ -1,12 +1,19 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { useUploadState, UploadedFile, ExtractionData } from "@/hooks/useUploadState";
+import { useUploadState, UploadedFile, ExtractionData, DocumentType } from "@/hooks/useUploadState";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { 
   Upload, 
   FileText, 
@@ -18,15 +25,28 @@ import {
   Eye,
   Clock,
   RotateCcw,
-  Trash2
+  Trash2,
+  BookOpen,
+  FileCheck,
+  Scale,
+  ScrollText
 } from "lucide-react";
 import ExtractionPreviewDialog from "@/components/admin/ExtractionPreviewDialog";
+
+// Document type configuration
+const DOCUMENT_TYPES: { value: DocumentType; label: string; icon: React.ReactNode; description: string; pipeline: "analyze" | "ingest" }[] = [
+  { value: "tarif", label: "Tarif SH", icon: <FileCheck className="h-4 w-4" />, description: "Codes SH, taux DD, lignes tarifaires", pipeline: "analyze" },
+  { value: "accord", label: "Accord commercial", icon: <Scale className="h-4 w-4" />, description: "Accords, conventions, traités", pipeline: "ingest" },
+  { value: "reglementation", label: "Réglementation", icon: <BookOpen className="h-4 w-4" />, description: "Code des douanes, lois, décrets", pipeline: "ingest" },
+  { value: "circulaire", label: "Circulaire", icon: <ScrollText className="h-4 w-4" />, description: "Circulaires, notes, instructions", pipeline: "ingest" },
+];
 
 export default function AdminUpload() {
   const { files, setFiles, updateFileStatus, queueFile, processNext, isProcessing, setIsProcessing } = useUploadState();
   const [isDragging, setIsDragging] = useState(false);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null);
+  const [selectedDocType, setSelectedDocType] = useState<DocumentType>("tarif");
   const { toast } = useToast();
   const processingRef = useRef(false);
   
@@ -232,7 +252,92 @@ export default function AdminUpload() {
     };
   }, [updateFileStatus]);
 
-  const detectDocumentType = (fileName: string): { category: string; label: string } => {
+  // Ingestion pour documents réglementaires (accords, circulaires, code des douanes)
+  const runLegalIngestion = useCallback(async (
+    pdfId: string,
+    filePath: string,
+    fileId: string,
+    fileName: string,
+    docType: DocumentType
+  ) => {
+    const FETCH_TIMEOUT_MS = 300000; // 5 min pour gros documents
+    
+    updateFileStatus(fileId, { 
+      progress: 65,
+      error: "Ingestion pour RAG..."
+    });
+
+    // Récupérer le PDF depuis le storage pour l'envoyer en base64
+    const { data: pdfBlob, error: downloadError } = await supabase.storage
+      .from("pdf-documents")
+      .download(filePath);
+    
+    if (downloadError || !pdfBlob) {
+      throw new Error(`Impossible de télécharger le PDF: ${downloadError?.message}`);
+    }
+
+    // Convertir en base64
+    const arrayBuffer = await pdfBlob.arrayBuffer();
+    const base64 = btoa(
+      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
+
+    // Mapper le type vers source_type
+    const sourceTypeMap: Record<DocumentType, string> = {
+      tarif: "tariff",
+      accord: "agreement",
+      reglementation: "law",
+      circulaire: "circular",
+    };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ingest-legal-doc`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          },
+          body: JSON.stringify({
+            source_type: sourceTypeMap[docType],
+            source_ref: fileName.replace(".pdf", ""),
+            title: fileName.replace(".pdf", "").replace(/_/g, " "),
+            pdf_base64: base64,
+            country_code: "MA",
+            generate_embeddings: true,
+            detect_hs_codes: true,
+          }),
+          signal: controller.signal,
+        }
+      );
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
+      }
+
+      const result = await response.json();
+      
+      return {
+        success: result.success,
+        chunks_created: result.chunks_created || 0,
+        detected_codes_count: result.detected_codes_count || 0,
+        evidence_created: result.evidence_created || 0,
+        pages_processed: result.pages_processed || 0,
+      };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }, [updateFileStatus]);
+
+  const detectDocumentTypeFromName = (fileName: string): { category: string; label: string } => {
     const name = fileName.toLowerCase();
     
     // Priorité aux documents tarifaires (incluant SH CODE / HS CODE)
@@ -259,11 +364,14 @@ export default function AdminUpload() {
     return { category: "autre", label: "Document douanier" };
   };
 
-  // Process a single file
-  const processFile = async (file: File, fileId: string) => {
-    const docType = detectDocumentType(file.name);
+  // Process a single file - route to correct pipeline based on document type
+  const processFile = async (file: File, fileId: string, chosenDocType?: DocumentType) => {
+    // Use the chosen document type, or fallback to detection from filename
+    const docTypeFromName = detectDocumentTypeFromName(file.name);
+    const effectiveDocType = chosenDocType || (docTypeFromName.category as DocumentType) || "tarif";
+    const pipeline = DOCUMENT_TYPES.find(d => d.value === effectiveDocType)?.pipeline || "analyze";
     
-    updateFileStatus(fileId, { status: "uploading", progress: 10 });
+    updateFileStatus(fileId, { status: "uploading", progress: 10, documentType: effectiveDocType });
 
     try {
       // 0. Check for duplicates based on file name - DELETE old version to allow replacement
@@ -321,7 +429,7 @@ export default function AdminUpload() {
       if (uploadError) throw uploadError;
       updateFileStatus(fileId, { progress: 40 });
 
-      // 2. Create PDF document record with auto-detected category
+      // 2. Create PDF document record with selected category
       const { data: pdfDoc, error: insertError } = await supabase
         .from("pdf_documents")
         .insert({
@@ -329,7 +437,7 @@ export default function AdminUpload() {
           file_name: file.name,
           file_path: filePath,
           file_size_bytes: file.size,
-          category: docType.category,
+          category: effectiveDocType,
           country_code: "MA",
           mime_type: "application/pdf",
           is_active: true,
@@ -346,117 +454,134 @@ export default function AdminUpload() {
         filePath: filePath,
       });
 
-      // 3. Utiliser le batch extraction automatique pour gérer les PDFs multi-pages
-      // Les données sont accumulées côté client et présentées pour validation AVANT insertion
-      let analysisData = null;
-      let analysisError = null;
-      
-      try {
-        updateFileStatus(fileId, { 
-          progress: 65,
-          error: "Lancement de l'extraction batch..."
-        });
-        
-        // Utiliser le batch extraction qui accumule les données de toutes les pages
-        const batchResult = await runBatchExtraction(
-          pdfDoc.id,
-          filePath,
-          fileId,
-          file.name
-        );
-        
-        // Mettre à jour le statut 
-        updateFileStatus(fileId, { 
-          progress: 95,
-          error: `Extraction terminée: ${batchResult.tariff_lines?.length || 0} lignes`
-        });
-        
-        // Utiliser les données accumulées directement (pas de requête DB car previewOnly=true)
-        const tariffLines = batchResult.tariff_lines || [];
-        const hsCodesFull = batchResult.hs_codes || [];
-        const notes = batchResult.notes || [];
-        const stats = batchResult.stats || {};
-        const summary = batchResult.summary || "";
-        
-        // Construire un fallback de résumé si Claude n'en a pas généré
-        const fallbackSummary = `Extraction terminée: ${tariffLines.length} lignes tarifaires, ${hsCodesFull.length} codes SH, ${notes.length} notes`;
-        
-        analysisData = {
-          summary: summary || fallbackSummary,
-          key_points: [],
-          tariff_lines: tariffLines,
-          hs_codes: hsCodesFull,
-          hs_codes_full: hsCodesFull,
-          notes: notes,
-          document_type: tariffLines.length > 0 ? "tariff" : "regulatory",
-          trade_agreements: [],
-          full_text: "",
-        };
-        
-      } catch (err: any) {
-        console.error("Batch extraction error:", err);
-        analysisError = err;
-      }
+      // 3. Route to appropriate pipeline based on document type
+      if (pipeline === "ingest") {
+        // ========== LEGAL DOCUMENT INGESTION (RAG) ==========
+        try {
+          const ingestionResult = await runLegalIngestion(
+            pdfDoc.id,
+            filePath,
+            fileId,
+            file.name,
+            effectiveDocType
+          );
 
-      if (analysisError || !analysisData) {
-        console.warn("Analysis error (non-blocking):", analysisError);
-        updateFileStatus(fileId, {
-          status: "error",
-          progress: 100,
-          error: analysisError?.message || "Erreur réseau - réessayez",
-        });
-        toast({
-          title: "Erreur d'analyse",
-          description: "Connexion perdue ou service surchargé. Réessayez dans quelques instants.",
-          variant: "destructive",
-        });
-      } else {
-        // Show preview instead of auto-inserting
-        const extractionData: ExtractionData = {
-          summary: analysisData?.summary || "",
-          key_points: analysisData?.key_points || [],
-          hs_codes: analysisData?.hs_codes || [],
-          hs_codes_full: analysisData?.hs_codes_full || [],
-          tariff_lines: analysisData?.tariff_lines || [],
-          notes: analysisData?.notes || [],
-          chapter_info: analysisData?.chapter_info,
-          pdfId: pdfDoc.id,
-          pdfTitle: pdfTitle,
-          countryCode: "MA",
-          document_type: analysisData?.document_type || "tariff",
-          trade_agreements: analysisData?.trade_agreements || [],
-          full_text_length: analysisData?.full_text?.length || 0,
-          // Champs enrichis pour documents réglementaires
-          document_reference: analysisData?.document_reference,
-          publication_date: analysisData?.publication_date,
-          effective_date: analysisData?.effective_date,
-          expiry_date: analysisData?.expiry_date,
-          legal_references: analysisData?.legal_references || [],
-          important_dates: analysisData?.important_dates || [],
-          issuing_authority: analysisData?.issuing_authority,
-          recipients: analysisData?.recipients || [],
-          abrogates: analysisData?.abrogates || [],
-          modifies: analysisData?.modifies || [],
-        };
-
-        const isRegulatoryDoc = extractionData.document_type === "regulatory";
-        const hsCount = extractionData.hs_codes?.length || 0;
-        const tariffCount = extractionData.tariff_lines?.length || 0;
-
-        // For regulatory documents with no tariff data, mark as success directly
-        if (isRegulatoryDoc && hsCount === 0 && tariffCount === 0) {
           updateFileStatus(fileId, {
             status: "success",
             progress: 100,
             pdfId: pdfDoc.id,
-            analysis: extractionData,
+            error: undefined,
+            analysis: {
+              summary: `Document ingéré pour RAG: ${ingestionResult.chunks_created} segments, ${ingestionResult.detected_codes_count} codes SH détectés`,
+              key_points: [],
+              hs_codes: [],
+              tariff_lines: [],
+              document_type: "regulatory",
+              full_text_length: ingestionResult.pages_processed * 1000, // Estimation
+            },
           });
           
           toast({
-            title: "✅ Document réglementaire traité",
-            description: `Texte extrait et indexé pour le chat RAG (${extractionData.full_text_length} caractères)`,
+            title: "✅ Document réglementaire ingéré",
+            description: `${ingestionResult.chunks_created} segments créés, ${ingestionResult.detected_codes_count} codes SH détectés pour le RAG`,
+          });
+        } catch (err: any) {
+          console.error("Legal ingestion error:", err);
+          updateFileStatus(fileId, {
+            status: "error",
+            progress: 100,
+            error: err.message || "Erreur d'ingestion",
+          });
+          toast({
+            title: "Erreur d'ingestion",
+            description: err.message || "Impossible d'ingérer le document",
+            variant: "destructive",
+          });
+        }
+      } else {
+        // ========== TARIFF EXTRACTION (analyze-pdf) ==========
+        let analysisData = null;
+        let analysisError = null;
+        
+        try {
+          updateFileStatus(fileId, { 
+            progress: 65,
+            error: "Lancement de l'extraction batch..."
+          });
+          
+          // Utiliser le batch extraction qui accumule les données de toutes les pages
+          const batchResult = await runBatchExtraction(
+            pdfDoc.id,
+            filePath,
+            fileId,
+            file.name
+          );
+          
+          // Mettre à jour le statut 
+          updateFileStatus(fileId, { 
+            progress: 95,
+            error: `Extraction terminée: ${batchResult.tariff_lines?.length || 0} lignes`
+          });
+          
+          // Utiliser les données accumulées directement (pas de requête DB car previewOnly=true)
+          const tariffLines = batchResult.tariff_lines || [];
+          const hsCodesFull = batchResult.hs_codes || [];
+          const notes = batchResult.notes || [];
+          const summary = batchResult.summary || "";
+          
+          // Construire un fallback de résumé si Claude n'en a pas généré
+          const fallbackSummary = `Extraction terminée: ${tariffLines.length} lignes tarifaires, ${hsCodesFull.length} codes SH, ${notes.length} notes`;
+          
+          analysisData = {
+            summary: summary || fallbackSummary,
+            key_points: [],
+            tariff_lines: tariffLines,
+            hs_codes: hsCodesFull,
+            hs_codes_full: hsCodesFull,
+            notes: notes,
+            document_type: "tariff" as const,
+            trade_agreements: [],
+            full_text: "",
+          };
+          
+        } catch (err: any) {
+          console.error("Batch extraction error:", err);
+          analysisError = err;
+        }
+
+        if (analysisError || !analysisData) {
+          console.warn("Analysis error (non-blocking):", analysisError);
+          updateFileStatus(fileId, {
+            status: "error",
+            progress: 100,
+            error: analysisError?.message || "Erreur réseau - réessayez",
+          });
+          toast({
+            title: "Erreur d'analyse",
+            description: "Connexion perdue ou service surchargé. Réessayez dans quelques instants.",
+            variant: "destructive",
           });
         } else {
+          // Show preview instead of auto-inserting
+          const extractionData: ExtractionData = {
+            summary: analysisData?.summary || "",
+            key_points: analysisData?.key_points || [],
+            hs_codes: analysisData?.hs_codes || [],
+            hs_codes_full: analysisData?.hs_codes_full || [],
+            tariff_lines: analysisData?.tariff_lines || [],
+            notes: analysisData?.notes || [],
+            chapter_info: analysisData?.chapter_info,
+            pdfId: pdfDoc.id,
+            pdfTitle: pdfTitle,
+            countryCode: "MA",
+            document_type: analysisData?.document_type || "tariff",
+            trade_agreements: analysisData?.trade_agreements || [],
+            full_text_length: analysisData?.full_text?.length || 0,
+          };
+
+          const hsCount = extractionData.hs_codes?.length || 0;
+          const tariffCount = extractionData.tariff_lines?.length || 0;
+
           // Tariff documents need validation
           updateFileStatus(fileId, {
             status: "preview",
@@ -498,7 +623,11 @@ export default function AdminUpload() {
     processingRef.current = true;
     setIsProcessing(true);
     
-    await processFile(nextItem.file, nextItem.fileId);
+    // Get the document type from the queued file state
+    const queuedFileState = files.find(f => f.id === nextItem.fileId);
+    const docType = queuedFileState?.documentType;
+    
+    await processFile(nextItem.file, nextItem.fileId, docType);
     
     processingRef.current = false;
     
@@ -506,7 +635,7 @@ export default function AdminUpload() {
     setTimeout(() => {
       processQueue();
     }, 500);
-  }, [processNext, setIsProcessing]);
+  }, [processNext, setIsProcessing, files]);
 
   // Start processing when files are queued
   useEffect(() => {
@@ -515,8 +644,8 @@ export default function AdminUpload() {
     }
   }, [files, isProcessing, processQueue]);
 
-  // Queue a file for processing
-  const addToQueue = (file: File) => {
+  // Queue a file for processing with selected document type
+  const addToQueue = (file: File, docType: DocumentType) => {
     const fileId = crypto.randomUUID();
     const uploadedFile: UploadedFile = {
       id: fileId,
@@ -525,6 +654,7 @@ export default function AdminUpload() {
       status: "queued",
       progress: 0,
       countryCode: "MA",
+      documentType: docType,
     };
     queueFile(file, uploadedFile);
   };
@@ -645,7 +775,7 @@ export default function AdminUpload() {
 
     Array.from(selectedFiles).forEach((file) => {
       if (file.type === "application/pdf") {
-        addToQueue(file);
+        addToQueue(file, selectedDocType);
       } else {
         toast({
           title: "Format non supporté",
@@ -666,7 +796,7 @@ export default function AdminUpload() {
       const droppedFiles = e.dataTransfer.files;
       Array.from(droppedFiles).forEach((file) => {
         if (file.type === "application/pdf") {
-          addToQueue(file);
+          addToQueue(file, selectedDocType);
         } else {
           toast({
             title: "Format non supporté",
@@ -676,7 +806,7 @@ export default function AdminUpload() {
         }
       });
     },
-    [queueFile]
+    [selectedDocType, toast]
   );
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -818,16 +948,45 @@ export default function AdminUpload() {
           <CardHeader>
             <CardTitle>Déposer des documents</CardTitle>
             <CardDescription>
-              PDFs de tarifs, circulaires, notes, avis de classement...
+              Sélectionnez le type puis déposez vos PDFs
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-6">
+            {/* Document Type Selector */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Type de document</label>
+              <Select value={selectedDocType} onValueChange={(v) => setSelectedDocType(v as DocumentType)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DOCUMENT_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      <div className="flex items-center gap-2">
+                        {type.icon}
+                        <div>
+                          <span className="font-medium">{type.label}</span>
+                          <span className="text-xs text-muted-foreground ml-2">
+                            {type.pipeline === "analyze" ? "(extraction tableaux)" : "(RAG/recherche)"}
+                          </span>
+                        </div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {DOCUMENT_TYPES.find(t => t.value === selectedDocType)?.description}
+              </p>
+            </div>
+
+            {/* Drop Zone */}
             <div
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               className={`
-                relative border-2 border-dashed rounded-xl p-12 text-center transition-all cursor-pointer
+                relative border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer
                 ${isDragging
                   ? "border-accent bg-accent/10 scale-[1.02]"
                   : "border-border hover:border-accent/50 hover:bg-accent/5"
@@ -841,19 +1000,21 @@ export default function AdminUpload() {
                 onChange={handleFileSelect}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
-              <Upload className={`h-16 w-16 mx-auto mb-4 transition-colors ${isDragging ? "text-accent" : "text-muted-foreground"}`} />
-              <p className="text-xl font-medium mb-2">
+              <Upload className={`h-12 w-12 mx-auto mb-3 transition-colors ${isDragging ? "text-accent" : "text-muted-foreground"}`} />
+              <p className="text-lg font-medium mb-1">
                 Glissez vos PDFs ici
               </p>
-              <p className="text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 ou cliquez pour sélectionner
               </p>
-              <div className="mt-4 flex flex-wrap justify-center gap-2">
-                <Badge variant="outline">Tarifs douaniers</Badge>
-                <Badge variant="outline">Circulaires</Badge>
-                <Badge variant="outline">Notes techniques</Badge>
-                <Badge variant="outline">Avis de classement</Badge>
-              </div>
+            </div>
+            
+            {/* Current type indicator */}
+            <div className="flex items-center justify-center gap-2 p-3 rounded-lg bg-muted/50">
+              {DOCUMENT_TYPES.find(t => t.value === selectedDocType)?.icon}
+              <span className="text-sm">
+                Les fichiers seront traités comme <strong>{DOCUMENT_TYPES.find(t => t.value === selectedDocType)?.label}</strong>
+              </span>
             </div>
           </CardContent>
         </Card>
@@ -890,9 +1051,14 @@ export default function AdminUpload() {
                             <p className="font-medium truncate max-w-[180px]">
                               {file.name}
                             </p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatFileSize(file.size)}
-                            </p>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span>{formatFileSize(file.size)}</span>
+                              {file.documentType && (
+                                <Badge variant="outline" className="text-[10px] px-1 py-0">
+                                  {DOCUMENT_TYPES.find(t => t.value === file.documentType)?.label || file.documentType}
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
