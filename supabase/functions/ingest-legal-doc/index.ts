@@ -198,7 +198,7 @@ async function extractTextFromPDFChunk(chunkBase64: string, startPage: number): 
       },
       signal: controller.signal,
       body: JSON.stringify({
-        model: "claude-3-5-sonnet-20241022", // Faster model for text extraction
+        model: "claude-3-haiku-20240307", // Fast model for text extraction
         max_tokens: 8000, // Lower for faster responses
         system: `Tu es un extracteur de texte. Extrais le texte intégral de chaque page du document PDF.
 Retourne un JSON strict:
