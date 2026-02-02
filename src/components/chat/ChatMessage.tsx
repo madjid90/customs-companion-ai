@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
-import { InteractiveQuestions, parseQuestionsFromResponse } from "./InteractiveQuestions";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { CitedCirculars, type CircularReference } from "./CitedCirculars";
 import { supabase } from "@/integrations/supabase/client";
@@ -448,19 +447,6 @@ export function ChatMessage({
               {processedContent}
             </ReactMarkdown>
             
-            {/* Interactive questions for clarification */}
-            {isLastMessage && !isLoading && (() => {
-              const questions = parseQuestionsFromResponse(message.content);
-              return questions.length > 0 ? (
-                <InteractiveQuestions
-                  questions={questions}
-                  onAnswer={(questionId, answer) => {
-                    onAnswer(answer);
-                  }}
-                  disabled={isLoading}
-                />
-              ) : null;
-            })()}
             
             {/* Display validated sources - always show if there are citations OR if there's a validation message */}
             {(message.citedCirculars || message.validationMessage) && (
