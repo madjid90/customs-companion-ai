@@ -96,7 +96,7 @@ interface IngestResponse {
 // PDF TEXT EXTRACTION (via Claude) - With batch support for large PDFs
 // ============================================================================
 
-const MAX_PAGES_PER_BATCH = 80; // Stay under Claude's 100 page limit with margin
+const MAX_PAGES_PER_BATCH = 40; // Conservative batch size for large legal docs
 
 // Split a PDF into a subset of pages using pdf-lib
 async function splitPdfPages(
@@ -105,20 +105,22 @@ async function splitPdfPages(
   endPage: number
 ): Promise<string> {
   const pdfBytes = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));
-  const srcDoc = await PDFDocument.load(pdfBytes);
+  const srcDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
   const totalPages = srcDoc.getPageCount();
   
-  // Adjust bounds
-  const actualStart = Math.max(0, startPage - 1); // 0-indexed
+  // Adjust bounds (1-indexed to 0-indexed)
+  const actualStart = Math.max(0, startPage - 1);
   const actualEnd = Math.min(totalPages - 1, endPage - 1);
   
   if (actualStart > actualEnd || actualStart >= totalPages) {
     throw new Error(`Page range ${startPage}-${endPage} out of bounds (total: ${totalPages})`);
   }
   
+  console.log(`[ingest-legal-doc] Splitting pages ${actualStart + 1}-${actualEnd + 1} from ${totalPages} total`);
+  
   // Create new PDF with only the requested pages
   const newDoc = await PDFDocument.create();
-  const pageIndices = [];
+  const pageIndices: number[] = [];
   for (let i = actualStart; i <= actualEnd; i++) {
     pageIndices.push(i);
   }
@@ -128,13 +130,26 @@ async function splitPdfPages(
   
   const newPdfBytes = await newDoc.save();
   
+  // Verify the new PDF has correct page count
+  const verifyDoc = await PDFDocument.load(newPdfBytes);
+  const newPageCount = verifyDoc.getPageCount();
+  console.log(`[ingest-legal-doc] Split PDF has ${newPageCount} pages (expected ${pageIndices.length})`);
+  
+  if (newPageCount !== pageIndices.length) {
+    throw new Error(`Split verification failed: expected ${pageIndices.length} pages, got ${newPageCount}`);
+  }
+  
   // Convert to base64
   let binary = '';
   const bytes = new Uint8Array(newPdfBytes);
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
-  return btoa(binary);
+  
+  const result = btoa(binary);
+  console.log(`[ingest-legal-doc] Split PDF base64 size: ${(result.length / 1024).toFixed(1)}KB`);
+  
+  return result;
 }
 
 // Get actual page count from PDF
@@ -150,7 +165,13 @@ async function extractTextFromPDFChunk(chunkBase64: string, startPage: number): 
     throw new Error("ANTHROPIC_API_KEY not configured");
   }
 
-  console.log(`[ingest-legal-doc] Sending chunk to Claude (starting at page ${startPage})...`);
+  // Verify chunk size is reasonable (< 5MB base64 = ~3.75MB file)
+  const chunkSizeKB = chunkBase64.length / 1024;
+  console.log(`[ingest-legal-doc] Sending chunk to Claude: ${chunkSizeKB.toFixed(1)}KB base64, starting at page ${startPage}`);
+  
+  if (chunkSizeKB > 15000) {
+    throw new Error(`Chunk too large (${chunkSizeKB.toFixed(0)}KB) - likely split failed`);
+  }
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -161,7 +182,7 @@ async function extractTextFromPDFChunk(chunkBase64: string, startPage: number): 
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 32000,
+      max_tokens: 16000, // Reduced to stay within context limit
       system: `Tu es un extracteur de texte. Extrais le texte intégral de chaque page du document PDF.
 Retourne un JSON strict:
 {
