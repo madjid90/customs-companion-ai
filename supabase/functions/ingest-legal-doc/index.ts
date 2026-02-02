@@ -78,6 +78,14 @@ interface TextChunk {
   page_number: number | null;
   char_start: number;
   char_end: number;
+  // Enriched metadata
+  article_number: string | null;
+  section_title: string | null;
+  parent_section: string | null;
+  chunk_type: string | null;
+  hierarchy_path: string | null;
+  keywords: string[];
+  mentioned_hs_codes: string[];
 }
 
 interface DetectedCode {
@@ -327,12 +335,112 @@ async function extractTextFromPDF(pdfBase64: string): Promise<ExtractedPage[]> {
 }
 
 // ============================================================================
-// CHUNKING
+// CHUNKING WITH METADATA EXTRACTION
 // ============================================================================
+
+// Extract article number from text (e.g., "Article 123", "Art. 45 bis")
+function extractArticleNumber(text: string): string | null {
+  const patterns = [
+    /\bArt(?:icle)?\.?\s*(\d+(?:\s*(?:bis|ter|quater|quinquies|sexies|septies|octies|novies|decies))?(?:\s*[-–]\s*\d+)?)/i,
+    /\b§\s*(\d+(?:\.\d+)*)/,
+  ];
+  
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+
+// Extract section/chapter title from text
+function extractSectionTitle(text: string): string | null {
+  const patterns = [
+    /^((?:CHAPITRE|TITRE|SECTION|SOUS-SECTION|PARTIE)\s+[IVXLCDM\d]+(?:\s*[-–:]\s*.{5,80})?)/im,
+    /^((?:Chapitre|Titre|Section|Sous-section|Partie)\s+[IVXLCDM\d]+(?:\s*[-–:]\s*.{5,80})?)/m,
+  ];
+  
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[1].trim().substring(0, 200);
+  }
+  return null;
+}
+
+// Determine chunk type based on content
+function detectChunkType(text: string): string {
+  const textLower = text.toLowerCase();
+  
+  if (/\b(définition|définit|entend par|au sens du présent)/i.test(text)) return "definition";
+  if (/^(CHAPITRE|TITRE|SECTION)/i.test(text.trim())) return "header";
+  if (/\bart(?:icle)?\.?\s*\d+/i.test(text)) return "article";
+  if (/\b(note|nota|n\.b\.)/i.test(textLower)) return "note";
+  if (/\b(exception|exclut|ne comprend pas|à l'exclusion)/i.test(textLower)) return "exclusion";
+  if (/\b(procédure|formalité|déclaration|document)/i.test(textLower)) return "procedure";
+  if (/\b(pénalité|sanction|amende|infraction)/i.test(textLower)) return "sanction";
+  if (/\b(taux|droit|taxe|%)/i.test(textLower)) return "tariff";
+  
+  return "general";
+}
+
+// Extract keywords from text
+function extractKeywords(text: string): string[] {
+  const keywords: Set<string> = new Set();
+  
+  // Legal/customs keywords
+  const keywordPatterns = [
+    /\b(importation|exportation|transit|admission temporaire|dédouanement|régime douanier)\b/gi,
+    /\b(certificat d'origine|EUR\.?\s*1|déclaration en douane|DUM)\b/gi,
+    /\b(franchise|exonération|suspension|drawback)\b/gi,
+    /\b(contrôle|visite|vérification|inspection)\b/gi,
+    /\b(valeur en douane|valeur transactionnelle|CIF|FOB)\b/gi,
+    /\b(origine préférentielle|origine non préférentielle|cumul)\b/gi,
+    /\b(contingent|quota|licence d'importation)\b/gi,
+  ];
+  
+  for (const pattern of keywordPatterns) {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      keywords.add(match[1].toLowerCase().trim());
+    }
+  }
+  
+  return Array.from(keywords).slice(0, 10);
+}
+
+// Extract HS codes mentioned in chunk
+function extractMentionedHSCodes(text: string): string[] {
+  const codes: Set<string> = new Set();
+  
+  // 10-digit codes
+  const pattern10 = /\b(\d{10})\b/g;
+  let match;
+  while ((match = pattern10.exec(text)) !== null) {
+    codes.add(match[1]);
+  }
+  
+  // Formatted codes like 84.71.30.00.10
+  const patternFormatted = /\b(\d{2}[.\s]\d{2}[.\s]\d{2}(?:[.\s]\d{2}){0,2})\b/g;
+  while ((match = patternFormatted.exec(text)) !== null) {
+    const normalized = match[1].replace(/[\s.]/g, "");
+    if (normalized.length >= 6) codes.add(normalized);
+  }
+  
+  return Array.from(codes).slice(0, 20);
+}
+
+// Build hierarchy path based on context
+function buildHierarchyPath(sectionTitle: string | null, articleNumber: string | null): string | null {
+  const parts: string[] = [];
+  if (sectionTitle) parts.push(sectionTitle.substring(0, 50));
+  if (articleNumber) parts.push(`Art. ${articleNumber}`);
+  return parts.length > 0 ? parts.join(" > ") : null;
+}
 
 function createChunks(pages: ExtractedPage[]): TextChunk[] {
   const chunks: TextChunk[] = [];
   let chunkIndex = 0;
+  let currentSection: string | null = null;
+  let parentSection: string | null = null;
 
   for (const page of pages) {
     const text = page.text.trim();
@@ -347,15 +455,33 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
       const trimmedPara = para.trim();
       if (!trimmedPara) continue;
 
+      // Track section changes
+      const sectionMatch = extractSectionTitle(trimmedPara);
+      if (sectionMatch) {
+        parentSection = currentSection;
+        currentSection = sectionMatch;
+      }
+
       // If adding this paragraph exceeds target, save current chunk
       if (currentChunk && (currentChunk.length + trimmedPara.length) > CHUNK_SIZE_TARGET) {
         if (currentChunk.length >= MIN_CHUNK_SIZE) {
+          const chunkText = currentChunk.trim();
+          const articleNumber = extractArticleNumber(chunkText);
+          const sectionTitle = extractSectionTitle(chunkText) || currentSection;
+          
           chunks.push({
             chunk_index: chunkIndex++,
-            text: currentChunk.trim(),
+            text: chunkText,
             page_number: page.page_number,
             char_start: charStart,
             char_end: charStart + currentChunk.length,
+            article_number: articleNumber,
+            section_title: sectionTitle,
+            parent_section: parentSection,
+            chunk_type: detectChunkType(chunkText),
+            hierarchy_path: buildHierarchyPath(sectionTitle, articleNumber),
+            keywords: extractKeywords(chunkText),
+            mentioned_hs_codes: extractMentionedHSCodes(chunkText),
           });
         }
 
@@ -370,12 +496,23 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
 
     // Save remaining chunk
     if (currentChunk.length >= MIN_CHUNK_SIZE) {
+      const chunkText = currentChunk.trim();
+      const articleNumber = extractArticleNumber(chunkText);
+      const sectionTitle = extractSectionTitle(chunkText) || currentSection;
+      
       chunks.push({
         chunk_index: chunkIndex++,
-        text: currentChunk.trim(),
+        text: chunkText,
         page_number: page.page_number,
         char_start: charStart,
         char_end: charStart + currentChunk.length,
+        article_number: articleNumber,
+        section_title: sectionTitle,
+        parent_section: parentSection,
+        chunk_type: detectChunkType(chunkText),
+        hierarchy_path: buildHierarchyPath(sectionTitle, articleNumber),
+        keywords: extractKeywords(chunkText),
+        mentioned_hs_codes: extractMentionedHSCodes(chunkText),
       });
     }
   }
@@ -549,6 +686,14 @@ async function insertChunks(
           char_start: chunk.char_start,
           char_end: chunk.char_end,
           embedding,
+          // Enriched metadata
+          article_number: chunk.article_number,
+          section_title: chunk.section_title,
+          parent_section: chunk.parent_section,
+          chunk_type: chunk.chunk_type,
+          hierarchy_path: chunk.hierarchy_path,
+          keywords: chunk.keywords.length > 0 ? chunk.keywords : null,
+          mentioned_hs_codes: chunk.mentioned_hs_codes.length > 0 ? chunk.mentioned_hs_codes : null,
         };
       })
     );
@@ -606,6 +751,14 @@ async function insertChunksAppend(
           char_start: chunk.char_start,
           char_end: chunk.char_end,
           embedding,
+          // Enriched metadata
+          article_number: chunk.article_number,
+          section_title: chunk.section_title,
+          parent_section: chunk.parent_section,
+          chunk_type: chunk.chunk_type,
+          hierarchy_path: chunk.hierarchy_path,
+          keywords: chunk.keywords.length > 0 ? chunk.keywords : null,
+          mentioned_hs_codes: chunk.mentioned_hs_codes.length > 0 ? chunk.mentioned_hs_codes : null,
         };
       })
     );
