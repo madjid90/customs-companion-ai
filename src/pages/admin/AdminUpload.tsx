@@ -261,9 +261,9 @@ export default function AdminUpload() {
     fileName: string,
     docType: DocumentType
   ) => {
-    const BATCH_SIZE = 2; // Minimal batches for very dense legal docs
-    const FETCH_TIMEOUT_MS = 55000; // 55s per batch (within edge function limit)
-    const DELAY_BETWEEN_BATCHES = 2000; // More buffer between batches
+    const BATCH_SIZE = 1; // Single page per request for very dense legal docs
+    const FETCH_TIMEOUT_MS = 58000; // 58s per batch (within edge function limit)
+    const DELAY_BETWEEN_BATCHES = 2500; // More buffer between batches to avoid rate limits
     
     updateFileStatus(fileId, { 
       progress: 60,
