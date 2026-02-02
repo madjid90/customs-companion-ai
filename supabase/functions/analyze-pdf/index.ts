@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
 import {
   getCorsHeaders,
   handleCorsPreFlight,
@@ -14,6 +15,153 @@ import { maskSensitiveData, safeLog } from "../_shared/masking.ts";
 import { parseJsonResilient } from "../_shared/json-resilient.ts";
 import { requireAuth, isProductionMode } from "../_shared/auth-check.ts";
 import { callLLMWithMetrics } from "../_shared/retry.ts";
+
+// =============================================================================
+// PDF UTILITIES - Split large PDFs for Claude's 100 page limit
+// =============================================================================
+
+const MAX_PAGES_FOR_CLAUDE = 80; // Stay under Claude's 100 page limit with margin
+
+// Cache for PDF page counts to avoid re-parsing
+const PDF_PAGE_COUNT_CACHE = new Map<string, number>();
+
+/**
+ * Get actual page count from PDF using pdf-lib
+ */
+async function getPdfPageCount(pdfBase64: string, cacheKey?: string): Promise<number> {
+  if (cacheKey && PDF_PAGE_COUNT_CACHE.has(cacheKey)) {
+    return PDF_PAGE_COUNT_CACHE.get(cacheKey)!;
+  }
+  
+  try {
+    const pdfBytes = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));
+    const srcDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+    const pageCount = srcDoc.getPageCount();
+    
+    if (cacheKey) {
+      PDF_PAGE_COUNT_CACHE.set(cacheKey, pageCount);
+    }
+    
+    console.log(`[PDF-LIB] Detected ${pageCount} pages`);
+    return pageCount;
+  } catch (err: any) {
+    console.warn(`[PDF-LIB] Error getting page count: ${err.message}`);
+    return 0;
+  }
+}
+
+/**
+ * Extract specific pages from a PDF, returning a smaller PDF base64
+ * This is CRITICAL for working with Claude's 100 page limit
+ * 
+ * @param pdfBase64 - Full PDF as base64
+ * @param startPage - First page (1-indexed)
+ * @param endPage - Last page (1-indexed, inclusive)
+ */
+async function extractPdfPages(
+  pdfBase64: string,
+  startPage: number,
+  endPage: number
+): Promise<string> {
+  const pdfBytes = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));
+  const srcDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+  const totalPages = srcDoc.getPageCount();
+  
+  // Adjust bounds (convert to 0-indexed)
+  const actualStart = Math.max(0, startPage - 1);
+  const actualEnd = Math.min(totalPages - 1, endPage - 1);
+  
+  if (actualStart > actualEnd || actualStart >= totalPages) {
+    throw new Error(`Page range ${startPage}-${endPage} out of bounds (total: ${totalPages})`);
+  }
+  
+  // Create new PDF with only the requested pages
+  const newDoc = await PDFDocument.create();
+  const pageIndices: number[] = [];
+  for (let i = actualStart; i <= actualEnd; i++) {
+    pageIndices.push(i);
+  }
+  
+  const copiedPages = await newDoc.copyPages(srcDoc, pageIndices);
+  copiedPages.forEach(page => newDoc.addPage(page));
+  
+  const newPdfBytes = await newDoc.save();
+  
+  // Convert to base64
+  let binary = '';
+  const bytes = new Uint8Array(newPdfBytes);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  
+  console.log(`[PDF-LIB] Extracted pages ${startPage}-${endPage} (${pageIndices.length} pages)`);
+  return btoa(binary);
+}
+
+/**
+ * Prepare a PDF for Claude API call
+ * If the PDF has more than MAX_PAGES_FOR_CLAUDE pages, extract only the needed range
+ * 
+ * @param fullPdfBase64 - The complete PDF
+ * @param targetPage - The specific page we want to analyze (1-indexed)
+ * @param totalPages - Total pages in the PDF
+ * @returns { pdf: base64 string to send, adjustedPageNum: page number within the chunk }
+ */
+async function preparePdfForClaude(
+  fullPdfBase64: string,
+  targetPage: number,
+  totalPages: number
+): Promise<{ pdf: string; adjustedPageNum: number }> {
+  // If PDF is small enough, send it as-is
+  if (totalPages <= MAX_PAGES_FOR_CLAUDE) {
+    return { pdf: fullPdfBase64, adjustedPageNum: targetPage };
+  }
+  
+  // For large PDFs, extract a window around the target page
+  // We take a chunk of MAX_PAGES_FOR_CLAUDE pages centered on the target
+  const halfWindow = Math.floor(MAX_PAGES_FOR_CLAUDE / 2);
+  let startPage = Math.max(1, targetPage - halfWindow);
+  let endPage = Math.min(totalPages, startPage + MAX_PAGES_FOR_CLAUDE - 1);
+  
+  // Adjust start if we hit the end
+  if (endPage === totalPages) {
+    startPage = Math.max(1, totalPages - MAX_PAGES_FOR_CLAUDE + 1);
+  }
+  
+  console.log(`[PDF-LIB] Large PDF (${totalPages} pages), extracting window ${startPage}-${endPage} for target page ${targetPage}`);
+  
+  const chunkPdf = await extractPdfPages(fullPdfBase64, startPage, endPage);
+  const adjustedPageNum = targetPage - startPage + 1;
+  
+  return { pdf: chunkPdf, adjustedPageNum };
+}
+
+/**
+ * Prepare a PDF range for Claude API call (for batch operations like summary, page scan)
+ */
+async function preparePdfRangeForClaude(
+  fullPdfBase64: string,
+  startPage: number,
+  endPage: number,
+  totalPages: number
+): Promise<{ pdf: string; adjustedStart: number; adjustedEnd: number }> {
+  const requestedPages = endPage - startPage + 1;
+  
+  // If requested range is small enough, extract just that range
+  if (requestedPages <= MAX_PAGES_FOR_CLAUDE) {
+    if (totalPages <= MAX_PAGES_FOR_CLAUDE) {
+      return { pdf: fullPdfBase64, adjustedStart: startPage, adjustedEnd: endPage };
+    }
+    const chunkPdf = await extractPdfPages(fullPdfBase64, startPage, endPage);
+    return { pdf: chunkPdf, adjustedStart: 1, adjustedEnd: requestedPages };
+  }
+  
+  // If requested range is too large, take first MAX_PAGES_FOR_CLAUDE pages
+  console.log(`[PDF-LIB] Requested range ${startPage}-${endPage} too large, limiting to ${MAX_PAGES_FOR_CLAUDE} pages`);
+  const limitedEnd = Math.min(endPage, startPage + MAX_PAGES_FOR_CLAUDE - 1);
+  const chunkPdf = await extractPdfPages(fullPdfBase64, startPage, limitedEnd);
+  return { pdf: chunkPdf, adjustedStart: 1, adjustedEnd: limitedEnd - startPage + 1 };
+}
 
 // =============================================================================
 // CONFIGURATION - ANTHROPIC CLAUDE (Native PDF Support)
@@ -1462,7 +1610,8 @@ async function generateDocumentSummary(
   base64Pdf: string,
   title: string,
   apiKey: string,
-  pdfId: string
+  pdfId: string,
+  totalPages: number
 ): Promise<string> {
   // Vérifier le cache
   if (SUMMARY_CACHE.has(pdfId)) {
@@ -1470,6 +1619,18 @@ async function generateDocumentSummary(
   }
   
   console.log("[Summary] Generating document summary...");
+  
+  // For large PDFs, only send first 50 pages for summary
+  let pdfToSend = base64Pdf;
+  if (totalPages > MAX_PAGES_FOR_CLAUDE) {
+    try {
+      console.log(`[Summary] Large PDF (${totalPages} pages), extracting first 50 for summary`);
+      pdfToSend = await extractPdfPages(base64Pdf, 1, 50);
+    } catch (err: any) {
+      console.warn("[Summary] Failed to extract pages:", err.message);
+      return "";
+    }
+  }
   
   const requestBody = {
     model: CLAUDE_MODEL,
@@ -1480,7 +1641,7 @@ async function generateDocumentSummary(
       content: [
         { 
           type: "document", 
-          source: { type: "base64", media_type: "application/pdf", data: base64Pdf },
+          source: { type: "base64", media_type: "application/pdf", data: pdfToSend },
         },
         { 
           type: "text", 
@@ -1548,12 +1709,11 @@ Format de réponse (texte brut, pas JSON):
 }
 
 // =============================================================================
-// DÉTECTION DU NOMBRE DE PAGES VIA CLAUDE (appel léger)
+// DÉTECTION DU NOMBRE DE PAGES VIA PDF-LIB (sans appel LLM)
 // =============================================================================
 
-async function detectPdfPageCount(
+async function detectPdfPageCountFast(
   base64Pdf: string,
-  apiKey: string,
   pdfId: string
 ): Promise<number> {
   // Vérifier le cache
@@ -1561,68 +1721,22 @@ async function detectPdfPageCount(
     return PAGE_COUNT_CACHE.get(pdfId)!;
   }
   
-  console.log("[Page Detection] Calling Claude to detect page count...");
-  
-  const requestBody = {
-    model: CLAUDE_MODEL,
-    max_tokens: 100,
-    system: "Réponds uniquement avec un nombre entier.",
-    messages: [{
-      role: "user",
-      content: [
-        { 
-          type: "document", 
-          source: { type: "base64", media_type: "application/pdf", data: base64Pdf },
-        },
-        { type: "text", text: "Combien de pages contient ce document PDF ? Réponds UNIQUEMENT avec le nombre (ex: 27)." }
-      ]
-    }],
-  };
+  console.log("[Page Detection] Using pdf-lib for fast page count...");
   
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s max
-    
-    const response = await fetch(ANTHROPIC_API_URL, {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "pdfs-2024-09-25",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-      signal: controller.signal,
-    });
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      console.warn("[Page Detection] API error, using fallback estimation");
-      return 0; // Retourne 0 pour signaler l'utilisation du fallback
+    const pageCount = await getPdfPageCount(base64Pdf, pdfId);
+    if (pageCount > 0) {
+      PAGE_COUNT_CACHE.set(pdfId, pageCount);
+      console.log(`[Page Detection] Detected ${pageCount} pages via pdf-lib`);
+      return pageCount;
     }
-    
-    const data = await response.json();
-    const responseText = data.content?.[0]?.text || "";
-    
-    // Extraire le nombre
-    const match = responseText.match(/\d+/);
-    if (match) {
-      const pageCount = parseInt(match[0], 10);
-      if (pageCount > 0 && pageCount < 5000) {
-        console.log(`[Page Detection] Detected ${pageCount} pages`);
-        PAGE_COUNT_CACHE.set(pdfId, pageCount);
-        return pageCount;
-      }
-    }
-    
-    console.warn("[Page Detection] Could not parse response, using fallback");
-    return 0;
-    
   } catch (err: any) {
-    console.warn("[Page Detection] Error:", err.message);
-    return 0;
+    console.warn("[Page Detection] pdf-lib error:", err.message);
   }
+  
+  // Fallback to file size estimation
+  console.log("[Page Detection] Falling back to size estimation");
+  return 0;
 }
 
 // =============================================================================
@@ -1633,9 +1747,27 @@ async function scanPagesForTariffContent(
   base64Pdf: string,
   startPage: number,
   endPage: number,
-  apiKey: string
+  apiKey: string,
+  totalPages: number
 ): Promise<{ tariffPages: number[]; textPages: number[] }> {
   console.log(`[Page Scan] Quick scan pages ${startPage}-${endPage} for content type...`);
+  
+  // Prepare PDF chunk for Claude (limit to MAX_PAGES_FOR_CLAUDE)
+  let pdfToSend = base64Pdf;
+  let adjustedStart = startPage;
+  let adjustedEnd = endPage;
+  
+  try {
+    const prepared = await preparePdfRangeForClaude(base64Pdf, startPage, endPage, totalPages);
+    pdfToSend = prepared.pdf;
+    adjustedStart = prepared.adjustedStart;
+    adjustedEnd = prepared.adjustedEnd;
+  } catch (err: any) {
+    console.warn("[Page Scan] Failed to prepare PDF chunk:", err.message);
+    const allPages: number[] = [];
+    for (let i = startPage; i <= endPage; i++) allPages.push(i);
+    return { tariffPages: allPages, textPages: [] };
+  }
   
   const requestBody = {
     model: CLAUDE_MODEL,
@@ -1646,18 +1778,18 @@ async function scanPagesForTariffContent(
       content: [
         { 
           type: "document", 
-          source: { type: "base64", media_type: "application/pdf", data: base64Pdf },
+          source: { type: "base64", media_type: "application/pdf", data: pdfToSend },
         },
         { 
           type: "text", 
-          text: `Analyse les pages ${startPage} à ${endPage} de ce PDF.
+          text: `Analyse les pages ${adjustedStart} à ${adjustedEnd} de ce PDF.
 Pour chaque page, détermine si elle contient:
 - Un TABLEAU TARIFAIRE (colonnes avec codes SH, descriptions, taux)
 - Du TEXTE/NOTES (notes de chapitre, définitions, introductions)
 
 Réponds UNIQUEMENT avec ce JSON:
 {
-  "tariff_pages": [${startPage}, ...],  
+  "tariff_pages": [${adjustedStart}, ...],  
   "text_pages": [...]
 }
 
@@ -1708,12 +1840,14 @@ IMPORTANT: Inclure TOUTES les pages dans l'une des deux catégories.`
     const parsed = parseJsonRobust(responseText);
     
     if (parsed && Array.isArray(parsed.tariff_pages)) {
-      const tariffPages = parsed.tariff_pages.filter((p: any) => 
-        typeof p === 'number' && p >= startPage && p <= endPage
-      );
-      const textPages = (parsed.text_pages || parsed.text_only_pages || []).filter((p: any) => 
-        typeof p === 'number' && p >= startPage && p <= endPage
-      );
+      // Map back to original page numbers
+      const pageOffset = startPage - adjustedStart;
+      const tariffPages = parsed.tariff_pages
+        .filter((p: any) => typeof p === 'number' && p >= adjustedStart && p <= adjustedEnd)
+        .map((p: number) => p + pageOffset);
+      const textPages = (parsed.text_pages || parsed.text_only_pages || [])
+        .filter((p: any) => typeof p === 'number' && p >= adjustedStart && p <= adjustedEnd)
+        .map((p: number) => p + pageOffset);
       
       console.log(`[Page Scan] Found ${tariffPages.length} tariff pages, ${textPages.length} text pages`);
       
@@ -2050,9 +2184,26 @@ async function analyzePageWithClaude(
   const MAX_RETRIES = 3;
   const BASE_DELAY = 3000;
   
-  const prompt = getPageTariffPrompt(title, pageNumber, totalPages);
-  
   console.log(`[Page ${pageNumber}/${totalPages}] Analyzing...`);
+  
+  // Prepare PDF chunk for Claude - CRITICAL for large PDFs
+  let pdfToSend = base64Pdf;
+  let adjustedPageNum = pageNumber;
+  
+  try {
+    const prepared = await preparePdfForClaude(base64Pdf, pageNumber, totalPages);
+    pdfToSend = prepared.pdf;
+    adjustedPageNum = prepared.adjustedPageNum;
+    
+    if (adjustedPageNum !== pageNumber) {
+      console.log(`[Page ${pageNumber}] Using chunk, adjusted page number: ${adjustedPageNum}`);
+    }
+  } catch (err: any) {
+    console.error(`[Page ${pageNumber}] Failed to prepare PDF chunk:`, err.message);
+    return { raw_lines: [], notes: [], has_tariff_table: false, error: `PDF prep failed: ${err.message}` };
+  }
+  
+  const prompt = getPageTariffPrompt(title, adjustedPageNum, Math.min(totalPages, MAX_PAGES_FOR_CLAUDE));
   
   const requestBody = {
     model: CLAUDE_MODEL,
@@ -2063,11 +2214,10 @@ async function analyzePageWithClaude(
       content: [
         { 
           type: "document", 
-          source: { type: "base64", media_type: "application/pdf", data: base64Pdf },
-          // Claude native PDF: spécifier la page
+          source: { type: "base64", media_type: "application/pdf", data: pdfToSend },
           cache_control: { type: "ephemeral" }
         },
-        { type: "text", text: `ANALYSE UNIQUEMENT LA PAGE ${pageNumber}.\n\n${prompt}` }
+        { type: "text", text: `ANALYSE UNIQUEMENT LA PAGE ${adjustedPageNum}.\n\n${prompt}` }
       ]
     }],
   };
@@ -2141,12 +2291,12 @@ async function analyzePageWithClaude(
         if (line.col1 !== undefined && line.position_6 === undefined) {
           return convertLegacyToRawTariffLine(line, pageNumber);
         }
-        // Ajouter page_number
-        return { ...line, page_number: line.page_number || pageNumber } as RawTariffLine;
+        // Ajouter page_number - use original page number, not adjusted
+        return { ...line, page_number: pageNumber } as RawTariffLine;
       }).filter(Boolean) as RawTariffLine[];
     }
     
-    // Notes depuis la réponse LLM
+    // Notes depuis la réponse LLM - use original page number
     let notes: ExtractedNote[] = (parsed.notes || []).map((n: any) => ({
       note_type: n.note_type || "remark",
       anchor: n.anchor || undefined,
@@ -2321,13 +2471,13 @@ serve(async (req) => {
     const category = pdfDoc?.category || "tarif";
     const countryCode = pdfDoc?.country_code || "MA";
     
-    // Détecter le nombre réel de pages via Claude (appel léger)
+    // Détecter le nombre réel de pages via pdf-lib (pas d'appel LLM)
     const fileSizeBytes = bytes.length;
     let totalPagesDetected = 0;
     
     // Premier appel : détecter le nombre de pages
     if (!extraction_run_id) {
-      totalPagesDetected = await detectPdfPageCount(base64Pdf, ANTHROPIC_API_KEY, pdfId);
+      totalPagesDetected = await detectPdfPageCountFast(base64Pdf, pdfId);
       if (totalPagesDetected === 0) {
         // Fallback: estimation basée sur la taille (~50KB par page pour PDF tarifaire)
         totalPagesDetected = Math.max(1, Math.ceil(fileSizeBytes / 50000));
@@ -2338,7 +2488,7 @@ serve(async (req) => {
     // Générer un résumé du document au premier batch
     let documentSummary = "";
     if (!extraction_run_id && start_page === 1) {
-      documentSummary = await generateDocumentSummary(base64Pdf, title, ANTHROPIC_API_KEY, pdfId);
+      documentSummary = await generateDocumentSummary(base64Pdf, title, ANTHROPIC_API_KEY, pdfId, totalPagesDetected);
     }
     
     console.log(`PDF size: ${fileSizeBytes} bytes, detected pages: ${totalPagesDetected || "from existing run"}, summary: ${documentSummary ? "yes" : "no"}`);
@@ -2431,7 +2581,8 @@ serve(async (req) => {
         base64Pdf,
         startPage,
         endPage,
-        ANTHROPIC_API_KEY
+        ANTHROPIC_API_KEY,
+        totalPages
       );
       tariffPages = scanResult.tariffPages;
       textPages = scanResult.textPages;
