@@ -55,6 +55,12 @@ interface IngestRequest {
   pdf_url?: string; // URL to fetch PDF
   raw_text?: string; // Already extracted text
   
+  // Batch processing (for large PDFs - client-orchestrated)
+  start_page?: number; // 1-indexed start page (for batch mode)
+  end_page?: number; // 1-indexed end page (for batch mode)
+  batch_mode?: boolean; // If true, only process specified page range
+  source_id?: number; // Existing source ID for append mode
+  
   // Options
   country_code?: string;
   generate_embeddings?: boolean;
@@ -90,6 +96,10 @@ interface IngestResponse {
   detected_codes_count: number;
   evidence_created: number;
   error?: string;
+  // Batch mode additional fields
+  total_pages?: number;
+  batch_start?: number;
+  batch_end?: number;
 }
 
 // ============================================================================
@@ -555,6 +565,62 @@ async function insertChunks(
   return inserted;
 }
 
+// Append chunks without deleting existing ones (for batch mode)
+async function insertChunksAppend(
+  supabase: any,
+  sourceId: number,
+  chunks: TextChunk[],
+  generateEmbeddings: boolean
+): Promise<number> {
+  // Get current max chunk_index for this source
+  const { data: maxData } = await supabase
+    .from("legal_chunks")
+    .select("chunk_index")
+    .eq("source_id", sourceId)
+    .order("chunk_index", { ascending: false })
+    .limit(1);
+  
+  const startIndex = (maxData && maxData.length > 0) ? maxData[0].chunk_index + 1 : 0;
+  
+  let inserted = 0;
+
+  // Insert in batches of 10
+  for (let i = 0; i < chunks.length; i += 10) {
+    const batch = chunks.slice(i, i + 10);
+    
+    const rows = await Promise.all(
+      batch.map(async (chunk, batchIdx) => {
+        let embedding = null;
+        if (generateEmbeddings) {
+          const embeddingArray = await generateEmbedding(chunk.text);
+          if (embeddingArray) {
+            embedding = JSON.stringify(embeddingArray);
+          }
+        }
+
+        return {
+          source_id: sourceId,
+          chunk_index: startIndex + i + batchIdx,
+          chunk_text: chunk.text,
+          page_number: chunk.page_number,
+          char_start: chunk.char_start,
+          char_end: chunk.char_end,
+          embedding,
+        };
+      })
+    );
+
+    const { error } = await supabase.from("legal_chunks").insert(rows);
+
+    if (error) {
+      console.error("[ingest-legal-doc] Chunk append error:", error);
+    } else {
+      inserted += rows.length;
+    }
+  }
+
+  return inserted;
+}
 async function insertHSEvidence(
   supabase: any,
   sourceId: number,
@@ -638,36 +704,58 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[ingest-legal-doc] Ingesting ${body.source_type} ${body.source_ref}`);
+    const isBatchMode = body.batch_mode === true && body.start_page && body.end_page;
+    console.log(`[ingest-legal-doc] Ingesting ${body.source_type} ${body.source_ref}${isBatchMode ? ` (batch: pages ${body.start_page}-${body.end_page})` : ''}`);
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // 1. Get text content
-    let pages: ExtractedPage[] = [];
-
-    if (body.raw_text) {
-      // Raw text provided directly
-      pages = [{ page_number: 1, text: body.raw_text }];
-    } else if (body.pdf_base64) {
-      // Extract from base64 PDF
-      pages = await extractTextFromPDF(body.pdf_base64);
-    } else if (body.pdf_url) {
-      // Fetch PDF from URL
+    // 1. Get PDF and determine total pages
+    let pdfBase64 = body.pdf_base64;
+    
+    if (!pdfBase64 && body.pdf_url) {
       console.log(`[ingest-legal-doc] Fetching PDF from ${body.pdf_url}`);
       const pdfResponse = await fetch(body.pdf_url);
       if (!pdfResponse.ok) {
         throw new Error(`Failed to fetch PDF: ${pdfResponse.status}`);
       }
       const pdfBuffer = await pdfResponse.arrayBuffer();
-      const pdfBase64 = btoa(
+      pdfBase64 = btoa(
         new Uint8Array(pdfBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
       );
-      pages = await extractTextFromPDF(pdfBase64);
+    }
+
+    let pages: ExtractedPage[] = [];
+    let totalPages = 0;
+
+    if (body.raw_text) {
+      // Raw text provided directly
+      pages = [{ page_number: 1, text: body.raw_text }];
+      totalPages = 1;
+    } else if (pdfBase64) {
+      // Get total page count first
+      totalPages = await getPdfPageCount(pdfBase64);
+      console.log(`[ingest-legal-doc] PDF has ${totalPages} pages total`);
+
+      if (isBatchMode) {
+        // BATCH MODE: Only extract specified page range
+        const startPage = Math.max(1, body.start_page!);
+        const endPage = Math.min(totalPages, body.end_page!);
+        
+        console.log(`[ingest-legal-doc] Batch mode: extracting pages ${startPage}-${endPage}`);
+        
+        // Split PDF to just the pages we need
+        const chunkBase64 = await splitPdfPages(pdfBase64, startPage, endPage);
+        pages = await extractTextFromPDFChunk(chunkBase64, startPage);
+        
+      } else {
+        // FULL MODE: Extract all pages using batching
+        pages = await extractTextFromPDF(pdfBase64);
+      }
     }
 
     console.log(`[ingest-legal-doc] Extracted ${pages.length} pages`);
 
-    // 2. Combine full text
+    // 2. Combine full text for this batch
     const fullText = pages.map((p) => p.text).join("\n\n---PAGE---\n\n");
 
     // 3. Create chunks
@@ -678,17 +766,52 @@ serve(async (req) => {
     const detectedCodes = body.detect_hs_codes !== false ? detectHSCodes(pages) : [];
     console.log(`[ingest-legal-doc] Detected ${detectedCodes.length} HS codes`);
 
-    // 5. Upsert legal_source
-    const sourceId = await upsertLegalSource(supabase, body, fullText);
-    console.log(`[ingest-legal-doc] Created/updated source ID: ${sourceId}`);
+    // 5. Handle source record
+    let sourceId: number;
+    
+    if (isBatchMode && body.source_id) {
+      // Append mode: use existing source
+      sourceId = body.source_id;
+      console.log(`[ingest-legal-doc] Appending to existing source ID: ${sourceId}`);
+      
+      // Append to full_text
+      const { data: existingSource } = await supabase
+        .from("legal_sources")
+        .select("full_text")
+        .eq("id", sourceId)
+        .single();
+      
+      if (existingSource) {
+        const combinedText = (existingSource.full_text || "") + "\n\n---BATCH---\n\n" + fullText;
+        await supabase
+          .from("legal_sources")
+          .update({ full_text: combinedText })
+          .eq("id", sourceId);
+      }
+    } else {
+      // Create new source
+      sourceId = await upsertLegalSource(supabase, body, fullText);
+      console.log(`[ingest-legal-doc] Created/updated source ID: ${sourceId}`);
+    }
 
-    // 6. Insert chunks
-    const chunksCreated = await insertChunks(
-      supabase,
-      sourceId,
-      chunks,
-      body.generate_embeddings !== false
-    );
+    // 6. Insert chunks (append mode - don't delete existing for batch)
+    let chunksCreated = 0;
+    if (isBatchMode && body.source_id) {
+      // Append chunks without deleting existing ones
+      chunksCreated = await insertChunksAppend(
+        supabase,
+        sourceId,
+        chunks,
+        body.generate_embeddings !== false
+      );
+    } else {
+      chunksCreated = await insertChunks(
+        supabase,
+        sourceId,
+        chunks,
+        body.generate_embeddings !== false
+      );
+    }
 
     // 7. Insert HS evidence
     const evidenceCreated = await insertHSEvidence(
@@ -708,6 +831,9 @@ serve(async (req) => {
       chunks_created: chunksCreated,
       detected_codes_count: detectedCodes.length,
       evidence_created: evidenceCreated,
+      total_pages: totalPages,
+      batch_start: isBatchMode ? body.start_page : undefined,
+      batch_end: isBatchMode ? body.end_page : undefined,
     };
 
     return new Response(JSON.stringify(response), {

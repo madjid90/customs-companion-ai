@@ -253,6 +253,7 @@ export default function AdminUpload() {
   }, [updateFileStatus]);
 
   // Ingestion pour documents réglementaires (accords, circulaires, code des douanes)
+  // Orchestration côté client pour éviter les timeouts sur gros documents
   const runLegalIngestion = useCallback(async (
     pdfId: string,
     filePath: string,
@@ -260,11 +261,13 @@ export default function AdminUpload() {
     fileName: string,
     docType: DocumentType
   ) => {
-    const FETCH_TIMEOUT_MS = 300000; // 5 min pour gros documents
+    const BATCH_SIZE = 5; // Pages per batch - small to avoid worker limits
+    const FETCH_TIMEOUT_MS = 60000; // 60s per batch (within edge function limit)
+    const DELAY_BETWEEN_BATCHES = 1000;
     
     updateFileStatus(fileId, { 
-      progress: 65,
-      error: "Ingestion pour RAG..."
+      progress: 60,
+      error: "Préparation du document..."
     });
 
     // Récupérer le PDF depuis le storage pour l'envoyer en base64
@@ -290,51 +293,134 @@ export default function AdminUpload() {
       circulaire: "circular",
     };
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    // Helper: fetch with timeout
+    const fetchWithTimeout = async (body: object): Promise<Response> => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ingest-legal-doc`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+              "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          }
+        );
+        
+        clearTimeout(timeoutId);
+        return response;
+      } catch (err) {
+        clearTimeout(timeoutId);
+        throw err;
+      }
+    };
 
-    try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ingest-legal-doc`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-            "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          },
-          body: JSON.stringify({
-            source_type: sourceTypeMap[docType],
-            source_ref: fileName.replace(".pdf", ""),
-            title: fileName.replace(".pdf", "").replace(/_/g, " "),
-            pdf_base64: base64,
-            country_code: "MA",
-            generate_embeddings: true,
-            detect_hs_codes: true,
-          }),
-          signal: controller.signal,
+    // First batch: creates source and returns total pages
+    updateFileStatus(fileId, { 
+      progress: 62,
+      error: "Ingestion batch 1..."
+    });
+
+    const firstBatchResponse = await fetchWithTimeout({
+      source_type: sourceTypeMap[docType],
+      source_ref: fileName.replace(".pdf", ""),
+      title: fileName.replace(".pdf", "").replace(/_/g, " "),
+      pdf_base64: base64,
+      country_code: "MA",
+      generate_embeddings: true,
+      detect_hs_codes: true,
+      batch_mode: true,
+      start_page: 1,
+      end_page: BATCH_SIZE,
+    });
+
+    if (!firstBatchResponse.ok) {
+      const errorText = await firstBatchResponse.text();
+      throw new Error(`HTTP ${firstBatchResponse.status}: ${errorText.substring(0, 200)}`);
+    }
+
+    const firstResult = await firstBatchResponse.json();
+    
+    if (!firstResult.success) {
+      throw new Error(firstResult.error || "Erreur lors de l'ingestion");
+    }
+
+    const sourceId = firstResult.source_id;
+    const totalPages = firstResult.total_pages || BATCH_SIZE;
+    let processedPages = firstResult.pages_processed || BATCH_SIZE;
+    let totalChunks = firstResult.chunks_created || 0;
+    let totalCodes = firstResult.detected_codes_count || 0;
+    let totalEvidence = firstResult.evidence_created || 0;
+
+    console.log(`[LegalIngestion] First batch done: ${processedPages}/${totalPages} pages, source_id=${sourceId}`);
+
+    // Process remaining batches
+    let currentPage = BATCH_SIZE + 1;
+
+    while (currentPage <= totalPages) {
+      const endPage = Math.min(currentPage + BATCH_SIZE - 1, totalPages);
+      const batchNum = Math.ceil(currentPage / BATCH_SIZE);
+      
+      const progressPercent = 62 + Math.round((processedPages / totalPages) * 35);
+      
+      updateFileStatus(fileId, { 
+        progress: progressPercent,
+        error: `Batch ${batchNum}: pages ${currentPage}-${endPage}...`
+      });
+
+      await new Promise(r => setTimeout(r, DELAY_BETWEEN_BATCHES));
+
+      try {
+        const batchResponse = await fetchWithTimeout({
+          source_type: sourceTypeMap[docType],
+          source_ref: fileName.replace(".pdf", ""),
+          pdf_base64: base64,
+          country_code: "MA",
+          generate_embeddings: true,
+          detect_hs_codes: true,
+          batch_mode: true,
+          start_page: currentPage,
+          end_page: endPage,
+          source_id: sourceId,
+        });
+
+        if (!batchResponse.ok) {
+          const errorText = await batchResponse.text();
+          console.warn(`[LegalIngestion] Batch ${batchNum} error: ${errorText.substring(0, 100)}`);
+          // Continue with next batch on error
+        } else {
+          const batchResult = await batchResponse.json();
+          
+          if (batchResult.success) {
+            processedPages += batchResult.pages_processed || 0;
+            totalChunks += batchResult.chunks_created || 0;
+            totalCodes += batchResult.detected_codes_count || 0;
+            totalEvidence += batchResult.evidence_created || 0;
+            
+            console.log(`[LegalIngestion] Batch ${batchNum} done: ${processedPages}/${totalPages} pages`);
+          }
         }
-      );
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
+      } catch (batchError: any) {
+        console.warn(`[LegalIngestion] Batch ${batchNum} failed:`, batchError.message);
+        // Continue with next batch
       }
 
-      const result = await response.json();
-      
-      return {
-        success: result.success,
-        chunks_created: result.chunks_created || 0,
-        detected_codes_count: result.detected_codes_count || 0,
-        evidence_created: result.evidence_created || 0,
-        pages_processed: result.pages_processed || 0,
-      };
-    } finally {
-      clearTimeout(timeoutId);
+      currentPage = endPage + 1;
     }
+
+    return {
+      success: true,
+      chunks_created: totalChunks,
+      detected_codes_count: totalCodes,
+      evidence_created: totalEvidence,
+      pages_processed: processedPages,
+    };
   }, [updateFileStatus]);
 
   const detectDocumentTypeFromName = (fileName: string): { category: string; label: string } => {
