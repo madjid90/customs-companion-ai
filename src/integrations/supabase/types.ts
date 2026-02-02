@@ -2042,6 +2042,26 @@ export type Database = {
           id: string
         }[]
       }
+      search_hs_codes_hybrid: {
+        Args: {
+          match_count?: number
+          query_embedding: string
+          query_text: string
+          semantic_weight?: number
+        }
+        Returns: {
+          chapter_number: number
+          code: string
+          code_clean: string
+          combined_score: number
+          description_en: string
+          description_fr: string
+          fts_score: number
+          id: string
+          level: string
+          semantic_score: number
+        }[]
+      }
       search_hs_codes_semantic: {
         Args: {
           match_count?: number
@@ -2096,6 +2116,23 @@ export type Database = {
           relevance_score: number
           source_id: number
           source_title: string
+        }[]
+      }
+      search_legal_chunks_hybrid: {
+        Args: {
+          match_count?: number
+          query_embedding: string
+          query_text: string
+          semantic_weight?: number
+        }
+        Returns: {
+          article_number: string
+          chunk_text: string
+          chunk_type: string
+          combined_score: number
+          id: number
+          section_title: string
+          source_id: number
         }[]
       }
       search_legal_chunks_semantic: {
@@ -2213,6 +2250,24 @@ export type Database = {
           note_type: string
           page_number: number
           relevance_score: number
+        }[]
+      }
+      search_tariff_notes_hybrid: {
+        Args: {
+          chapter_filters?: string[]
+          match_count?: number
+          query_embedding: string
+          query_text: string
+          semantic_weight?: number
+        }
+        Returns: {
+          anchor: string
+          chapter_number: string
+          combined_score: number
+          id: number
+          note_text: string
+          note_type: string
+          page_number: number
         }[]
       }
       search_tariff_notes_semantic: {
