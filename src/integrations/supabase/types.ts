@@ -820,37 +820,64 @@ export type Database = {
       }
       legal_chunks: {
         Row: {
+          article_number: string | null
           char_end: number | null
           char_start: number | null
           chunk_index: number
           chunk_text: string
+          chunk_type: string | null
           created_at: string
           embedding: string | null
+          hierarchy_path: string | null
           id: number
+          is_active: boolean | null
+          keywords: Json | null
+          mentioned_hs_codes: Json | null
           page_number: number | null
+          parent_section: string | null
+          section_title: string | null
           source_id: number
+          token_count: number | null
         }
         Insert: {
+          article_number?: string | null
           char_end?: number | null
           char_start?: number | null
           chunk_index?: number
           chunk_text: string
+          chunk_type?: string | null
           created_at?: string
           embedding?: string | null
+          hierarchy_path?: string | null
           id?: number
+          is_active?: boolean | null
+          keywords?: Json | null
+          mentioned_hs_codes?: Json | null
           page_number?: number | null
+          parent_section?: string | null
+          section_title?: string | null
           source_id: number
+          token_count?: number | null
         }
         Update: {
+          article_number?: string | null
           char_end?: number | null
           char_start?: number | null
           chunk_index?: number
           chunk_text?: string
+          chunk_type?: string | null
           created_at?: string
           embedding?: string | null
+          hierarchy_path?: string | null
           id?: number
+          is_active?: boolean | null
+          keywords?: Json | null
+          mentioned_hs_codes?: Json | null
           page_number?: number | null
+          parent_section?: string | null
+          section_title?: string | null
           source_id?: number
+          token_count?: number | null
         }
         Relationships: [
           {
@@ -916,41 +943,56 @@ export type Database = {
         Row: {
           country_code: string
           created_at: string
+          document_type: string | null
+          effective_date: string | null
           excerpt: string | null
           full_text: string | null
           id: number
+          is_current: boolean | null
           issuer: string | null
+          language: string | null
           source_date: string | null
           source_ref: string
           source_type: string
           source_url: string | null
           title: string | null
+          total_chunks: number | null
         }
         Insert: {
           country_code?: string
           created_at?: string
+          document_type?: string | null
+          effective_date?: string | null
           excerpt?: string | null
           full_text?: string | null
           id?: number
+          is_current?: boolean | null
           issuer?: string | null
+          language?: string | null
           source_date?: string | null
           source_ref: string
           source_type: string
           source_url?: string | null
           title?: string | null
+          total_chunks?: number | null
         }
         Update: {
           country_code?: string
           created_at?: string
+          document_type?: string | null
+          effective_date?: string | null
           excerpt?: string | null
           full_text?: string | null
           id?: number
+          is_current?: boolean | null
           issuer?: string | null
+          language?: string | null
           source_date?: string | null
           source_ref?: string
           source_type?: string
           source_url?: string | null
           title?: string | null
+          total_chunks?: number | null
         }
         Relationships: []
       }
@@ -2031,6 +2073,29 @@ export type Database = {
           similarity: number
           summary: string
           title: string
+        }[]
+      }
+      search_legal_by_article: {
+        Args: { p_article_pattern: string; p_source_type?: string }
+        Returns: {
+          article_number: string
+          chunk_text: string
+          hierarchy_path: string
+          id: number
+          section_title: string
+          source_id: number
+          source_title: string
+        }[]
+      }
+      search_legal_by_hs_code: {
+        Args: { p_hs_code: string }
+        Returns: {
+          article_number: string
+          chunk_text: string
+          id: number
+          relevance_score: number
+          source_id: number
+          source_title: string
         }[]
       }
       search_legal_chunks_semantic: {
