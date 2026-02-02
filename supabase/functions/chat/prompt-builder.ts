@@ -15,7 +15,6 @@ import { extractTopPassages, formatPassagesForPrompt } from "./passage-scorer.ts
  */
 export function buildSystemPrompt(
   context: RAGContext,
-  veilleDocuments: any[],
   legalPdfTexts: Record<string, { text: string; title: string; download_url: string }>,
   imageAnalysis: ImageAnalysisResult | null,
   country: string,
@@ -637,14 +636,6 @@ ${context.pdf_summaries.length > 0 ? context.pdf_summaries.map((p: any, idx: num
   return content;
 }).join('\n') : "Aucune extraction PDF"}
 
-### Documents de veille réglementaire
-${veilleDocuments.length > 0 ? veilleDocuments.map((v: any) => {
-  let content = `---\n**${v.title}** (${v.importance || 'standard'})\n`;
-  if (v.source_name) content += `Source: ${v.source_name}\n`;
-  if (v.summary) content += `Résumé: ${v.summary}\n`;
-  if (v.content) content += `Contenu: ${v.content.substring(0, 1000)}...\n`;
-  return content;
-}).join('\n') : "Aucun document de veille"}
 
 ### Références légales avec texte intégral
 ${context.legal_references.length > 0 ? context.legal_references.map((ref: any) => {

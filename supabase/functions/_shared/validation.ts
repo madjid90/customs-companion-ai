@@ -29,7 +29,7 @@ export interface AnalyzePdfRequest {
 }
 
 export interface GenerateEmbeddingsRequest {
-  table?: "hs_codes" | "knowledge_documents" | "pdf_extractions" | "veille_documents";
+  table?: "hs_codes" | "knowledge_documents" | "pdf_extractions" | "tariff_notes" | "legal_chunks";
   limit?: number;
   forceUpdate?: boolean;
 }
@@ -154,7 +154,7 @@ export function validateGenerateEmbeddingsRequest(body: unknown): { valid: boole
   const b = body as Record<string, unknown>;
   
   // table optionnel mais doit être valide
-  const validTables = ["hs_codes", "knowledge_documents", "pdf_extractions", "veille_documents"];
+  const validTables = ["hs_codes", "knowledge_documents", "pdf_extractions", "tariff_notes", "legal_chunks"];
   if (b.table !== undefined && !validTables.includes(b.table as string)) {
     return { valid: false, error: `table doit être: ${validTables.join(", ")}` };
   }

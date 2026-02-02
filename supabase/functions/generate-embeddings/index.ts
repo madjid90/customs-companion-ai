@@ -95,7 +95,7 @@ serve(async (req) => {
     logger.info("Starting embeddings generation", { table, limit, forceUpdate });
 
     // Validate table parameter to prevent injection
-    const validTables = ["hs_codes", "knowledge_documents", "pdf_extractions", "veille_documents"];
+    const validTables = ["hs_codes", "knowledge_documents", "pdf_extractions", "tariff_notes", "legal_chunks"];
     if (table && !validTables.includes(table)) {
       return errorResponse(req, `Invalid table. Must be one of: ${validTables.join(", ")}`, 400);
     }
@@ -302,40 +302,38 @@ serve(async (req) => {
       }
     }
 
-    // Process veille documents
-    if (!table || table === "veille_documents") {
+    // Process tariff notes
+    if (!table || table === "tariff_notes") {
       const startProcessed = results.processed;
       try {
         let query = supabase
-          .from("veille_documents")
-          .select("id, title, summary, content, category")
-          .eq("status", "approved")
+          .from("tariff_notes")
+          .select("id, note_type, note_text, chapter_number")
           .limit(limit);
 
         if (!forceUpdate) {
           query = query.is("embedding", null);
         }
 
-        const { data: veilleD, error } = await query;
+        const { data: notes, error } = await query;
 
         if (error) throw error;
 
-        if (veilleD && veilleD.length > 0) {
+        if (notes && notes.length > 0) {
           const batchSize = 10;
-          for (let i = 0; i < veilleD.length; i += batchSize) {
-            const batch = veilleD.slice(i, i + batchSize);
-            const texts = batch.map((doc) =>
-              `${doc.title} (${doc.category || "veille"}): ${doc.summary || ""} ${doc.content?.substring(0, 5000) || ""}`
+          for (let i = 0; i < notes.length; i += batchSize) {
+            const batch = notes.slice(i, i + batchSize);
+            const texts = batch.map((note) =>
+              `Note tarifaire ${note.note_type} (chapitre ${note.chapter_number || ""}): ${note.note_text || ""}`
             );
 
             try {
               const embeddings = await generateEmbeddingsBatch(texts, OPENAI_API_KEY);
 
               for (let j = 0; j < batch.length; j++) {
-                // Convert embedding array to pgvector string format "[...]"
                 const embeddingString = `[${embeddings[j].join(",")}]`;
                 const { error: updateError } = await supabase
-                  .from("veille_documents")
+                  .from("tariff_notes")
                   .update({
                     embedding: embeddingString,
                     embedding_updated_at: new Date().toISOString(),
@@ -355,9 +353,65 @@ serve(async (req) => {
             await new Promise((r) => setTimeout(r, 500));
           }
         }
-        results.details.push(`veille_documents: ${veilleD?.length || 0} found, ${results.processed - startProcessed} processed`);
+        results.details.push(`tariff_notes: ${notes?.length || 0} found, ${results.processed - startProcessed} processed`);
       } catch (e) {
-        results.details.push(`veille_documents error: ${e}`);
+        results.details.push(`tariff_notes error: ${e}`);
+      }
+    }
+
+    // Process legal chunks
+    if (!table || table === "legal_chunks") {
+      const startProcessed = results.processed;
+      try {
+        let query = supabase
+          .from("legal_chunks")
+          .select("id, chunk_text, article_number, section_title")
+          .limit(limit);
+
+        if (!forceUpdate) {
+          query = query.is("embedding", null);
+        }
+
+        const { data: chunks, error } = await query;
+
+        if (error) throw error;
+
+        if (chunks && chunks.length > 0) {
+          const batchSize = 10;
+          for (let i = 0; i < chunks.length; i += batchSize) {
+            const batch = chunks.slice(i, i + batchSize);
+            const texts = batch.map((chunk) =>
+              `${chunk.article_number ? `Article ${chunk.article_number}` : ""} ${chunk.section_title || ""}: ${chunk.chunk_text || ""}`
+            );
+
+            try {
+              const embeddings = await generateEmbeddingsBatch(texts, OPENAI_API_KEY);
+
+              for (let j = 0; j < batch.length; j++) {
+                const embeddingString = `[${embeddings[j].join(",")}]`;
+                const { error: updateError } = await supabase
+                  .from("legal_chunks")
+                  .update({
+                    embedding: embeddingString,
+                  })
+                  .eq("id", batch[j].id);
+
+                if (updateError) {
+                  results.errors++;
+                } else {
+                  results.processed++;
+                }
+              }
+            } catch (batchError) {
+              results.errors += batch.length;
+            }
+
+            await new Promise((r) => setTimeout(r, 500));
+          }
+        }
+        results.details.push(`legal_chunks: ${chunks?.length || 0} found, ${results.processed - startProcessed} processed`);
+      } catch (e) {
+        results.details.push(`legal_chunks error: ${e}`);
       }
     }
 
