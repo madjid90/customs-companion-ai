@@ -196,15 +196,20 @@ async function extractTextFromPDFChunk(chunkBase64: string, startPage: number): 
   const requestBody = {
     model: "claude-sonnet-4-20250514", // Supports PDF input
     max_tokens: 4000, // Reduced for single page
-    system: `Tu es un extracteur de texte. Extrais le texte intégral de chaque page du document PDF.
-Retourne un JSON strict:
+    system: `Tu es un extracteur de texte multilingue (français, arabe, anglais). 
+Extrais le texte intégral de chaque page du document PDF.
+
+أنت مستخرج نصوص متعدد اللغات. استخرج النص الكامل من كل صفحة في وثيقة PDF.
+
+Retourne un JSON strict / أرجع JSON صارم:
 {
   "pages": [
-    {"page_number": 1, "text": "...contenu page 1..."},
-    {"page_number": 2, "text": "...contenu page 2..."}
+    {"page_number": 1, "text": "...contenu page 1 / محتوى الصفحة 1..."},
+    {"page_number": 2, "text": "...contenu page 2 / محتوى الصفحة 2..."}
   ]
 }
-Préserve la structure, les numéros d'articles, les références. Ne résume pas, extrais tout le texte.`,
+Préserve la structure, les numéros d'articles, les références. Ne résume pas, extrais tout le texte.
+حافظ على البنية وأرقام المواد والمراجع. لا تلخص، استخرج كل النص.`,
     messages: [
       {
         role: "user",
@@ -219,7 +224,8 @@ Préserve la structure, les numéros d'articles, les références. Ne résume pa
           },
           {
             type: "text",
-            text: `Extrais le texte intégral de toutes les pages de ce document PDF. JSON strict uniquement.`,
+            text: `Extrais le texte intégral de toutes les pages de ce document PDF (français ou arabe). JSON strict uniquement.
+استخرج النص الكامل من جميع صفحات وثيقة PDF (فرنسية أو عربية). JSON صارم فقط.`,
           },
         ],
       },
@@ -323,11 +329,16 @@ async function extractTextFromPDF(pdfBase64: string): Promise<ExtractedPage[]> {
 // CHUNKING WITH METADATA EXTRACTION
 // ============================================================================
 
-// Extract article number from text (e.g., "Article 123", "Art. 45 bis")
+// Extract article number from text (e.g., "Article 123", "Art. 45 bis", "المادة 123")
 function extractArticleNumber(text: string): string | null {
   const patterns = [
+    // French patterns
     /\bArt(?:icle)?\.?\s*(\d+(?:\s*(?:bis|ter|quater|quinquies|sexies|septies|octies|novies|decies))?(?:\s*[-–]\s*\d+)?)/i,
     /\b§\s*(\d+(?:\.\d+)*)/,
+    // Arabic patterns: المادة (al-mādda = article), الفصل (al-faṣl = chapter/article)
+    /(?:المادة|الفصل|البند)\s*[:.]?\s*(\d+(?:\s*[-–]\s*\d+)?)/,
+    // Arabic ordinal numbers written out
+    /(?:المادة|الفصل)\s+(الأول[ى]?|الثاني[ة]?|الثالث[ة]?|الرابع[ة]?|الخامس[ة]?)/,
   ];
   
   for (const pattern of patterns) {
@@ -337,11 +348,14 @@ function extractArticleNumber(text: string): string | null {
   return null;
 }
 
-// Extract section/chapter title from text
+// Extract section/chapter title from text (French + Arabic)
 function extractSectionTitle(text: string): string | null {
   const patterns = [
+    // French patterns
     /^((?:CHAPITRE|TITRE|SECTION|SOUS-SECTION|PARTIE)\s+[IVXLCDM\d]+(?:\s*[-–:]\s*.{5,80})?)/im,
     /^((?:Chapitre|Titre|Section|Sous-section|Partie)\s+[IVXLCDM\d]+(?:\s*[-–:]\s*.{5,80})?)/m,
+    // Arabic patterns: الباب (al-bāb = part/title), الفصل (al-faṣl = chapter), القسم (al-qism = section)
+    /^((?:الباب|الفصل|القسم|الجزء|العنوان)\s+(?:[IVXLCDM\d]+|الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر)(?:\s*[-–:]\s*.{5,80})?)/m,
   ];
   
   for (const pattern of patterns) {
@@ -351,28 +365,51 @@ function extractSectionTitle(text: string): string | null {
   return null;
 }
 
-// Determine chunk type based on content
+// Determine chunk type based on content (French + Arabic)
 function detectChunkType(text: string): string {
   const textLower = text.toLowerCase();
   
+  // Definition patterns (French + Arabic: تعريف = taʿrīf, يقصد ب = yuqṣad bi)
   if (/\b(définition|définit|entend par|au sens du présent)/i.test(text)) return "definition";
+  if (/(?:تعريف|يقصد ب|يراد ب|المقصود ب)/.test(text)) return "definition";
+  
+  // Header patterns
   if (/^(CHAPITRE|TITRE|SECTION)/i.test(text.trim())) return "header";
+  if (/^(?:الباب|الفصل|القسم|الجزء)/.test(text.trim())) return "header";
+  
+  // Article patterns
   if (/\bart(?:icle)?\.?\s*\d+/i.test(text)) return "article";
+  if (/(?:المادة|الفصل|البند)\s*\d+/.test(text)) return "article";
+  
+  // Note patterns (Arabic: ملاحظة = mulāḥaẓa)
   if (/\b(note|nota|n\.b\.)/i.test(textLower)) return "note";
+  if (/(?:ملاحظة|ملحوظة|تنبيه)/.test(text)) return "note";
+  
+  // Exclusion patterns (Arabic: استثناء = istiṯnāʾ, لا يشمل = lā yašmal)
   if (/\b(exception|exclut|ne comprend pas|à l'exclusion)/i.test(textLower)) return "exclusion";
+  if (/(?:استثناء|لا يشمل|باستثناء|يستثنى)/.test(text)) return "exclusion";
+  
+  // Procedure patterns (Arabic: إجراء = ʾijrāʾ)
   if (/\b(procédure|formalité|déclaration|document)/i.test(textLower)) return "procedure";
+  if (/(?:إجراء|إجراءات|تصريح|وثيقة|مستند)/.test(text)) return "procedure";
+  
+  // Sanction patterns (Arabic: عقوبة = ʿuqūba, غرامة = ġarāma)
   if (/\b(pénalité|sanction|amende|infraction)/i.test(textLower)) return "sanction";
+  if (/(?:عقوبة|غرامة|جزاء|مخالفة)/.test(text)) return "sanction";
+  
+  // Tariff patterns (Arabic: رسم = rasm, ضريبة = ḍarība)
   if (/\b(taux|droit|taxe|%)/i.test(textLower)) return "tariff";
+  if (/(?:رسم|ضريبة|تعريفة|نسبة)/.test(text)) return "tariff";
   
   return "general";
 }
 
-// Extract keywords from text
+// Extract keywords from text (French + Arabic)
 function extractKeywords(text: string): string[] {
   const keywords: Set<string> = new Set();
   
-  // Legal/customs keywords
-  const keywordPatterns = [
+  // French legal/customs keywords
+  const frenchPatterns = [
     /\b(importation|exportation|transit|admission temporaire|dédouanement|régime douanier)\b/gi,
     /\b(certificat d'origine|EUR\.?\s*1|déclaration en douane|DUM)\b/gi,
     /\b(franchise|exonération|suspension|drawback)\b/gi,
@@ -382,14 +419,39 @@ function extractKeywords(text: string): string[] {
     /\b(contingent|quota|licence d'importation)\b/gi,
   ];
   
-  for (const pattern of keywordPatterns) {
+  // Arabic legal/customs keywords
+  const arabicPatterns = [
+    // استيراد (istīrād = import), تصدير (taṣdīr = export), عبور (ʿubūr = transit)
+    /(استيراد|تصدير|عبور|إدخال مؤقت|تخليص جمركي|نظام جمركي)/g,
+    // شهادة المنشأ (šahādat al-manšaʾ = certificate of origin)
+    /(شهادة المنشأ|التصريح الجمركي|وثيقة الاستيراد)/g,
+    // إعفاء (ʾiʿfāʾ = exemption), تعليق (taʿlīq = suspension)
+    /(إعفاء|تعليق|امتياز جمركي)/g,
+    // مراقبة (murāqaba = control), تفتيش (taftīš = inspection)
+    /(مراقبة|تفتيش|فحص|معاينة)/g,
+    // القيمة الجمركية (al-qīma al-jumrukiyya = customs value)
+    /(القيمة الجمركية|قيمة المعاملة)/g,
+    // المنشأ التفضيلي (al-manšaʾ al-tafḍīlī = preferential origin)
+    /(المنشأ التفضيلي|المنشأ غير التفضيلي|التراكم)/g,
+    // حصة (ḥiṣṣa = quota), رخصة استيراد (ruḫṣat istīrād = import license)
+    /(حصة|رخصة استيراد|ترخيص)/g,
+  ];
+  
+  for (const pattern of frenchPatterns) {
     let match;
     while ((match = pattern.exec(text)) !== null) {
       keywords.add(match[1].toLowerCase().trim());
     }
   }
   
-  return Array.from(keywords).slice(0, 10);
+  for (const pattern of arabicPatterns) {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      keywords.add(match[1].trim());
+    }
+  }
+  
+  return Array.from(keywords).slice(0, 15);
 }
 
 // Extract HS codes mentioned in chunk
