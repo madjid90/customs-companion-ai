@@ -31,6 +31,10 @@ import {
   searchVeilleHybrid,
   searchTariffNotesHybrid,
   searchTariffNotesByChapter,
+  // Nouvelles fonctions hybrides RRF
+  searchHSCodesHybrid,
+  searchTariffNotesHybridRRF,
+  searchLegalChunksHybrid,
 } from "./semantic-search.ts";
 import {
   analyzeQuestion,
@@ -67,6 +71,35 @@ import {
 
 const LOVABLE_AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const LOVABLE_AI_MODEL = "google/gemini-2.5-flash";
+
+// Configuration des timeouts
+const TIMEOUTS = {
+  embedding: 5000,    // 5s
+  search: 8000,       // 8s
+  llm: 60000,         // 60s
+};
+
+// =============================================================================
+// FONCTIONS UTILITAIRES
+// =============================================================================
+
+/**
+ * Exécute une promesse avec timeout
+ */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  fallback: T,
+  name: string
+): Promise<T> {
+  const timeout = new Promise<T>((resolve) => {
+    setTimeout(() => {
+      console.warn(`${name} timeout after ${ms}ms, using fallback`);
+      resolve(fallback);
+    }, ms);
+  });
+  return Promise.race([promise, timeout]);
+}
 
 // =============================================================================
 // HANDLER PRINCIPAL
@@ -733,28 +766,60 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     }
 
     // =========================================================================
-    // SEMANTIC SEARCH ENHANCEMENT
+    // SEMANTIC SEARCH ENHANCEMENT - VERSION OPTIMISÉE
     // =========================================================================
     if (useSemanticSearch && queryEmbedding) {
-      console.log("Using semantic search enhancement...");
+      console.log("Using semantic search enhancement (parallel with hybrid)...");
       const adaptiveThresholds = getAdaptiveThresholds(analysis.intent);
 
-      const [semanticHS, semanticKnowledge, semanticPDFs, semanticVeille] = await Promise.all([
+      // Toutes les recherches en parallèle avec timeout
+      const [semanticHS, semanticKnowledge, semanticPDFs, semanticVeille, legalChunks] = await Promise.all([
+        // HS Codes - utiliser recherche hybride RRF
         context.hs_codes.length < 10
-          ? searchHSCodesSemantic(supabase, queryEmbedding, adaptiveThresholds.hsThreshold, adaptiveThresholds.limits.hs)
+          ? withTimeout(
+              searchHSCodesHybrid(supabase, queryEmbedding, cleanSearchQuery, 0.6, adaptiveThresholds.limits.hs),
+              TIMEOUTS.search,
+              [],
+              "HS hybrid search"
+            )
           : Promise.resolve([]),
+        // Knowledge documents
         context.knowledge_documents.length < 5
-          ? searchKnowledgeHybrid(supabase, queryEmbedding, cleanSearchQuery, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs)
+          ? withTimeout(
+              searchKnowledgeHybrid(supabase, queryEmbedding, cleanSearchQuery, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs),
+              TIMEOUTS.search,
+              [],
+              "Knowledge search"
+            )
           : Promise.resolve([]),
+        // PDFs
         context.pdf_summaries.length < 3
-          ? searchPDFsHybrid(supabase, queryEmbedding, cleanSearchQuery, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs, SUPABASE_URL)
+          ? withTimeout(
+              searchPDFsHybrid(supabase, queryEmbedding, cleanSearchQuery, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs, SUPABASE_URL),
+              TIMEOUTS.search,
+              [],
+              "PDF search"
+            )
           : Promise.resolve([]),
+        // Veille
         veilleDocuments.length < 3
-          ? searchVeilleHybrid(supabase, queryEmbedding, cleanSearchQuery, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs)
+          ? withTimeout(
+              searchVeilleHybrid(supabase, queryEmbedding, cleanSearchQuery, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs),
+              TIMEOUTS.search,
+              [],
+              "Veille search"
+            )
           : Promise.resolve([]),
+        // Legal chunks (Code des Douanes) - NOUVEAU
+        withTimeout(
+          searchLegalChunksHybrid(supabase, queryEmbedding, cleanSearchQuery, 0.5, 8),
+          TIMEOUTS.search,
+          [],
+          "Legal chunks search"
+        ),
       ]);
 
-      // Merge semantic results
+      // Merge HS codes
       if (semanticHS.length > 0) {
         const existingCodes = new Set(context.hs_codes.map((c: any) => c.code || c.code_clean));
         const newHSCodes = semanticHS
@@ -787,11 +852,24 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         veilleDocuments = [...veilleDocuments, ...newVeille].slice(0, 8);
       }
 
+      // Ajouter les chunks légaux au contexte knowledge_documents
+      if (legalChunks.length > 0) {
+        const legalDocs = legalChunks.map((chunk: any) => ({
+          title: chunk.article_number ? `Article ${chunk.article_number} - Code des Douanes` : chunk.section_title || 'Code des Douanes',
+          content: chunk.chunk_text,
+          category: 'legal',
+          chunk_type: chunk.chunk_type,
+          source: 'legal_chunks',
+        }));
+        context.knowledge_documents = [...context.knowledge_documents, ...legalDocs].slice(0, 15);
+      }
+
       console.log("Semantic search added:", {
         hs_codes: semanticHS.length,
         knowledge: semanticKnowledge.length,
         pdfs: semanticPDFs.length,
         veille: semanticVeille.length,
+        legal_chunks: legalChunks.length,
       });
     }
 
