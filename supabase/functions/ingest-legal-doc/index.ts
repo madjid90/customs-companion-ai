@@ -667,19 +667,133 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
 // DATABASE OPERATIONS
 // ============================================================================
 
+/**
+ * Extract the actual document reference from the text content
+ * This handles cases where the file name doesn't match the real reference
+ * (e.g., file named "circulaire_24320.pdf" but contains "Circulaire n° 4601/311")
+ */
+function extractDocumentReference(fullText: string, sourceType: string): { ref: string | null; title: string | null } {
+  const textStart = fullText.slice(0, 3000); // Check first ~3000 chars for reference
+  
+  // Patterns for different document types (French + Arabic)
+  const patterns: { type: string; patterns: RegExp[] }[] = [
+    {
+      type: "circular",
+      patterns: [
+        // French: "Circulaire n° 4601/311", "Circulaire N°4601-311"
+        /[Cc]irculaire\s*[Nn°°.:\s]+(\d{2,5}[\s/-]?\d{0,4})/,
+        // Arabic: منشور رقم (manšūr raqm = circular number)
+        /(?:منشور|تعميم)\s*(?:رقم|عدد)?\s*[:.]?\s*(\d{2,5}[\s/-]?\d{0,4})/,
+      ],
+    },
+    {
+      type: "note",
+      patterns: [
+        /[Nn]ote\s*[Nn°°.:\s]+(\d{2,5}[\s/-]?\d{0,4})/,
+        /(?:مذكرة|ملاحظة)\s*(?:رقم|عدد)?\s*[:.]?\s*(\d{2,5}[\s/-]?\d{0,4})/,
+      ],
+    },
+    {
+      type: "decision",
+      patterns: [
+        /[Dd]écision\s*[Nn°°.:\s]+(\d{2,5}[\s/-]?\d{0,4})/,
+        /(?:قرار|مقرر)\s*(?:رقم|عدد)?\s*[:.]?\s*(\d{2,5}[\s/-]?\d{0,4})/,
+      ],
+    },
+    {
+      type: "decree",
+      patterns: [
+        /[Dd]écret\s*[Nn°°.:\s]+(\d[\d.-]+\d)/,
+        /(?:مرسوم|ظهير)\s*(?:رقم|عدد)?\s*[:.]?\s*([\d.-]+)/,
+      ],
+    },
+    {
+      type: "law",
+      patterns: [
+        /[Ll]oi\s*[Nn°°.:\s]+(\d[\d.-]+)/,
+        /(?:قانون)\s*(?:رقم|عدد)?\s*[:.]?\s*([\d.-]+)/,
+      ],
+    },
+    {
+      type: "arrêté",
+      patterns: [
+        /[Aa]rrêté\s*[Nn°°.:\s]+(\d[\d.-]+\d)/,
+        /(?:قرار وزاري)\s*(?:رقم|عدد)?\s*[:.]?\s*([\d.-]+)/,
+      ],
+    },
+  ];
+
+  let extractedRef: string | null = null;
+  let extractedTitle: string | null = null;
+
+  // Try to find reference based on source type first
+  const typePatterns = patterns.find(p => p.type === sourceType)?.patterns || [];
+  for (const pattern of typePatterns) {
+    const match = textStart.match(pattern);
+    if (match) {
+      extractedRef = match[1].trim();
+      break;
+    }
+  }
+
+  // If not found, try all patterns
+  if (!extractedRef) {
+    for (const group of patterns) {
+      for (const pattern of group.patterns) {
+        const match = textStart.match(pattern);
+        if (match) {
+          extractedRef = match[1].trim();
+          break;
+        }
+      }
+      if (extractedRef) break;
+    }
+  }
+
+  // Extract title: look for "OBJET :" or "موضوع" (mawḍūʿ = subject)
+  const titlePatterns = [
+    /OBJET\s*:\s*(.{10,150}?)(?:\.|$|\n)/i,
+    /Objet\s*:\s*(.{10,150}?)(?:\.|$|\n)/,
+    /(?:موضوع|الموضوع)\s*[:.\s]\s*(.{10,150}?)(?:\.|$|\n)/,
+  ];
+
+  for (const pattern of titlePatterns) {
+    const match = textStart.match(pattern);
+    if (match) {
+      extractedTitle = match[1].trim();
+      break;
+    }
+  }
+
+  console.log(`[ingest-legal-doc] Extracted reference: "${extractedRef}", title: "${extractedTitle?.slice(0, 50)}..."`);
+
+  return { ref: extractedRef, title: extractedTitle };
+}
+
 async function upsertLegalSource(
   supabase: any,
   request: IngestRequest,
   fullText: string
 ): Promise<number> {
+  // Try to extract the actual reference from the document content
+  const extracted = extractDocumentReference(fullText, request.source_type);
+  
+  // Use extracted reference if available, otherwise fall back to provided source_ref
+  const actualRef = extracted.ref || request.source_ref;
+  const actualTitle = request.title || extracted.title;
+  
+  if (extracted.ref && extracted.ref !== request.source_ref) {
+    console.log(`[ingest-legal-doc] Using extracted reference "${extracted.ref}" instead of provided "${request.source_ref}"`);
+  }
+
   const { data, error } = await supabase
     .from("legal_sources")
     .upsert(
       {
         country_code: request.country_code || "MA",
         source_type: request.source_type,
-        source_ref: request.source_ref,
-        title: request.title,
+        source_ref: actualRef,
+        title: actualTitle,
         issuer: request.issuer,
         source_date: request.source_date,
         source_url: request.source_url,
