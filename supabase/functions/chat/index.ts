@@ -28,7 +28,6 @@ import {
   searchHSCodesSemantic,
   searchKnowledgeHybrid,
   searchPDFsHybrid,
-  searchVeilleHybrid,
   searchTariffNotesHybrid,
   searchTariffNotesByChapter,
   // Nouvelles fonctions hybrides RRF
@@ -511,20 +510,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       }
     }
 
-    // 7. Get veille documents
-    let veilleDocuments: any[] = [];
-    if (analysis.keywords.length > 0) {
-      const veilleSearchTerm = escapeSearchTerm(analysis.keywords.slice(0, 2).join(' '));
-      const { data: veille } = await supabase
-        .from('veille_documents')
-        .select('id, title, summary, content, source_name, source_url, category, importance, publication_date, mentioned_hs_codes')
-        .eq('is_verified', true)
-        .or(`title.ilike.%${veilleSearchTerm}%,summary.ilike.%${veilleSearchTerm}%,content.ilike.%${veilleSearchTerm}%`)
-        .order('publication_date', { ascending: false })
-        .limit(5);
-      
-      if (veille) veilleDocuments = veille;
-    }
+    // 7. (REMOVED) Veille documents - fonctionnalité supprimée
 
     // 8. Get legal references - ALWAYS search for relevant circulars
     // Search by keywords AND by detected HS codes to ensure comprehensive coverage
@@ -773,7 +759,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       const adaptiveThresholds = getAdaptiveThresholds(analysis.intent);
 
       // Toutes les recherches en parallèle avec timeout
-      const [semanticHS, semanticKnowledge, semanticPDFs, semanticVeille, legalChunks] = await Promise.all([
+      const [semanticHS, semanticKnowledge, semanticPDFs, legalChunks] = await Promise.all([
         // HS Codes - utiliser recherche hybride RRF
         context.hs_codes.length < 10
           ? withTimeout(
@@ -801,16 +787,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
               "PDF search"
             )
           : Promise.resolve([]),
-        // Veille
-        veilleDocuments.length < 3
-          ? withTimeout(
-              searchVeilleHybrid(supabase, queryEmbedding, cleanSearchQuery, adaptiveThresholds.docThreshold, adaptiveThresholds.limits.docs),
-              TIMEOUTS.search,
-              [],
-              "Veille search"
-            )
-          : Promise.resolve([]),
-        // Legal chunks (Code des Douanes) - NOUVEAU
+        // Legal chunks (Code des Douanes)
         withTimeout(
           searchLegalChunksHybrid(supabase, queryEmbedding, cleanSearchQuery, 0.5, 8),
           TIMEOUTS.search,
@@ -844,14 +821,6 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         context.pdf_summaries = [...context.pdf_summaries, ...newPDFs].slice(0, 10);
       }
 
-      if (semanticVeille.length > 0) {
-        const existingVeilleTitles = new Set(veilleDocuments.map((d: any) => d.title));
-        const newVeille = semanticVeille
-          .filter((d: any) => !existingVeilleTitles.has(d.title))
-          .map((d: any) => ({ ...d, semantic_match: true }));
-        veilleDocuments = [...veilleDocuments, ...newVeille].slice(0, 8);
-      }
-
       // Ajouter les chunks légaux au contexte knowledge_documents
       if (legalChunks.length > 0) {
         const legalDocs = legalChunks.map((chunk: any) => ({
@@ -868,7 +837,6 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         hs_codes: semanticHS.length,
         knowledge: semanticKnowledge.length,
         pdfs: semanticPDFs.length,
-        veille: semanticVeille.length,
         legal_chunks: legalChunks.length,
       });
     }
@@ -877,7 +845,6 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       tariffs_with_inheritance: context.tariffs_with_inheritance.length,
       hs_codes: context.hs_codes.length,
       pdfs: context.pdf_summaries.length,
-      veille: veilleDocuments.length,
       tariff_notes: context.tariff_notes.length,
     });
 
@@ -887,7 +854,6 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     const availableSources = buildAvailableSources(context, SUPABASE_URL!);
     const systemPrompt = buildSystemPrompt(
       context,
-      veilleDocuments,
       legalPdfTexts,
       imageAnalysis,
       analysis.country,
@@ -1111,7 +1077,6 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       controlled: context.controlled_products.length,
       documents: context.knowledge_documents.length,
       pdfs: context.pdf_summaries.length,
-      veille: veilleDocuments.length,
       semantic_search_used: useSemanticSearch,
       sources_validated: sourceValidation.sources_validated.length,
       sources_rejected: sourceValidation.sources_rejected.length,
@@ -1194,7 +1159,6 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           controlled_found: context.controlled_products.length,
           documents_found: context.knowledge_documents.length,
           pdfs_used: context.pdf_summaries.length,
-          veille_docs: veilleDocuments.length,
           legal_references_found: context.legal_references.length,
         },
         // New: validated sources only
