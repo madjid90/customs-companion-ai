@@ -794,3 +794,113 @@ export async function searchLegalChunksHybrid(
   }
 }
 
+// ============================================================================
+// MULTILINGUAL SEARCH (ARABIC/FRENCH)
+// ============================================================================
+
+/**
+ * Détecte la langue principale d'un texte (arabe ou français)
+ */
+export function detectLanguage(text: string): 'ar' | 'fr' {
+  const arabicPattern = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
+  const arabicChars = (text.match(arabicPattern) || []).length;
+  const totalChars = text.replace(/\s/g, '').length;
+  
+  // If more than 30% Arabic characters, consider it Arabic
+  return arabicChars / totalChars > 0.3 ? 'ar' : 'fr';
+}
+
+/**
+ * Recherche multilingue des chunks légaux (supporte arabe et français)
+ */
+export async function searchLegalChunksMultilingual(
+  supabase: any,
+  queryEmbedding: number[],
+  queryText: string,
+  language?: 'ar' | 'fr',
+  limit: number = 10
+): Promise<any[]> {
+  const detectedLang = language || detectLanguage(queryText);
+  
+  try {
+    // Use the multilingual RPC function
+    const { data, error } = await supabase.rpc('search_legal_chunks_multilingual', {
+      query_text: queryText,
+      query_embedding: `[${queryEmbedding.join(',')}]`,
+      query_language: detectedLang,
+      match_count: limit,
+    });
+
+    if (error) {
+      console.warn('Multilingual legal search failed, falling back to hybrid:', error.message);
+      return searchLegalChunksHybrid(supabase, queryEmbedding, queryText, 0.5, limit);
+    }
+
+    return (data || []).map((chunk: any) => ({
+      ...chunk,
+      detected_language: detectedLang,
+    }));
+  } catch (error) {
+    console.error('Multilingual legal search failed:', error);
+    return [];
+  }
+}
+
+/**
+ * Recherche complète multilingue - combine HS codes, tariff notes, et legal chunks
+ */
+export async function performMultilingualSearch(
+  supabase: any,
+  queryEmbedding: number[] | null,
+  queryText: string,
+  options: {
+    language?: 'ar' | 'fr';
+    hsLimit?: number;
+    notesLimit?: number;
+    legalLimit?: number;
+    chapterFilters?: string[];
+  } = {}
+): Promise<{
+  hsCodes: any[];
+  tariffNotes: any[];
+  legalChunks: any[];
+  detectedLanguage: 'ar' | 'fr';
+}> {
+  const {
+    language,
+    hsLimit = 15,
+    notesLimit = 10,
+    legalLimit = 10,
+    chapterFilters,
+  } = options;
+  
+  const detectedLanguage = language || detectLanguage(queryText);
+  
+  const results = {
+    hsCodes: [] as any[],
+    tariffNotes: [] as any[],
+    legalChunks: [] as any[],
+    detectedLanguage,
+  };
+
+  if (!queryEmbedding) {
+    console.warn('No embedding available, search limited');
+    return results;
+  }
+
+  // Parallel searches
+  const [hsResults, notesResults, legalResults] = await Promise.all([
+    searchHSCodesHybrid(supabase, queryEmbedding, queryText, 0.6, hsLimit),
+    searchTariffNotesHybridRRF(supabase, queryEmbedding, queryText, chapterFilters || null, 0.5, notesLimit),
+    searchLegalChunksMultilingual(supabase, queryEmbedding, queryText, detectedLanguage, legalLimit),
+  ]);
+
+  results.hsCodes = hsResults;
+  results.tariffNotes = notesResults;
+  results.legalChunks = legalResults;
+
+  console.log(`[Multilingual Search] Lang: ${detectedLanguage}, HS: ${hsResults.length}, Notes: ${notesResults.length}, Legal: ${legalResults.length}`);
+
+  return results;
+}
+

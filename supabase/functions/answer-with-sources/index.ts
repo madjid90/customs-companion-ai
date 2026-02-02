@@ -243,10 +243,18 @@ function buildContextPrompt(context: DBContext): string {
   return prompt;
 }
 
-function buildSystemPrompt(context: DBContext): string {
+function buildSystemPrompt(context: DBContext, questionLanguage: 'ar' | 'fr' = 'fr'): string {
   const contextPrompt = buildContextPrompt(context);
 
+  const langInstruction = questionLanguage === 'ar' 
+    ? `## لغة الإجابة
+أجب باللغة العربية. استخدم المصطلحات التقنية (رموز SH، DDI، TVA) كما هي أو مترجمة حسب السياق.`
+    : `## LANGUE DE RÉPONSE
+Réponds en français. Utilise les termes techniques (codes SH, DDI, TVA) tels quels.`;
+
   return `Tu es un expert douanier marocain. Tu réponds UNIQUEMENT en utilisant les sources fournies.
+
+${langInstruction}
 
 ${contextPrompt}
 
@@ -254,7 +262,7 @@ ${contextPrompt}
 
 1. **Citations obligatoires** : Chaque affirmation doit être liée à une source via son identifiant exact.
 2. **Format des citations** : Utilise [TARIFF:MA:XXXXXXXXXX], [NOTE:123], [LEGAL:77], [EVIDENCE:45]
-3. **Pas d'invention** : Si l'information n'est pas dans les sources, dis "Information non disponible dans la base".
+3. **Pas d'invention** : Si l'information n'est pas dans les sources, dis "Information non disponible dans la base" / "المعلومات غير متوفرة في قاعدة البيانات".
 4. **JSON strict** : Ta réponse doit être un JSON valide avec:
    - "answer": texte de la réponse avec citations inline
    - "cited_sources": tableau des identifiants cités
@@ -275,10 +283,21 @@ ${contextPrompt}
 Si aucune source n'est disponible, réponds:
 \`\`\`json
 {
-  "answer": "Source indisponible dans la base interne.",
+  "answer": "${questionLanguage === 'ar' ? 'المصدر غير متوفر في قاعدة البيانات الداخلية.' : 'Source indisponible dans la base interne.'}",
   "cited_sources": []
 }
 \`\`\``;
+}
+
+/**
+ * Détecte la langue d'une question (arabe ou français)
+ */
+function detectQuestionLanguage(text: string): 'ar' | 'fr' {
+  const arabicPattern = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
+  const arabicChars = (text.match(arabicPattern) || []).length;
+  const totalChars = text.replace(/\s/g, '').length;
+  
+  return totalChars > 0 && arabicChars / totalChars > 0.3 ? 'ar' : 'fr';
 }
 
 // ============================================================================
@@ -525,8 +544,12 @@ serve(async (req) => {
     const context = await fetchDBContext(supabase, question, national_code, hs_code, country_code);
     console.log(`[answer-with-sources] Context: ${context.tariffs.length} tariffs, ${context.notes.length} notes, ${context.legalSources.length} legal, ${context.evidence.length} evidence`);
 
+    // Detect question language
+    const questionLanguage = detectQuestionLanguage(question);
+    console.log(`[answer-with-sources] Language detected: ${questionLanguage}`);
+
     // 2. Build prompt and call AI
-    const systemPrompt = buildSystemPrompt(context);
+    const systemPrompt = buildSystemPrompt(context, questionLanguage);
     const { answer, cited_sources } = await callClaudeForAnswer(systemPrompt, question);
 
     // 3. Validate all cited sources against DB
