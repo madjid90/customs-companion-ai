@@ -42,7 +42,7 @@ const DOCUMENT_TYPES: { value: DocumentType; label: string; icon: React.ReactNod
 ];
 
 export default function AdminUpload() {
-  const { files, setFiles, updateFileStatus, queueFile, processNext, isProcessing, setIsProcessing } = useUploadState();
+  const { files, setFiles, updateFileStatus, queueFile, processNext, isProcessing, setIsProcessing, clearAll, removeFile: removeFileFromState } = useUploadState();
   const [isDragging, setIsDragging] = useState(false);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null);
@@ -982,9 +982,9 @@ export default function AdminUpload() {
       }
     }
     
-    // Remove from local state
-    setFiles(prev => prev.filter(f => f.id !== fileToRemove.id));
-  }, [setFiles, toast]);
+    // Remove from local state (uses both context function and localStorage)
+    removeFileFromState(fileToRemove.id);
+  }, [removeFileFromState, toast]);
 
   return (
     <div className="space-y-6">
@@ -1107,13 +1107,32 @@ export default function AdminUpload() {
 
         {/* Upload Queue */}
         <Card className="animate-slide-up" style={{ animationDelay: "0.1s" }}>
-          <CardHeader>
-            <CardTitle>Résultats</CardTitle>
-            <CardDescription>
-              {files.length === 0
-                ? "En attente de fichiers..."
-                : `${files.filter((f) => f.status === "success").length}/${files.length} traités`}
-            </CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <div>
+              <CardTitle>Résultats</CardTitle>
+              <CardDescription>
+                {files.length === 0
+                  ? "En attente de fichiers..."
+                  : `${files.filter((f) => f.status === "success").length}/${files.length} traités`}
+              </CardDescription>
+            </div>
+            {files.length > 0 && !isProcessing && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => {
+                  clearAll();
+                  toast({
+                    title: "Historique vidé",
+                    description: "La liste des uploads a été effacée.",
+                  });
+                }}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Vider
+              </Button>
+            )}
           </CardHeader>
           <CardContent>
             {files.length === 0 ? (

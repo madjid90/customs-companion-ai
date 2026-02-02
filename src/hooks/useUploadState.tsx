@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useRef, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useRef, ReactNode, useEffect } from "react";
 
 export interface HSCodeEntry {
   code: string;
@@ -98,12 +98,67 @@ interface QueuedFile {
   fileId: string;
 }
 
+// Clé de stockage localStorage
+const STORAGE_KEY = "admin_upload_state";
+
+// Fonction pour sérialiser l'état (sans les données d'analyse volumineuses)
+function serializeForStorage(files: UploadedFile[]): string {
+  const lightFiles = files.map(f => ({
+    ...f,
+    // Ne pas persister les données d'analyse volumineuses
+    analysis: f.analysis ? {
+      summary: f.analysis.summary,
+      pdfId: f.analysis.pdfId,
+      pdfTitle: f.analysis.pdfTitle,
+      document_type: f.analysis.document_type,
+      // Compteurs seulement
+      hs_codes_count: f.analysis.hs_codes?.length || 0,
+      tariff_lines_count: f.analysis.tariff_lines?.length || 0,
+      notes_count: f.analysis.notes?.length || 0,
+    } : undefined,
+  }));
+  return JSON.stringify(lightFiles);
+}
+
+// Fonction pour désérialiser l'état
+function deserializeFromStorage(data: string): UploadedFile[] {
+  try {
+    const parsed = JSON.parse(data);
+    if (!Array.isArray(parsed)) return [];
+    
+    return parsed.map((f: any) => ({
+      ...f,
+      // Marquer les uploads interrompus comme "error" avec possibilité de reprendre
+      status: f.status === "uploading" || f.status === "analyzing" || f.status === "queued"
+        ? "error" as const
+        : f.status,
+      error: f.status === "uploading" || f.status === "analyzing" || f.status === "queued"
+        ? "Upload interrompu - rechargez le fichier"
+        : f.error,
+      // Reconstituer un objet analysis minimal si présent
+      analysis: f.analysis ? {
+        summary: f.analysis.summary || "",
+        key_points: [],
+        hs_codes: [],
+        tariff_lines: [],
+        pdfId: f.analysis.pdfId,
+        pdfTitle: f.analysis.pdfTitle,
+        document_type: f.analysis.document_type,
+      } : undefined,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 interface UploadStateContextType {
   files: UploadedFile[];
   setFiles: React.Dispatch<React.SetStateAction<UploadedFile[]>>;
   updateFileStatus: (id: string, updates: Partial<UploadedFile>) => void;
   addFile: (file: UploadedFile) => void;
   clearCompleted: () => void;
+  clearAll: () => void;
+  removeFile: (id: string) => void;
   pendingCount: number;
   queueFile: (file: File, uploadedFile: UploadedFile) => void;
   processNext: () => QueuedFile | null;
@@ -114,22 +169,58 @@ interface UploadStateContextType {
 const UploadStateContext = createContext<UploadStateContextType | undefined>(undefined);
 
 export function UploadStateProvider({ children }: { children: ReactNode }) {
-  const [files, setFiles] = useState<UploadedFile[]>([]);
+  // Initialiser depuis localStorage
+  const [files, setFilesInternal] = useState<UploadedFile[]>(() => {
+    if (typeof window === "undefined") return [];
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const restored = deserializeFromStorage(stored);
+      console.log("[UploadState] Restored", restored.length, "files from storage");
+      return restored;
+    }
+    return [];
+  });
+  
   const [isProcessing, setIsProcessing] = useState(false);
   const queueRef = useRef<QueuedFile[]>([]);
 
+  // Persister dans localStorage à chaque changement
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const serialized = serializeForStorage(files);
+    localStorage.setItem(STORAGE_KEY, serialized);
+  }, [files]);
+
+  // Wrapper setFiles pour mise à jour
+  const setFiles: React.Dispatch<React.SetStateAction<UploadedFile[]>> = useCallback((action) => {
+    setFilesInternal(action);
+  }, []);
+
   const updateFileStatus = useCallback((id: string, updates: Partial<UploadedFile>) => {
-    setFiles((prev) =>
+    setFilesInternal((prev) =>
       prev.map((f) => (f.id === id ? { ...f, ...updates } : f))
     );
   }, []);
 
   const addFile = useCallback((file: UploadedFile) => {
-    setFiles((prev) => [file, ...prev]);
+    setFilesInternal((prev) => [file, ...prev]);
   }, []);
 
   const clearCompleted = useCallback(() => {
-    setFiles((prev) => prev.filter((f) => f.status !== "success"));
+    setFilesInternal((prev) => prev.filter((f) => f.status !== "success"));
+  }, []);
+
+  const clearAll = useCallback(() => {
+    setFilesInternal([]);
+    queueRef.current = [];
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }, []);
+
+  const removeFile = useCallback((id: string) => {
+    setFilesInternal((prev) => prev.filter((f) => f.id !== id));
+    queueRef.current = queueRef.current.filter((q) => q.fileId !== id);
   }, []);
 
   const queueFile = useCallback((file: File, uploadedFile: UploadedFile) => {
@@ -156,6 +247,8 @@ export function UploadStateProvider({ children }: { children: ReactNode }) {
         updateFileStatus,
         addFile,
         clearCompleted,
+        clearAll,
+        removeFile,
         pendingCount,
         queueFile,
         processNext,
