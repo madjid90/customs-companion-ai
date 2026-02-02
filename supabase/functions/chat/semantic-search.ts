@@ -770,3 +770,143 @@ export async function searchTariffNotesByChapter(
     return [];
   }
 }
+
+
+// ============================================
+// NOUVELLES FONCTIONS - RECHERCHE HYBRIDE RRF
+// ============================================
+
+/**
+ * Cache d'embeddings en mémoire pour éviter les appels répétés
+ */
+const embeddingCache = new Map<string, { embedding: number[]; timestamp: number }>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Génère un embedding avec cache en mémoire
+ */
+export async function generateQueryEmbeddingCached(
+  text: string,
+  apiKey: string
+): Promise<number[] | null> {
+  const cacheKey = text.toLowerCase().trim().substring(0, 500);
+  
+  const cached = embeddingCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    console.log('Embedding cache hit');
+    return cached.embedding;
+  }
+
+  const embedding = await generateQueryEmbedding(text, apiKey);
+  
+  if (embedding) {
+    embeddingCache.set(cacheKey, { embedding, timestamp: Date.now() });
+    
+    if (embeddingCache.size > 100) {
+      const now = Date.now();
+      for (const [key, value] of embeddingCache) {
+        if (now - value.timestamp > CACHE_TTL_MS) {
+          embeddingCache.delete(key);
+        }
+      }
+    }
+  }
+
+  return embedding;
+}
+
+/**
+ * Recherche hybride HS Codes combinant sémantique + FTS avec RRF
+ */
+export async function searchHSCodesHybrid(
+  supabase: any,
+  queryEmbedding: number[],
+  queryText: string,
+  semanticWeight: number = 0.6,
+  limit: number = 20
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.rpc('search_hs_codes_hybrid', {
+      query_text: queryText,
+      query_embedding: `[${queryEmbedding.join(',')}]`,
+      semantic_weight: semanticWeight,
+      match_count: limit,
+    });
+
+    if (error) {
+      console.warn('Hybrid HS search RPC failed, falling back to semantic:', error.message);
+      return searchHSCodesSemantic(supabase, queryEmbedding, SEMANTIC_THRESHOLDS.hsCodesMedium, limit);
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Hybrid HS search failed:', error);
+    return [];
+  }
+}
+
+/**
+ * Recherche hybride pour les notes tarifaires avec RRF
+ */
+export async function searchTariffNotesHybridRRF(
+  supabase: any,
+  queryEmbedding: number[],
+  queryText: string,
+  chapterFilters: string[] | null = null,
+  semanticWeight: number = 0.5,
+  limit: number = 15
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.rpc('search_tariff_notes_hybrid', {
+      query_text: queryText,
+      query_embedding: `[${queryEmbedding.join(',')}]`,
+      chapter_filters: chapterFilters,
+      semantic_weight: semanticWeight,
+      match_count: limit,
+    });
+
+    if (error) {
+      console.warn('Hybrid tariff notes search failed:', error.message);
+      if (chapterFilters && chapterFilters.length > 0) {
+        return searchTariffNotesByChapter(supabase, chapterFilters, limit);
+      }
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Hybrid tariff notes search failed:', error);
+    return [];
+  }
+}
+
+/**
+ * Recherche hybride pour les chunks légaux
+ */
+export async function searchLegalChunksHybrid(
+  supabase: any,
+  queryEmbedding: number[],
+  queryText: string,
+  semanticWeight: number = 0.5,
+  limit: number = 10
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.rpc('search_legal_chunks_hybrid', {
+      query_text: queryText,
+      query_embedding: `[${queryEmbedding.join(',')}]`,
+      semantic_weight: semanticWeight,
+      match_count: limit,
+    });
+
+    if (error) {
+      console.warn('Hybrid legal chunks search failed:', error.message);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Hybrid legal chunks search failed:', error);
+    return [];
+  }
+}
+
