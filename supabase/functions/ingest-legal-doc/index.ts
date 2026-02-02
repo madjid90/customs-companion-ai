@@ -96,8 +96,8 @@ interface IngestResponse {
 // PDF TEXT EXTRACTION (via Claude) - With batch support for large PDFs
 // ============================================================================
 
-const MAX_PAGES_PER_BATCH = 15; // Small batches for dense legal docs to avoid timeout
-const CLAUDE_TIMEOUT_MS = 120000; // 2 minute timeout per batch
+const MAX_PAGES_PER_BATCH = 5; // Very small batches for extremely dense legal docs
+const CLAUDE_TIMEOUT_MS = 180000; // 3 minute timeout per batch
 
 // Split a PDF into a subset of pages using pdf-lib
 async function splitPdfPages(
