@@ -822,78 +822,107 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
 function extractDocumentReference(fullText: string, sourceType: string): { ref: string | null; title: string | null } {
   const textStart = fullText.slice(0, 3000); // Check first ~3000 chars for reference
   
-  // Patterns for different document types (French + Arabic)
-  const patterns: { type: string; patterns: RegExp[] }[] = [
-    {
-      type: "circular",
-      patterns: [
-        // French: "Circulaire n° 4601/311", "Circulaire N°4601-311"
-        /[Cc]irculaire\s*[Nn°°.:\s]+(\d{2,5}[\s/-]?\d{0,4})/,
-        // Arabic: منشور رقم (manšūr raqm = circular number)
-        /(?:منشور|تعميم)\s*(?:رقم|عدد)?\s*[:.]?\s*(\d{2,5}[\s/-]?\d{0,4})/,
-      ],
-    },
-    {
-      type: "note",
-      patterns: [
-        /[Nn]ote\s*[Nn°°.:\s]+(\d{2,5}[\s/-]?\d{0,4})/,
-        /(?:مذكرة|ملاحظة)\s*(?:رقم|عدد)?\s*[:.]?\s*(\d{2,5}[\s/-]?\d{0,4})/,
-      ],
-    },
-    {
-      type: "decision",
-      patterns: [
-        /[Dd]écision\s*[Nn°°.:\s]+(\d{2,5}[\s/-]?\d{0,4})/,
-        /(?:قرار|مقرر)\s*(?:رقم|عدد)?\s*[:.]?\s*(\d{2,5}[\s/-]?\d{0,4})/,
-      ],
-    },
-    {
-      type: "decree",
-      patterns: [
-        /[Dd]écret\s*[Nn°°.:\s]+(\d[\d.-]+\d)/,
-        /(?:مرسوم|ظهير)\s*(?:رقم|عدد)?\s*[:.]?\s*([\d.-]+)/,
-      ],
-    },
-    {
-      type: "law",
-      patterns: [
-        /[Ll]oi\s*[Nn°°.:\s]+(\d[\d.-]+)/,
-        /(?:قانون)\s*(?:رقم|عدد)?\s*[:.]?\s*([\d.-]+)/,
-      ],
-    },
-    {
-      type: "arrêté",
-      patterns: [
-        /[Aa]rrêté\s*[Nn°°.:\s]+(\d[\d.-]+\d)/,
-        /(?:قرار وزاري)\s*(?:رقم|عدد)?\s*[:.]?\s*([\d.-]+)/,
-      ],
-    },
+  // PRIORITY 1: Try to extract the EXACT reference immediately following "CIRCULAIRE N°"
+  // This is the most reliable pattern for Moroccan administrative circulars
+  const priorityCircularPatterns = [
+    // "CIRCULAIRE N° 4591/312" or "CIRCULAIRE N° 4591 /312" (with space before slash)
+    /CIRCULAIRE\s*N[°o]?\s*(\d{3,5}\s*[/\-]\s*\d{1,4})/i,
+    // "Circulaire n° 4591-312"
+    /[Cc]irculaire\s+[Nn][°o]?\s*(\d{3,5}\s*[-]\s*\d{1,4})/,
+    // Standalone number format: "CIRCULAIRE N° 4591"
+    /CIRCULAIRE\s*N[°o]?\s*(\d{4,5})\b/i,
   ];
-
+  
   let extractedRef: string | null = null;
   let extractedTitle: string | null = null;
-
-  // Try to find reference based on source type first
-  const typePatterns = patterns.find(p => p.type === sourceType)?.patterns || [];
-  for (const pattern of typePatterns) {
-    const match = textStart.match(pattern);
-    if (match) {
-      extractedRef = match[1].trim();
-      break;
+  
+  // Try priority circular patterns first (for source_type "circular")
+  if (sourceType === "circular") {
+    for (const pattern of priorityCircularPatterns) {
+      const match = textStart.match(pattern);
+      if (match) {
+        // Clean up the reference (remove extra spaces around separators)
+        extractedRef = match[1].replace(/\s*([/\-])\s*/g, '$1').trim();
+        console.log(`[ingest-legal-doc] Found priority circular reference: "${extractedRef}"`);
+        break;
+      }
     }
   }
-
-  // If not found, try all patterns
+  
+  // If priority patterns didn't match, fall back to general patterns
   if (!extractedRef) {
-    for (const group of patterns) {
-      for (const pattern of group.patterns) {
-        const match = textStart.match(pattern);
-        if (match) {
-          extractedRef = match[1].trim();
-          break;
-        }
+    // Patterns for different document types (French + Arabic)
+    const patterns: { type: string; patterns: RegExp[] }[] = [
+      {
+        type: "circular",
+        patterns: [
+          // French: "Circulaire n° 4601/311", "Circulaire N°4601-311"  
+          /[Cc]irculaire\s*[Nn°°.:\s]+(\d{3,5}[\s]*[/\-][\s]*\d{1,4})/,
+          // Simple numeric reference
+          /[Cc]irculaire\s*[Nn°°.:\s]+(\d{4,5})\b/,
+          // Arabic: منشور رقم (manšūr raqm = circular number)
+          /(?:منشور|تعميم)\s*(?:رقم|عدد)?\s*[:.]?\s*(\d{3,5}[\s]*[/\-]?[\s]*\d{0,4})/,
+        ],
+      },
+      {
+        type: "note",
+        patterns: [
+          /[Nn]ote\s*[Nn°°.:\s]+(\d{2,5}[\s/-]?\d{0,4})/,
+          /(?:مذكرة|ملاحظة)\s*(?:رقم|عدد)?\s*[:.]?\s*(\d{2,5}[\s/-]?\d{0,4})/,
+        ],
+      },
+      {
+        type: "decision",
+        patterns: [
+          /[Dd]écision\s*[Nn°°.:\s]+(\d{2,5}[\s/-]?\d{0,4})/,
+          /(?:قرار|مقرر)\s*(?:رقم|عدد)?\s*[:.]?\s*(\d{2,5}[\s/-]?\d{0,4})/,
+        ],
+      },
+      {
+        type: "decree",
+        patterns: [
+          /[Dd]écret\s*[Nn°°.:\s]+(\d[\d.-]+\d)/,
+          /(?:مرسوم|ظهير)\s*(?:رقم|عدد)?\s*[:.]?\s*([\d.-]+)/,
+        ],
+      },
+      {
+        type: "law",
+        patterns: [
+          /[Ll]oi\s*[Nn°°.:\s]+(\d[\d.-]+)/,
+          /(?:قانون)\s*(?:رقم|عدد)?\s*[:.]?\s*([\d.-]+)/,
+        ],
+      },
+      {
+        type: "arrêté",
+        patterns: [
+          /[Aa]rrêté\s*[Nn°°.:\s]+(\d[\d.-]+\d)/,
+          /(?:قرار وزاري)\s*(?:رقم|عدد)?\s*[:.]?\s*([\d.-]+)/,
+        ],
+      },
+    ];
+
+    // Try to find reference based on source type first
+    const typePatterns = patterns.find(p => p.type === sourceType)?.patterns || [];
+    for (const pattern of typePatterns) {
+      const match = textStart.match(pattern);
+      if (match) {
+        extractedRef = match[1].replace(/\s+/g, '').trim(); // Remove internal spaces
+        break;
       }
-      if (extractedRef) break;
+    }
+
+    // If not found, try all patterns
+    if (!extractedRef) {
+      for (const group of patterns) {
+        for (const pattern of group.patterns) {
+          const match = textStart.match(pattern);
+          if (match) {
+            extractedRef = match[1].replace(/\s+/g, '').trim();
+            break;
+          }
+        }
+        if (extractedRef) break;
+      }
     }
   }
 
