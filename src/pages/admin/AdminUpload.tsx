@@ -254,6 +254,7 @@ export default function AdminUpload() {
 
   // Ingestion pour documents réglementaires (accords, circulaires, code des douanes)
   // Orchestration côté client pour éviter les timeouts sur gros documents
+  // Supporte la reprise automatique pour les documents partiellement traités
   const runLegalIngestion = useCallback(async (
     pdfId: string,
     filePath: string,
@@ -270,6 +271,50 @@ export default function AdminUpload() {
       error: "Préparation du document..."
     });
 
+    // Mapper le type vers source_type
+    const sourceTypeMap: Record<DocumentType, string> = {
+      tarif: "tariff",
+      accord: "agreement",
+      reglementation: "law",
+      circulaire: "circular",
+    };
+
+    // === RESUME LOGIC: Check for existing chunks ===
+    const sourceRef = fileName.replace(".pdf", "");
+    let existingSourceId: number | null = null;
+    let resumeFromPage = 1;
+    
+    // Check if there's an existing legal_sources entry for this document
+    const { data: existingSource } = await supabase
+      .from("legal_sources")
+      .select("id, total_chunks")
+      .eq("source_ref", sourceRef)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+    
+    if (existingSource) {
+      // Find the last processed page from existing chunks
+      const { data: lastChunk } = await supabase
+        .from("legal_chunks")
+        .select("page_number")
+        .eq("source_id", existingSource.id)
+        .order("page_number", { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (lastChunk?.page_number) {
+        existingSourceId = existingSource.id;
+        resumeFromPage = lastChunk.page_number + 1;
+        console.log(`[LegalIngestion] Resuming from page ${resumeFromPage} (source_id=${existingSourceId})`);
+        
+        updateFileStatus(fileId, { 
+          progress: 62,
+          error: `Reprise à la page ${resumeFromPage}...`
+        });
+      }
+    }
+
     // Récupérer le PDF depuis le storage pour l'envoyer en base64
     const { data: pdfBlob, error: downloadError } = await supabase.storage
       .from("pdf-documents")
@@ -284,14 +329,6 @@ export default function AdminUpload() {
     const base64 = btoa(
       new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
     );
-
-    // Mapper le type vers source_type
-    const sourceTypeMap: Record<DocumentType, string> = {
-      tarif: "tariff",
-      accord: "agreement",
-      reglementation: "law",
-      circulaire: "circular",
-    };
 
     // Helper: fetch with timeout
     const fetchWithTimeout = async (body: object): Promise<Response> => {
@@ -321,23 +358,32 @@ export default function AdminUpload() {
       }
     };
 
-    // First batch: creates source and returns total pages
+    let sourceId = existingSourceId;
+    let totalPages = 0;
+    let processedPages = resumeFromPage > 1 ? resumeFromPage - 1 : 0; // Pages already done
+    let totalChunks = 0;
+    let totalCodes = 0;
+    let totalEvidence = 0;
+    
+    // If resuming, we need to get total pages from first request
+    // If starting fresh, first batch creates the source
     updateFileStatus(fileId, { 
       progress: 62,
-      error: "Ingestion batch 1..."
+      error: resumeFromPage > 1 ? `Reprise page ${resumeFromPage}...` : "Ingestion batch 1..."
     });
 
     const firstBatchResponse = await fetchWithTimeout({
       source_type: sourceTypeMap[docType],
-      source_ref: fileName.replace(".pdf", ""),
+      source_ref: sourceRef,
       title: fileName.replace(".pdf", "").replace(/_/g, " "),
       pdf_base64: base64,
       country_code: "MA",
       generate_embeddings: true,
       detect_hs_codes: true,
       batch_mode: true,
-      start_page: 1,
-      end_page: BATCH_SIZE,
+      start_page: resumeFromPage,
+      end_page: resumeFromPage + BATCH_SIZE - 1,
+      ...(sourceId ? { source_id: sourceId } : {}),
     });
 
     if (!firstBatchResponse.ok) {
@@ -351,17 +397,17 @@ export default function AdminUpload() {
       throw new Error(firstResult.error || "Erreur lors de l'ingestion");
     }
 
-    const sourceId = firstResult.source_id;
-    const totalPages = firstResult.total_pages || BATCH_SIZE;
-    let processedPages = firstResult.pages_processed || BATCH_SIZE;
-    let totalChunks = firstResult.chunks_created || 0;
-    let totalCodes = firstResult.detected_codes_count || 0;
-    let totalEvidence = firstResult.evidence_created || 0;
+    sourceId = firstResult.source_id || sourceId;
+    totalPages = firstResult.total_pages || BATCH_SIZE;
+    processedPages += firstResult.pages_processed || BATCH_SIZE;
+    totalChunks += firstResult.chunks_created || 0;
+    totalCodes += firstResult.detected_codes_count || 0;
+    totalEvidence += firstResult.evidence_created || 0;
 
     console.log(`[LegalIngestion] First batch done: ${processedPages}/${totalPages} pages, source_id=${sourceId}`);
 
     // Process remaining batches
-    let currentPage = BATCH_SIZE + 1;
+    let currentPage = resumeFromPage + BATCH_SIZE;
 
     while (currentPage <= totalPages) {
       const endPage = Math.min(currentPage + BATCH_SIZE - 1, totalPages);
