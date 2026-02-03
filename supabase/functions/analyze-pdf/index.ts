@@ -2443,12 +2443,23 @@ serve(async (req) => {
     }
     
     // Télécharger le PDF
+    console.log(`[Storage] Downloading PDF from path: ${pdfPath}`);
     const { data: fileData, error: downloadError } = await supabase.storage
       .from("pdf-documents")
       .download(pdfPath);
     
     if (downloadError || !fileData) {
-      return errorResponse(req, `Erreur téléchargement PDF: ${downloadError?.message}`, 500);
+      // Log détaillé de l'erreur pour le debugging
+      console.error(`[Storage] Download failed for path: ${pdfPath}`);
+      console.error(`[Storage] Error details:`, JSON.stringify(downloadError || {}));
+      
+      // Message d'erreur plus informatif
+      const errorDetail = downloadError?.message 
+        || (typeof downloadError === 'object' && Object.keys(downloadError || {}).length === 0 
+            ? `Fichier non trouvé dans le storage: ${pdfPath}` 
+            : JSON.stringify(downloadError));
+      
+      return errorResponse(req, `Erreur téléchargement PDF: ${errorDetail}`, 500);
     }
     
     // Convertir en base64 (chunked pour gros fichiers)
