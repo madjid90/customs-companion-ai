@@ -822,15 +822,28 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
 function extractDocumentReference(fullText: string, sourceType: string): { ref: string | null; title: string | null } {
   const textStart = fullText.slice(0, 3000); // Check first ~3000 chars for reference
   
-  // PRIORITY 1: Try to extract the EXACT reference immediately following "CIRCULAIRE N°"
-  // This is the most reliable pattern for Moroccan administrative circulars
+  // PRIORITY 1: Try to extract the EXACT reference immediately following "CIRCULAIRE N°" or "دورية رقم"
+  // This is the most reliable pattern for Moroccan administrative circulars (French + Arabic)
   const priorityCircularPatterns = [
+    // French patterns
     // "CIRCULAIRE N° 4591/312" or "CIRCULAIRE N° 4591 /312" (with space before slash)
     /CIRCULAIRE\s*N[°o]?\s*(\d{3,5}\s*[/\-]\s*\d{1,4})/i,
     // "Circulaire n° 4591-312"
     /[Cc]irculaire\s+[Nn][°o]?\s*(\d{3,5}\s*[-]\s*\d{1,4})/,
     // Standalone number format: "CIRCULAIRE N° 4591"
     /CIRCULAIRE\s*N[°o]?\s*(\d{4,5})\b/i,
+    
+    // Arabic patterns - دورية (dawriyya = circular)
+    // "دورية رقم 4608/223" or "دورية رقم 4608 / 223"
+    /دورية\s*(?:رقم|عدد)?\s*[:.]?\s*(\d{3,5}\s*[/\-]\s*\d{1,4})/,
+    // "دورية رقم 4608-223"
+    /دورية\s*(?:رقم|عدد)?\s*[:.]?\s*(\d{3,5}\s*[-]\s*\d{1,4})/,
+    // Standalone: "دورية رقم 4608"
+    /دورية\s*(?:رقم|عدد)?\s*[:.]?\s*(\d{4,5})\b/,
+    
+    // منشور (manšūr = circular/memo) - alternative Arabic term
+    /منشور\s*(?:رقم|عدد)?\s*[:.]?\s*(\d{3,5}\s*[/\-]\s*\d{1,4})/,
+    /منشور\s*(?:رقم|عدد)?\s*[:.]?\s*(\d{4,5})\b/,
   ];
   
   let extractedRef: string | null = null;
