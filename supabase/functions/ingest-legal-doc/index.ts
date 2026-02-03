@@ -940,16 +940,31 @@ function extractDocumentReference(fullText: string, sourceType: string): { ref: 
   }
 
   // Extract title: look for "OBJET :" or "موضوع" (mawḍūʿ = subject)
+  // Handle OCR variations like "OB.JET", "OBJET", "O B J E T"
   const titlePatterns = [
-    /OBJET\s*:\s*(.{10,150}?)(?:\.|$|\n)/i,
-    /Objet\s*:\s*(.{10,150}?)(?:\.|$|\n)/,
-    /(?:موضوع|الموضوع)\s*[:.\s]\s*(.{10,150}?)(?:\.|$|\n)/,
+    // French patterns - handle OCR noise (dots, spaces between letters)
+    /O\.?B\.?J\.?E\.?T\s*[:.\s]\s*(.{10,200}?)(?:\n|$)/i,
+    /OBJET\s*:\s*(.{10,200}?)(?:\n|$)/i,
+    /Objet\s*:\s*(.{10,200}?)(?:\n|$)/,
+    // Alternative French patterns
+    /Réf[ée]rence\s*:\s*(.{10,200}?)(?:\n|$)/i,
+    /Concernant\s*:\s*(.{10,200}?)(?:\n|$)/i,
+    // Arabic patterns - موضوع (mawḍūʿ = subject)
+    /(?:موضوع|الموضوع)\s*[:.\s]\s*(.{10,200}?)(?:\n|$)/,
+    // عنوان ('unwān = title)
+    /(?:عنوان|العنوان)\s*[:.\s]\s*(.{10,200}?)(?:\n|$)/,
   ];
 
   for (const pattern of titlePatterns) {
     const match = textStart.match(pattern);
     if (match) {
-      extractedTitle = match[1].trim();
+      // Clean up the title: remove trailing punctuation, extra whitespace
+      extractedTitle = match[1]
+        .replace(/[\r\n]+/g, ' ')  // Replace newlines with spaces
+        .replace(/\s+/g, ' ')       // Collapse multiple spaces
+        .replace(/[.,:;]+$/, '')    // Remove trailing punctuation
+        .trim();
+      console.log(`[ingest-legal-doc] Extracted title via pattern: "${extractedTitle}"`);
       break;
     }
   }
