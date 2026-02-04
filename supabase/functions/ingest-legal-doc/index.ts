@@ -56,6 +56,9 @@ interface IngestRequest {
   pdf_url?: string; // URL to fetch PDF
   raw_text?: string; // Already extracted text
   
+  // File info (for storage)
+  file_name?: string; // Original file name for storage
+  
   // Batch processing (for large PDFs - client-orchestrated)
   start_page?: number; // 1-indexed start page (for batch mode)
   end_page?: number; // 1-indexed end page (for batch mode)
@@ -66,6 +69,7 @@ interface IngestRequest {
   country_code?: string;
   generate_embeddings?: boolean;
   detect_hs_codes?: boolean;
+  store_pdf?: boolean; // If true, store PDF in Supabase Storage and create pdf_documents entry
 }
 
 interface ExtractedTable {
@@ -118,6 +122,7 @@ interface DetectedCode {
 interface IngestResponse {
   success: boolean;
   source_id: number | null;
+  pdf_id?: string | null; // ID of created pdf_documents entry
   pages_processed: number;
   chunks_created: number;
   detected_codes_count: number;
@@ -974,6 +979,108 @@ function extractDocumentReference(fullText: string, sourceType: string): { ref: 
   return { ref: extractedRef, title: extractedTitle };
 }
 
+// ============================================================================
+// PDF STORAGE & pdf_documents CREATION
+// ============================================================================
+
+/**
+ * Stores the PDF in Supabase Storage and creates a pdf_documents entry
+ * Returns the pdf_documents.id and file_path for linking
+ */
+async function storePdfAndCreateDocument(
+  supabase: any,
+  pdfBase64: string,
+  request: IngestRequest,
+  totalPages: number,
+  extractedRef: string,
+  extractedTitle: string | null
+): Promise<{ pdfId: string; filePath: string } | null> {
+  try {
+    // Generate file path: circulaires/YYYY/reference.pdf
+    const year = request.source_date 
+      ? new Date(request.source_date).getFullYear() 
+      : new Date().getFullYear();
+    
+    // Clean reference for file name
+    const safeRef = (extractedRef || request.source_ref)
+      .replace(/[/\\:*?"<>|]/g, '-')
+      .replace(/\s+/g, '_');
+    
+    const fileName = request.file_name || `${request.source_type}_${safeRef}.pdf`;
+    const filePath = `circulaires/${year}/${fileName}`;
+    
+    console.log(`[ingest-legal-doc] Storing PDF at: ${filePath}`);
+    
+    // Convert base64 to Uint8Array for upload
+    const pdfBytes = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));
+    
+    // Upload to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from('pdf-documents')
+      .upload(filePath, pdfBytes, {
+        contentType: 'application/pdf',
+        upsert: true
+      });
+    
+    if (uploadError) {
+      console.error(`[ingest-legal-doc] Storage upload error:`, uploadError);
+      return null;
+    }
+    
+    console.log(`[ingest-legal-doc] PDF uploaded successfully`);
+    
+    // Map source_type to category
+    const categoryMap: Record<string, string> = {
+      circular: 'Circulaire',
+      note: 'Réglementation',
+      decision: 'Réglementation',
+      law: 'Réglementation/Code',
+      decree: 'Réglementation',
+      arrêté: 'Réglementation',
+    };
+    
+    const category = categoryMap[request.source_type] || 'Réglementation';
+    const title = extractedTitle || request.title || `${request.source_type} ${extractedRef}`;
+    
+    // Create pdf_documents entry
+    const { data: pdfDoc, error: docError } = await supabase
+      .from('pdf_documents')
+      .upsert({
+        title: title,
+        file_name: fileName,
+        file_path: filePath,
+        category: category,
+        document_type: request.source_type,
+        document_reference: extractedRef || request.source_ref,
+        country_code: request.country_code || 'MA',
+        issuing_authority: request.issuer,
+        publication_date: request.source_date,
+        page_count: totalPages,
+        file_size_bytes: pdfBytes.length,
+        mime_type: 'application/pdf',
+        is_active: true,
+        is_verified: false,
+      }, {
+        onConflict: 'file_path'
+      })
+      .select('id')
+      .single();
+    
+    if (docError) {
+      console.error(`[ingest-legal-doc] pdf_documents insert error:`, docError);
+      return null;
+    }
+    
+    console.log(`[ingest-legal-doc] Created pdf_documents entry: ${pdfDoc.id}`);
+    
+    return { pdfId: pdfDoc.id, filePath: filePath };
+    
+  } catch (error) {
+    console.error(`[ingest-legal-doc] PDF storage error:`, error);
+    return null;
+  }
+}
+
 async function upsertLegalSource(
   supabase: any,
   request: IngestRequest,
@@ -1312,6 +1419,53 @@ serve(async (req) => {
       console.log(`[ingest-legal-doc] Created/updated source ID: ${sourceId}`);
     }
 
+    // 5b. Store PDF and create pdf_documents entry if requested
+    let pdfId: string | null = null;
+    if (body.store_pdf !== false && pdfBase64 && !isBatchMode) {
+      // Extract reference for file naming
+      const extracted = extractDocumentReference(fullText, body.source_type);
+      const actualRef = extracted.ref || body.source_ref;
+      const actualTitle = body.title || extracted.title;
+      
+      const storageResult = await storePdfAndCreateDocument(
+        supabase,
+        pdfBase64,
+        body,
+        totalPages,
+        actualRef,
+        actualTitle
+      );
+      
+      if (storageResult) {
+        pdfId = storageResult.pdfId;
+        
+        // Create legal_references entry to link pdf_documents to this source
+        const { error: refError } = await supabase
+          .from('legal_references')
+          .upsert({
+            pdf_id: storageResult.pdfId,
+            reference_type: body.source_type === 'circular' ? 'Circulaire' : 
+                           body.source_type === 'law' ? 'Loi' :
+                           body.source_type === 'decree' ? 'Décret' :
+                           body.source_type === 'note' ? 'Note' : 'Document',
+            reference_number: actualRef,
+            title: actualTitle,
+            reference_date: body.source_date,
+            country_code: body.country_code || 'MA',
+            context: fullText.slice(0, 300),
+            is_active: true,
+          }, {
+            onConflict: 'reference_number,reference_type'
+          });
+        
+        if (refError) {
+          console.error(`[ingest-legal-doc] legal_references insert error:`, refError);
+        } else {
+          console.log(`[ingest-legal-doc] Created legal_references entry linking to pdf_id: ${pdfId}`);
+        }
+      }
+    }
+
     // 6. Insert chunks (append mode - don't delete existing for batch)
     let chunksCreated = 0;
     if (isBatchMode && body.source_id) {
@@ -1345,6 +1499,7 @@ serve(async (req) => {
     const response: IngestResponse = {
       success: true,
       source_id: sourceId,
+      pdf_id: pdfId,
       pages_processed: pages.length,
       chunks_created: chunksCreated,
       detected_codes_count: detectedCodes.length,
