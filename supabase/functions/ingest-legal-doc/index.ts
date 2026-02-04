@@ -1420,8 +1420,11 @@ serve(async (req) => {
     }
 
     // 5b. Store PDF and create pdf_documents entry if requested
+    // For batch mode, only do this on the FIRST batch (start_page == 1)
     let pdfId: string | null = null;
-    if (body.store_pdf !== false && pdfBase64 && !isBatchMode) {
+    const isFirstBatch = !isBatchMode || body.start_page === 1;
+    
+    if (body.store_pdf !== false && pdfBase64 && isFirstBatch) {
       // Extract reference for file naming
       const extracted = extractDocumentReference(fullText, body.source_type);
       const actualRef = extracted.ref || body.source_ref;
