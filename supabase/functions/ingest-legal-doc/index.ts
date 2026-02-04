@@ -819,13 +819,20 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
 // DATABASE OPERATIONS
 // ============================================================================
 
+interface ExtractedDocumentMetadata {
+  ref: string | null;
+  title: string | null;
+  date: string | null;       // ISO date extracted from document
+  issuer: string | null;     // Issuing authority
+}
+
 /**
- * Extract the actual document reference from the text content
+ * Extract the actual document reference, title, date and issuer from the text content
  * This handles cases where the file name doesn't match the real reference
  * (e.g., file named "circulaire_24320.pdf" but contains "Circulaire n° 4601/311")
  */
-function extractDocumentReference(fullText: string, sourceType: string): { ref: string | null; title: string | null } {
-  const textStart = fullText.slice(0, 3000); // Check first ~3000 chars for reference
+function extractDocumentReference(fullText: string, sourceType: string): ExtractedDocumentMetadata {
+  const textStart = fullText.slice(0, 4000); // Check first ~4000 chars for reference/metadata
   
   // PRIORITY 1: Try to extract the EXACT reference immediately following "CIRCULAIRE N°" or "دورية رقم"
   // This is the most reliable pattern for Moroccan administrative circulars (French + Arabic)
@@ -974,9 +981,117 @@ function extractDocumentReference(fullText: string, sourceType: string): { ref: 
     }
   }
 
-  console.log(`[ingest-legal-doc] Extracted reference: "${extractedRef}", title: "${extractedTitle?.slice(0, 50)}..."`);
+  // =========================================================================
+  // DATE EXTRACTION
+  // =========================================================================
+  let extractedDate: string | null = null;
+  
+  const datePatterns = [
+    // French: "Rabat, le 15 janvier 2024" or "Le 15/01/2024"
+    /(?:le|en date du|du)\s+(\d{1,2})\s*(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s*(\d{4})/i,
+    // French: "15/01/2024" or "15-01-2024"
+    /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/,
+    // Arabic date: في 15 يناير 2024
+    /في\s+(\d{1,2})\s+(يناير|فبراير|مارس|أبريل|ماي|يونيو|يوليوز|غشت|شتنبر|أكتوبر|نونبر|دجنبر)\s*(\d{4})/,
+    // Hijri date marker (just extract Gregorian if nearby)
+    /(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/, // ISO format: 2024-01-15
+  ];
+  
+  const frenchMonths: Record<string, number> = {
+    janvier: 1, février: 2, mars: 3, avril: 4, mai: 5, juin: 6,
+    juillet: 7, août: 8, septembre: 9, octobre: 10, novembre: 11, décembre: 12
+  };
+  
+  const arabicMonths: Record<string, number> = {
+    يناير: 1, فبراير: 2, مارس: 3, أبريل: 4, ماي: 5, يونيو: 6,
+    يوليوز: 7, غشت: 8, شتنبر: 9, أكتوبر: 10, نونبر: 11, دجنبر: 12
+  };
+  
+  for (const pattern of datePatterns) {
+    const match = textStart.match(pattern);
+    if (match) {
+      try {
+        let year: number, month: number, day: number;
+        
+        if (match[2] && frenchMonths[match[2].toLowerCase()]) {
+          // French month name format
+          day = parseInt(match[1]);
+          month = frenchMonths[match[2].toLowerCase()];
+          year = parseInt(match[3]);
+        } else if (match[2] && arabicMonths[match[2]]) {
+          // Arabic month name format
+          day = parseInt(match[1]);
+          month = arabicMonths[match[2]];
+          year = parseInt(match[3]);
+        } else if (match[0].includes('-') && match[1].length === 4) {
+          // ISO format: YYYY-MM-DD
+          year = parseInt(match[1]);
+          month = parseInt(match[2]);
+          day = parseInt(match[3]);
+        } else {
+          // DD/MM/YYYY format
+          day = parseInt(match[1]);
+          month = parseInt(match[2]);
+          year = parseInt(match[3]);
+        }
+        
+        // Validate reasonable date range (2000-2030)
+        if (year >= 2000 && year <= 2030 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+          extractedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          console.log(`[ingest-legal-doc] Extracted date: "${extractedDate}"`);
+          break;
+        }
+      } catch (e) {
+        // Continue to next pattern
+      }
+    }
+  }
 
-  return { ref: extractedRef, title: extractedTitle };
+  // =========================================================================
+  // ISSUER EXTRACTION
+  // =========================================================================
+  let extractedIssuer: string | null = null;
+  
+  const issuerPatterns = [
+    // French patterns
+    /(?:ADMINISTRATION|Direction)\s+(?:des\s+)?(?:DOUANES|Douanes)\s+(?:et\s+)?(?:IMPÔTS\s+INDIRECTS|Impôts\s+Indirects)?/i,
+    /(?:LE\s+)?DIRECTEUR\s+(?:GÉNÉRAL|Général)\s+(?:de\s+l[''])?(?:ADMINISTRATION|Administration)\s+(?:des\s+)?(?:DOUANES|Douanes)/i,
+    /MINISTÈRE\s+(?:de\s+l[''])?(?:ÉCONOMIE|Économie|FINANCES|Finances)/i,
+    /OFFICE\s+(?:des\s+)?(?:CHANGES|Changes)/i,
+    /(?:AGENCE|Agence)\s+(?:NATIONALE|Nationale)\s+(?:de\s+)?(?:RÉGLEMENTATION|Réglementation)\s+(?:des\s+)?(?:TÉLÉCOMMUNICATIONS|Télécommunications)/i,
+    // Arabic patterns
+    /إدارة\s*الجمارك\s*و?الضرائب\s*غير\s*المباشرة/,
+    /المديرية?\s*العامة?\s*للجمارك/,
+    /مكتب\s*الصرف/,
+    /وزارة\s*(?:الاقتصاد|المالية)/,
+  ];
+  
+  for (const pattern of issuerPatterns) {
+    const match = textStart.match(pattern);
+    if (match) {
+      // Normalize issuer name
+      const rawIssuer = match[0].trim();
+      
+      if (/douanes/i.test(rawIssuer) || /جمارك/.test(rawIssuer)) {
+        extractedIssuer = "Administration des Douanes et Impôts Indirects (ADII)";
+      } else if (/changes/i.test(rawIssuer) || /صرف/.test(rawIssuer)) {
+        extractedIssuer = "Office des Changes";
+      } else if (/ministère/i.test(rawIssuer) || /وزارة/.test(rawIssuer)) {
+        extractedIssuer = "Ministère de l'Économie et des Finances";
+      } else if (/télécommunications/i.test(rawIssuer)) {
+        extractedIssuer = "Agence Nationale de Réglementation des Télécommunications (ANRT)";
+      } else {
+        extractedIssuer = rawIssuer;
+      }
+      
+      console.log(`[ingest-legal-doc] Extracted issuer: "${extractedIssuer}"`);
+      break;
+    }
+  }
+
+  console.log(`[ingest-legal-doc] Extracted metadata: ref="${extractedRef}", title="${extractedTitle?.slice(0, 50)}...", date="${extractedDate}", issuer="${extractedIssuer}"`);
+
+  return { ref: extractedRef, title: extractedTitle, date: extractedDate, issuer: extractedIssuer };
 }
 
 // ============================================================================
@@ -992,13 +1107,17 @@ async function storePdfAndCreateDocument(
   pdfBase64: string,
   request: IngestRequest,
   totalPages: number,
-  extractedRef: string,
-  extractedTitle: string | null
+  extractedMetadata: ExtractedDocumentMetadata
 ): Promise<{ pdfId: string; filePath: string } | null> {
   try {
+    const extractedRef = extractedMetadata.ref || request.source_ref;
+    const extractedTitle = extractedMetadata.title;
+    const extractedDate = extractedMetadata.date || request.source_date;
+    const extractedIssuer = extractedMetadata.issuer || request.issuer;
+    
     // Generate file path: circulaires/YYYY/reference.pdf
-    const year = request.source_date 
-      ? new Date(request.source_date).getFullYear() 
+    const year = extractedDate 
+      ? new Date(extractedDate).getFullYear() 
       : new Date().getFullYear();
     
     // Clean reference for file name
@@ -1053,8 +1172,8 @@ async function storePdfAndCreateDocument(
         document_type: request.source_type,
         document_reference: extractedRef || request.source_ref,
         country_code: request.country_code || 'MA',
-        issuing_authority: request.issuer,
-        publication_date: request.source_date,
+        issuing_authority: extractedIssuer, // Use extracted issuer
+        publication_date: extractedDate,    // Use extracted date
         page_count: totalPages,
         file_size_bytes: pdfBytes.length,
         mime_type: 'application/pdf',
@@ -1087,12 +1206,20 @@ async function upsertLegalSource(
   // Try to extract the actual reference from the document content
   const extracted = extractDocumentReference(fullText, request.source_type);
   
-  // Use extracted reference if available, otherwise fall back to provided source_ref
+  // Use extracted values if available, otherwise fall back to provided request values
   const actualRef = extracted.ref || request.source_ref;
   const actualTitle = request.title || extracted.title;
+  const actualDate = request.source_date || extracted.date;
+  const actualIssuer = request.issuer || extracted.issuer;
   
   if (extracted.ref && extracted.ref !== request.source_ref) {
     console.log(`[ingest-legal-doc] Using extracted reference "${extracted.ref}" instead of provided "${request.source_ref}"`);
+  }
+  if (extracted.date && !request.source_date) {
+    console.log(`[ingest-legal-doc] Using extracted date "${extracted.date}"`);
+  }
+  if (extracted.issuer && !request.issuer) {
+    console.log(`[ingest-legal-doc] Using extracted issuer "${extracted.issuer}"`);
   }
 
   const { data, error } = await supabase
@@ -1103,8 +1230,9 @@ async function upsertLegalSource(
         source_type: request.source_type,
         source_ref: actualRef,
         title: actualTitle,
-        issuer: request.issuer,
-        source_date: request.source_date,
+        issuer: actualIssuer,
+        source_date: actualDate,
+        effective_date: actualDate, // Also set effective_date to same value if not provided
         source_url: request.source_url,
         full_text: fullText,
         excerpt: fullText.slice(0, 500),
@@ -1423,18 +1551,19 @@ serve(async (req) => {
     const isFirstBatch = !isBatchMode || body.start_page === 1;
     
     if (body.store_pdf !== false && pdfBase64 && isFirstBatch) {
-      // Extract reference for file naming
+      // Extract metadata for file naming and database
       const extracted = extractDocumentReference(fullText, body.source_type);
       const actualRef = extracted.ref || body.source_ref;
       const actualTitle = body.title || extracted.title;
+      const actualDate = extracted.date || body.source_date;
+      const actualIssuer = extracted.issuer || body.issuer;
       
       const storageResult = await storePdfAndCreateDocument(
         supabase,
         pdfBase64,
         body,
         totalPages,
-        actualRef,
-        actualTitle
+        extracted // Pass full extracted metadata object
       );
       
       if (storageResult) {
@@ -1451,7 +1580,7 @@ serve(async (req) => {
                            body.source_type === 'note' ? 'Note' : 'Document',
             reference_number: actualRef,
             title: actualTitle,
-            reference_date: body.source_date,
+            reference_date: actualDate,  // Use extracted date
             country_code: body.country_code || 'MA',
             context: fullText.slice(0, 300),
             is_active: true,
@@ -1462,7 +1591,7 @@ serve(async (req) => {
         if (refError) {
           console.error(`[ingest-legal-doc] legal_references insert error:`, refError);
         } else {
-          console.log(`[ingest-legal-doc] Created legal_references entry linking to pdf_id: ${pdfId}`);
+          console.log(`[ingest-legal-doc] Created legal_references entry linking to pdf_id: ${pdfId} with date: ${actualDate}`);
         }
       }
     }
