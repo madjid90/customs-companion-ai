@@ -1042,10 +1042,10 @@ async function storePdfAndCreateDocument(
     const category = categoryMap[request.source_type] || 'Réglementation';
     const title = extractedTitle || request.title || `${request.source_type} ${extractedRef}`;
     
-    // Create pdf_documents entry
+    // Create pdf_documents entry (simple insert - file_path is unique per upload timestamp)
     const { data: pdfDoc, error: docError } = await supabase
       .from('pdf_documents')
-      .upsert({
+      .insert({
         title: title,
         file_name: fileName,
         file_path: filePath,
@@ -1060,8 +1060,6 @@ async function storePdfAndCreateDocument(
         mime_type: 'application/pdf',
         is_active: true,
         is_verified: false,
-      }, {
-        onConflict: 'file_path'
       })
       .select('id')
       .single();
