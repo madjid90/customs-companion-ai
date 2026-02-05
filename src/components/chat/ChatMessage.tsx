@@ -175,7 +175,7 @@ export function ChatMessage({
   cleanContent,
   removeQuestions,
 }: ChatMessageProps) {
-  const [previewDoc, setPreviewDoc] = useState<{ url: string; title: string } | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; title: string; pageNumber?: number } | null>(null);
   const [isSearchingDoc, setIsSearchingDoc] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<AttachedFile | null>(null);
   
@@ -319,23 +319,28 @@ export function ChatMessage({
   }, []);
 
   // Handle link clicks including source:// protocol
-  const handleLinkClick = useCallback((url: string, linkText: string) => {
+  const handleLinkClick = useCallback((url: string, linkText: string, pageNumber?: number) => {
     if (url.startsWith('source://')) {
       // Extract parameters from URL
       const params = new URLSearchParams(url.split('?')[1] || '');
       const directUrl = params.get('url');
       const title = params.get('title') || linkText;
       const chapter = params.get('chapter') || undefined;
+      const page = params.get('page') ? parseInt(params.get('page')!) : pageNumber;
       
       // If we have a direct URL, use it
       if (directUrl) {
-        setPreviewDoc({ url: decodeURIComponent(directUrl), title: decodeURIComponent(title) });
+        setPreviewDoc({ 
+          url: decodeURIComponent(directUrl), 
+          title: decodeURIComponent(title),
+          pageNumber: page
+        });
       } else {
         // Otherwise search by title/chapter
         searchAndOpenDocument(decodeURIComponent(title), chapter);
       }
     } else if (isDocumentUrl(url)) {
-      setPreviewDoc({ url, title: extractDocTitle(url, linkText) });
+      setPreviewDoc({ url, title: extractDocTitle(url, linkText), pageNumber });
     }
   }, [searchAndOpenDocument]);
 
@@ -677,6 +682,7 @@ export function ChatMessage({
           onOpenChange={(open) => !open && setPreviewDoc(null)}
           url={previewDoc.url}
           title={previewDoc.title}
+          pageNumber={previewDoc.pageNumber}
         />
       )}
     </div>
