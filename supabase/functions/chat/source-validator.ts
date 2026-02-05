@@ -314,11 +314,16 @@ export async function validateAllSources(
   const detectedArticles = extractArticlesFromResponse(responseText);
   const keywords = extractProductKeywords(question);
   
+  console.log("Source validation - detected articles:", detectedArticles);
+  console.log("Source validation - legalChunks count:", dbEvidence.legalChunks?.length || 0);
+  
   // Run both validations in parallel
   const [hsResult, articleSources] = await Promise.all([
     validateSourcesForCodes(supabase, detectedCodes, keywords, dbEvidence, supabaseUrl),
     validateArticleSources(supabase, detectedArticles, dbEvidence, supabaseUrl),
   ]);
+  
+  console.log("Source validation - article sources found:", articleSources.length);
   
   // Merge results, avoiding duplicates
   const allSources = [...hsResult.sources_validated];
