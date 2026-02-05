@@ -1173,6 +1173,39 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         validated: false, // Mark as not code-validated but still useful
       });
     }
+    
+    // ALSO include legal_sources that were used (Code des Douanes, etc.)
+    // These are found via legal_chunks search but need to appear as sources
+    const legalChunksUsed = context.knowledge_documents.filter((d: any) => d.source === 'legal_chunks');
+    if (legalChunksUsed.length > 0 && citedCirculars.length < 10) {
+      // Find unique source IDs from legal chunks
+      const { data: usedSources } = await supabase
+        .from('legal_sources')
+        .select('id, source_ref, title, source_url, source_type')
+        .eq('is_current', true)
+        .limit(5);
+      
+      if (usedSources && usedSources.length > 0) {
+        for (const source of usedSources) {
+          // Skip if already added
+          if (citedCirculars.some(c => c.reference_number === source.source_ref)) continue;
+          
+          // Check for local PDF in public folder
+          const localPdfUrl = `/documents/${source.source_ref}.pdf`;
+          
+          citedCirculars.push({
+            id: `legal_source_${source.id}`,
+            reference_type: source.source_type === 'law' ? 'Code' : 'Document légal',
+            reference_number: source.source_ref,
+            title: source.title || source.source_ref,
+            reference_date: null,
+            download_url: localPdfUrl, // Use local PDF path
+            pdf_title: source.title,
+            validated: true, // Legal sources are always valid
+          });
+        }
+      }
+    }
 
     // Add message if no evidence found
     let responseWithValidation = responseText;

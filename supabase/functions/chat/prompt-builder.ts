@@ -719,7 +719,19 @@ ${context.tariff_notes && context.tariff_notes.length > 0
 1. **PAS DE TABLEAUX** markdown
 2. **PAS DE LIENS** [texte](url)
 3. **Codes SH à 10 chiffres** quand applicable
-4. **Indicateur de confiance** en fin de réponse`;
+4. **Indicateur de confiance** en fin de réponse
+5. **NE JAMAIS INVENTER D'URLs** - Cite le nom du document sans URL. Le système ajoutera les liens automatiquement.
+
+### 🚫 INTERDICTION ABSOLUE - URLs FICTIVES:
+Tu ne dois JAMAIS générer de liens markdown comme [texte](https://...) car:
+- Les URLs que tu inventerais n'existent pas
+- Le système ajoute automatiquement les vraies URLs dans la section "Sources"
+
+**Bonne pratique:** 
+- Cite simplement le nom: "Selon le Code des Douanes et Impôts Indirects (CDII), Article 123..."
+- Ou: "La Circulaire n°4598/312 précise que..."
+
+Le système détectera automatiquement ces références et ajoutera les liens de téléchargement corrects.`;
 }
 
 /**
