@@ -7,6 +7,42 @@
 import { cleanHSCode } from "./hs-utils.ts";
 
 // =============================================================================
+// ARTICLE EXTRACTION (for legal documents like Code des Douanes)
+// =============================================================================
+
+/**
+ * Extract legal article references from AI response (e.g., "Art. 15 bis", "Article 42-2")
+ * This is SEPARATE from HS code extraction to avoid interference
+ */
+export function extractArticlesFromResponse(responseText: string): string[] {
+  const articles: string[] = [];
+  
+  const articlePatterns = [
+    // "Article 15 bis", "article 42-2", "Art. 74-3"
+    /\b(?:Article|Art\.?)\s*(\d+(?:\s*(?:bis|ter|quater))?(?:\s*-\s*\d+)?)/gi,
+    // "l'article 285", "articles 15 et 16"
+    /\bl['']article\s+(\d+(?:\s*(?:bis|ter|quater))?)/gi,
+    // Arabic article patterns
+    /المادة\s+(\d+)/g,
+    /الفصل\s+(\d+)/g,
+  ];
+  
+  for (const pattern of articlePatterns) {
+    const matches = responseText.matchAll(pattern);
+    for (const match of matches) {
+      const articleNum = match[1]?.trim();
+      if (articleNum && articleNum.length <= 10) {
+        // Normalize: remove extra spaces, keep "bis", "ter" etc.
+        const normalized = articleNum.replace(/\s+/g, " ").trim();
+        articles.push(normalized);
+      }
+    }
+  }
+  
+  return [...new Set(articles)];
+}
+
+// =============================================================================
 // TYPES
 // =============================================================================
 
@@ -20,6 +56,18 @@ export interface ValidatedSource {
   evidence_text?: string;
   matched_by: "hs_code" | "keyword" | "chapter" | "direct";
   confidence: "high" | "medium" | "low";
+}
+
+export interface ArticleSource {
+  id: string;
+  type: "legal";
+  title: string;
+  reference: string;
+  download_url: string | null;
+  article_number: string;
+  evidence_text?: string;
+  matched_by: "article";
+  confidence: "high" | "medium";
 }
 
 export interface SourceValidationResult {
@@ -36,6 +84,116 @@ export interface DBEvidence {
   pdfSummaries: any[];
   legalRefs: any[];
   legalChunks: any[];
+}
+
+// =============================================================================
+// LEGAL ARTICLE VALIDATION (separate from HS code validation)
+// =============================================================================
+
+/**
+ * Validate legal articles against legal_chunks in DB
+ * This runs INDEPENDENTLY of HS code validation
+ */
+export async function validateArticleSources(
+  supabase: any,
+  detectedArticles: string[],
+  dbEvidence: DBEvidence,
+  supabaseUrl: string
+): Promise<ValidatedSource[]> {
+  const validated: ValidatedSource[] = [];
+  
+  if (detectedArticles.length === 0) {
+    return [];
+  }
+  
+  // Normalize article numbers for matching
+  const normalizedArticles = detectedArticles.map(a => 
+    a.toLowerCase().replace(/\s+/g, "").replace(/-/g, "")
+  );
+  
+  // Check legal chunks for matching articles
+  for (const chunk of dbEvidence.legalChunks || []) {
+    const chunkArticle = chunk.article_number;
+    if (!chunkArticle) continue;
+    
+    const normalizedChunkArticle = chunkArticle
+      .toLowerCase()
+      .replace(/\s+/g, "")
+      .replace(/-/g, "");
+    
+    // Check for match
+    const isMatch = normalizedArticles.some(a => 
+      normalizedChunkArticle.includes(a) || a.includes(normalizedChunkArticle)
+    );
+    
+    if (isMatch) {
+      // Get source info for download URL
+      let downloadUrl: string | null = null;
+      let sourceTitle = "";
+      let sourceRef = "";
+      
+      if (chunk.source_id) {
+        // Try to get PDF info from legal_sources -> pdf_documents
+        const { data: sourceData } = await supabase
+          .from('legal_sources')
+          .select('id, source_ref, title, source_url')
+          .eq('id', chunk.source_id)
+          .single();
+        
+        if (sourceData) {
+          sourceRef = sourceData.source_ref || sourceData.title || "";
+          sourceTitle = sourceData.title || sourceRef;
+          
+          // Try to find the PDF document
+          const { data: pdfDoc } = await supabase
+            .from('pdf_documents')
+            .select('id, file_path, title')
+            .or(`title.ilike.%${sourceRef}%,document_reference.ilike.%${sourceRef}%`)
+            .eq('is_active', true)
+            .limit(1)
+            .single();
+          
+          if (pdfDoc?.file_path) {
+            downloadUrl = `${supabaseUrl}/storage/v1/object/public/pdf-documents/${pdfDoc.file_path}`;
+          } else if (sourceData.source_url) {
+            downloadUrl = sourceData.source_url;
+          }
+        }
+      }
+      
+      // Fallback: search for Code des Douanes PDF directly
+      if (!downloadUrl) {
+        const { data: cdiiPdf } = await supabase
+          .from('pdf_documents')
+          .select('id, file_path, title')
+          .or(`title.ilike.%Code des Douanes%,title.ilike.%CDII%,file_name.ilike.%CodeDesDouanes%`)
+          .eq('is_active', true)
+          .limit(1)
+          .single();
+        
+        if (cdiiPdf?.file_path) {
+          downloadUrl = `${supabaseUrl}/storage/v1/object/public/pdf-documents/${cdiiPdf.file_path}`;
+          sourceTitle = sourceTitle || cdiiPdf.title || "Code des Douanes";
+        }
+      }
+      
+      validated.push({
+        id: `article:${chunk.source_id || 'unknown'}:${chunkArticle}`,
+        type: "legal",
+        title: `Article ${chunkArticle}${chunk.section_title ? ` - ${chunk.section_title}` : ""}`,
+        reference: sourceRef ? `${sourceRef} - Art. ${chunkArticle}` : `Art. ${chunkArticle}`,
+        download_url: downloadUrl,
+        evidence_text: chunk.chunk_text?.substring(0, 300),
+        matched_by: "direct",
+        confidence: "high",
+      });
+    }
+  }
+  
+  // Deduplicate
+  return validated.filter(
+    (v, i, arr) => arr.findIndex(x => x.id === v.id) === i
+  );
 }
 
 // =============================================================================
@@ -136,11 +294,61 @@ export function extractProductKeywords(question: string): string[] {
   return words;
 }
 
+// =============================================================================
+// COMBINED VALIDATION (HS codes + Articles)
+// =============================================================================
+
 /**
- * Validates sources against DB evidence
+ * Combined validation: HS codes AND legal articles
+ * Runs both validations independently and merges results
+ */
+export async function validateAllSources(
+  supabase: any,
+  responseText: string,
+  question: string,
+  dbEvidence: DBEvidence,
+  supabaseUrl: string
+): Promise<SourceValidationResult> {
+  // Extract both HS codes and articles from response
+  const detectedCodes = extractCodesFromResponse(responseText);
+  const detectedArticles = extractArticlesFromResponse(responseText);
+  const keywords = extractProductKeywords(question);
+  
+  // Run both validations in parallel
+  const [hsResult, articleSources] = await Promise.all([
+    validateSourcesForCodes(supabase, detectedCodes, keywords, dbEvidence, supabaseUrl),
+    validateArticleSources(supabase, detectedArticles, dbEvidence, supabaseUrl),
+  ]);
+  
+  // Merge results, avoiding duplicates
+  const allSources = [...hsResult.sources_validated];
+  for (const article of articleSources) {
+    if (!allSources.some(s => s.id === article.id)) {
+      allSources.push(article);
+    }
+  }
+  
+  // Sort by confidence
+  allSources.sort((a, b) => {
+    const order = { high: 0, medium: 1, low: 2 };
+    return order[a.confidence] - order[b.confidence];
+  });
+  
+  return {
+    sources_validated: allSources.slice(0, 10),
+    sources_rejected: hsResult.sources_rejected,
+    has_evidence: allSources.length > 0,
+    message: allSources.length > 0 
+      ? undefined 
+      : "Aucune source interne ne prouve ce code. Considérez lancer une ingestion de documents.",
+  };
+}
+
+/**
+ * Validates HS code sources against DB evidence (UNCHANGED LOGIC)
  * Returns only sources that have actual DB backing for the detected codes
  */
-export async function validateSourcesForCodes(
+async function validateSourcesForCodes(
   supabase: any,
   detectedCodes: string[],
   keywords: string[],
