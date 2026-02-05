@@ -39,7 +39,7 @@ export const CitedCirculars = forwardRef<HTMLDivElement, CitedCircularsProps>(fu
           </span>
         </div>
         <div className="p-3 rounded-lg bg-warning/10 border border-warning/20">
-          <p className="text-xs text-warning-foreground flex items-start gap-2">
+          <p className="text-xs text-foreground flex items-start gap-2">
             <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
             <span>{validationMessage}</span>
           </p>
