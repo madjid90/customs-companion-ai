@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Download, Loader2, AlertCircle, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
+import { Download, Loader2, AlertCircle, ExternalLink, FileText } from "lucide-react";
 import {
   Drawer,
   DrawerContent,
@@ -27,33 +27,46 @@ export function DocumentPreviewDialog({
   pageNumber 
 }: DocumentPreviewDialogProps) {
   const [isLoading, setIsLoading] = useState(true);
-  const [useNativeViewer, setUseNativeViewer] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const isMobile = useIsMobile();
+  const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Check if we have a valid URL
   const hasValidUrl = url && url.length > 0 && (url.startsWith('http://') || url.startsWith('https://'));
 
-  // Reset loading state when dialog opens
+  // Reset state when dialog opens or URL changes
   useEffect(() => {
     if (open) {
       setIsLoading(true);
+      setHasError(false);
+      setLoadAttempt(0);
+      
+      // Set a timeout to detect if iframe fails to load
+      loadTimeoutRef.current = setTimeout(() => {
+        if (isLoading) {
+          // If still loading after 10 seconds, show error state
+          setIsLoading(false);
+          setHasError(true);
+        }
+      }, 10000);
     }
+    
+    return () => {
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+      }
+    };
   }, [open, url]);
 
   // Build URL with page fragment for native browser PDF viewer
-  // This works on Chrome, Firefox, Edge (desktop & mobile)
-  // Safari has limited support but falls back gracefully
   const getViewerUrl = () => {
     if (!hasValidUrl) return '';
     
-    if (useNativeViewer) {
-      // Native PDF viewer with page parameter
-      const pageParam = pageNumber ? `#page=${pageNumber}` : '';
-      return `${url}${pageParam}`;
-    } else {
-      // Google Docs Viewer fallback (no page navigation support)
-      return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
-    }
+    // Native PDF viewer with page parameter
+    const pageParam = pageNumber ? `#page=${pageNumber}` : '';
+    return `${url}${pageParam}`;
   };
 
   const handleDownload = async () => {
@@ -83,11 +96,52 @@ export function DocumentPreviewDialog({
     }
   };
 
+  const handleIframeLoad = () => {
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+    }
+    setIsLoading(false);
+    
+    // Check if iframe content is accessible (might be blocked)
+    try {
+      const iframe = iframeRef.current;
+      if (iframe) {
+        // Try to detect if the iframe loaded properly
+        // If blocked, this might throw or return unexpected values
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+        
+        // If we can access the document and it has specific blocked content indicators
+        if (iframeDoc) {
+          const bodyText = iframeDoc.body?.innerText || '';
+          if (bodyText.includes('bloqué') || bodyText.includes('blocked') || bodyText.length === 0) {
+            setHasError(true);
+          }
+        }
+      }
+    } catch (e) {
+      // Cross-origin error is expected for successful PDF loads
+      // This is actually good - it means the PDF loaded in the iframe
+    }
+  };
+
   const handleIframeError = () => {
-    // If native viewer fails, try Google Docs Viewer
-    if (useNativeViewer) {
-      setUseNativeViewer(false);
-      setIsLoading(true);
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+    }
+    setIsLoading(false);
+    setHasError(true);
+  };
+
+  const handleRetry = () => {
+    setLoadAttempt(prev => prev + 1);
+    setIsLoading(true);
+    setHasError(false);
+    
+    // Force iframe reload with cache buster
+    if (iframeRef.current) {
+      const separator = url.includes('?') ? '&' : '?';
+      const cacheBuster = `${separator}_t=${Date.now()}`;
+      iframeRef.current.src = getViewerUrl() + cacheBuster;
     }
   };
 
@@ -145,6 +199,48 @@ export function DocumentPreviewDialog({
               </p>
             </div>
           </div>
+        ) : hasError ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-4 text-center p-6 max-w-md">
+              <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center">
+                <FileText className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <div>
+                <h3 className="text-lg font-medium mb-2">Prévisualisation non disponible</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Le navigateur a bloqué l'affichage du PDF. Utilisez les boutons ci-dessous pour accéder au document.
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                <Button
+                  variant="default"
+                  onClick={handleOpenExternal}
+                  className="gap-2"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Ouvrir dans un nouvel onglet
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleDownload}
+                  className="gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Télécharger
+                </Button>
+              </div>
+              {loadAttempt < 2 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleRetry}
+                  className="text-muted-foreground"
+                >
+                  Réessayer la prévisualisation
+                </Button>
+              )}
+            </div>
+          </div>
         ) : (
           <>
             {isLoading && (
@@ -160,12 +256,14 @@ export function DocumentPreviewDialog({
               </div>
             )}
             <iframe
+              ref={iframeRef}
               src={getViewerUrl()}
               className="w-full h-full border-0"
-              onLoad={() => setIsLoading(false)}
+              onLoad={handleIframeLoad}
               onError={handleIframeError}
               title={title || "Document preview"}
               allow="fullscreen"
+              sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
             />
           </>
         )}
