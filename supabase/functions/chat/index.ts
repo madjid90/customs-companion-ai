@@ -869,6 +869,74 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         legal_chunks: legalChunks.length,
       });
     }
+    
+    // =========================================================================
+    // FALLBACK: ILIKE search for legal_chunks when semantic search returns empty
+    // =========================================================================
+    if ((!(context as any)._legalChunks || (context as any)._legalChunks.length === 0) && analysis.keywords.length > 0) {
+      console.log("Legal chunks empty from semantic search, trying ILIKE fallback...");
+      
+      try {
+        // Build OR conditions for keyword search
+        const keywordsToSearch = analysis.keywords.slice(0, 3).filter(k => k.length >= 4);
+        
+        if (keywordsToSearch.length > 0) {
+          const orConditions = keywordsToSearch.map(kw => `chunk_text.ilike.%${escapeSearchTerm(kw)}%`).join(',');
+          
+          const { data: fallbackChunks, error: fallbackError } = await supabase
+            .from('legal_chunks')
+            .select(`
+              id, chunk_index, chunk_text, chunk_type, article_number, section_title, 
+              page_number, source_id,
+              legal_sources!inner(id, source_ref, title, source_url)
+            `)
+            .or(orConditions)
+            .eq('is_active', true)
+            .order('id', { ascending: true })
+            .limit(10);
+          
+          if (!fallbackError && fallbackChunks && fallbackChunks.length > 0) {
+            console.log(`ILIKE fallback found ${fallbackChunks.length} legal chunks`);
+            
+            // Enrich with download URLs (try to find Code des Douanes PDF)
+            const { data: cdiiPdf } = await supabase
+              .from('pdf_documents')
+              .select('id, file_path, title')
+              .or(`title.ilike.%Code des Douanes%,file_name.ilike.%CodeDesDouanes%`)
+              .eq('is_active', true)
+              .limit(1)
+              .single();
+            
+            const baseDownloadUrl = cdiiPdf?.file_path 
+              ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${cdiiPdf.file_path}`
+              : null;
+            
+            const enrichedChunks = fallbackChunks.map((chunk: any) => ({
+              ...chunk,
+              source_ref: chunk.legal_sources?.source_ref || null,
+              source_title: chunk.legal_sources?.title || 'Code des Douanes',
+              source_url: chunk.legal_sources?.source_url || null,
+              download_url: baseDownloadUrl,
+              similarity: 0.65, // Assign a reasonable score for keyword matches
+            }));
+            
+            (context as any)._legalChunks = enrichedChunks;
+            
+            // Also add to knowledge_documents for context
+            const legalDocs = enrichedChunks.map((chunk: any) => ({
+              title: chunk.article_number ? `Article ${chunk.article_number} - Code des Douanes` : chunk.section_title || 'Code des Douanes',
+              content: chunk.chunk_text,
+              category: 'legal',
+              chunk_type: chunk.chunk_type,
+              source: 'legal_chunks_fallback',
+            }));
+            context.knowledge_documents = [...context.knowledge_documents, ...legalDocs].slice(0, 15);
+          }
+        }
+      } catch (fallbackErr) {
+        console.warn("Legal chunks ILIKE fallback failed:", fallbackErr);
+      }
+    }
 
     console.log("Context collected:", {
       tariffs_with_inheritance: context.tariffs_with_inheritance.length,
