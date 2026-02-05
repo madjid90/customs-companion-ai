@@ -1140,6 +1140,39 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         validated: true,
       });
     }
+    
+    // ALSO include legal references that were found but not validated (circulars are valuable even without code match)
+    // This ensures circulars appear in sources even when code validation fails
+    for (const ref of context.legal_references.slice(0, 5)) {
+      // Skip if already in citedCirculars
+      if (citedCirculars.some(c => c.id === ref.id)) continue;
+      
+      // Construct download URL if not present
+      let downloadUrl = ref.download_url;
+      if (!downloadUrl && ref.pdf_id) {
+        // Look up the PDF path
+        const { data: pdfDoc } = await supabase
+          .from('pdf_documents')
+          .select('file_path')
+          .eq('id', ref.pdf_id)
+          .single();
+        
+        if (pdfDoc?.file_path) {
+          downloadUrl = `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${pdfDoc.file_path}`;
+        }
+      }
+      
+      citedCirculars.push({
+        id: ref.id,
+        reference_type: ref.reference_type || 'Document',
+        reference_number: ref.reference_number || '',
+        title: ref.title || ref.pdf_title || 'Document',
+        reference_date: ref.reference_date || null,
+        download_url: downloadUrl || null,
+        pdf_title: ref.pdf_title || ref.title || null,
+        validated: false, // Mark as not code-validated but still useful
+      });
+    }
 
     // Add message if no evidence found
     let responseWithValidation = responseText;
