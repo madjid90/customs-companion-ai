@@ -1057,13 +1057,15 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         return false;
       }),
       legalChunks: ((context as any)._legalChunks || []).filter((chunk: any) => {
-        // Keep chunks that match keywords or have high similarity
+        // Keep chunks that match keywords, have high similarity, OR have an article number
+        // (article matching is done in validateArticleSources)
         const chunkText = (chunk.chunk_text || "").toLowerCase();
         const hasKeywordMatch = questionKeywords.some(kw => 
           kw.length >= 4 && chunkText.includes(kw.toLowerCase())
         );
         const hasHighSimilarity = chunk.similarity && chunk.similarity >= 0.6;
-        return hasKeywordMatch || hasHighSimilarity;
+        const hasArticleNumber = !!chunk.article_number;
+        return hasKeywordMatch || hasHighSimilarity || hasArticleNumber;
       }),
     };
     
