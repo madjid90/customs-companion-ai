@@ -179,7 +179,10 @@ serve(async (req) => {
               response: cachedResponse.response.text,
               confidence: cachedResponse.response.confidence,
               cached: true,
-              metadata: { cached: true, similarity: cachedResponse.response.similarity }
+              metadata: { cached: true, similarity: cachedResponse.response.similarity },
+              cited_circulars: cachedResponse.response.cited_circulars || [],
+              has_db_evidence: cachedResponse.response.has_db_evidence ?? true,
+              validation_message: cachedResponse.response.validation_message,
             }),
             { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
           );
@@ -1110,18 +1113,6 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       .select('id')
       .single();
 
-    // Save to cache
-    if (queryEmbedding && confidence !== "low" && (!images || images.length === 0) && question) {
-      saveToResponseCache(
-        supabase,
-        question,
-        queryEmbedding,
-        responseText,
-        contextUsed,
-        confidence
-      ).catch((err) => console.error("Cache save error:", err));
-    }
-
     // =========================================================================
     // BUILD VALIDATED CITATIONS (DB-only)
     // =========================================================================
@@ -1170,6 +1161,21 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     let responseWithValidation = responseText;
     if (!sourceValidation.has_evidence && codesForValidation.length > 0) {
       responseWithValidation += "\n\n---\n⚠️ **Note**: Aucune source interne ne confirme ce code SH. Cette classification est indicative et nécessite vérification auprès des autorités douanières.";
+    }
+
+    // Save to cache (AFTER building citedCirculars so we can cache them too)
+    if (queryEmbedding && confidence !== "low" && (!images || images.length === 0) && question) {
+      saveToResponseCache(
+        supabase,
+        question,
+        queryEmbedding,
+        responseWithValidation,
+        contextUsed,
+        confidence,
+        citedCirculars,
+        sourceValidation.has_evidence,
+        sourceValidation.message
+      ).catch((err) => console.error("Cache save error:", err));
     }
 
     return new Response(
