@@ -342,11 +342,45 @@ export async function validateAllSources(
     return order[a.confidence] - order[b.confidence];
   });
   
+  // Resolve any placeholder URLs (source://legal_source/XXX)
+  const resolvedSources = await Promise.all(
+    allSources.slice(0, 10).map(async (source) => {
+      if (source.download_url?.startsWith('source://legal_source/')) {
+        const sourceId = source.download_url.replace('source://legal_source/', '');
+        
+        // Try to find the PDF for this legal source
+        try {
+          // First, try to find Code des Douanes directly
+          const { data: cdiiPdf } = await supabase
+            .from('pdf_documents')
+            .select('id, file_path, title')
+            .or(`title.ilike.%Code des Douanes%,file_name.ilike.%CodeDesDouanes%`)
+            .eq('is_active', true)
+            .limit(1)
+            .single();
+          
+          if (cdiiPdf?.file_path) {
+            return {
+              ...source,
+              download_url: `${supabaseUrl}/storage/v1/object/public/pdf-documents/${cdiiPdf.file_path}`,
+            };
+          }
+        } catch (e) {
+          // Ignore lookup errors
+        }
+        
+        // If no PDF found, clear the placeholder URL
+        return { ...source, download_url: null };
+      }
+      return source;
+    })
+  );
+  
   return {
-    sources_validated: allSources.slice(0, 10),
+    sources_validated: resolvedSources,
     sources_rejected: hsResult.sources_rejected,
-    has_evidence: allSources.length > 0,
-    message: allSources.length > 0 
+    has_evidence: resolvedSources.length > 0,
+    message: resolvedSources.length > 0 
       ? undefined 
       : "Aucune source interne ne prouve ce code. Considérez lancer une ingestion de documents.",
   };
@@ -637,11 +671,13 @@ async function validateSourcesForCodes(
   }
 
   // 5. Validate legal chunks (articles extracted from documents)
+  // IMPORTANT: Accept chunks even without article_number for regulatory content
   if (dbEvidence.legalChunks && dbEvidence.legalChunks.length > 0) {
     for (const chunk of dbEvidence.legalChunks) {
       const articleNum = chunk.article_number;
       const sectionTitle = chunk.section_title || "";
       const sourceRef = chunk.source_ref || chunk.source_title || "";
+      const chunkType = chunk.chunk_type || "general";
       
       // Match by keywords or article reference
       let matched = false;
@@ -660,7 +696,16 @@ async function validateSourcesForCodes(
         matchedBy = "direct";
       }
       
-      if (matched && articleNum) {
+      // Fallback: if we have detected keywords but no codes, be more permissive
+      if (!matched && detectedCodes.length === 0 && keywordsLower.length > 0) {
+        // Accept any chunk with matching content type (article, definition, table)
+        if (["article", "definition", "table", "exclusion"].includes(chunkType)) {
+          matched = keywordsLower.some(kw => kw.length >= 3 && chunkText.includes(kw));
+          matchedBy = "keyword";
+        }
+      }
+      
+      if (matched) {
         // Build download URL if we have a source
         let downloadUrl: string | null = null;
         if (chunk.source_pdf_path) {
@@ -669,15 +714,33 @@ async function validateSourcesForCodes(
           downloadUrl = chunk.source_url;
         }
         
+        // Fallback: Try to get Code des Douanes PDF if this looks like legal content
+        if (!downloadUrl && chunk.source_id) {
+          // This will be resolved in the final validation step
+          downloadUrl = `source://legal_source/${chunk.source_id}`;
+        }
+        
+        // Build appropriate title based on whether we have article number
+        const title = articleNum 
+          ? `Article ${articleNum}${sectionTitle ? ` - ${sectionTitle}` : ""}`
+          : sectionTitle 
+            ? sectionTitle 
+            : `${sourceRef || "Document légal"}`;
+        
+        const reference = articleNum 
+          ? `${sourceRef ? sourceRef + " - " : ""}Art. ${articleNum}`
+          : sourceRef || "Document légal";
+        
         validated.push({
-          id: `article:${chunk.id || chunk.source_id}:${articleNum}`,
+          id: `legal:${chunk.id || chunk.source_id}:${articleNum || chunk.chunk_index || Math.random().toString(36).slice(2, 8)}`,
           type: "legal",
-          title: `Article ${articleNum}${sectionTitle ? ` - ${sectionTitle}` : ""}`,
-          reference: `${sourceRef} - Art. ${articleNum}`,
+          title,
+          reference,
           download_url: downloadUrl,
           evidence_text: chunk.chunk_text?.substring(0, 300),
           matched_by: matchedBy,
           confidence: matchedBy === "direct" ? "high" : "medium",
+          page_number: chunk.page_number || undefined,
         });
       }
     }
@@ -708,14 +771,27 @@ async function validateSourcesForCodes(
 
 /**
  * Filters cited circulars to only those with DB evidence for the codes
+ * UPDATED: Also accepts legal sources when no codes are detected
  */
 export function filterCitedCirculars(
   citedCirculars: any[],
   validatedSources: ValidatedSource[],
   detectedCodes: string[]
 ): any[] {
+  // When no codes detected, return all validated legal sources
   if (detectedCodes.length === 0) {
-    return [];
+    // Return validated legal sources as cited circulars
+    return validatedSources
+      .filter(s => s.type === "legal" || s.type === "pdf")
+      .map(s => ({
+        id: s.id,
+        reference_type: s.type === "legal" ? "Article" : "Document",
+        reference_number: s.reference || "",
+        title: s.title,
+        download_url: s.download_url,
+        validated: true,
+        page_number: s.page_number,
+      }));
   }
 
   // Get chapters from detected codes
