@@ -110,6 +110,8 @@ export const CitedCirculars = forwardRef<HTMLDivElement, CitedCircularsProps>(fu
                       ? "bg-success/15 text-success"
                       : circular.reference_type === "Preuve"
                       ? "bg-warning/15 text-warning"
+                      : circular.reference_type === "Article"
+                      ? "bg-secondary/30 text-secondary-foreground"
                       : "bg-accent/15 text-accent"
                   )}>
                     {circular.reference_type || "Document"}

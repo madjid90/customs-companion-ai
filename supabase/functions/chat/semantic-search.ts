@@ -772,7 +772,8 @@ export async function searchLegalChunksHybrid(
   queryEmbedding: number[],
   queryText: string,
   semanticWeight: number = 0.5,
-  limit: number = 10
+  limit: number = 10,
+  supabaseUrl?: string
 ): Promise<any[]> {
   try {
     const { data, error } = await supabase.rpc('search_legal_chunks_hybrid', {
@@ -787,7 +788,52 @@ export async function searchLegalChunksHybrid(
       return [];
     }
 
-    return data || [];
+    if (!data || data.length === 0) return [];
+
+    // Enrich with source metadata (title, PDF path)
+    const sourceIds = [...new Set(data.map((d: any) => d.source_id).filter(Boolean))];
+    
+    if (sourceIds.length > 0) {
+      const { data: sources } = await supabase
+        .from('legal_sources')
+        .select('id, source_ref, title, source_url')
+        .in('id', sourceIds);
+      
+      const sourceMap = new Map((sources || []).map((s: any) => [s.id, s]));
+      
+      // Try to find PDF documents for these sources
+      const sourceRefs = (sources || []).map((s: any) => s.source_ref).filter(Boolean);
+      let pdfMap = new Map();
+      
+      if (sourceRefs.length > 0) {
+        const { data: pdfs } = await supabase
+          .from('pdf_documents')
+          .select('id, document_reference, file_path, title')
+          .in('document_reference', sourceRefs);
+        
+        pdfMap = new Map((pdfs || []).map((p: any) => [p.document_reference, p]));
+      }
+      
+      const baseUrl = supabaseUrl || Deno.env.get('SUPABASE_URL') || '';
+      
+      return data.map((chunk: any) => {
+        const source = sourceMap.get(chunk.source_id) as any;
+        const pdf = source ? pdfMap.get(source.source_ref) as any : null;
+        
+        return {
+          ...chunk,
+          source_ref: source?.source_ref || null,
+          source_title: source?.title || null,
+          source_url: source?.source_url || null,
+          source_pdf_path: pdf?.file_path || null,
+          download_url: pdf?.file_path 
+            ? `${baseUrl}/storage/v1/object/public/pdf-documents/${pdf.file_path}`
+            : source?.source_url || null,
+        };
+      });
+    }
+
+    return data;
   } catch (error) {
     console.error('Hybrid legal chunks search failed:', error);
     return [];
