@@ -35,6 +35,7 @@ export interface DBEvidence {
   evidence: any[];
   pdfSummaries: any[];
   legalRefs: any[];
+  legalChunks: any[];
 }
 
 // =============================================================================
@@ -416,6 +417,53 @@ export async function validateSourcesForCodes(
         matched_by: "hs_code",
         confidence: ev.confidence === "auto_detected_10" ? "high" : "medium",
       });
+    }
+  }
+
+  // 5. Validate legal chunks (articles extracted from documents)
+  if (dbEvidence.legalChunks && dbEvidence.legalChunks.length > 0) {
+    for (const chunk of dbEvidence.legalChunks) {
+      const articleNum = chunk.article_number;
+      const sectionTitle = chunk.section_title || "";
+      const sourceRef = chunk.source_ref || chunk.source_title || "";
+      
+      // Match by keywords or article reference
+      let matched = false;
+      let matchedBy: "keyword" | "direct" = "keyword";
+      
+      // Check if chunk text mentions any keywords
+      const chunkText = (chunk.chunk_text || "").toLowerCase();
+      if (keywordsLower.some(kw => kw.length >= 4 && chunkText.includes(kw))) {
+        matched = true;
+        matchedBy = "keyword";
+      }
+      
+      // Also match if high similarity score from semantic search
+      if (!matched && chunk.similarity && chunk.similarity >= 0.65) {
+        matched = true;
+        matchedBy = "direct";
+      }
+      
+      if (matched && articleNum) {
+        // Build download URL if we have a source
+        let downloadUrl: string | null = null;
+        if (chunk.source_pdf_path) {
+          downloadUrl = `${supabaseUrl}/storage/v1/object/public/pdf-documents/${chunk.source_pdf_path}`;
+        } else if (chunk.source_url) {
+          downloadUrl = chunk.source_url;
+        }
+        
+        validated.push({
+          id: `article:${chunk.id || chunk.source_id}:${articleNum}`,
+          type: "legal",
+          title: `Article ${articleNum}${sectionTitle ? ` - ${sectionTitle}` : ""}`,
+          reference: `${sourceRef} - Art. ${articleNum}`,
+          download_url: downloadUrl,
+          evidence_text: chunk.chunk_text?.substring(0, 300),
+          matched_by: matchedBy,
+          confidence: matchedBy === "direct" ? "high" : "medium",
+        });
+      }
     }
   }
 

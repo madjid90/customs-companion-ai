@@ -789,12 +789,15 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           : Promise.resolve([]),
         // Legal chunks (Code des Douanes)
         withTimeout(
-          searchLegalChunksHybrid(supabase, queryEmbedding, cleanSearchQuery, 0.5, 8),
+        searchLegalChunksHybrid(supabase, queryEmbedding, cleanSearchQuery, 0.5, 8, SUPABASE_URL),
           TIMEOUTS.search,
           [],
           "Legal chunks search"
         ),
       ]);
+
+    // Store raw legal chunks for source validation later
+    (context as any)._legalChunks = legalChunks;
 
       // Merge HS codes
       if (semanticHS.length > 0) {
@@ -1050,6 +1053,15 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         
         return false;
       }),
+      legalChunks: ((context as any)._legalChunks || []).filter((chunk: any) => {
+        // Keep chunks that match keywords or have high similarity
+        const chunkText = (chunk.chunk_text || "").toLowerCase();
+        const hasKeywordMatch = questionKeywords.some(kw => 
+          kw.length >= 4 && chunkText.includes(kw.toLowerCase())
+        );
+        const hasHighSimilarity = chunk.similarity && chunk.similarity >= 0.6;
+        return hasKeywordMatch || hasHighSimilarity;
+      }),
     };
     
     // Validate sources - STRICT mode
@@ -1127,11 +1139,24 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     
     // Convert validated sources to cited circulars format
     for (const validSource of sourceValidation.sources_validated.slice(0, 8)) {
+      // Determine reference type based on source type and title
+      let refType = "Preuve";
+      if (validSource.type === "pdf") {
+        refType = "Tarif";
+      } else if (validSource.type === "legal") {
+        // Check if it's an article
+        if (validSource.title?.toLowerCase().includes("article") || validSource.reference?.includes("Art.")) {
+          refType = "Article";
+        } else {
+          refType = "Circulaire";
+        }
+      } else if (validSource.type === "tariff") {
+        refType = "Ligne tarifaire";
+      }
+      
       citedCirculars.push({
         id: validSource.id,
-        reference_type: validSource.type === "pdf" ? "Tarif" : 
-                        validSource.type === "legal" ? "Circulaire" :
-                        validSource.type === "tariff" ? "Ligne tarifaire" : "Preuve",
+        reference_type: refType,
         reference_number: validSource.reference || validSource.chapter || "",
         title: validSource.title,
         reference_date: null,
