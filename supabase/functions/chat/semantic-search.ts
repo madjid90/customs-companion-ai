@@ -139,6 +139,9 @@ export async function checkResponseCache(
         context: data[0].context_used,
         similarity: data[0].similarity,
         cached: true,
+        cited_circulars: data[0].cited_circulars || [],
+        has_db_evidence: data[0].has_db_evidence ?? true,
+        validation_message: data[0].validation_message,
       },
     };
   } catch (error) {
@@ -156,7 +159,10 @@ export async function saveToResponseCache(
   questionEmbedding: number[],
   response: string,
   contextUsed: any,
-  confidenceLevel: string
+  confidenceLevel: string,
+  citedCirculars?: any[],
+  hasDbEvidence?: boolean,
+  validationMessage?: string
 ): Promise<void> {
   try {
     const encoder = new TextEncoder();
@@ -175,6 +181,9 @@ export async function saveToResponseCache(
         response_text: response,
         context_used: contextUsed,
         confidence_level: confidenceLevel,
+        cited_circulars: citedCirculars || [],
+        has_db_evidence: hasDbEvidence ?? true,
+        validation_message: validationMessage || null,
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       },
       { onConflict: "question_hash" }

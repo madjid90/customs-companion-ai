@@ -1436,10 +1436,12 @@ export type Database = {
       }
       response_cache: {
         Row: {
+          cited_circulars: Json | null
           confidence_level: string | null
           context_used: Json | null
           created_at: string
           expires_at: string
+          has_db_evidence: boolean | null
           hit_count: number | null
           id: string
           question_embedding: string | null
@@ -1447,12 +1449,15 @@ export type Database = {
           question_text: string
           response_text: string
           updated_at: string
+          validation_message: string | null
         }
         Insert: {
+          cited_circulars?: Json | null
           confidence_level?: string | null
           context_used?: Json | null
           created_at?: string
           expires_at?: string
+          has_db_evidence?: boolean | null
           hit_count?: number | null
           id?: string
           question_embedding?: string | null
@@ -1460,12 +1465,15 @@ export type Database = {
           question_text: string
           response_text: string
           updated_at?: string
+          validation_message?: string | null
         }
         Update: {
+          cited_circulars?: Json | null
           confidence_level?: string | null
           context_used?: Json | null
           created_at?: string
           expires_at?: string
+          has_db_evidence?: boolean | null
           hit_count?: number | null
           id?: string
           question_embedding?: string | null
@@ -1473,6 +1481,7 @@ export type Database = {
           question_text?: string
           response_text?: string
           updated_at?: string
+          validation_message?: string | null
         }
         Relationships: []
       }
@@ -1975,12 +1984,15 @@ export type Database = {
       find_cached_response: {
         Args: { query_embedding: string; similarity_threshold?: number }
         Returns: {
+          cited_circulars: Json
           confidence_level: string
           context_used: Json
+          has_db_evidence: boolean
           id: string
           question_text: string
           response_text: string
           similarity: number
+          validation_message: string
         }[]
       }
       get_dashboard_stats: {
