@@ -149,16 +149,39 @@ serve(async (req) => {
       return errorResponse(req, "Question, images or PDF documents required", 400);
     }
 
+    // =========================================================================
+    // VALIDATION DES CLÉS API
+    // =========================================================================
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    // Vérifier les clés OBLIGATOIRES
+    const missingKeys: string[] = [];
+    if (!LOVABLE_API_KEY) missingKeys.push("LOVABLE_API_KEY");
+    if (!SUPABASE_URL) missingKeys.push("SUPABASE_URL");
+    if (!SUPABASE_SERVICE_ROLE_KEY) missingKeys.push("SUPABASE_SERVICE_ROLE_KEY");
+    
+    if (missingKeys.length > 0) {
+      logger.error("Missing required API keys", { missingKeys });
+      return errorResponse(
+        req, 
+        `Erreur de configuration serveur. Contactez l'administrateur.`, 
+        500
+      );
     }
 
-    const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+    // Avertir si les clés optionnelles sont manquantes
+    if (!OPENAI_API_KEY) {
+      logger.warn("OPENAI_API_KEY not configured - semantic search disabled");
+    }
+    if (!ANTHROPIC_API_KEY) {
+      logger.warn("ANTHROPIC_API_KEY not configured - PDF analysis disabled");
+    }
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     // =========================================================================
     // SEMANTIC CACHE CHECK
