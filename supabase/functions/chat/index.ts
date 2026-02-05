@@ -56,7 +56,7 @@ import {
 } from "./context-builder.ts";
 import { buildSystemPrompt, determineConfidence } from "./prompt-builder.ts";
 import {
-  validateSourcesForCodes,
+  validateAllSources,
   extractCodesFromResponse,
   extractProductKeywords,
   filterCitedCirculars,
@@ -1068,10 +1068,10 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     };
     
     // Validate sources - STRICT mode
-    const sourceValidation = await validateSourcesForCodes(
+    const sourceValidation = await validateAllSources(
       supabase,
-      codesForValidation,
-      questionKeywords,
+      responseText,
+      question || "",
       dbEvidence,
       SUPABASE_URL!
     );
