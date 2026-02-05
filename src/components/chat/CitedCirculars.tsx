@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import { FileText, ExternalLink, AlertCircle, CheckCircle2 } from "lucide-react";
+import { FileText, ExternalLink, AlertCircle, CheckCircle2, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface CircularReference {
@@ -11,11 +11,12 @@ export interface CircularReference {
   download_url?: string;
   pdf_title?: string;
   validated?: boolean;
+  page_number?: number; // Page for direct navigation
 }
 
 interface CitedCircularsProps {
   circulars: CircularReference[];
-  onDocumentClick: (url: string, title: string) => void;
+  onDocumentClick: (url: string, title: string, pageNumber?: number) => void;
   isSearchingDoc?: boolean;
   hasDbEvidence?: boolean;
   validationMessage?: string;
@@ -27,11 +28,11 @@ export const CitedCirculars = forwardRef<HTMLDivElement, CitedCircularsProps>(fu
   isSearchingDoc,
   hasDbEvidence = true,
   validationMessage 
-}: CitedCircularsProps) {
+}: CitedCircularsProps, ref) {
   // Show message if no DB evidence
   if (!hasDbEvidence && validationMessage) {
     return (
-      <div className="mt-4 pt-3 border-t border-border/30">
+      <div ref={ref} className="mt-4 pt-3 border-t border-border/30">
         <div className="flex items-center gap-2 mb-2">
           <AlertCircle className="h-4 w-4 text-warning" />
           <span className="text-xs font-semibold text-foreground uppercase tracking-wide">
@@ -64,7 +65,7 @@ export const CitedCirculars = forwardRef<HTMLDivElement, CitedCircularsProps>(fu
   if (uniqueCirculars.length === 0) return null;
 
   return (
-    <div className="mt-4 pt-3 border-t border-border/30">
+    <div ref={ref} className="mt-4 pt-3 border-t border-border/30">
       <div className="flex items-center gap-2 mb-2">
         <CheckCircle2 className="h-4 w-4 text-success" />
         <span className="text-xs font-semibold text-foreground uppercase tracking-wide">
@@ -79,6 +80,7 @@ export const CitedCirculars = forwardRef<HTMLDivElement, CitedCircularsProps>(fu
           const hasValidUrl = circular.download_url && circular.download_url.startsWith('http');
           const displayTitle = circular.title || circular.reference_number || "Document";
           const displayRef = circular.reference_number || (circular.reference_type === "Tarif" ? "" : circular.pdf_title);
+          const hasPageNumber = typeof circular.page_number === 'number' && circular.page_number > 0;
           
           return (
             <div
@@ -87,13 +89,13 @@ export const CitedCirculars = forwardRef<HTMLDivElement, CitedCircularsProps>(fu
                 "flex items-start gap-3 p-2.5 rounded-lg bg-muted/30 transition-colors group",
                 hasValidUrl && "hover:bg-muted/50 cursor-pointer"
               )}
-              onClick={() => hasValidUrl && onDocumentClick(circular.download_url!, displayTitle)}
+              onClick={() => hasValidUrl && onDocumentClick(circular.download_url!, displayTitle, circular.page_number)}
               role={hasValidUrl ? "button" : undefined}
               tabIndex={hasValidUrl ? 0 : undefined}
               onKeyDown={(e) => {
                 if (hasValidUrl && (e.key === 'Enter' || e.key === ' ')) {
                   e.preventDefault();
-                  onDocumentClick(circular.download_url!, displayTitle);
+                  onDocumentClick(circular.download_url!, displayTitle, circular.page_number);
                 }
               }}
             >
@@ -119,6 +121,12 @@ export const CitedCirculars = forwardRef<HTMLDivElement, CitedCircularsProps>(fu
                   {displayRef && (
                     <span className="text-sm font-semibold text-foreground">
                       {displayRef}
+                    </span>
+                  )}
+                  {hasPageNumber && (
+                    <span className="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">
+                      <BookOpen className="h-3 w-3" />
+                      p.{circular.page_number}
                     </span>
                   )}
                   {circular.reference_date && (
@@ -148,7 +156,7 @@ export const CitedCirculars = forwardRef<HTMLDivElement, CitedCircularsProps>(fu
                   )}
                 >
                   <ExternalLink className="h-3 w-3" />
-                  <span>Consulter</span>
+                  <span>{hasPageNumber ? `Page ${circular.page_number}` : "Consulter"}</span>
                 </div>
               )}
             </div>

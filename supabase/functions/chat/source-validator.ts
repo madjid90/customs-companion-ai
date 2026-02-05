@@ -56,6 +56,7 @@ export interface ValidatedSource {
   evidence_text?: string;
   matched_by: "hs_code" | "keyword" | "chapter" | "direct";
   confidence: "high" | "medium" | "low";
+  page_number?: number; // Page number for direct navigation
 }
 
 export interface ArticleSource {
@@ -68,6 +69,7 @@ export interface ArticleSource {
   evidence_text?: string;
   matched_by: "article";
   confidence: "high" | "medium";
+  page_number?: number; // Page number for direct navigation
 }
 
 export interface SourceValidationResult {
@@ -186,6 +188,7 @@ export async function validateArticleSources(
         evidence_text: chunk.chunk_text?.substring(0, 300),
         matched_by: "direct",
         confidence: "high",
+        page_number: chunk.page_number || undefined, // Include page for navigation
       });
     }
   }
