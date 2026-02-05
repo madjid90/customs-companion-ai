@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Download, Loader2, AlertCircle, ExternalLink, FileText } from "lucide-react";
+import { Download, Loader2, AlertCircle, ExternalLink, FileText, RefreshCw } from "lucide-react";
 import {
   Drawer,
   DrawerContent,
@@ -16,7 +16,7 @@ interface DocumentPreviewDialogProps {
   onOpenChange: (open: boolean) => void;
   url: string;
   title?: string;
-  pageNumber?: number; // Target page for direct navigation
+  pageNumber?: number;
 }
 
 export function DocumentPreviewDialog({ 
@@ -28,60 +28,101 @@ export function DocumentPreviewDialog({
 }: DocumentPreviewDialogProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const isMobile = useIsMobile();
-  const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Check if we have a valid URL
   const hasValidUrl = url && url.length > 0 && (url.startsWith('http://') || url.startsWith('https://'));
 
-  // Reset state when dialog opens or URL changes
+  // Fetch PDF and create blob URL to bypass X-Frame-Options
   useEffect(() => {
-    if (open) {
-      setIsLoading(true);
-      setHasError(false);
-      setLoadAttempt(0);
-      
-      // Set a timeout to detect if iframe fails to load
-      loadTimeoutRef.current = setTimeout(() => {
-        if (isLoading) {
-          // If still loading after 10 seconds, show error state
-          setIsLoading(false);
-          setHasError(true);
+    if (!open || !hasValidUrl) return;
+
+    let cancelled = false;
+    setIsLoading(true);
+    setHasError(false);
+    setBlobUrl(null);
+
+    const fetchPdf = async () => {
+      try {
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
         }
-      }, 10000);
-    }
-    
-    return () => {
-      if (loadTimeoutRef.current) {
-        clearTimeout(loadTimeoutRef.current);
+        
+        const blob = await response.blob();
+        
+        if (cancelled) return;
+        
+        // Check if it's actually a PDF
+        if (!blob.type.includes('pdf') && !blob.type.includes('octet-stream')) {
+          console.warn('Response is not a PDF:', blob.type);
+        }
+        
+        const objectUrl = URL.createObjectURL(blob);
+        setBlobUrl(objectUrl);
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Failed to fetch PDF:', error);
+        if (!cancelled) {
+          setHasError(true);
+          setIsLoading(false);
+        }
       }
     };
-  }, [open, url]);
 
-  // Build URL with page fragment for native browser PDF viewer
+    fetchPdf();
+
+    return () => {
+      cancelled = true;
+      // Clean up blob URL when dialog closes
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+      }
+    };
+  }, [open, url, hasValidUrl]);
+
+  // Clean up blob URL when component unmounts
+  useEffect(() => {
+    return () => {
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+      }
+    };
+  }, [blobUrl]);
+
+  // Get the viewer URL with page number
   const getViewerUrl = () => {
-    if (!hasValidUrl) return '';
-    
-    // Native PDF viewer with page parameter
+    if (!blobUrl) return '';
     const pageParam = pageNumber ? `#page=${pageNumber}` : '';
-    return `${url}${pageParam}`;
+    return `${blobUrl}${pageParam}`;
   };
 
   const handleDownload = async () => {
     if (hasValidUrl) {
       try {
-        const response = await fetch(url);
-        const blob = await response.blob();
-        const downloadUrl = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.download = title || 'document.pdf';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(downloadUrl);
+        // Use existing blob if available
+        if (blobUrl) {
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = title || 'document.pdf';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } else {
+          const response = await fetch(url);
+          const blob = await response.blob();
+          const downloadUrl = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = downloadUrl;
+          link.download = title || 'document.pdf';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(downloadUrl);
+        }
       } catch (error) {
         // Fallback: open in new tab if download fails
         window.open(url, '_blank');
@@ -96,53 +137,33 @@ export function DocumentPreviewDialog({
     }
   };
 
-  const handleIframeLoad = () => {
-    if (loadTimeoutRef.current) {
-      clearTimeout(loadTimeoutRef.current);
-    }
-    setIsLoading(false);
-    
-    // Check if iframe content is accessible (might be blocked)
-    try {
-      const iframe = iframeRef.current;
-      if (iframe) {
-        // Try to detect if the iframe loaded properly
-        // If blocked, this might throw or return unexpected values
-        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-        
-        // If we can access the document and it has specific blocked content indicators
-        if (iframeDoc) {
-          const bodyText = iframeDoc.body?.innerText || '';
-          if (bodyText.includes('bloqué') || bodyText.includes('blocked') || bodyText.length === 0) {
-            setHasError(true);
-          }
-        }
-      }
-    } catch (e) {
-      // Cross-origin error is expected for successful PDF loads
-      // This is actually good - it means the PDF loaded in the iframe
-    }
-  };
-
-  const handleIframeError = () => {
-    if (loadTimeoutRef.current) {
-      clearTimeout(loadTimeoutRef.current);
-    }
-    setIsLoading(false);
-    setHasError(true);
-  };
-
   const handleRetry = () => {
-    setLoadAttempt(prev => prev + 1);
     setIsLoading(true);
     setHasError(false);
+    setBlobUrl(null);
     
-    // Force iframe reload with cache buster
-    if (iframeRef.current) {
-      const separator = url.includes('?') ? '&' : '?';
-      const cacheBuster = `${separator}_t=${Date.now()}`;
-      iframeRef.current.src = getViewerUrl() + cacheBuster;
-    }
+    // Trigger re-fetch by toggling a dependency
+    const fetchPdf = async () => {
+      try {
+        const cacheBuster = `${url.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+        const response = await fetch(url + cacheBuster);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        setBlobUrl(objectUrl);
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Retry failed:', error);
+        setHasError(true);
+        setIsLoading(false);
+      }
+    };
+
+    fetchPdf();
   };
 
   const content = (
@@ -206,9 +227,9 @@ export function DocumentPreviewDialog({
                 <FileText className="h-8 w-8 text-muted-foreground" />
               </div>
               <div>
-                <h3 className="text-lg font-medium mb-2">Prévisualisation non disponible</h3>
+                <h3 className="text-lg font-medium mb-2">Erreur de chargement</h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Le navigateur a bloqué l'affichage du PDF. Utilisez les boutons ci-dessous pour accéder au document.
+                  Le document n'a pas pu être chargé. Utilisez les boutons ci-dessous pour y accéder.
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
@@ -229,44 +250,36 @@ export function DocumentPreviewDialog({
                   Télécharger
                 </Button>
               </div>
-              {loadAttempt < 2 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleRetry}
-                  className="text-muted-foreground"
-                >
-                  Réessayer la prévisualisation
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRetry}
+                className="text-muted-foreground gap-2"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Réessayer
+              </Button>
             </div>
           </div>
-        ) : (
-          <>
-            {isLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
-                <div className="flex flex-col items-center gap-3">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  <p className="text-sm text-muted-foreground">
-                    {pageNumber 
-                      ? `Chargement de la page ${pageNumber}...` 
-                      : 'Chargement du document...'}
-                  </p>
-                </div>
-              </div>
-            )}
-            <iframe
-              ref={iframeRef}
-              src={getViewerUrl()}
-              className="w-full h-full border-0"
-              onLoad={handleIframeLoad}
-              onError={handleIframeError}
-              title={title || "Document preview"}
-              allow="fullscreen"
-              sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-            />
-          </>
-        )}
+        ) : isLoading ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">
+                {pageNumber 
+                  ? `Chargement de la page ${pageNumber}...` 
+                  : 'Chargement du document...'}
+              </p>
+            </div>
+          </div>
+        ) : blobUrl ? (
+          <iframe
+            ref={iframeRef}
+            src={getViewerUrl()}
+            className="w-full h-full border-0"
+            title={title || "Document preview"}
+          />
+        ) : null}
       </div>
     </>
   );
