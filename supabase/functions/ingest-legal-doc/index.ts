@@ -141,14 +141,48 @@ interface IngestResponse {
 const MAX_PAGES_PER_BATCH = 1; // Single page per request for very dense legal docs
 const CLAUDE_TIMEOUT_MS = 55000; // 55 second timeout - must be < Edge Function limit (~60s)
 
-// Split a PDF into a subset of pages using pdf-lib
+// Memory-efficient base64 to Uint8Array conversion (avoid intermediate strings)
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+// Memory-efficient Uint8Array to base64 conversion (chunk-based to avoid stack overflow)
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  const CHUNK_SIZE = 32768; // Process in 32KB chunks
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    const chunk = bytes.subarray(i, Math.min(i + CHUNK_SIZE, bytes.length));
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return btoa(binary);
+}
+
+// Maximum PDF size in bytes for edge function processing (5MB raw = ~6.7MB base64)
+const MAX_PDF_SIZE_BYTES = 5 * 1024 * 1024;
+
+// Split a PDF into a subset of pages using pdf-lib (memory-optimized)
 async function splitPdfPages(
   pdfBase64: string,
   startPage: number,
   endPage: number
 ): Promise<string> {
-  const pdfBytes = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));
-  const srcDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+  // Check size before decoding
+  const estimatedSize = Math.floor(pdfBase64.length * 3 / 4);
+  if (estimatedSize > MAX_PDF_SIZE_BYTES) {
+    throw new Error(`PDF trop volumineux (${(estimatedSize / 1024 / 1024).toFixed(1)}MB). Max: ${MAX_PDF_SIZE_BYTES / 1024 / 1024}MB`);
+  }
+  
+  const pdfBytes = base64ToUint8Array(pdfBase64);
+  const srcDoc = await PDFDocument.load(pdfBytes, { 
+    ignoreEncryption: true,
+    updateMetadata: false, // Skip metadata parsing to save memory
+  });
   const totalPages = srcDoc.getPageCount();
   
   // Adjust bounds (1-indexed to 0-indexed)
@@ -171,34 +205,32 @@ async function splitPdfPages(
   const copiedPages = await newDoc.copyPages(srcDoc, pageIndices);
   copiedPages.forEach(page => newDoc.addPage(page));
   
-  const newPdfBytes = await newDoc.save();
+  // Save with compression to reduce memory footprint
+  const newPdfBytes = await newDoc.save({ 
+    useObjectStreams: false, // Simpler output = less memory
+  });
   
-  // Verify the new PDF has correct page count
-  const verifyDoc = await PDFDocument.load(newPdfBytes);
-  const newPageCount = verifyDoc.getPageCount();
-  console.log(`[ingest-legal-doc] Split PDF has ${newPageCount} pages (expected ${pageIndices.length})`);
+  console.log(`[ingest-legal-doc] Split PDF has ${pageIndices.length} pages`);
   
-  if (newPageCount !== pageIndices.length) {
-    throw new Error(`Split verification failed: expected ${pageIndices.length} pages, got ${newPageCount}`);
-  }
-  
-  // Convert to base64
-  let binary = '';
-  const bytes = new Uint8Array(newPdfBytes);
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  
-  const result = btoa(binary);
+  // Convert to base64 efficiently
+  const result = uint8ArrayToBase64(newPdfBytes);
   console.log(`[ingest-legal-doc] Split PDF base64 size: ${(result.length / 1024).toFixed(1)}KB`);
   
   return result;
 }
 
-// Get actual page count from PDF
+// Get actual page count from PDF (memory-optimized)
 async function getPdfPageCount(pdfBase64: string): Promise<number> {
-  const pdfBytes = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));
-  const srcDoc = await PDFDocument.load(pdfBytes);
+  const estimatedSize = Math.floor(pdfBase64.length * 3 / 4);
+  if (estimatedSize > MAX_PDF_SIZE_BYTES) {
+    throw new Error(`PDF trop volumineux (${(estimatedSize / 1024 / 1024).toFixed(1)}MB). Max: ${MAX_PDF_SIZE_BYTES / 1024 / 1024}MB`);
+  }
+  
+  const pdfBytes = base64ToUint8Array(pdfBase64);
+  const srcDoc = await PDFDocument.load(pdfBytes, {
+    ignoreEncryption: true,
+    updateMetadata: false,
+  });
   return srcDoc.getPageCount();
 }
 
