@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useUploadState, UploadedFile, ExtractionData, DocumentType } from "@/hooks/useUploadState";
+import { storeFile, getStoredFile, removeStoredFile, removeStoredFiles, clearAllStoredFiles, cleanupOldFiles } from "@/lib/fileStorage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,13 @@ export default function AdminUpload() {
   const [isRetryingAll, setIsRetryingAll] = useState(false);
   const { toast } = useToast();
   const processingRef = useRef(false);
+
+  // Cleanup old IndexedDB files on mount (older than 48h)
+  useEffect(() => {
+    cleanupOldFiles(48 * 60 * 60 * 1000).then(count => {
+      if (count > 0) console.log(`[FileStorage] Cleaned up ${count} old files`);
+    });
+  }, []);
   
   // Fonction batch avec callbacks dynamiques pour chaque fichier
   // Accumule les données de chaque batch pour prévisualisation avant insertion
@@ -599,6 +607,9 @@ export default function AdminUpload() {
             effectiveDocType
           );
 
+          // Clean up IndexedDB blob on success
+          removeStoredFile(fileId);
+          
           updateFileStatus(fileId, {
             status: "success",
             progress: 100,
@@ -610,7 +621,7 @@ export default function AdminUpload() {
               hs_codes: [],
               tariff_lines: [],
               document_type: "regulatory",
-              full_text_length: ingestionResult.pages_processed * 1000, // Estimation
+              full_text_length: ingestionResult.pages_processed * 1000,
             },
           });
           
@@ -715,6 +726,9 @@ export default function AdminUpload() {
           const hsCount = extractionData.hs_codes?.length || 0;
           const tariffCount = extractionData.tariff_lines?.length || 0;
 
+          // Clean up IndexedDB blob on successful extraction (preview is good enough)
+          removeStoredFile(fileId);
+          
           // Tariff documents need validation
           updateFileStatus(fileId, {
             status: "preview",
@@ -777,7 +791,7 @@ export default function AdminUpload() {
   }, [files, isProcessing, processQueue]);
 
   // Queue a file for processing with selected document type
-  const addToQueue = (file: File, docType: DocumentType) => {
+  const addToQueue = async (file: File, docType: DocumentType) => {
     const fileId = crypto.randomUUID();
     const uploadedFile: UploadedFile = {
       id: fileId,
@@ -788,6 +802,8 @@ export default function AdminUpload() {
       countryCode: "MA",
       documentType: docType,
     };
+    // Store the actual File blob in IndexedDB for retry resilience
+    await storeFile(fileId, file, docType);
     queueFile(file, uploadedFile);
   };
 
@@ -808,11 +824,12 @@ export default function AdminUpload() {
   };
 
   // Récupérer pdfId/filePath depuis la DB pour un fichier en erreur, puis relancer
+  // Si le fichier n'existe pas en DB, tenter de le re-uploader depuis IndexedDB
   const recoverAndRetry = async (file: UploadedFile) => {
     updateFileStatus(file.id, { error: "Recherche du fichier en base..." });
 
     try {
-      // Chercher le document en DB par nom de fichier
+      // 1. Chercher le document en DB par nom de fichier
       const { data: docs, error: searchError } = await supabase
         .from("pdf_documents")
         .select("id, file_path, category")
@@ -821,39 +838,58 @@ export default function AdminUpload() {
         .order("created_at", { ascending: false })
         .limit(1);
 
-      if (searchError || !docs || docs.length === 0) {
-        toast({
-          title: "Fichier introuvable",
-          description: "Ce fichier n'a pas été trouvé dans le storage. Veuillez le re-uploader.",
-          variant: "destructive",
+      if (!searchError && docs && docs.length > 0) {
+        // Fichier trouvé en DB → mettre à jour l'état et relancer l'analyse
+        const doc = docs[0];
+        updateFileStatus(file.id, { 
+          pdfId: doc.id, 
+          filePath: doc.file_path,
+          documentType: file.documentType || (doc.category as DocumentType) || "circulaire",
+          error: "Fichier récupéré, relance en cours..."
         });
-        updateFileStatus(file.id, { error: "Fichier introuvable en base - re-uploadez" });
+
+        const recoveredFile: UploadedFile = {
+          ...file,
+          pdfId: doc.id,
+          filePath: doc.file_path,
+          documentType: file.documentType || (doc.category as DocumentType) || "circulaire",
+        };
+
+        await retryAnalysis(recoveredFile);
         return;
       }
 
-      const doc = docs[0];
+      // 2. Fichier non trouvé en DB → tenter de le récupérer depuis IndexedDB
+      updateFileStatus(file.id, { error: "Fichier absent de la base, recherche locale..." });
+
+      const storedBlob = await getStoredFile(file.id);
       
-      // Mettre à jour l'état local avec les infos récupérées
+      if (!storedBlob) {
+        toast({
+          title: "Fichier introuvable",
+          description: "Le fichier original n'est plus disponible. Veuillez le re-uploader.",
+          variant: "destructive",
+        });
+        updateFileStatus(file.id, { error: "Fichier introuvable - re-uploadez le PDF" });
+        return;
+      }
+
+      // 3. Re-uploader complètement depuis le blob IndexedDB
       updateFileStatus(file.id, { 
-        pdfId: doc.id, 
-        filePath: doc.file_path,
-        documentType: file.documentType || (doc.category as DocumentType) || "circulaire",
-        error: "Fichier récupéré, relance en cours..."
+        status: "uploading",
+        progress: 10,
+        error: "Re-upload depuis le cache local..." 
       });
 
-      // Construire un objet file mis à jour pour retryAnalysis
-      const recoveredFile: UploadedFile = {
-        ...file,
-        pdfId: doc.id,
-        filePath: doc.file_path,
-        documentType: file.documentType || (doc.category as DocumentType) || "circulaire",
-      };
-
-      // Relancer l'analyse
-      await retryAnalysis(recoveredFile);
+      const docType = file.documentType || "circulaire";
+      await processFile(storedBlob, file.id, docType);
+      
     } catch (err: any) {
       console.error("Recovery error:", err);
-      updateFileStatus(file.id, { error: err.message || "Erreur de récupération" });
+      updateFileStatus(file.id, { 
+        status: "error",
+        error: err.message || "Erreur de récupération" 
+      });
       toast({
         title: "Erreur",
         description: err.message || "Impossible de récupérer le fichier",
@@ -902,6 +938,9 @@ export default function AdminUpload() {
           docType
         );
 
+        // Clean up IndexedDB blob on success
+        removeStoredFile(file.id);
+        
         updateFileStatus(file.id, {
           status: "success",
           progress: 100,
@@ -957,6 +996,9 @@ export default function AdminUpload() {
             full_text_length: 0,
           };
 
+          // Clean up IndexedDB blob on success
+          removeStoredFile(file.id);
+          
           updateFileStatus(file.id, {
             status: "preview",
             progress: 100,
@@ -1122,8 +1164,11 @@ export default function AdminUpload() {
   // Count queued files
   const queuedCount = files.filter(f => f.status === "queued").length;
 
-  // Remove a file from the list (and cleanup storage/DB if already uploaded)
+  // Remove a file from the list (and cleanup storage/DB/IndexedDB if already uploaded)
   const removeFile = useCallback(async (fileToRemove: UploadedFile) => {
+    // Clean up IndexedDB blob
+    await removeStoredFile(fileToRemove.id);
+    
     // If file was already uploaded to DB/storage, clean up
     if (fileToRemove.pdfId) {
       try {
@@ -1313,11 +1358,12 @@ export default function AdminUpload() {
                 <Button 
                   variant="ghost" 
                   size="sm" 
-                  onClick={() => {
+                  onClick={async () => {
+                    await clearAllStoredFiles();
                     clearAll();
                     toast({
                       title: "Historique vidé",
-                      description: "La liste des uploads a été effacée.",
+                      description: "La liste des uploads et le cache local ont été effacés.",
                     });
                   }}
                   className="text-muted-foreground hover:text-destructive"
@@ -1398,26 +1444,22 @@ export default function AdminUpload() {
                       {file.error && (
                         <div className="flex items-center justify-between">
                           <p className="text-sm text-destructive">{file.error}</p>
-                          {file.status === "error" && file.pdfId && file.filePath && (
+                          {file.status === "error" && (
                             <Button 
                               size="sm" 
                               variant="outline"
-                              onClick={() => retryAnalysis(file)}
+                              onClick={() => {
+                                if (file.pdfId && file.filePath) {
+                                  retryAnalysis(file);
+                                } else {
+                                  recoverAndRetry(file);
+                                }
+                              }}
                               className="gap-2 ml-2 shrink-0"
+                              disabled={isRetryingAll}
                             >
                               <RotateCcw className="h-4 w-4" />
                               Relancer
-                            </Button>
-                          )}
-                          {file.status === "error" && (!file.pdfId || !file.filePath) && (
-                            <Button 
-                              size="sm" 
-                              variant="outline"
-                              onClick={() => recoverAndRetry(file)}
-                              className="gap-2 ml-2 shrink-0"
-                            >
-                              <RotateCcw className="h-4 w-4" />
-                              Récupérer & Relancer
                             </Button>
                           )}
                         </div>
