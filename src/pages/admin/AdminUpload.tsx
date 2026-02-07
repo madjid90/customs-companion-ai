@@ -962,6 +962,12 @@ export default function AdminUpload() {
 
         // Clean up IndexedDB blob on success
         removeStoredFile(file.id);
+
+        // Handle already_complete or missing result gracefully
+        const chunksCreated = ingestionResult?.chunks_created ?? 0;
+        const detectedCodes = ingestionResult?.detected_codes_count ?? 0;
+        const pagesProcessed = ingestionResult?.pages_processed ?? 0;
+        const isAlreadyComplete = ingestionResult?.already_complete === true;
         
         updateFileStatus(file.id, {
           status: "success",
@@ -969,18 +975,22 @@ export default function AdminUpload() {
           pdfId: file.pdfId,
           error: undefined,
           analysis: {
-            summary: `Document ingéré pour RAG: ${ingestionResult.chunks_created} segments, ${ingestionResult.detected_codes_count} codes SH détectés`,
+            summary: isAlreadyComplete 
+              ? "Document déjà entièrement traité"
+              : `Document ingéré pour RAG: ${chunksCreated} segments, ${detectedCodes} codes SH détectés`,
             key_points: [],
             hs_codes: [],
             tariff_lines: [],
             document_type: "regulatory",
-            full_text_length: ingestionResult.pages_processed * 1000,
+            full_text_length: pagesProcessed * 1000,
           },
         });
 
         toast({
-          title: "✅ Document réglementaire ingéré",
-          description: `${ingestionResult.chunks_created} segments créés, ${ingestionResult.detected_codes_count} codes SH détectés`,
+          title: isAlreadyComplete ? "✅ Document déjà traité" : "✅ Document réglementaire ingéré",
+          description: isAlreadyComplete 
+            ? "Ce document a déjà été entièrement ingéré."
+            : `${chunksCreated} segments créés, ${detectedCodes} codes SH détectés`,
         });
       } else {
         // ========== TARIFF EXTRACTION (analyze-pdf) ==========
