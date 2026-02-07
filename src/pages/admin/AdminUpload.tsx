@@ -806,22 +806,20 @@ export default function AdminUpload() {
     setSelectedFile(null);
   };
 
-  // Relancer l'analyse d'un fichier en erreur - utilise le batch extraction automatique
+  // Relancer l'analyse d'un fichier en erreur - route vers le bon pipeline selon le type
   const retryAnalysis = async (file: UploadedFile) => {
     if (!file.pdfId || !file.filePath) {
       toast({
         title: "Erreur",
-        description: "Informations manquantes pour relancer l'analyse",
+        description: "Informations manquantes pour relancer l'analyse. Veuillez re-uploader le fichier.",
         variant: "destructive",
       });
       return;
     }
 
-    // Supprimer toute extraction existante et runs précédents
-    await Promise.all([
-      supabase.from("pdf_extractions").delete().eq("pdf_id", file.pdfId),
-      supabase.from("pdf_extraction_runs").delete().eq("pdf_id", file.pdfId),
-    ]);
+    // Déterminer le pipeline selon le type de document
+    const docType = file.documentType || "tarif";
+    const pipeline = DOCUMENT_TYPES.find(d => d.value === docType)?.pipeline || "analyze";
 
     // Mettre à jour le statut
     updateFileStatus(file.id, { 
@@ -831,65 +829,100 @@ export default function AdminUpload() {
     });
 
     toast({
-      title: "🔄 Relance de l'analyse batch",
-      description: "Extraction automatique page par page...",
+      title: "🔄 Relance de l'analyse",
+      description: pipeline === "ingest" 
+        ? "Ingestion réglementaire en cours..." 
+        : "Extraction tarifaire page par page...",
     });
 
     try {
-      // Utiliser la fonction batch extraction avec callbacks dynamiques
-      // Le résultat contient directement les données accumulées (previewOnly=true)
-      const result = await runBatchExtraction(
-        file.pdfId,
-        file.filePath!,
-        file.id,
-        file.name
-      );
-
-      // Utiliser les données accumulées directement depuis le résultat du batch
-      // (pas de requête DB car previewOnly=true ne persiste pas les données)
-      const tariffLines = result.tariff_lines || [];
-      const hsCodesFull = result.hs_codes || [];
-      const notes = result.notes || [];
-      
-      if (tariffLines.length > 0 || hsCodesFull.length > 0) {
-        const extractionDataResult: ExtractionData = {
-          summary: `Extraction terminée: ${tariffLines.length} lignes tarifaires, ${hsCodesFull.length} codes SH, ${notes.length} notes`,
-          key_points: [],
-          hs_codes: hsCodesFull,
-          hs_codes_full: hsCodesFull,
-          tariff_lines: tariffLines,
-          notes: notes,
-          chapter_info: undefined,
-          pdfId: file.pdfId,
-          pdfTitle: file.name,
-          countryCode: "MA",
-          document_type: tariffLines.length > 0 ? "tariff" : "regulatory",
-          trade_agreements: [],
-          full_text_length: 0,
-        };
+      if (pipeline === "ingest") {
+        // ========== LEGAL DOCUMENT INGESTION (RAG) ==========
+        const ingestionResult = await runLegalIngestion(
+          file.pdfId,
+          file.filePath!,
+          file.id,
+          file.name,
+          docType
+        );
 
         updateFileStatus(file.id, {
-          status: "preview",
+          status: "success",
           progress: 100,
-          analysis: extractionDataResult,
+          pdfId: file.pdfId,
           error: undefined,
+          analysis: {
+            summary: `Document ingéré pour RAG: ${ingestionResult.chunks_created} segments, ${ingestionResult.detected_codes_count} codes SH détectés`,
+            key_points: [],
+            hs_codes: [],
+            tariff_lines: [],
+            document_type: "regulatory",
+            full_text_length: ingestionResult.pages_processed * 1000,
+          },
         });
 
         toast({
-          title: "✅ Analyse terminée",
-          description: `${tariffLines.length} lignes tarifaires extraites`,
+          title: "✅ Document réglementaire ingéré",
+          description: `${ingestionResult.chunks_created} segments créés, ${ingestionResult.detected_codes_count} codes SH détectés`,
         });
       } else {
-        throw new Error("Aucune donnée tarifaire extraite");
-      }
+        // ========== TARIFF EXTRACTION (analyze-pdf) ==========
+        // Supprimer toute extraction existante et runs précédents
+        await Promise.all([
+          supabase.from("pdf_extractions").delete().eq("pdf_id", file.pdfId),
+          supabase.from("pdf_extraction_runs").delete().eq("pdf_id", file.pdfId),
+        ]);
 
+        const result = await runBatchExtraction(
+          file.pdfId,
+          file.filePath!,
+          file.id,
+          file.name
+        );
+
+        const tariffLines = result.tariff_lines || [];
+        const hsCodesFull = result.hs_codes || [];
+        const notes = result.notes || [];
+        
+        if (tariffLines.length > 0 || hsCodesFull.length > 0) {
+          const extractionDataResult: ExtractionData = {
+            summary: result.summary || `Extraction terminée: ${tariffLines.length} lignes tarifaires, ${hsCodesFull.length} codes SH, ${notes.length} notes`,
+            key_points: [],
+            hs_codes: hsCodesFull,
+            hs_codes_full: hsCodesFull,
+            tariff_lines: tariffLines,
+            notes: notes,
+            chapter_info: undefined,
+            pdfId: file.pdfId,
+            pdfTitle: file.name,
+            countryCode: "MA",
+            document_type: "tariff",
+            trade_agreements: [],
+            full_text_length: 0,
+          };
+
+          updateFileStatus(file.id, {
+            status: "preview",
+            progress: 100,
+            analysis: extractionDataResult,
+            error: undefined,
+          });
+
+          toast({
+            title: "✅ Analyse terminée",
+            description: `${tariffLines.length} lignes tarifaires extraites`,
+          });
+        } else {
+          throw new Error("Aucune donnée tarifaire extraite");
+        }
+      }
     } catch (err: any) {
-      console.error("Batch retry error:", err);
+      console.error("Retry analysis error:", err);
       
       updateFileStatus(file.id, {
         status: "error",
         progress: 100,
-        error: err.message || "Erreur d'analyse batch",
+        error: err.message || "Erreur d'analyse",
       });
 
       toast({
@@ -1259,6 +1292,11 @@ export default function AdminUpload() {
                               <RotateCcw className="h-4 w-4" />
                               Relancer
                             </Button>
+                          )}
+                          {file.status === "error" && (!file.pdfId || !file.filePath) && (
+                            <p className="text-xs text-muted-foreground ml-2 shrink-0">
+                              Re-uploadez le fichier
+                            </p>
                           )}
                         </div>
                       )}
