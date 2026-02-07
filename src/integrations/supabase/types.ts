@@ -631,6 +631,42 @@ export type Database = {
           },
         ]
       }
+      embedding_queue: {
+        Row: {
+          attempts: number | null
+          created_at: string | null
+          error_message: string | null
+          id: string
+          processed_at: string | null
+          record_id: string
+          status: string | null
+          table_name: string
+          text_content: string
+        }
+        Insert: {
+          attempts?: number | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          processed_at?: string | null
+          record_id: string
+          status?: string | null
+          table_name: string
+          text_content: string
+        }
+        Update: {
+          attempts?: number | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          processed_at?: string | null
+          record_id?: string
+          status?: string | null
+          table_name?: string
+          text_content?: string
+        }
+        Relationships: []
+      }
       hs_codes: {
         Row: {
           chapter_number: number | null
@@ -1967,7 +2003,13 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      documents_missing_embeddings: {
+        Row: {
+          count: number | null
+          table_name: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       calculate_dum_item_taxes: {
@@ -1978,6 +2020,15 @@ export type Database = {
           p_vat_rate?: number
         }
         Returns: Json
+      }
+      check_embedding_coverage: {
+        Args: never
+        Returns: {
+          coverage_percent: number
+          table_name: string
+          total_records: number
+          with_embedding: number
+        }[]
       }
       cleanup_expired_cache: { Args: never; Returns: number }
       cleanup_old_rate_limits: { Args: never; Returns: number }
