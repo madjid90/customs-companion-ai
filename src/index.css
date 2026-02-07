@@ -80,15 +80,15 @@
     --chat-typing-dot: 220 70% 52%;
 
     /* Gradients – Switchly-inspired blue→teal */
-    --gradient-hero: linear-gradient(145deg, hsl(220 70% 52%), hsl(162 72% 46%));
-    --gradient-accent: linear-gradient(135deg, hsl(220 70% 52%), hsl(162 72% 46%));
+    --gradient-hero: linear-gradient(145deg, hsl(217 91% 54%), hsl(160 84% 39%));
+    --gradient-accent: linear-gradient(135deg, hsl(217 91% 54%), hsl(160 84% 39%));
     --gradient-gold: linear-gradient(135deg, hsl(45 65% 52%), hsl(45 75% 60%));
-    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(225 30% 97%));
-    --gradient-surface: radial-gradient(ellipse at top, hsl(225 35% 97%), hsl(230 30% 95%));
-    --gradient-page: linear-gradient(160deg, hsl(225 35% 97%), hsl(230 30% 96%), hsl(220 25% 97%));
-    --gradient-blue: linear-gradient(135deg, hsl(220 70% 52%), hsl(162 72% 46%));
-    --gradient-teal: linear-gradient(135deg, hsl(162 72% 46%), hsl(175 60% 50%));
-    --gradient-cta: linear-gradient(135deg, hsl(220 70% 52%) 0%, hsl(180 60% 45%) 50%, hsl(162 72% 46%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(210 40% 97%));
+    --gradient-surface: radial-gradient(ellipse at top, hsl(210 40% 97%), hsl(210 35% 96%));
+    --gradient-page: linear-gradient(160deg, hsl(210 40% 98%), hsl(210 35% 97%), hsl(210 30% 98%));
+    --gradient-blue: linear-gradient(135deg, hsl(217 91% 54%), hsl(160 84% 39%));
+    --gradient-teal: linear-gradient(135deg, hsl(160 84% 39%), hsl(175 60% 50%));
+    --gradient-cta: linear-gradient(135deg, hsl(217 91% 54%) 0%, hsl(160 84% 39%) 100%);
 
     /* Shadows – Switchly-style: softer, more visible */
     --shadow-xs: 0 1px 2px 0 hsl(0 0% 0% / 0.04);
