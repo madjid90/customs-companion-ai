@@ -617,7 +617,7 @@ export function ChatMessage({
 
       {/* User avatar */}
       {isUser && (
-        <div className="flex-shrink-0 w-7 h-7 md:w-8 md:h-8 rounded-lg bg-primary/10 flex items-center justify-center hidden md:flex">
+        <div className="flex-shrink-0 w-7 h-7 md:w-8 md:h-8 flex items-center justify-center hidden md:flex">
           <User className="h-5 w-5 md:h-5 md:w-5 text-primary" />
         </div>
       )}
