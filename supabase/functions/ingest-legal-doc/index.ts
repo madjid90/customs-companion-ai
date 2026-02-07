@@ -19,14 +19,7 @@ import {
 } from "../_shared/hs-code-utils.ts";
 import { callAnthropicWithRetry } from "../_shared/retry.ts";
 
-// ============================================================================
-// CORS & CONFIG
-// ============================================================================
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
@@ -1528,8 +1521,10 @@ async function insertHSEvidence(
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreFlight(req);
   }
+
+  const corsHeaders = getCorsHeaders(req);
 
   const startTime = Date.now();
 

@@ -12,10 +12,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 // CORS & CONFIG
 // ============================================================================
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -518,8 +515,10 @@ async function validateSources(
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreFlight(req);
   }
+
+  const corsHeaders = getCorsHeaders(req);
 
   const startTime = Date.now();
 

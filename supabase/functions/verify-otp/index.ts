@@ -1,11 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import {
+  getCorsHeaders,
+  handleCorsPreFlight,
+  getClientId,
+  checkRateLimitDistributed,
+  rateLimitResponse,
+} from "../_shared/cors.ts";
 
 // Compute a deterministic password from server secret + phone
 async function computePassword(secret: string, phone: string): Promise<string> {
@@ -24,7 +25,21 @@ async function computePassword(secret: string, phone: string): Promise<string> {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreFlight(req);
+  }
+
+  const corsHeaders = getCorsHeaders(req);
+
+  // Rate limiting: max 10 verify attempts per IP per hour
+  const clientId = getClientId(req);
+  const rateLimit = await checkRateLimitDistributed(clientId, {
+    maxRequests: 10,
+    windowMs: 60 * 60 * 1000, // 1 hour
+    blockDurationMs: 60 * 60 * 1000,
+  });
+
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(req, rateLimit.resetAt);
   }
 
   try {

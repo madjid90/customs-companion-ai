@@ -1,15 +1,30 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import {
+  getCorsHeaders,
+  handleCorsPreFlight,
+  getClientId,
+  checkRateLimitDistributed,
+  rateLimitResponse,
+} from "../_shared/cors.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreFlight(req);
+  }
+
+  const corsHeaders = getCorsHeaders(req);
+
+  // Rate limiting: max 5 OTP requests per phone per 15 minutes
+  const clientId = getClientId(req);
+  const rateLimit = await checkRateLimitDistributed(clientId, {
+    maxRequests: 5,
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    blockDurationMs: 15 * 60 * 1000,
+  });
+
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(req, rateLimit.resetAt);
   }
 
   try {
@@ -39,6 +54,21 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+
+    // Phone-specific rate limit: max 3 OTP per phone per 15 minutes
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const { count: recentOtpCount } = await supabase
+      .from("otp_codes")
+      .select("*", { count: "exact", head: true })
+      .eq("phone", normalizedPhone)
+      .gte("created_at", fifteenMinutesAgo);
+
+    if ((recentOtpCount || 0) >= 3) {
+      return new Response(
+        JSON.stringify({ error: "Trop de demandes. Réessayez dans 15 minutes." }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Check if this is the very first user (bootstrap manager)
     const { count: totalUsers } = await supabase
@@ -88,8 +118,10 @@ serve(async (req) => {
       .eq("phone", normalizedPhone)
       .eq("is_used", false);
 
-    // Generate 6-digit OTP
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    // Generate 6-digit OTP using cryptographically secure random
+    const array = new Uint32Array(1);
+    crypto.getRandomValues(array);
+    const code = String(100000 + (array[0] % 900000));
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes
 
     // Store OTP

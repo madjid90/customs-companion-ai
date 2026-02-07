@@ -51,7 +51,7 @@ export function getCorsHeaders(request: Request): Record<string, string> {
 
   return {
     "Access-Control-Allow-Origin": isAllowed && origin ? origin : "null",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-request-id",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-request-id, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
     "Access-Control-Max-Age": "86400",
     "Access-Control-Allow-Credentials": "true",
