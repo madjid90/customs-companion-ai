@@ -588,14 +588,14 @@ export function ChatMessage({
             
             {/* Attached files in user message */}
             {isUser && message.attachedFiles && message.attachedFiles.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-white/20">
+              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-primary/15">
                 {message.attachedFiles.map((file, index) => (
                   <button
                     key={index}
                     onClick={() => setPreviewAttachment(file)}
                     className={cn(
-                      "relative group flex items-center gap-2 bg-white/10 rounded-lg p-2 pr-3",
-                      "hover:bg-white/20 transition-all duration-200 cursor-pointer"
+                      "relative group flex items-center gap-2 bg-primary/5 border border-primary/15 rounded-lg p-2 pr-3",
+                      "hover:bg-primary/10 transition-all duration-200 cursor-pointer"
                     )}
                   >
                     {file.type === "image" ? (
@@ -610,18 +610,18 @@ export function ChatMessage({
                         </div>
                       </div>
                     ) : (
-                      <div className="relative w-10 h-10 flex items-center justify-center bg-white/10 rounded">
-                        <FileText className="h-5 w-5 text-white/80" />
+                      <div className="relative w-10 h-10 flex items-center justify-center bg-muted rounded">
+                        <FileText className="h-5 w-5 text-muted-foreground" />
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded">
                           <Eye className="h-3 w-3 text-white" />
                         </div>
                       </div>
                     )}
                     <div className="flex flex-col items-start min-w-0">
-                      <span className="text-xs font-medium text-white/90 max-w-[80px] truncate">
+                      <span className="text-xs font-medium text-foreground max-w-[80px] truncate">
                         {file.name}
                       </span>
-                      <span className="text-[10px] text-white/60">
+                      <span className="text-[10px] text-muted-foreground">
                         {(file.size / 1024).toFixed(0)} Ko
                       </span>
                     </div>
