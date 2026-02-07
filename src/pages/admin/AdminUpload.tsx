@@ -806,6 +806,61 @@ export default function AdminUpload() {
     setSelectedFile(null);
   };
 
+  // Récupérer pdfId/filePath depuis la DB pour un fichier en erreur, puis relancer
+  const recoverAndRetry = async (file: UploadedFile) => {
+    updateFileStatus(file.id, { error: "Recherche du fichier en base..." });
+
+    try {
+      // Chercher le document en DB par nom de fichier
+      const { data: docs, error: searchError } = await supabase
+        .from("pdf_documents")
+        .select("id, file_path, category")
+        .eq("file_name", file.name)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (searchError || !docs || docs.length === 0) {
+        toast({
+          title: "Fichier introuvable",
+          description: "Ce fichier n'a pas été trouvé dans le storage. Veuillez le re-uploader.",
+          variant: "destructive",
+        });
+        updateFileStatus(file.id, { error: "Fichier introuvable en base - re-uploadez" });
+        return;
+      }
+
+      const doc = docs[0];
+      
+      // Mettre à jour l'état local avec les infos récupérées
+      updateFileStatus(file.id, { 
+        pdfId: doc.id, 
+        filePath: doc.file_path,
+        documentType: file.documentType || (doc.category as DocumentType) || "circulaire",
+        error: "Fichier récupéré, relance en cours..."
+      });
+
+      // Construire un objet file mis à jour pour retryAnalysis
+      const recoveredFile: UploadedFile = {
+        ...file,
+        pdfId: doc.id,
+        filePath: doc.file_path,
+        documentType: file.documentType || (doc.category as DocumentType) || "circulaire",
+      };
+
+      // Relancer l'analyse
+      await retryAnalysis(recoveredFile);
+    } catch (err: any) {
+      console.error("Recovery error:", err);
+      updateFileStatus(file.id, { error: err.message || "Erreur de récupération" });
+      toast({
+        title: "Erreur",
+        description: err.message || "Impossible de récupérer le fichier",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Relancer l'analyse d'un fichier en erreur - route vers le bon pipeline selon le type
   const retryAnalysis = async (file: UploadedFile) => {
     if (!file.pdfId || !file.filePath) {
@@ -1294,9 +1349,15 @@ export default function AdminUpload() {
                             </Button>
                           )}
                           {file.status === "error" && (!file.pdfId || !file.filePath) && (
-                            <p className="text-xs text-muted-foreground ml-2 shrink-0">
-                              Re-uploadez le fichier
-                            </p>
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => recoverAndRetry(file)}
+                              className="gap-2 ml-2 shrink-0"
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                              Récupérer & Relancer
+                            </Button>
                           )}
                         </div>
                       )}
