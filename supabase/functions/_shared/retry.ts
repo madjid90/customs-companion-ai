@@ -29,11 +29,11 @@ const DEFAULT_CONFIG: RetryConfig = {
 
 // Configuration LLM spécifique
 const LLM_CONFIG: RetryConfig = {
-  maxRetries: 2,        // PRODUCTION: 2 retries max
-  initialDelayMs: 3000, // 3s entre les tentatives
-  maxDelayMs: 15000,    // Max 15s d'attente
+  maxRetries: 1,        // PRODUCTION: 1 retry max (total 2 attempts) to avoid cascading timeouts
+  initialDelayMs: 2000, // 2s between attempts
+  maxDelayMs: 10000,    // Max 10s wait
   retryableStatuses: [429, 500, 502, 503, 504, 529], // 529 = Anthropic overloaded
-  timeoutMs: 180000,    // 3 minutes pour les PDFs volumineux
+  timeoutMs: 120000,    // 2 minutes default for LLM calls
 };
 
 /**
