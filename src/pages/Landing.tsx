@@ -22,7 +22,7 @@ import {
 const stats = [
   { value: "99%", label: "Précision", change: "+5%" },
   { value: "< 3s", label: "Réponse", change: "-40%" },
-  { value: "50k+", label: "Codes SH", change: "" },
+  { value: "10k+", label: "Documents", change: "" },
 ];
 
 const recentQueries = [
