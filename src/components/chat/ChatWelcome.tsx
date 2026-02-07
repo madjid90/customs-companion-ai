@@ -87,7 +87,7 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
       </div>
 
       {/* Title block */}
-      <h2 className="text-xl md:text-2xl font-bold text-foreground mb-1 tracking-tight text-center">
+      <h2 className="text-xl md:text-2xl font-extrabold text-foreground mb-1 tracking-tight text-center">
         Votre assistant douanier
       </h2>
       <p className="text-sm md:text-base text-muted-foreground mb-8 text-center max-w-md leading-relaxed">
@@ -95,23 +95,23 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
       </p>
 
       {/* Suggestion cards – Switchly-style with arrow */}
-      <div className="w-full max-w-xl bg-card rounded-2xl border border-border/20 shadow-sm overflow-hidden">
+      <div className="w-full max-w-xl bg-card rounded-2xl border border-border shadow-md overflow-hidden">
         {suggestedQuestions.map((item, i) => (
           <button
             key={`${item.question}-${i}`}
             className={cn(
-              "group flex items-center gap-3.5 text-left w-full p-4 hover:bg-muted/40 transition-all duration-200",
-              i < suggestedQuestions.length - 1 && "border-b border-border/20"
+              "group flex items-center gap-4 text-left w-full px-5 py-4 hover:bg-muted/50 transition-all duration-200",
+              i < suggestedQuestions.length - 1 && "border-b border-border"
             )}
             onClick={() => onQuestionClick(item.question)}
           >
-            <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-primary/8 flex items-center justify-center group-hover:bg-primary/12 transition-colors">
-              <item.icon className="h-4 w-4 text-primary/70" />
+            <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
+              <item.icon className="h-[18px] w-[18px] text-primary" />
             </div>
-            <span className="flex-1 text-[13px] md:text-sm leading-snug text-muted-foreground group-hover:text-foreground transition-colors">
+            <span className="flex-1 text-sm leading-snug text-muted-foreground group-hover:text-foreground transition-colors">
               {item.question}
             </span>
-            <ArrowRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-primary/60 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+            <ArrowRight className="h-4 w-4 text-muted-foreground/30 group-hover:text-primary group-hover:translate-x-0.5 transition-all flex-shrink-0" />
           </button>
         ))}
       </div>
