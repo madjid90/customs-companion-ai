@@ -100,15 +100,15 @@ export function ImageUploadButton({
             variant="outline"
             size="icon"
             className={cn(
-              "h-11 w-11 rounded-xl border-border/50 bg-background hover:bg-accent/10 hover:border-accent/50 transition-all duration-200 shadow-sm hover:shadow-md",
-              uploadedFiles.length > 0 && "border-accent/50 bg-accent/5 text-accent"
+              "h-11 w-11 rounded-xl border-border/50 bg-background hover:bg-primary/10 hover:border-primary/30 transition-all duration-200 shadow-sm hover:shadow-md",
+              uploadedFiles.length > 0 && "border-primary/50 bg-primary/5 text-primary"
             )}
             disabled={disabled || isUploading}
           >
             {isUploading ? (
-              <Loader2 className="h-5 w-5 animate-spin text-accent" />
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
             ) : (
-              <ImagePlus className="h-5 w-5 text-muted-foreground group-hover:text-accent transition-colors" />
+              <ImagePlus className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
             )}
           </Button>
         </PopoverTrigger>
@@ -119,7 +119,7 @@ export function ImageUploadButton({
           <div className="flex flex-col gap-1">
             <Button
               variant="ghost"
-              className="justify-start gap-3 h-11 rounded-lg hover:bg-accent/10 hover:text-accent transition-colors"
+              className="justify-start gap-3 h-11 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors"
               onClick={() => imageInputRef.current?.click()}
             >
               <div className="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center">
@@ -132,7 +132,7 @@ export function ImageUploadButton({
             </Button>
             <Button
               variant="ghost"
-              className="justify-start gap-3 h-11 rounded-lg hover:bg-accent/10 hover:text-accent transition-colors"
+              className="justify-start gap-3 h-11 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors"
               onClick={() => docInputRef.current?.click()}
             >
               <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
