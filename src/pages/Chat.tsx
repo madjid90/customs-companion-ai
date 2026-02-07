@@ -7,7 +7,7 @@ import { ChatMessage, ChatTypingIndicator } from "@/components/chat/ChatMessage"
 import { ChatWelcome } from "@/components/chat/ChatWelcome";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ChatHistory } from "@/components/chat/ChatHistory";
-import { useHeaderContext } from "@/components/layout/PublicLayout";
+import { useAppHeaderContext } from "@/components/layout/AppLayout";
 import { cn } from "@/lib/utils";
 import type { UploadedFile } from "@/components/chat/ImageUploadButton";
 
@@ -263,7 +263,7 @@ const fileToBase64 = (file: File): Promise<string> => {
 export default function Chat() {
   const [searchParams] = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
-  const { setHistoryControls } = useHeaderContext();
+  const { setHistoryControls } = useAppHeaderContext();
   
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState(initialQuery);
