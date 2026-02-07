@@ -1226,8 +1226,8 @@ async function storePdfAndCreateDocument(
     
     console.log(`[ingest-legal-doc] Storing PDF at: ${filePath}`);
     
-    // Convert base64 to Uint8Array for upload
-    const pdfBytes = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));
+    // Convert base64 to Uint8Array for upload (use efficient chunked converter)
+    const pdfBytes = base64ToUint8Array(pdfBase64);
     
     // Upload to Supabase Storage
     const { error: uploadError } = await supabase.storage
@@ -1703,6 +1703,12 @@ serve(async (req) => {
     }
 
     // 6. Insert chunks (append mode - don't delete existing for batch)
+    // IMPORTANT: Skip inline embedding generation to save CPU time
+    // The trigger `queue_for_embedding` on legal_chunks automatically queues
+    // new chunks for async embedding via the `refresh-embeddings` function.
+    // This avoids OpenAI API calls inside the edge function, preventing CPU exhaustion.
+    const shouldGenerateEmbeddings = false;
+    
     let chunksCreated = 0;
     if (isBatchMode && body.source_id) {
       // Append chunks without deleting existing ones
@@ -1710,14 +1716,14 @@ serve(async (req) => {
         supabase,
         sourceId,
         chunks,
-        body.generate_embeddings !== false
+        shouldGenerateEmbeddings
       );
     } else {
       chunksCreated = await insertChunks(
         supabase,
         sourceId,
         chunks,
-        body.generate_embeddings !== false
+        shouldGenerateEmbeddings
       );
     }
 
