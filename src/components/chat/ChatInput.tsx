@@ -45,7 +45,7 @@ export function ChatInput({
 
   return (
     <>
-      <div className="border-t border-border/40 bg-card/80 backdrop-blur-xl p-2.5 md:p-4 chat-input-wrapper sticky bottom-0 safe-area-bottom">
+      <div className="border-t border-border/30 bg-white/80 backdrop-blur-xl p-2.5 md:p-4 chat-input-wrapper sticky bottom-0 safe-area-bottom">
         <div className="max-w-3xl mx-auto">
           {/* Uploaded files preview - horizontal scroll on mobile */}
           {uploadedFiles.length > 0 && (

@@ -48,7 +48,7 @@ export function AdminSidebar() {
       )}
     >
       {/* Header */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-border/50">
+      <div className="h-16 flex items-center justify-between px-4 border-b border-border/30">
         {!collapsed && <Logo size="md" />}
         <Button
           variant="ghost"
@@ -87,7 +87,7 @@ export function AdminSidebar() {
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
                   isActive
-                    ? "bg-primary text-primary-foreground shadow-accent"
+                    ? "bg-primary/8 text-primary"
                     : "text-muted-foreground hover:bg-primary/5 hover:text-foreground"
                 )}
               >
@@ -100,7 +100,7 @@ export function AdminSidebar() {
       </ScrollArea>
 
       {/* Footer */}
-      <div className="p-2 border-t border-border/50">
+      <div className="p-2 border-t border-border/30">
         <Button
           variant="ghost"
           className={cn(

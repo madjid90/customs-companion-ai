@@ -92,11 +92,13 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
         </div>
       </div>
       
-      {/* Title – Prodify-inspired: serif + gradient accent text */}
-      <h2 className="text-2xl md:text-4xl font-serif-display text-foreground mb-2 md:mb-3">
-        Votre assistant{" "}
-        <span className="text-gradient-violet font-serif-display italic">douanier intelligent</span>
+      {/* Title – Prodify-inspired: SANS-SERIF bold + teal gradient serif subtitle */}
+      <h2 className="text-2xl md:text-4xl font-display font-extrabold text-foreground mb-1 md:mb-2 tracking-tight">
+        Votre assistant douanier
       </h2>
+      <p className="text-xl md:text-2xl font-serif-display italic text-gradient-teal mb-3 md:mb-4">
+        Comment puis-je vous aider ?
+      </p>
       <p className="text-muted-foreground max-w-lg mx-auto mb-5 md:mb-8 text-sm md:text-base leading-relaxed px-2">
         Classification SH, tarifs, réglementations — obtenez des réponses précises 
         et sourcées en quelques secondes.
@@ -118,7 +120,7 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
         {suggestedQuestions.map((item, i) => (
           <button
             key={`${item.question}-${i}`}
-            className="group card-elevated text-left py-3.5 md:py-4 px-4 md:px-5 flex items-start gap-3 transition-all duration-300 hover:border-primary/30"
+            className="group card-elevated text-left py-3.5 md:py-4 px-4 md:px-5 flex items-start gap-3 transition-all duration-300 hover:border-primary/20 border border-border/30"
             onClick={() => onQuestionClick(item.question)}
           >
             <div className="flex-shrink-0 w-8 h-8 md:w-9 md:h-9 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 group-hover:scale-105 transition-all duration-300">
