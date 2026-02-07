@@ -139,7 +139,8 @@ interface IngestResponse {
 // ============================================================================
 
 const MAX_PAGES_PER_BATCH = 1; // Single page per request for very dense legal docs
-const CLAUDE_TIMEOUT_MS = 55000; // 55 second timeout - must be < Edge Function limit (~60s)
+const CLAUDE_TIMEOUT_MS = 55000; // 55 second timeout for single pages
+const CLAUDE_TIMEOUT_FULL_PDF_MS = 120000; // 120 seconds for full PDF when split fails
 
 // Memory-efficient base64 to Uint8Array conversion (avoid intermediate strings)
 function base64ToUint8Array(base64: string): Uint8Array {
@@ -219,6 +220,34 @@ async function splitPdfPages(
   return result;
 }
 
+// Estimate page count from raw PDF bytes using regex (fallback when pdf-lib fails)
+function estimatePageCountFromBytes(pdfBase64: string): number {
+  try {
+    const raw = atob(pdfBase64);
+    // Count "/Type /Page" or "/Type/Page" occurrences (NOT "/Type /Pages")
+    const pagePattern = /\/Type\s*\/Page(?!s)/g;
+    let count = 0;
+    let match;
+    while ((match = pagePattern.exec(raw)) !== null) {
+      count++;
+    }
+    if (count > 0) {
+      console.log(`[ingest-legal-doc] Regex-estimated page count: ${count}`);
+      return count;
+    }
+  } catch (e) {
+    console.warn(`[ingest-legal-doc] Regex page estimation failed: ${e}`);
+  }
+  // Last resort: estimate from file size (~30KB per page for text-heavy legal docs)
+  const estimatedSize = Math.floor(pdfBase64.length * 3 / 4);
+  const estimated = Math.max(1, Math.ceil(estimatedSize / 30000));
+  console.log(`[ingest-legal-doc] Size-estimated page count: ${estimated} (from ${(estimatedSize / 1024).toFixed(0)}KB)`);
+  return estimated;
+}
+
+// Flag to track if pdf-lib parsing works for this PDF
+let pdfLibWorks = true;
+
 // Get actual page count from PDF (memory-optimized, with fallback)
 async function getPdfPageCount(pdfBase64: string): Promise<number> {
   const estimatedSize = Math.floor(pdfBase64.length * 3 / 4);
@@ -232,12 +261,13 @@ async function getPdfPageCount(pdfBase64: string): Promise<number> {
       ignoreEncryption: true,
       updateMetadata: false,
     });
+    pdfLibWorks = true;
     return srcDoc.getPageCount();
   } catch (error) {
     console.warn(`[ingest-legal-doc] pdf-lib failed to parse PDF: ${error instanceof Error ? error.message : String(error)}`);
-    console.warn(`[ingest-legal-doc] Falling back to single-page mode (sending entire PDF to Claude)`);
-    // Return 1 so the caller sends the entire PDF as a single chunk
-    return 1;
+    pdfLibWorks = false;
+    // Use regex/size-based estimation instead of defaulting to 1
+    return estimatePageCountFromBytes(pdfBase64);
   }
 }
 
@@ -330,11 +360,16 @@ Réponds en JSON strict uniquement.`,
     ],
   };
 
+  // Use adaptive timeout: longer for full PDFs, shorter for single pages
+  const isLargeChunk = chunkBase64.length > 200 * 1024; // > 200KB base64
+  const timeout = isLargeChunk ? CLAUDE_TIMEOUT_FULL_PDF_MS : CLAUDE_TIMEOUT_MS;
+  console.log(`[ingest-legal-doc] Using timeout: ${timeout / 1000}s (chunk ${isLargeChunk ? 'large' : 'small'})`);
+  
   // Use callAnthropicWithRetry for automatic retry on 500/503/529 errors
   const response = await callAnthropicWithRetry(
     ANTHROPIC_API_KEY,
     requestBody,
-    CLAUDE_TIMEOUT_MS
+    timeout
   );
 
   if (!response.ok) {
@@ -405,6 +440,13 @@ async function extractTextFromPDF(pdfBase64: string): Promise<ExtractedPage[]> {
   const totalPages = await getPdfPageCount(pdfBase64);
   console.log(`[ingest-legal-doc] PDF has ${totalPages} pages`);
 
+  // If pdf-lib can't parse this PDF, we can't split it
+  if (!pdfLibWorks) {
+    console.log(`[ingest-legal-doc] pdf-lib unavailable for this PDF - sending entire document to Claude (${totalPages} estimated pages)`);
+    console.warn(`[ingest-legal-doc] Large malformed PDF: processing as single chunk with extended timeout`);
+    return await extractTextFromPDFChunk(pdfBase64, 1);
+  }
+
   // For small PDFs (< MAX_PAGES_PER_BATCH), process in one go
   if (totalPages <= MAX_PAGES_PER_BATCH) {
     console.log(`[ingest-legal-doc] Small PDF, processing directly`);
@@ -447,8 +489,15 @@ async function extractTextFromPDF(pdfBase64: string): Promise<ExtractedPage[]> {
       
       // If pdf-lib splitting failed (malformed PDF), fall back to sending entire PDF
       if (errorMsg.includes("PDFDict") || errorMsg.includes("undefined") || errorMsg.includes("Expected instance")) {
-        console.warn(`[ingest-legal-doc] pdf-lib split failed, falling back to sending entire PDF to Claude`);
-        return await extractTextFromPDFChunk(pdfBase64, 1);
+        console.warn(`[ingest-legal-doc] pdf-lib split failed mid-processing, sending remaining PDF to Claude`);
+        pdfLibWorks = false;
+        // Only if we haven't already extracted some pages
+        if (allPages.length === 0) {
+          return await extractTextFromPDFChunk(pdfBase64, 1);
+        }
+        // If we have some pages already, stop here and return what we have
+        console.log(`[ingest-legal-doc] Returning ${allPages.length} already-extracted pages`);
+        break;
       }
       
       throw error;
