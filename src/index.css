@@ -80,15 +80,15 @@
     --chat-typing-dot: 220 70% 52%;
 
     /* Gradients – Switchly-inspired blue→teal */
-    --gradient-hero: linear-gradient(145deg, hsl(190 75% 55%), hsl(160 72% 52%));
-    --gradient-accent: linear-gradient(135deg, hsl(190 75% 55%), hsl(160 72% 52%));
+    --gradient-hero: linear-gradient(145deg, hsl(193 65% 60%), hsl(155 55% 52%));
+    --gradient-accent: linear-gradient(135deg, hsl(193 65% 60%), hsl(155 55% 52%));
     --gradient-gold: linear-gradient(135deg, hsl(45 65% 52%), hsl(45 75% 60%));
     --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(210 40% 97%));
     --gradient-surface: radial-gradient(ellipse at top, hsl(190 40% 94% / 0.6), transparent 70%);
     --gradient-page: linear-gradient(180deg, hsl(210 40% 98%), hsl(210 30% 98%));
-    --gradient-blue: linear-gradient(135deg, hsl(190 75% 55%), hsl(160 72% 52%));
-    --gradient-teal: linear-gradient(135deg, hsl(160 72% 52%), hsl(155 68% 58%));
-    --gradient-cta: linear-gradient(135deg, hsl(190 75% 55%) 0%, hsl(160 72% 52%) 100%);
+    --gradient-blue: linear-gradient(135deg, hsl(193 65% 60%), hsl(155 55% 52%));
+    --gradient-teal: linear-gradient(135deg, hsl(165 55% 52%), hsl(155 50% 58%));
+    --gradient-cta: linear-gradient(135deg, hsl(193 65% 60%) 0%, hsl(155 55% 52%) 100%);
 
     /* Shadows – Switchly-style: softer, more visible */
     --shadow-xs: 0 1px 2px 0 hsl(0 0% 0% / 0.04);
