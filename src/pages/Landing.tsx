@@ -93,13 +93,13 @@ export default function Landing() {
       </header>
 
       {/* ─── Hero Section — Split Layout ────────────── */}
-      <section className="min-h-[calc(100dvh-4rem)] md:min-h-0 flex items-center md:block pt-0 md:pt-36 md:pb-24 px-4">
+      <section className="min-h-[calc(100dvh-4rem)] md:min-h-0 flex items-center md:block pt-0 md:pt-40 md:pb-28 px-4">
         <div className="container mx-auto max-w-6xl">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+          <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
             {/* Left — Copy */}
             <div className="max-w-xl mx-auto md:mx-0 text-center md:text-left">
               {/* Live badge */}
-              <div className="inline-flex items-center gap-2 mb-5 md:mb-6 animate-fade-in">
+              <div className="inline-flex items-center gap-2 mb-6 md:mb-8 animate-fade-in">
                 <span className="relative flex h-2.5 w-2.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75" />
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-secondary" />
@@ -109,13 +109,13 @@ export default function Landing() {
                 </span>
               </div>
 
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[3.5rem] font-extrabold tracking-tight leading-[1.1] mb-5 md:mb-6 animate-slide-up">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[3.5rem] font-extrabold tracking-tight leading-[1.1] mb-6 md:mb-8 animate-slide-up">
                 Votre assistant{" "}
                 <span className="gradient-text">douanier intelligent</span>{" "}
                 propulsé par l'IA
               </h1>
 
-              <p className="text-base md:text-lg text-muted-foreground leading-relaxed mb-6 md:mb-8 animate-fade-in">
+              <p className="text-base md:text-lg text-muted-foreground leading-relaxed mb-8 md:mb-10 animate-fade-in">
                 Codes SH, tarifs douaniers, réglementations — obtenez des
                 réponses précises et sourcées en quelques secondes.
               </p>
@@ -123,15 +123,15 @@ export default function Landing() {
               <Link to="/login" className="inline-block animate-slide-up">
                 <Button
                   size="lg"
-                  className="cta-gradient rounded-full px-8 h-13 md:h-14 text-base font-semibold gap-2"
+                  className="cta-gradient rounded-full px-10 h-14 md:h-16 text-base md:text-lg font-semibold gap-3 shadow-xl hover:shadow-2xl"
                 >
                   Accéder au chat
-                  <ArrowRight className="h-4 w-4" />
+                  <ArrowRight className="h-5 w-5" />
                 </Button>
               </Link>
 
               {/* Chips */}
-              <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 mt-5 md:mt-6 animate-fade-in">
+              <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 mt-6 md:mt-8 animate-fade-in">
                 <span className="chip">
                   <Lock className="h-3.5 w-3.5" />
                   100% sécurisé
@@ -222,10 +222,10 @@ export default function Landing() {
       </section>
 
       {/* ─── How it works ────────────────────────────── */}
-      <section className="py-20 px-4">
+      <section className="py-16 md:py-28 px-4">
         <div className="container mx-auto max-w-4xl">
-          <div className="text-center mb-14">
-            <h2 className="text-2xl md:text-3xl font-bold mb-3">
+          <div className="text-center mb-14 md:mb-16">
+            <h2 className="text-2xl md:text-3xl font-bold mb-4">
               Comment ça marche ?
             </h2>
             <p className="text-muted-foreground max-w-lg mx-auto">
@@ -253,10 +253,10 @@ export default function Landing() {
       </section>
 
       {/* ─── Features Grid ───────────────────────────── */}
-      <section className="py-20 px-4 bg-muted/30">
+      <section className="py-16 md:py-28 px-4 bg-muted/30">
         <div className="container mx-auto max-w-5xl">
-          <div className="text-center mb-14">
-            <h2 className="text-2xl md:text-3xl font-bold mb-3">
+          <div className="text-center mb-14 md:mb-16">
+            <h2 className="text-2xl md:text-3xl font-bold mb-4">
               Tout ce dont vous avez besoin
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto">
@@ -288,25 +288,25 @@ export default function Landing() {
       </section>
 
       {/* ─── CTA Section ─────────────────────────────── */}
-      <section className="py-20 px-4">
+      <section className="py-16 md:py-28 px-4">
         <div className="container mx-auto max-w-2xl text-center">
-          <div className="card-elevated p-10 md:p-14 relative overflow-hidden">
+          <div className="card-elevated p-10 md:p-16 relative overflow-hidden">
             <div className="absolute inset-0 opacity-[0.03] hero-gradient" />
             <div className="relative z-10">
               <h2 className="text-2xl md:text-3xl font-bold mb-4">
                 Prêt à commencer ?
               </h2>
-              <p className="text-muted-foreground mb-8">
+              <p className="text-muted-foreground mb-10">
                 Connectez-vous avec votre numéro de téléphone pour accéder à
                 l'assistant douanier.
               </p>
               <Link to="/login">
                 <Button
                   size="lg"
-                  className="cta-gradient rounded-full px-8 h-12 text-base font-semibold gap-2"
+                  className="cta-gradient rounded-full px-10 h-14 md:h-16 text-base md:text-lg font-semibold gap-3 shadow-xl hover:shadow-2xl"
                 >
                   Se connecter
-                  <ArrowRight className="h-4 w-4" />
+                  <ArrowRight className="h-5 w-5" />
                 </Button>
               </Link>
               <p className="text-xs text-muted-foreground mt-4 flex items-center justify-center gap-4">
