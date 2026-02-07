@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Phone, ArrowRight, Loader2, KeyRound, ArrowLeft } from "lucide-react";
+import { Phone, ArrowRight, Loader2, KeyRound, ArrowLeft, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,8 +12,14 @@ import { useToast } from "@/hooks/use-toast";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
+const COUNTRY_CODES = [
+  { code: "+212", flag: "🇲🇦", label: "Maroc", placeholder: "6XX XXX XXX" },
+  { code: "+33", flag: "🇫🇷", label: "France", placeholder: "6 XX XX XX XX" },
+];
+
 export default function PhoneLogin() {
-  const [phone, setPhone] = useState("");
+  const [countryIndex, setCountryIndex] = useState(0);
+  const [phoneLocal, setPhoneLocal] = useState("");
   const [otp, setOtp] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [step, setStep] = useState<"phone" | "otp">("phone");
@@ -21,6 +27,7 @@ export default function PhoneLogin() {
   const [error, setError] = useState("");
   const [isBootstrap, setIsBootstrap] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [countryOpen, setCountryOpen] = useState(false);
   const otpInputRef = useRef<HTMLInputElement>(null);
 
   const navigate = useNavigate();
@@ -28,10 +35,13 @@ export default function PhoneLogin() {
   const { isAuthenticated, isManager, setSessionFromOtp } = usePhoneAuth();
   const { toast } = useToast();
 
+  const country = COUNTRY_CODES[countryIndex];
+  const fullPhone = `${country.code}${phoneLocal.replace(/\s/g, "")}`;
+
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      const from = location.state?.from?.pathname || (isManager ? "/app/chat" : "/app/chat");
+      const from = location.state?.from?.pathname || "/app/chat";
       navigate(from, { replace: true });
     }
   }, [isAuthenticated, isManager, navigate, location]);
@@ -62,7 +72,7 @@ export default function PhoneLogin() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${SUPABASE_KEY}`,
         },
-        body: JSON.stringify({ phone: phone.trim() }),
+        body: JSON.stringify({ phone: fullPhone }),
       });
 
       const data = await res.json();
@@ -78,7 +88,7 @@ export default function PhoneLogin() {
       setCountdown(60);
       toast({
         title: "Code envoyé !",
-        description: `Un SMS a été envoyé au ${phone}`,
+        description: `Un SMS a été envoyé au ${country.code} ${phoneLocal}`,
       });
     } catch (err) {
       setError("Erreur de connexion au serveur");
@@ -100,7 +110,7 @@ export default function PhoneLogin() {
           Authorization: `Bearer ${SUPABASE_KEY}`,
         },
         body: JSON.stringify({
-          phone: phone.trim(),
+          phone: fullPhone,
           code: otp.trim(),
           displayName: isBootstrap ? displayName.trim() : undefined,
         }),
@@ -128,9 +138,7 @@ export default function PhoneLogin() {
         description: `Bienvenue ${data.user.display_name || ""}`,
       });
 
-      // Redirect based on role
-      const redirectTo = data.user.role === "manager" ? "/app/chat" : "/app/chat";
-      navigate(redirectTo, { replace: true });
+      navigate("/app/chat", { replace: true });
     } catch (err) {
       setError("Erreur de connexion au serveur");
     }
@@ -150,7 +158,7 @@ export default function PhoneLogin() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${SUPABASE_KEY}`,
         },
-        body: JSON.stringify({ phone: phone.trim() }),
+        body: JSON.stringify({ phone: fullPhone }),
       });
 
       const data = await res.json();
@@ -182,7 +190,7 @@ export default function PhoneLogin() {
             <CardDescription>
               {step === "phone"
                 ? "Entrez votre numéro pour recevoir un code de vérification"
-                : `Code envoyé au ${phone}`}
+                : `Code envoyé au ${country.code} ${phoneLocal}`}
             </CardDescription>
           </div>
         </CardHeader>
@@ -191,18 +199,54 @@ export default function PhoneLogin() {
             <form onSubmit={handleSendOtp} className="space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="phone">Numéro de téléphone</Label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="phone"
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+212 6XX XXX XXX"
-                    className="pl-10 rounded-xl"
-                    autoFocus
-                    required
-                  />
+                <div className="flex gap-2">
+                  {/* Country selector */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 h-10 px-3 rounded-xl border border-input bg-background text-sm hover:bg-accent/50 transition-colors whitespace-nowrap"
+                      onClick={() => setCountryOpen(!countryOpen)}
+                    >
+                      <span className="text-lg leading-none">{country.flag}</span>
+                      <span className="font-medium text-foreground">{country.code}</span>
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                    </button>
+                    {countryOpen && (
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-xl shadow-lg overflow-hidden min-w-[180px]">
+                        {COUNTRY_CODES.map((c, i) => (
+                          <button
+                            key={c.code}
+                            type="button"
+                            className={`w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-accent/50 transition-colors ${
+                              i === countryIndex ? "bg-primary/5 text-primary font-medium" : "text-foreground"
+                            }`}
+                            onClick={() => {
+                              setCountryIndex(i);
+                              setCountryOpen(false);
+                            }}
+                          >
+                            <span className="text-lg leading-none">{c.flag}</span>
+                            <span>{c.label}</span>
+                            <span className="ml-auto text-muted-foreground">{c.code}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {/* Phone input */}
+                  <div className="relative flex-1">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="phone"
+                      type="tel"
+                      value={phoneLocal}
+                      onChange={(e) => setPhoneLocal(e.target.value)}
+                      placeholder={country.placeholder}
+                      className="pl-10 rounded-xl"
+                      autoFocus
+                      required
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -215,7 +259,7 @@ export default function PhoneLogin() {
               <Button
                 type="submit"
                 className="w-full h-12 cta-gradient rounded-xl text-base"
-                disabled={isLoading || !phone.trim()}
+                disabled={isLoading || !phoneLocal.trim()}
               >
                 {isLoading ? (
                   <>
