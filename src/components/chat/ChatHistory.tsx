@@ -264,16 +264,16 @@ export function ChatHistory({
 
   return (
     <>
-      {/* Toggle button - adjusted for mobile */}
+      {/* Toggle button - only on desktop (mobile uses header) */}
       {!isOpen && (
         <Button
           variant="ghost"
           size="icon"
           onClick={onToggle}
-          className="fixed left-2 md:left-4 top-[4.5rem] md:top-20 z-40 h-9 w-9 md:h-10 md:w-10 rounded-full bg-card/80 backdrop-blur-sm border border-border/50 shadow-card hover:bg-primary/5 hover:text-primary"
+          className="hidden md:flex fixed left-4 top-20 z-40 h-10 w-10 rounded-full bg-card/80 backdrop-blur-sm border border-border/50 shadow-card hover:bg-primary/5 hover:text-primary"
           title="Ouvrir l'historique"
         >
-          <History className="h-4 w-4 md:h-5 md:w-5" />
+          <History className="h-5 w-5" />
         </Button>
       )}
 
@@ -292,7 +292,7 @@ export function ChatHistory({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         className={cn(
-          "fixed left-0 top-16 h-[calc(100vh-4rem)] bg-card border-r border-border/30 z-30 flex flex-col",
+          "fixed left-0 top-14 md:top-16 h-[calc(100vh-3.5rem)] md:h-[calc(100vh-4rem)] bg-card border-r border-border/30 z-30 flex flex-col",
           isOpen ? "w-[85vw] max-w-[320px] md:w-72" : "w-0 overflow-hidden",
           !isSwiping && "transition-all duration-300 ease-in-out"
         )}

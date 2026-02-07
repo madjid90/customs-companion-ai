@@ -7,6 +7,7 @@ import { ChatMessage, ChatTypingIndicator } from "@/components/chat/ChatMessage"
 import { ChatWelcome } from "@/components/chat/ChatWelcome";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ChatHistory } from "@/components/chat/ChatHistory";
+import { useHeaderContext } from "@/components/layout/PublicLayout";
 import { cn } from "@/lib/utils";
 import type { UploadedFile } from "@/components/chat/ImageUploadButton";
 
@@ -262,6 +263,7 @@ const fileToBase64 = (file: File): Promise<string> => {
 export default function Chat() {
   const [searchParams] = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
+  const { setHistoryControls } = useHeaderContext();
   
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState(initialQuery);
@@ -306,6 +308,12 @@ export default function Chat() {
     setInput("");
     setIsHistoryOpen(false);
   }, []);
+
+  // Sync history controls with header
+  const toggleHistory = useCallback(() => setIsHistoryOpen(prev => !prev), []);
+  useEffect(() => {
+    setHistoryControls(toggleHistory, isHistoryOpen);
+  }, [setHistoryControls, toggleHistory, isHistoryOpen]);
 
   const hasProcessedInitialQuery = useRef(false);
   useEffect(() => {
@@ -536,7 +544,7 @@ export default function Chat() {
   }, [uploadedFiles]);
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] h-[calc(100dvh-4rem)] bg-background overflow-hidden">
+    <div className="flex h-[calc(100vh-3.5rem)] md:h-[calc(100vh-4rem)] h-[calc(100dvh-3.5rem)] md:h-[calc(100dvh-4rem)] bg-background overflow-hidden">
       {/* History sidebar */}
       <ChatHistory
         currentSessionId={sessionId}
