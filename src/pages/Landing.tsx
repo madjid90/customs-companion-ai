@@ -143,8 +143,8 @@ export default function Landing() {
               </div>
             </div>
 
-            {/* Right — Floating Dashboard Card */}
-            <div className="relative animate-slide-up lg:pl-4">
+            {/* Right — Floating Dashboard Card (hidden on mobile) */}
+            <div className="relative animate-slide-up lg:pl-4 hidden md:block">
               {/* Notification toast - floating above card */}
               <div className="absolute -top-4 right-4 z-10 bg-card rounded-2xl border border-border/30 px-4 py-3 flex items-center gap-3 shadow-lg animate-fade-in">
                 <div className="h-8 w-8 rounded-full bg-secondary/10 flex items-center justify-center">
@@ -160,18 +160,18 @@ export default function Landing() {
               </div>
 
               {/* Main dashboard card */}
-              <div className="bg-card rounded-3xl border border-border/30 p-6 shadow-xl">
+              <div className="bg-card rounded-3xl border border-border/30 p-8 shadow-xl">
                 {/* Stats row */}
-                <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="grid grid-cols-3 gap-5 mb-8">
                   {stats.map((s, i) => (
                     <div
                       key={i}
-                      className="text-center p-3 rounded-xl bg-muted/40"
+                      className="text-center p-4 rounded-xl bg-muted/40"
                     >
-                      <p className="text-xl font-bold text-card-foreground">{s.value}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
+                      <p className="text-2xl lg:text-3xl font-bold text-card-foreground">{s.value}</p>
+                      <p className="text-sm text-muted-foreground mt-1">{s.label}</p>
                       {s.change && (
-                        <p className="text-xs font-medium text-secondary mt-1">{s.change}</p>
+                        <p className="text-sm font-medium text-secondary mt-1.5">{s.change}</p>
                       )}
                     </div>
                   ))}
@@ -182,18 +182,18 @@ export default function Landing() {
                   {recentQueries.map((q, i) => (
                     <div
                       key={i}
-                      className="flex items-center gap-3 py-3 border-b border-border/30 last:border-0"
+                      className="flex items-center gap-4 py-4 border-b border-border/30 last:border-0"
                     >
                       <div className="flex items-center gap-2 text-muted-foreground shrink-0">
-                        <Clock className="h-3.5 w-3.5" />
-                        <span className="text-xs font-mono">{q.time}</span>
+                        <Clock className="h-4 w-4" />
+                        <span className="text-sm font-mono">{q.time}</span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-card-foreground">{q.user}</p>
-                        <p className="text-xs text-muted-foreground truncate">{q.query}</p>
+                        <p className="text-base font-medium text-card-foreground">{q.user}</p>
+                        <p className="text-sm text-muted-foreground truncate">{q.query}</p>
                       </div>
                       <span
-                        className={`text-xs font-medium px-2.5 py-1 rounded-full shrink-0 ${
+                        className={`text-sm font-medium px-3 py-1.5 rounded-full shrink-0 ${
                           q.status === "resolved"
                             ? "bg-secondary/10 text-secondary"
                             : "bg-warning/10 text-warning"
