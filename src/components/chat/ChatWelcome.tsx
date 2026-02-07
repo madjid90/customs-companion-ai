@@ -77,34 +77,38 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100dvh-200px)] px-4 py-8 animate-fade-in">
-      {/* Robot icon */}
-      <div className="relative mb-6">
-        <div className="absolute inset-0 w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-primary/8 blur-xl -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
+      {/* Robot icon with gradient */}
+      <div className="relative mb-8">
+        <div
+          className="absolute inset-0 w-24 h-24 md:w-28 md:h-28 rounded-3xl blur-2xl opacity-20 -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2"
+          style={{ background: "var(--gradient-hero)" }}
+        />
         <div className="relative w-20 h-20 md:w-24 md:h-24 flex items-center justify-center animate-float">
           <Bot className="h-12 w-12 md:h-14 md:w-14 text-primary" strokeWidth={1.5} />
         </div>
       </div>
 
-      {/* Title block */}
-      <h2 className="text-xl md:text-2xl font-bold text-foreground mb-1 tracking-tight text-center">
-        Votre assistant douanier
+      {/* Title block – Switchly-style bold typography */}
+      <h2 className="text-2xl md:text-4xl font-extrabold text-foreground mb-2 tracking-tight text-center leading-tight">
+        Votre assistant{" "}
+        <span className="text-gradient-blue">douanier</span>
       </h2>
-      <p className="text-sm md:text-base text-muted-foreground mb-8 text-center max-w-md leading-relaxed">
+      <p className="text-sm md:text-base text-muted-foreground mb-10 text-center max-w-lg leading-relaxed">
         Classification SH, tarifs, réglementations — obtenez des réponses précises et sourcées.
       </p>
 
-      {/* Suggestion cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-xl">
+      {/* Suggestion cards – Switchly rounded style */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-xl">
         {suggestedQuestions.map((item, i) => (
           <button
             key={`${item.question}-${i}`}
-            className="group flex items-start gap-3 text-left p-3.5 rounded-xl bg-card border border-border/40 hover:border-primary/20 hover:shadow-sm transition-all duration-200"
+            className="group flex items-start gap-3 text-left p-4 rounded-2xl bg-card border border-border/30 hover:border-primary/30 hover:shadow-md transition-all duration-300 hover:-translate-y-0.5"
             onClick={() => onQuestionClick(item.question)}
           >
-            <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-primary/8 flex items-center justify-center group-hover:bg-primary/12 transition-colors">
-              <item.icon className="h-4 w-4 text-primary/70" />
+            <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-primary/8 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
+              <item.icon className="h-4 w-4 text-primary" />
             </div>
-            <span className="text-[13px] leading-snug text-muted-foreground group-hover:text-foreground transition-colors line-clamp-2 pt-0.5">
+            <span className="text-[13px] leading-snug text-muted-foreground group-hover:text-foreground transition-colors line-clamp-2 pt-1">
               {item.question}
             </span>
           </button>
@@ -114,9 +118,9 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
       {/* Refresh link */}
       <button
         onClick={refreshQuestions}
-        className="mt-5 text-xs text-muted-foreground/60 hover:text-primary transition-colors flex items-center gap-1.5"
+        className="mt-6 text-xs text-muted-foreground/50 hover:text-primary transition-colors flex items-center gap-1.5 group"
       >
-        <Sparkles className="h-3 w-3" />
+        <Sparkles className="h-3 w-3 group-hover:rotate-12 transition-transform" />
         Autres suggestions
       </button>
     </div>
