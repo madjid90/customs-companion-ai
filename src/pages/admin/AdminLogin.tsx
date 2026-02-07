@@ -104,7 +104,7 @@ export default function AdminLogin() {
 
   return (
     <div className="min-h-screen flex items-center justify-center page-gradient p-4">
-      <Card className="w-full max-w-md animate-slide-up card-elevated border border-border/30">
+      <Card className="w-full max-w-md animate-slide-up card-elevated border border-border/20">
         <CardHeader className="text-center space-y-4">
           <div className="mx-auto">
             <Logo size="lg" />
@@ -178,7 +178,7 @@ export default function AdminLogin() {
 
             <Button
               type="submit"
-              className="w-full h-11 blue-gradient hover:opacity-90 text-white font-semibold rounded-xl shadow-accent"
+              className="w-full h-12 cta-gradient rounded-xl text-base"
               disabled={isLoading || !email || !password}
             >
               {isLoading ? (
