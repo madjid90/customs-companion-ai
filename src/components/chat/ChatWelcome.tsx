@@ -82,7 +82,16 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
       <div className="relative mb-6">
         <div className="absolute inset-0 w-20 h-20 md:w-24 md:h-24 rounded-full bg-primary/6 blur-2xl -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
         <div className="relative w-20 h-20 md:w-24 md:h-24 flex items-center justify-center animate-float">
-          <Bot className="h-12 w-12 md:h-14 md:w-14 text-primary" strokeWidth={1.5} />
+          <svg width="0" height="0" className="absolute">
+            <defs>
+              <linearGradient id="bot-icon-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="hsl(217 91% 55%)" />
+                <stop offset="50%" stopColor="hsl(180 70% 45%)" />
+                <stop offset="100%" stopColor="hsl(145 65% 50%)" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <Bot className="h-12 w-12 md:h-14 md:w-14" strokeWidth={1.5} style={{ stroke: 'url(#bot-icon-gradient)' }} />
         </div>
       </div>
 
