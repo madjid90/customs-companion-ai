@@ -98,58 +98,55 @@
   }
 
   .dark {
-    --background: 220 20% 8%;
-    --foreground: 210 40% 96%;
+    --background: 222 47% 6%;
+    --foreground: 210 40% 98%;
 
-    --card: 220 18% 12%;
-    --card-foreground: 210 40% 96%;
+    --card: 222 47% 8%;
+    --card-foreground: 210 40% 98%;
 
-    --popover: 220 18% 12%;
-    --popover-foreground: 210 40% 96%;
+    --popover: 222 47% 8%;
+    --popover-foreground: 210 40% 98%;
 
-    --primary: 220 70% 58%;
-    --primary-foreground: 220 20% 8%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 15% 18%;
-    --secondary-foreground: 210 40% 96%;
+    --secondary: 145 58% 55%;
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 220 15% 18%;
-    --muted-foreground: 220 12% 58%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
 
-    --accent: 210 80% 55%;
-    --accent-foreground: 220 20% 8%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
 
-    --gold: 45 65% 52%;
-    --gold-foreground: 220 20% 8%;
-
-    --destructive: 0 62% 45%;
+    --destructive: 0 63% 31%;
     --destructive-foreground: 210 40% 96%;
 
-    --border: 220 15% 20%;
-    --input: 220 15% 20%;
-    --ring: 220 70% 58%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 217 91% 60%;
 
-    --sidebar-background: 220 20% 7%;
-    --sidebar-foreground: 210 40% 96%;
-    --sidebar-primary: 220 70% 58%;
-    --sidebar-primary-foreground: 220 20% 8%;
-    --sidebar-accent: 220 15% 14%;
-    --sidebar-accent-foreground: 210 40% 96%;
-    --sidebar-border: 220 15% 16%;
-    --sidebar-ring: 220 70% 58%;
+    --sidebar-background: 222 47% 8%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 217 33% 17%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217 33% 17%;
+    --sidebar-ring: 217 91% 60%;
 
-    --chat-user: 220 70% 58%;
-    --chat-user-foreground: 220 20% 8%;
-    --chat-ai: 220 15% 15%;
-    --chat-ai-foreground: 210 40% 96%;
-    --chat-ai-border: 220 15% 20%;
-    --chat-input-bg: 220 18% 12%;
-    --chat-typing-dot: 220 70% 58%;
+    --chat-user: 217 91% 60%;
+    --chat-user-foreground: 0 0% 100%;
+    --chat-ai: 222 47% 8%;
+    --chat-ai-foreground: 210 40% 98%;
+    --chat-ai-border: 217 33% 17%;
+    --chat-input-bg: 222 47% 8%;
+    --chat-typing-dot: 217 91% 60%;
 
-    --gradient-hero: linear-gradient(145deg, hsl(220 20% 8%), hsl(220 18% 16%));
-    --gradient-accent: linear-gradient(135deg, hsl(220 70% 55%), hsl(162 60% 46%));
-    --gradient-page: linear-gradient(145deg, hsl(220 20% 8%), hsl(220 18% 12%));
-    --gradient-cta: linear-gradient(135deg, hsl(220 70% 55%) 0%, hsl(180 55% 42%) 50%, hsl(162 65% 44%) 100%);
+    --gradient-hero: linear-gradient(135deg, hsl(217 91% 45%) 0%, hsl(180 60% 35%) 50%, hsl(145 55% 40%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(217 91% 50%), hsl(145 55% 40%));
+    --gradient-page: linear-gradient(180deg, hsl(222 47% 6%) 0%, hsl(222 40% 8%) 100%);
+    --gradient-cta: linear-gradient(135deg, hsl(217 91% 50%) 0%, hsl(180 60% 38%) 50%, hsl(145 55% 42%) 100%);
 
     --shadow-md: 0 4px 12px -2px hsl(0 0% 0% / 0.3);
     --shadow-lg: 0 12px 28px -6px hsl(0 0% 0% / 0.4);
@@ -161,14 +158,42 @@
     @apply border-border;
   }
 
+  html {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior-y: none;
+  }
+
+  /* Prevent zoom on input focus for iOS */
+  input, select, textarea {
+    font-size: 16px !important;
   }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
     @apply font-bold tracking-tight;
+  }
+
+  /* Touch-friendly tap targets on mobile */
+  @media (max-width: 768px) {
+    button, a, [role="button"] {
+      min-height: 44px;
+    }
   }
 }
 
@@ -229,20 +254,54 @@
     box-shadow: var(--shadow-gold);
   }
 
-  /* Glassmorphism – Prodify-style frosted glass */
+  /* Glass effect – Switchly style */
+  .glass {
+    @apply bg-card/80 backdrop-blur-md border border-border/50;
+  }
+
   .glass-effect {
     @apply backdrop-blur-xl bg-white/70 border border-white/30;
     box-shadow: var(--shadow-sm);
   }
 
-  .glass-effect-strong {
-    @apply backdrop-blur-2xl bg-white/85 border border-white/40;
-    box-shadow: var(--shadow-md);
-  }
-
   .glass-sidebar {
     @apply bg-white/90 backdrop-blur-xl;
     box-shadow: var(--shadow-sm);
+  }
+
+  /* Gradient text – Switchly static for GPU performance */
+  .gradient-text {
+    background: linear-gradient(
+      135deg,
+      hsl(217 91% 55%) 0%,
+      hsl(180 70% 45%) 35%,
+      hsl(145 65% 50%) 65%,
+      hsl(217 91% 55%) 100%
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Card hover – Switchly */
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+  }
+
+  /* Button glow effect – Switchly */
+  .btn-glow {
+    @apply relative overflow-hidden;
+  }
+
+  .btn-glow::before {
+    content: '';
+    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
+    background: radial-gradient(circle at center, hsl(217 91% 60% / 0.3) 0%, transparent 70%);
+  }
+
+  .btn-glow:hover::before {
+    @apply opacity-100;
   }
 
   /* Badge chip style – Prodify status badges */
