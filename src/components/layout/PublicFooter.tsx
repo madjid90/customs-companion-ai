@@ -4,7 +4,7 @@ import { ShieldCheck } from "lucide-react";
 
 export function PublicFooter() {
   return (
-    <footer className="border-t bg-card/80 backdrop-blur-lg">
+    <footer className="border-t border-border/30 bg-card/70 backdrop-blur-lg">
       <div className="container mx-auto px-4 py-8">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -27,7 +27,7 @@ export function PublicFooter() {
           </div>
         </div>
 
-        <div className="mt-6 pt-6 border-t text-center text-xs text-muted-foreground">
+        <div className="mt-6 pt-6 border-t border-border/30 text-center text-xs text-muted-foreground">
           © {new Date().getFullYear()} DouaneAI. Tous droits réservés.
         </div>
       </div>

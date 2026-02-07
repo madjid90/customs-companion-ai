@@ -1240,48 +1240,48 @@ export default function AdminUpload() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="animate-fade-in">
-        <h1 className="text-3xl font-bold text-foreground">Upload intelligent</h1>
-        <p className="text-muted-foreground mt-1">
+      <div className="admin-page-header animate-fade-in">
+        <h1>Upload intelligent</h1>
+        <p>
           Déposez vos PDFs — L'IA analyse et vous permet de valider avant insertion
         </p>
       </div>
 
-      {/* Process explanation */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-accent/5 border-accent/20">
-          <CardContent className="pt-6 text-center">
-            <Upload className="h-8 w-8 mx-auto mb-2 text-accent" />
-            <p className="font-medium">1. Upload</p>
-            <p className="text-sm text-muted-foreground">Glissez vos PDFs</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-warning/5 border-warning/20">
-          <CardContent className="pt-6 text-center">
-            <Brain className="h-8 w-8 mx-auto mb-2 text-warning" />
-            <p className="font-medium">2. Analyse IA</p>
-            <p className="text-sm text-muted-foreground">Extraction automatique</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-accent/5 border-accent/20">
-          <CardContent className="pt-6 text-center">
-            <Eye className="h-8 w-8 mx-auto mb-2 text-accent" />
-            <p className="font-medium">3. Prévisualisation</p>
-            <p className="text-sm text-muted-foreground">Correction manuelle</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-success/5 border-success/20">
-          <CardContent className="pt-6 text-center">
-            <Database className="h-8 w-8 mx-auto mb-2 text-success" />
-            <p className="font-medium">4. Insertion</p>
-            <p className="text-sm text-muted-foreground">Données validées</p>
-          </CardContent>
-        </Card>
+      {/* Process explanation – step cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 animate-slide-up">
+        <div className="step-card">
+          <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
+            <Upload className="h-5 w-5 text-primary" />
+          </div>
+          <p className="font-semibold text-sm">1. Upload</p>
+          <p className="text-xs text-muted-foreground mt-1">Glissez vos PDFs</p>
+        </div>
+        <div className="step-card">
+          <div className="w-11 h-11 rounded-xl bg-warning/10 flex items-center justify-center mx-auto mb-3">
+            <Brain className="h-5 w-5 text-warning" />
+          </div>
+          <p className="font-semibold text-sm">2. Analyse IA</p>
+          <p className="text-xs text-muted-foreground mt-1">Extraction automatique</p>
+        </div>
+        <div className="step-card">
+          <div className="w-11 h-11 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-3">
+            <Eye className="h-5 w-5 text-accent" />
+          </div>
+          <p className="font-semibold text-sm">3. Prévisualisation</p>
+          <p className="text-xs text-muted-foreground mt-1">Correction manuelle</p>
+        </div>
+        <div className="step-card">
+          <div className="w-11 h-11 rounded-xl bg-success/10 flex items-center justify-center mx-auto mb-3">
+            <Database className="h-5 w-5 text-success" />
+          </div>
+          <p className="font-semibold text-sm">4. Insertion</p>
+          <p className="text-xs text-muted-foreground mt-1">Données validées</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Drop Zone */}
-        <Card className="animate-slide-up">
+        <Card className="animate-slide-up card-elevated border-border/20">
           <CardHeader>
             <CardTitle>Déposer des documents</CardTitle>
             <CardDescription>
@@ -1323,10 +1323,10 @@ export default function AdminUpload() {
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               className={`
-                relative border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer
+                relative border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer
                 ${isDragging
-                  ? "border-accent bg-accent/10 scale-[1.02]"
-                  : "border-border hover:border-accent/50 hover:bg-accent/5"
+                  ? "border-primary bg-primary/5 scale-[1.02]"
+                  : "border-border/50 hover:border-primary/30 hover:bg-primary/5"
                 }
               `}
             >
@@ -1337,8 +1337,10 @@ export default function AdminUpload() {
                 onChange={handleFileSelect}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
-              <Upload className={`h-12 w-12 mx-auto mb-3 transition-colors ${isDragging ? "text-accent" : "text-muted-foreground"}`} />
-              <p className="text-lg font-medium mb-1">
+              <div className={`w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center transition-all ${isDragging ? "violet-gradient accent-glow" : "bg-primary/10"}`}>
+                <Upload className={`h-6 w-6 transition-colors ${isDragging ? "text-white" : "text-primary"}`} />
+              </div>
+              <p className="text-lg font-semibold mb-1">
                 Glissez vos PDFs ici
               </p>
               <p className="text-sm text-muted-foreground">
@@ -1357,7 +1359,7 @@ export default function AdminUpload() {
         </Card>
 
         {/* Upload Queue */}
-        <Card className="animate-slide-up" style={{ animationDelay: "0.1s" }}>
+        <Card className="animate-slide-up card-elevated border-border/20" style={{ animationDelay: "0.1s" }}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <div>
               <CardTitle>Résultats</CardTitle>

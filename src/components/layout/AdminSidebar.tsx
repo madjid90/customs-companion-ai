@@ -48,7 +48,7 @@ export function AdminSidebar() {
       )}
     >
       {/* Header */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-border/30">
+      <div className="h-16 flex items-center justify-between px-4 border-b border-border/20">
         {!collapsed && <Logo size="md" />}
         <Button
           variant="ghost"
@@ -72,7 +72,7 @@ export function AdminSidebar() {
               return (
                 <div
                   key={`sep-${index}`}
-                  className="h-px bg-border/50 my-4"
+                  className="h-px bg-border/30 my-4"
                 />
               );
             }
@@ -87,11 +87,11 @@ export function AdminSidebar() {
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
                   isActive
-                    ? "bg-primary/8 text-primary"
+                    ? "bg-primary/8 text-primary shadow-sm"
                     : "text-muted-foreground hover:bg-primary/5 hover:text-foreground"
                 )}
               >
-                <Icon className="h-5 w-5 flex-shrink-0" />
+                <Icon className={cn("h-5 w-5 flex-shrink-0", isActive && "text-primary")} />
                 {!collapsed && <span>{item.label}</span>}
               </Link>
             );
@@ -100,7 +100,7 @@ export function AdminSidebar() {
       </ScrollArea>
 
       {/* Footer */}
-      <div className="p-2 border-t border-border/30">
+      <div className="p-2 border-t border-border/20">
         <Button
           variant="ghost"
           className={cn(

@@ -420,20 +420,20 @@ export default function AdminHSCodes() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between animate-fade-in">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Codes SH</h1>
-          <p className="text-muted-foreground mt-1">
+        <div className="admin-page-header">
+          <h1>Codes SH</h1>
+          <p>
             Gérer la nomenclature douanière ({totalCount.toLocaleString()} codes)
           </p>
         </div>
-        <Button onClick={openCreateDialog} className="bg-accent hover:bg-accent/90">
+        <Button onClick={openCreateDialog} className="violet-gradient hover:opacity-90 text-white accent-glow rounded-xl">
           <Plus className="h-4 w-4 mr-2" />
           Nouveau code
         </Button>
       </div>
 
       {/* Search */}
-      <Card className="animate-slide-up">
+      <Card className="animate-slide-up card-elevated border-border/20">
         <CardContent className="pt-6">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -448,7 +448,7 @@ export default function AdminHSCodes() {
       </Card>
 
       {/* Table */}
-      <Card className="animate-slide-up" style={{ animationDelay: "0.1s" }}>
+      <Card className="animate-slide-up card-elevated border-border/20" style={{ animationDelay: "0.1s" }}>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
