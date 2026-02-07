@@ -26,6 +26,7 @@ interface CircularReference {
   download_url?: string;
   pdf_title?: string;
   validated?: boolean;
+  page_number?: number;
 }
 
 interface Message {
