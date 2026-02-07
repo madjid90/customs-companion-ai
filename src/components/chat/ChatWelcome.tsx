@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Sparkles, FileImage, Search, Scale, Package, FileCheck, Globe, Truck, ShieldAlert, Calculator, BookOpen, ArrowRight } from "lucide-react";
+import { Sparkles, FileImage, Search, Scale, Package, FileCheck, Globe, Truck, ShieldAlert, Calculator, BookOpen, ArrowRight, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChatWelcomeProps {
@@ -81,24 +81,7 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
       {/* Robot icon */}
       <div className="relative mb-6 animate-float">
         <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-primary/10 flex items-center justify-center">
-          <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-primary/10 flex items-center justify-center">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              className="h-7 w-7 md:h-8 md:w-8"
-            >
-              <path d="M12 8V4H8" stroke="hsl(var(--primary))" />
-              <rect width="16" height="12" x="4" y="8" rx="2" stroke="hsl(var(--primary))" />
-              <path d="M2 14h2" stroke="hsl(var(--primary))" />
-              <path d="M20 14h2" stroke="hsl(var(--primary))" />
-              <path d="M15 13v2" stroke="hsl(var(--primary))" />
-              <path d="M9 13v2" stroke="hsl(var(--primary))" />
-            </svg>
-          </div>
+          <Bot className="h-9 w-9 md:h-10 md:w-10 text-primary" strokeWidth={1.5} />
         </div>
       </div>
 
