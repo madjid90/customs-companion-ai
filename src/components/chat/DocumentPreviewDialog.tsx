@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Download, Loader2, AlertCircle, ExternalLink, FileText, RefreshCw } from "lucide-react";
+import { Download, AlertCircle, ExternalLink, FileText, RefreshCw } from "lucide-react";
 import {
   Drawer,
   DrawerContent,
@@ -10,6 +10,7 @@ import {
   DrawerDescription,
 } from "@/components/ui/drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { PdfViewer } from "./PdfViewer";
 
 interface DocumentPreviewDialogProps {
   open: boolean;
@@ -26,105 +27,26 @@ export function DocumentPreviewDialog({
   title,
   pageNumber 
 }: DocumentPreviewDialogProps) {
-  const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [retryKey, setRetryKey] = useState(0);
   const isMobile = useIsMobile();
 
-  // Check if we have a valid URL
   const hasValidUrl = url && url.length > 0 && (url.startsWith('http://') || url.startsWith('https://'));
-
-  // Fetch PDF and create blob URL to bypass X-Frame-Options
-  useEffect(() => {
-    if (!open || !hasValidUrl) return;
-
-    let cancelled = false;
-    setIsLoading(true);
-    setHasError(false);
-    setBlobUrl(null);
-
-    const fetchPdf = async () => {
-      try {
-        const response = await fetch(url);
-        
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        
-        const blob = await response.blob();
-        
-        if (cancelled) return;
-        
-        // Check if it's actually a PDF
-        if (!blob.type.includes('pdf') && !blob.type.includes('octet-stream')) {
-          console.warn('Response is not a PDF:', blob.type);
-        }
-        
-        const objectUrl = URL.createObjectURL(blob);
-        setBlobUrl(objectUrl);
-        setIsLoading(false);
-      } catch (error) {
-        console.error('Failed to fetch PDF:', error);
-        if (!cancelled) {
-          setHasError(true);
-          setIsLoading(false);
-        }
-      }
-    };
-
-    fetchPdf();
-
-    return () => {
-      cancelled = true;
-      // Clean up blob URL when dialog closes
-      if (blobUrl) {
-        URL.revokeObjectURL(blobUrl);
-      }
-    };
-  }, [open, url, hasValidUrl]);
-
-  // Clean up blob URL when component unmounts
-  useEffect(() => {
-    return () => {
-      if (blobUrl) {
-        URL.revokeObjectURL(blobUrl);
-      }
-    };
-  }, [blobUrl]);
-
-  // Get the viewer URL with page number
-  const getViewerUrl = () => {
-    if (!blobUrl) return '';
-    const pageParam = pageNumber ? `#page=${pageNumber}` : '';
-    return `${blobUrl}${pageParam}`;
-  };
 
   const handleDownload = async () => {
     if (hasValidUrl) {
       try {
-        // Use existing blob if available
-        if (blobUrl) {
-          const link = document.createElement('a');
-          link.href = blobUrl;
-          link.download = title || 'document.pdf';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-        } else {
-          const response = await fetch(url);
-          const blob = await response.blob();
-          const downloadUrl = window.URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = downloadUrl;
-          link.download = title || 'document.pdf';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          window.URL.revokeObjectURL(downloadUrl);
-        }
-      } catch (error) {
-        // Fallback: open in new tab if download fails
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = title || 'document.pdf';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(downloadUrl);
+      } catch {
         window.open(url, '_blank');
       }
     }
@@ -138,32 +60,8 @@ export function DocumentPreviewDialog({
   };
 
   const handleRetry = () => {
-    setIsLoading(true);
     setHasError(false);
-    setBlobUrl(null);
-    
-    // Trigger re-fetch by toggling a dependency
-    const fetchPdf = async () => {
-      try {
-        const cacheBuster = `${url.includes('?') ? '&' : '?'}_t=${Date.now()}`;
-        const response = await fetch(url + cacheBuster);
-        
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        
-        const blob = await response.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        setBlobUrl(objectUrl);
-        setIsLoading(false);
-      } catch (error) {
-        console.error('Retry failed:', error);
-        setHasError(true);
-        setIsLoading(false);
-      }
-    };
-
-    fetchPdf();
+    setRetryKey((k) => k + 1);
   };
 
   const content = (
@@ -261,30 +159,18 @@ export function DocumentPreviewDialog({
               </Button>
             </div>
           </div>
-        ) : isLoading ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
-            <div className="flex flex-col items-center gap-3">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="text-sm text-muted-foreground">
-                {pageNumber 
-                  ? `Chargement de la page ${pageNumber}...` 
-                  : 'Chargement du document...'}
-              </p>
-            </div>
-          </div>
-        ) : blobUrl ? (
-          <iframe
-            ref={iframeRef}
-            src={getViewerUrl()}
-            className="w-full h-full border-0"
-            title={title || "Document preview"}
+        ) : (
+          <PdfViewer
+            key={retryKey}
+            url={url}
+            pageNumber={pageNumber}
+            onError={() => setHasError(true)}
           />
-        ) : null}
+        )}
       </div>
     </>
   );
 
-  // Use Drawer for mobile, Dialog for desktop
   if (isMobile) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
