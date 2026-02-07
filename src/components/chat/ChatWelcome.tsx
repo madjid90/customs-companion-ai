@@ -78,11 +78,11 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100dvh-200px)] px-4 py-8 animate-fade-in">
-      {/* Robot icon – gradient container */}
+      {/* Robot icon */}
       <div className="relative mb-6">
-        <div className="absolute inset-0 w-24 h-24 md:w-28 md:h-28 rounded-3xl bg-primary/8 blur-2xl -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
-        <div className="relative w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent flex items-center justify-center animate-float">
-          <Bot className="h-11 w-11 md:h-13 md:w-13 text-primary" strokeWidth={1.8} />
+        <div className="absolute inset-0 w-20 h-20 md:w-24 md:h-24 rounded-full bg-primary/6 blur-2xl -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
+        <div className="relative w-20 h-20 md:w-24 md:h-24 flex items-center justify-center animate-float">
+          <Bot className="h-12 w-12 md:h-14 md:w-14 text-primary" strokeWidth={1.5} />
         </div>
       </div>
 
