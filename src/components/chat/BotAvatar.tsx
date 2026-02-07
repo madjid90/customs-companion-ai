@@ -13,15 +13,15 @@ export function BotAvatar({ size = "sm", className }: BotAvatarProps) {
   };
 
   const iconSizes = {
-    sm: "h-4 w-4 md:h-[18px] md:w-[18px]",
-    md: "h-6 w-6 md:h-7 md:w-7",
+    sm: "h-7 w-7 md:h-8 md:w-8",
+    md: "h-10 w-10 md:h-12 md:w-12",
     lg: "h-12 w-12 md:h-14 md:w-14",
   };
 
   return (
     <div
       className={cn(
-        "flex-shrink-0 rounded-xl bg-success/10 flex items-center justify-center border border-success/20",
+        "flex-shrink-0 flex items-center justify-center",
         sizeClasses[size],
         className
       )}
