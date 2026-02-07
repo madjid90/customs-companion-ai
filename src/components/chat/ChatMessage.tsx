@@ -594,12 +594,12 @@ export function ChatMessage({
                     key={index}
                     onClick={() => setPreviewAttachment(file)}
                     className={cn(
-                      "relative group flex items-center gap-2 bg-primary/5 border border-primary/15 rounded-lg p-2 pr-3",
-                      "hover:bg-primary/10 transition-all duration-200 cursor-pointer"
+                      "relative group flex items-center gap-2.5 rounded-lg p-2 pr-3",
+                      "hover:bg-primary/5 transition-all duration-200 cursor-pointer"
                     )}
                   >
                     {file.type === "image" ? (
-                      <div className="relative w-10 h-10 rounded overflow-hidden">
+                      <div className="relative w-9 h-9 rounded overflow-hidden flex-shrink-0">
                         <img
                           src={file.preview}
                           alt={file.name}
@@ -610,15 +610,12 @@ export function ChatMessage({
                         </div>
                       </div>
                     ) : (
-                      <div className="relative w-10 h-10 flex items-center justify-center bg-muted rounded">
-                        <FileText className="h-5 w-5 text-muted-foreground" />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded">
-                          <Eye className="h-3 w-3 text-white" />
-                        </div>
+                      <div className="w-9 h-9 flex items-center justify-center flex-shrink-0">
+                        <FileText className="h-5 w-5 text-primary" />
                       </div>
                     )}
                     <div className="flex flex-col items-start min-w-0">
-                      <span className="text-xs font-medium text-foreground max-w-[80px] truncate">
+                      <span className="text-xs font-medium text-foreground max-w-[120px] truncate">
                         {file.name}
                       </span>
                       <span className="text-[10px] text-muted-foreground">
