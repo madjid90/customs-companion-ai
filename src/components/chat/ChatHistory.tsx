@@ -292,7 +292,7 @@ export function ChatHistory({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         className={cn(
-          "fixed left-0 top-16 h-[calc(100vh-4rem)] bg-white/95 backdrop-blur-xl z-30 flex flex-col",
+          "fixed left-0 top-16 h-[calc(100vh-4rem)] bg-card border-r border-border/30 z-30 flex flex-col",
           isOpen ? "w-[85vw] max-w-[320px] md:w-72" : "w-0 overflow-hidden",
           !isSwiping && "transition-all duration-300 ease-in-out"
         )}

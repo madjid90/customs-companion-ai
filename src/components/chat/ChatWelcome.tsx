@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { Bot, Sparkles, FileImage, Search, Scale, Package, FileCheck, Globe, Truck, ShieldAlert, Calculator, BookOpen, ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 interface ChatWelcomeProps {
   onQuestionClick: (question: string) => void;
@@ -62,7 +61,6 @@ const getRandomQuestions = (count: number) => {
   return shuffled.slice(0, count);
 };
 
-
 export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
   const [suggestedQuestions, setSuggestedQuestions] = useState(() => getRandomQuestions(4));
 
@@ -78,55 +76,47 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
   };
 
   return (
-    <div className="text-center py-6 md:py-10 animate-fade-in px-3 md:px-4 flex flex-col justify-center min-h-[calc(100dvh-180px)]">
-      {/* Logo Icon with glow */}
-      <div className="relative inline-flex items-center justify-center mb-4 md:mb-6">
-        <div className="absolute inset-0 w-20 h-20 md:w-28 md:h-28 rounded-full bg-primary/10 blur-2xl animate-pulse-slow"></div>
-        <div className="relative w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-primary/10 flex items-center justify-center">
-          <Bot className="h-8 w-8 md:h-10 md:w-10 text-primary" strokeWidth={1.5} />
+    <div className="flex flex-col items-center justify-center min-h-[calc(100dvh-200px)] px-4 py-8 animate-fade-in">
+      {/* Robot icon */}
+      <div className="relative mb-6">
+        <div className="absolute inset-0 w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-primary/8 blur-xl -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
+        <div className="relative w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-primary/8 flex items-center justify-center border border-primary/10">
+          <Bot className="h-7 w-7 md:h-8 md:w-8 text-primary" strokeWidth={1.5} />
         </div>
       </div>
-      
-      {/* Title */}
-      <h2 className="text-2xl md:text-4xl font-display font-extrabold text-foreground mb-1 md:mb-2 tracking-tight">
+
+      {/* Title block */}
+      <h2 className="text-xl md:text-2xl font-bold text-foreground mb-1 tracking-tight text-center">
         Votre assistant douanier
       </h2>
-      <p className="text-xl md:text-2xl font-display font-bold text-gradient-blue mb-3 md:mb-4">
-        Comment puis-je vous aider ?
-      </p>
-      <p className="text-muted-foreground max-w-lg mx-auto mb-5 md:mb-8 text-sm md:text-base leading-relaxed px-2">
-        Classification SH, tarifs, réglementations — obtenez des réponses précises 
-        et sourcées en quelques secondes.
+      <p className="text-sm md:text-base text-muted-foreground mb-8 text-center max-w-md leading-relaxed">
+        Classification SH, tarifs, réglementations — obtenez des réponses précises et sourcées.
       </p>
 
-
-      {/* Suggested questions – floating card style */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 md:gap-3 max-w-2xl mx-auto">
+      {/* Suggestion cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-xl">
         {suggestedQuestions.map((item, i) => (
           <button
             key={`${item.question}-${i}`}
-            className="group card-elevated text-left py-3.5 md:py-4 px-4 md:px-5 flex items-start gap-3 transition-all duration-300 hover:border-primary/20 border border-border/30"
+            className="group flex items-start gap-3 text-left p-3.5 rounded-xl bg-card border border-border/40 hover:border-primary/20 hover:shadow-sm transition-all duration-200"
             onClick={() => onQuestionClick(item.question)}
           >
-            <div className="flex-shrink-0 w-8 h-8 md:w-9 md:h-9 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 group-hover:scale-105 transition-all duration-300">
-              <item.icon className="h-4 w-4 md:h-[18px] md:w-[18px] text-primary" />
+            <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-primary/8 flex items-center justify-center group-hover:bg-primary/12 transition-colors">
+              <item.icon className="h-4 w-4 text-primary/70" />
             </div>
-            <div className="flex-1 min-w-0">
-              <span className="text-xs md:text-sm text-foreground/80 group-hover:text-foreground transition-colors leading-relaxed line-clamp-2">
-                {item.question}
-              </span>
-            </div>
-            <ArrowRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all duration-300 flex-shrink-0 mt-0.5" />
+            <span className="text-[13px] leading-snug text-muted-foreground group-hover:text-foreground transition-colors line-clamp-2 pt-0.5">
+              {item.question}
+            </span>
           </button>
         ))}
       </div>
 
-      {/* Refresh */}
+      {/* Refresh link */}
       <button
         onClick={refreshQuestions}
-        className="mt-5 text-xs text-muted-foreground hover:text-primary transition-colors flex items-center justify-center gap-1.5 mx-auto group"
+        className="mt-5 text-xs text-muted-foreground/60 hover:text-primary transition-colors flex items-center gap-1.5"
       >
-        <Sparkles className="h-3 w-3 group-hover:rotate-12 transition-transform" />
+        <Sparkles className="h-3 w-3" />
         Autres suggestions
       </button>
     </div>
