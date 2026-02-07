@@ -1752,6 +1752,49 @@ serve(async (req) => {
       console.warn(`[ingest-legal-doc] Failed to update total_chunks: ${updateErr}`);
     }
 
+    // 9. Sync metadata to pdf_documents entries that match by title but lack metadata
+    // This ensures old uploads (via analyze-pdf) get enriched with extracted data
+    try {
+      const { data: sourceData } = await supabase
+        .from("legal_sources")
+        .select("source_ref, title, source_date, effective_date, issuer, excerpt")
+        .eq("id", sourceId)
+        .single();
+      
+      if (sourceData) {
+        // Find matching pdf_documents by title that are missing metadata
+        const { data: matchingPdfs } = await supabase
+          .from("pdf_documents")
+          .select("id, title")
+          .or(`title.eq.${sourceData.title},title.ilike.%${(sourceData.source_ref || '').replace(/[/%]/g, '')}%`)
+          .is("document_reference", null)
+          .in("category", ["circulaire", "reglementation", "note", "instruction", "Circulaire", "Réglementation"]);
+        
+        if (matchingPdfs && matchingPdfs.length > 0) {
+          for (const pdf of matchingPdfs) {
+            const { error: syncError } = await supabase
+              .from("pdf_documents")
+              .update({
+                document_reference: sourceData.source_ref,
+                description: (sourceData.excerpt || "").slice(0, 500),
+                publication_date: sourceData.source_date,
+                effective_date: sourceData.effective_date,
+                issuing_authority: sourceData.issuer,
+                document_type: "regulatory",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", pdf.id);
+            
+            if (!syncError) {
+              console.log(`[ingest-legal-doc] Synced metadata to pdf_documents ${pdf.id} (${pdf.title})`);
+            }
+          }
+        }
+      }
+    } catch (syncErr) {
+      console.warn(`[ingest-legal-doc] pdf_documents sync failed (non-critical): ${syncErr}`);
+    }
+
     const duration = Date.now() - startTime;
     console.log(`[ingest-legal-doc] Completed in ${duration}ms`);
 
