@@ -359,8 +359,8 @@ export function ChatMessage({
     >
       {/* Bot avatar */}
       {!isUser && (
-        <div className="flex-shrink-0 w-7 h-7 md:w-8 md:h-8 rounded-lg bg-primary/8 flex items-center justify-center hidden md:flex border border-primary/10">
-          <Bot className="h-3.5 w-3.5 md:h-4 md:w-4 text-primary/70" />
+        <div className="flex-shrink-0 w-7 h-7 md:w-8 md:h-8 rounded-lg bg-primary/15 flex items-center justify-center hidden md:flex border border-primary/20">
+          <Bot className="h-3.5 w-3.5 md:h-4 md:w-4 text-primary" />
         </div>
       )}
 
@@ -408,8 +408,8 @@ export function ChatMessage({
                 ol: ({ children }) => <ol className="my-2 space-y-1.5 list-decimal pl-4">{children}</ol>,
                 li: ({ children }) => <li className="text-sm leading-relaxed">{children}</li>,
                 p: ({ children }) => <p className="text-sm leading-relaxed my-2 first:mt-0 last:mb-0">{children}</p>,
-                strong: ({ children }) => <strong className="font-semibold text-accent">{children}</strong>,
-                code: ({ children }) => <code className="bg-muted/50 px-1.5 py-0.5 rounded text-xs font-mono text-accent">{children}</code>,
+                strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+                code: ({ children }) => <code className="bg-muted/50 px-1.5 py-0.5 rounded text-xs font-mono text-primary">{children}</code>,
                 table: ({ children }) => (
                   <div className="overflow-x-auto my-3 rounded-lg border border-border">
                     <table className="min-w-full text-sm border-collapse">{children}</table>
@@ -559,7 +559,7 @@ export function ChatMessage({
                   </span>
                 )}
                 {message.context.pdfs_used > 0 && (
-                  <span className="inline-flex items-center gap-1 text-xs bg-accent/10 text-accent px-2 py-1 rounded-full font-medium">
+                  <span className="inline-flex items-center gap-1 text-xs bg-muted text-muted-foreground px-2 py-1 rounded-full font-medium">
                     <FileText className="h-3 w-3" />
                     {message.context.pdfs_used} PDFs
                   </span>
@@ -697,8 +697,8 @@ export function ChatMessage({
 export function ChatTypingIndicator() {
   return (
     <div className="flex gap-2.5 md:gap-3 animate-fade-in px-1 md:px-0">
-      <div className="flex-shrink-0 w-7 h-7 md:w-8 md:h-8 rounded-lg bg-primary/8 flex items-center justify-center hidden md:flex border border-primary/10">
-        <Bot className="h-3.5 w-3.5 md:h-4 md:w-4 text-primary/70" />
+      <div className="flex-shrink-0 w-7 h-7 md:w-8 md:h-8 rounded-lg bg-primary/15 flex items-center justify-center hidden md:flex border border-primary/20">
+        <Bot className="h-3.5 w-3.5 md:h-4 md:w-4 text-primary" />
       </div>
       <div className="bg-card border border-border/40 text-foreground rounded-2xl px-4 py-3 shadow-sm">
         <div className="flex items-center gap-2.5">

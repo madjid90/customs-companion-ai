@@ -178,10 +178,10 @@ export const InteractiveQuestions = forwardRef<HTMLDivElement, InteractiveQuesti
                 onClick={() => onAnswer(question.id, option)}
                 className={cn(
                   "h-auto py-2 md:py-2.5 px-3 md:px-4 text-xs md:text-sm whitespace-normal text-left rounded-lg md:rounded-xl",
-                  "bg-background/50 hover:bg-accent/10 hover:text-accent-foreground",
-                  "border-border/50 hover:border-accent/50 active:scale-[0.98]",
+                  "bg-background/50 hover:bg-primary/10 hover:text-primary",
+                  "border-border/50 hover:border-primary/30 active:scale-[0.98]",
                   "transition-all duration-200 hover:scale-[1.02] hover:shadow-sm",
-                  "font-medium max-w-full"
+                  "font-medium max-w-full text-foreground"
                 )}
               >
                 {cleanMarkdown(option)}
@@ -197,8 +197,8 @@ export const InteractiveQuestions = forwardRef<HTMLDivElement, InteractiveQuesti
                 onClick={() => toggleCustomInput(question.id)}
                 className={cn(
                   "h-auto py-2 md:py-2.5 px-3 md:px-4 text-xs md:text-sm whitespace-normal text-left rounded-lg md:rounded-xl",
-                  "bg-muted/30 hover:bg-accent/10 hover:text-accent-foreground",
-                  "border-dashed border-border/50 hover:border-accent/50 active:scale-[0.98]",
+                  "bg-muted/30 hover:bg-primary/10 hover:text-primary",
+                  "border-dashed border-border/50 hover:border-primary/30 active:scale-[0.98]",
                   "transition-all duration-200 hover:scale-[1.02] hover:shadow-sm",
                   "font-medium text-muted-foreground"
                 )}
