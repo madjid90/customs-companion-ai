@@ -17,7 +17,13 @@ import {
   ToggleRight,
   Trash2,
   MessageSquare,
+  ChevronDown,
 } from "lucide-react";
+
+const COUNTRY_CODES = [
+  { code: "+212", flag: "🇲🇦", label: "Maroc", placeholder: "6XX XXX XXX" },
+  { code: "+33", flag: "🇫🇷", label: "France", placeholder: "6 XX XX XX XX" },
+];
 
 interface PhoneUserRow {
   id: string;
@@ -34,7 +40,9 @@ export default function ManagerUsers() {
   const { toast } = useToast();
   const [users, setUsers] = useState<PhoneUserRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [invitePhone, setInvitePhone] = useState("");
+  const [invitePhoneLocal, setInvitePhoneLocal] = useState("");
+  const [inviteCountryIndex, setInviteCountryIndex] = useState(0);
+  const [inviteCountryOpen, setInviteCountryOpen] = useState(false);
   const [inviteName, setInviteName] = useState("");
   const [isInviting, setIsInviting] = useState(false);
   const [conversations, setConversations] = useState<Record<string, number>>({});
@@ -78,8 +86,11 @@ export default function ManagerUsers() {
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!invitePhone.trim()) return;
+    if (!invitePhoneLocal.trim()) return;
     setIsInviting(true);
+
+    const inviteCountry = COUNTRY_CODES[inviteCountryIndex];
+    const fullInvitePhone = `${inviteCountry.code}${invitePhoneLocal.replace(/\s/g, "")}`;
 
     try {
       const res = await fetch(
@@ -91,7 +102,7 @@ export default function ManagerUsers() {
             Authorization: `Bearer ${session?.access_token}`,
           },
           body: JSON.stringify({
-            phone: invitePhone.trim(),
+            phone: fullInvitePhone,
             displayName: inviteName.trim(),
           }),
         }
@@ -108,9 +119,9 @@ export default function ManagerUsers() {
       } else {
         toast({
           title: "Agent invité !",
-          description: `SMS d'invitation envoyé au ${invitePhone}`,
+          description: `SMS d'invitation envoyé au ${inviteCountry.code} ${invitePhoneLocal}`,
         });
-        setInvitePhone("");
+        setInvitePhoneLocal("");
         setInviteName("");
         fetchUsers();
       }
@@ -193,17 +204,52 @@ export default function ManagerUsers() {
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="invite-phone">Numéro de téléphone</Label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="invite-phone"
-                    type="tel"
-                    value={invitePhone}
-                    onChange={(e) => setInvitePhone(e.target.value)}
-                    placeholder="+212 6XX XXX XXX"
-                    className="pl-10 rounded-xl"
-                    required
-                  />
+                <div className="flex gap-2">
+                  {/* Country selector */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 h-10 px-3 rounded-xl border border-input bg-background text-sm hover:bg-accent/50 transition-colors whitespace-nowrap"
+                      onClick={() => setInviteCountryOpen(!inviteCountryOpen)}
+                    >
+                      <span className="text-lg leading-none">{COUNTRY_CODES[inviteCountryIndex].flag}</span>
+                      <span className="font-medium text-foreground">{COUNTRY_CODES[inviteCountryIndex].code}</span>
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                    </button>
+                    {inviteCountryOpen && (
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-xl shadow-lg overflow-hidden min-w-[180px]">
+                        {COUNTRY_CODES.map((c, i) => (
+                          <button
+                            key={c.code}
+                            type="button"
+                            className={`w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-accent/50 transition-colors ${
+                              i === inviteCountryIndex ? "bg-primary/5 text-primary font-medium" : "text-foreground"
+                            }`}
+                            onClick={() => {
+                              setInviteCountryIndex(i);
+                              setInviteCountryOpen(false);
+                            }}
+                          >
+                            <span className="text-lg leading-none">{c.flag}</span>
+                            <span>{c.label}</span>
+                            <span className="ml-auto text-muted-foreground">{c.code}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="relative flex-1">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="invite-phone"
+                      type="tel"
+                      value={invitePhoneLocal}
+                      onChange={(e) => setInvitePhoneLocal(e.target.value)}
+                      placeholder={COUNTRY_CODES[inviteCountryIndex].placeholder}
+                      className="pl-10 rounded-xl"
+                      required
+                    />
+                  </div>
                 </div>
               </div>
               <div className="space-y-2">
@@ -230,7 +276,7 @@ export default function ManagerUsers() {
               <Button
                 type="submit"
                 className="cta-gradient rounded-xl"
-                disabled={isInviting || !invitePhone.trim() || agentCount >= 2}
+                disabled={isInviting || !invitePhoneLocal.trim() || agentCount >= 2}
               >
                 {isInviting ? (
                   <>
