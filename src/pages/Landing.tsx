@@ -93,13 +93,13 @@ export default function Landing() {
       </header>
 
       {/* ─── Hero Section — Split Layout ────────────── */}
-      <section className="pt-28 pb-16 md:pt-36 md:pb-24 px-4">
+      <section className="min-h-[calc(100dvh-4rem)] md:min-h-0 flex items-center md:block pt-0 md:pt-36 md:pb-24 px-4">
         <div className="container mx-auto max-w-6xl">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
             {/* Left — Copy */}
-            <div className="max-w-xl">
+            <div className="max-w-xl mx-auto md:mx-0 text-center md:text-left">
               {/* Live badge */}
-              <div className="inline-flex items-center gap-2 mb-6 animate-fade-in">
+              <div className="inline-flex items-center gap-2 mb-5 md:mb-6 animate-fade-in">
                 <span className="relative flex h-2.5 w-2.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75" />
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-secondary" />
@@ -109,13 +109,13 @@ export default function Landing() {
                 </span>
               </div>
 
-              <h1 className="text-4xl md:text-5xl lg:text-[3.5rem] font-extrabold tracking-tight leading-[1.1] mb-6 animate-slide-up">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[3.5rem] font-extrabold tracking-tight leading-[1.1] mb-5 md:mb-6 animate-slide-up">
                 Votre assistant{" "}
                 <span className="gradient-text">douanier intelligent</span>{" "}
                 propulsé par l'IA
               </h1>
 
-              <p className="text-lg text-muted-foreground leading-relaxed mb-8 animate-fade-in">
+              <p className="text-base md:text-lg text-muted-foreground leading-relaxed mb-6 md:mb-8 animate-fade-in">
                 Codes SH, tarifs douaniers, réglementations — obtenez des
                 réponses précises et sourcées en quelques secondes.
               </p>
@@ -123,7 +123,7 @@ export default function Landing() {
               <Link to="/login" className="inline-block animate-slide-up">
                 <Button
                   size="lg"
-                  className="cta-gradient rounded-full px-8 h-14 text-base font-semibold gap-2"
+                  className="cta-gradient rounded-full px-8 h-13 md:h-14 text-base font-semibold gap-2"
                 >
                   Accéder au chat
                   <ArrowRight className="h-4 w-4" />
@@ -131,7 +131,7 @@ export default function Landing() {
               </Link>
 
               {/* Chips */}
-              <div className="flex flex-wrap items-center gap-3 mt-6 animate-fade-in">
+              <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 mt-5 md:mt-6 animate-fade-in">
                 <span className="chip">
                   <Lock className="h-3.5 w-3.5" />
                   100% sécurisé
