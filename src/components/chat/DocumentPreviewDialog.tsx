@@ -161,7 +161,7 @@ export function DocumentPreviewDialog({
           </div>
         ) : (
           <PdfViewer
-            key={retryKey}
+            key={`${retryKey}-${url}-${pageNumber}`}
             url={url}
             pageNumber={pageNumber}
             onError={() => setHasError(true)}
