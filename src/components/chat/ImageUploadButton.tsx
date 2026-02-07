@@ -122,8 +122,8 @@ export function ImageUploadButton({
               className="justify-start gap-3 h-11 rounded-lg hover:bg-accent/10 hover:text-accent transition-colors"
               onClick={() => imageInputRef.current?.click()}
             >
-              <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
-                <ImagePlus className="h-4 w-4 text-accent" />
+              <div className="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center">
+                <ImagePlus className="h-4 w-4 text-secondary" />
               </div>
               <div className="text-left">
                 <p className="text-sm font-medium">Photo du produit</p>
