@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
@@ -281,6 +281,11 @@ export default function Chat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
+  // Streaming buffer: accumulate chunks in a ref and flush to state periodically
+  const streamBufferRef = useRef<string>("");
+  const streamFlushTimerRef = useRef<number | null>(null);
+  const streamMessageIdRef = useRef<string | null>(null);
+
   // Handle loading a previous session
   const handleSelectSession = useCallback((newSessionId: string, loadedMessages: Array<{ role: "user" | "assistant"; content: string; conversationId?: string }>) => {
     // Update session ID
@@ -417,6 +422,55 @@ export default function Chat() {
         role: msg.role,
         content: msg.content,
       }));
+
+      // Initialize streaming buffer
+      streamBufferRef.current = "";
+      streamMessageIdRef.current = assistantMessageId;
+
+      // Flush buffer to state - called at intervals for smooth rendering
+      const flushBuffer = () => {
+        const bufferedContent = streamBufferRef.current;
+        const msgId = streamMessageIdRef.current;
+        if (!msgId) return;
+
+        setMessages(prev => {
+          const lastMsg = prev[prev.length - 1];
+          if (lastMsg?.id === msgId) {
+            // Only update if content actually changed
+            if (lastMsg.content === bufferedContent) return prev;
+            return prev.map(msg =>
+              msg.id === msgId
+                ? { ...msg, content: bufferedContent }
+                : msg
+            );
+          }
+          // First flush: create the assistant message
+          if (bufferedContent) {
+            return [...prev, {
+              id: msgId,
+              role: "assistant" as const,
+              content: bufferedContent,
+              isStreaming: true,
+            }];
+          }
+          return prev;
+        });
+      };
+
+      // Start periodic flushing (every 80ms for smooth updates without excessive re-renders)
+      const startFlushing = () => {
+        if (streamFlushTimerRef.current) return;
+        streamFlushTimerRef.current = window.setInterval(flushBuffer, 80);
+      };
+
+      const stopFlushing = () => {
+        if (streamFlushTimerRef.current) {
+          clearInterval(streamFlushTimerRef.current);
+          streamFlushTimerRef.current = null;
+        }
+        // Final flush to ensure all content is rendered
+        flushBuffer();
+      };
       
       await streamChatResponse({
         question: enhancedMessage || "Analyse ce document et donne-moi les informations pertinentes",
@@ -425,29 +479,19 @@ export default function Chat() {
         pdfDocuments: pdfsToSend.length > 0 ? pdfsToSend : undefined,
         conversationHistory,
         onChunk: (chunk) => {
-          setMessages(prev => {
-            const lastMsg = prev[prev.length - 1];
-            if (lastMsg?.id === assistantMessageId) {
-              return prev.map(msg =>
-                msg.id === assistantMessageId
-                  ? { ...msg, content: msg.content + chunk }
-                  : msg
-              );
-            }
-            // First chunk: create the assistant message
-            return [...prev, {
-              id: assistantMessageId,
-              role: "assistant" as const,
-              content: chunk,
-              isStreaming: true,
-            }];
-          });
+          // Just accumulate in the buffer - no state update per token
+          streamBufferRef.current += chunk;
+          startFlushing();
         },
         onDone: (metadata) => {
+          stopFlushing();
+          streamMessageIdRef.current = null;
+
           setMessages(prev => prev.map(msg =>
             msg.id === assistantMessageId
               ? {
                   ...msg,
+                  content: streamBufferRef.current, // Use final buffer content
                   isStreaming: false,
                   confidence: metadata?.confidence as "high" | "medium" | "low",
                   conversationId: metadata?.conversationId,
@@ -464,6 +508,9 @@ export default function Chat() {
           setIsLoading(false);
         },
         onError: (error) => {
+          stopFlushing();
+          streamMessageIdRef.current = null;
+
           setMessages(prev => {
             const lastMsg = prev[prev.length - 1];
             if (lastMsg?.id === assistantMessageId) {
@@ -490,6 +537,11 @@ export default function Chat() {
       });
     } catch (error: any) {
       console.error("Chat error:", error);
+      // Clean up flush timer on error
+      if (streamFlushTimerRef.current) {
+        clearInterval(streamFlushTimerRef.current);
+        streamFlushTimerRef.current = null;
+      }
       setIsLoading(false);
     }
   };
@@ -535,11 +587,17 @@ export default function Chat() {
 
   useEffect(() => {
     return () => {
+      // Clean up blob URLs
       uploadedFiles.forEach((file) => {
         if (file.type === "image" && file.preview.startsWith("blob:")) {
           URL.revokeObjectURL(file.preview);
         }
       });
+      // Clean up streaming flush timer
+      if (streamFlushTimerRef.current) {
+        clearInterval(streamFlushTimerRef.current);
+        streamFlushTimerRef.current = null;
+      }
     };
   }, [uploadedFiles]);
 
