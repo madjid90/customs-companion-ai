@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/Logo";
+import { CookieConsent } from "@/components/ui/CookieConsent";
 import {
   ArrowRight,
   Shield,
@@ -333,6 +334,8 @@ export default function Landing() {
           </p>
         </div>
       </footer>
+      {/* Cookie Consent */}
+      <CookieConsent />
     </div>
   );
 }
