@@ -418,7 +418,14 @@ export default function AdminUpload() {
         title: "✅ Document déjà traité",
         description: `Ce document (${firstResult.total_pages} pages) a déjà été entièrement ingéré.`,
       });
-      return;
+      return {
+        success: true,
+        chunks_created: 0,
+        detected_codes_count: 0,
+        evidence_created: 0,
+        pages_processed: 0,
+        already_complete: true,
+      };
     }
 
     sourceId = firstResult.source_id || sourceId;
