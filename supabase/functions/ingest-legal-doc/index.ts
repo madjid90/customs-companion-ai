@@ -1752,8 +1752,9 @@ serve(async (req) => {
       console.warn(`[ingest-legal-doc] Failed to update total_chunks: ${updateErr}`);
     }
 
-    // 9. Sync metadata to pdf_documents entries that match by title but lack metadata
-    // This ensures old uploads (via analyze-pdf) get enriched with extracted data
+    // 9. Sync metadata to pdf_documents entries
+    // a) Enrich the document created by THIS pipeline run (description from excerpt)
+    // b) Also enrich old uploads (via analyze-pdf) that match by title/ref
     try {
       const { data: sourceData } = await supabase
         .from("legal_sources")
@@ -1761,28 +1762,43 @@ serve(async (req) => {
         .eq("id", sourceId)
         .single();
       
-      if (sourceData) {
-        // Find matching pdf_documents by title that are missing metadata
+      if (sourceData && sourceData.excerpt) {
+        const updatePayload = {
+          description: (sourceData.excerpt || "").slice(0, 500),
+          publication_date: sourceData.source_date,
+          effective_date: sourceData.effective_date,
+          issuing_authority: sourceData.issuer,
+          document_reference: sourceData.source_ref,
+          document_type: "regulatory",
+          updated_at: new Date().toISOString(),
+        };
+
+        // a) Update the document created in this pipeline run (by pdfId if available)
+        if (pdfId) {
+          const { error: selfSyncError } = await supabase
+            .from("pdf_documents")
+            .update(updatePayload)
+            .eq("id", pdfId);
+          
+          if (!selfSyncError) {
+            console.log(`[ingest-legal-doc] Enriched own pdf_documents ${pdfId} with description`);
+          }
+        }
+
+        // b) Find and enrich other matching pdf_documents missing description
         const { data: matchingPdfs } = await supabase
           .from("pdf_documents")
           .select("id, title")
-          .or(`title.eq.${sourceData.title},title.ilike.%${(sourceData.source_ref || '').replace(/[/%]/g, '')}%`)
-          .is("document_reference", null)
+          .or(`title.eq.${sourceData.title},document_reference.eq.${sourceData.source_ref}`)
+          .is("description", null)
           .in("category", ["circulaire", "reglementation", "note", "instruction", "Circulaire", "Réglementation"]);
         
         if (matchingPdfs && matchingPdfs.length > 0) {
           for (const pdf of matchingPdfs) {
+            if (pdf.id === pdfId) continue; // Already updated above
             const { error: syncError } = await supabase
               .from("pdf_documents")
-              .update({
-                document_reference: sourceData.source_ref,
-                description: (sourceData.excerpt || "").slice(0, 500),
-                publication_date: sourceData.source_date,
-                effective_date: sourceData.effective_date,
-                issuing_authority: sourceData.issuer,
-                document_type: "regulatory",
-                updated_at: new Date().toISOString(),
-              })
+              .update(updatePayload)
               .eq("id", pdf.id);
             
             if (!syncError) {
