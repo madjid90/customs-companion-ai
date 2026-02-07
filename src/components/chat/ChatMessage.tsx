@@ -137,15 +137,25 @@ const filterCitedSources = (circulars: CircularReference[], content: string): Ci
   // Normalized version without dots/dashes/spaces for code matching
   const normalizedContent = contentLower.replace(/[.\-\s]/g, '');
   
+  // Extract all HS code chapters mentioned in the content
+  const mentionedChapters = new Set<string>();
+  const hsCodePatterns = content.matchAll(/\b(\d{2})\d{2}[.\s]?\d{0,6}\b/g);
+  for (const m of hsCodePatterns) {
+    mentionedChapters.add(m[1]);
+  }
+  // Also from "Code SH : XXXX" patterns
+  const codeSHPatterns = content.matchAll(/Code\s*SH\s*[:\s]*\*?\*?\s*(\d{2})/gi);
+  for (const m of codeSHPatterns) {
+    mentionedChapters.add(m[1]);
+  }
+  
   const matched = circulars.filter((c) => {
     // 1. Articles: check if "Art. X" or "Article X" appears in text
     if (c.reference_type === "Article" || c.reference_type === "Preuve") {
-      // Extract article number from reference or title
       const articleMatch = c.reference_number?.match(/Art\.?\s*(\d+(?:\s*(?:bis|ter|quater))?(?:\s*-\s*\d+)?)/i)
         || c.title?.match(/Art(?:icle)?\.?\s*(\d+(?:\s*(?:bis|ter|quater))?(?:\s*-\s*\d+)?)/i);
       if (articleMatch) {
         const artNum = articleMatch[1].trim();
-        // Match "Art. 102", "Article 102", "article 102", "l'article 102", "المادة 102"
         const artPattern = new RegExp(`(?:Art\\.?\\s*|Article\\s+|l[''\u2019]article\\s+|المادة\\s+)${artNum}\\b`, 'i');
         if (artPattern.test(content)) return true;
       }
@@ -155,10 +165,8 @@ const filterCitedSources = (circulars: CircularReference[], content: string): Ci
     if (c.reference_type === "Ligne tarifaire" || c.reference_type === "Tarif") {
       const code = (c.reference_number || '').replace(/[.\-\s]/g, '');
       if (code.length >= 4) {
-        // Check full code or 6-digit prefix
         if (normalizedContent.includes(code)) return true;
         if (code.length >= 6 && normalizedContent.includes(code.substring(0, 6))) return true;
-        // Also check formatted version (e.g. "0403.20")
         if (code.length >= 6) {
           const formatted = code.substring(0, 4) + '.' + code.substring(4, 6);
           if (contentLower.includes(formatted)) return true;
@@ -168,13 +176,11 @@ const filterCitedSources = (circulars: CircularReference[], content: string): Ci
     
     // 3. Circulaires: check if the circulaire number or document name is mentioned
     if (c.reference_type === "Circulaire") {
-      // Check circulaire number patterns (e.g. "circulaire 1234", "circulaire n° 1234")
       const circNum = c.reference_number?.match(/(\d[\d\/\-]+\d)/);
       if (circNum) {
         const numPattern = new RegExp(`circulaire\\s+(?:n[°o]?\\.?\\s*)?${circNum[1].replace(/[\/\-]/g, '[/\\-]')}`, 'i');
         if (numPattern.test(content)) return true;
       }
-      // Check if referenced as "Code des Douanes" when the source IS the Code des Douanes
       if (c.reference_number?.toLowerCase().includes('codedesdouanes') || 
           c.pdf_title?.toLowerCase().includes('code des douanes') ||
           c.reference_number?.toLowerCase().includes('codedesDouanesimpotsindirects')) {
@@ -182,7 +188,20 @@ const filterCitedSources = (circulars: CircularReference[], content: string): Ci
       }
     }
     
-    // 4. Generic: check if reference_number digits/text appear in content
+    // 4. SH Code chapter PDFs: match against mentioned HS code chapters
+    const pdfTitle = (c.pdf_title || c.title || c.reference_number || '').toUpperCase();
+    const shCodeChapterMatch = pdfTitle.match(/SH[_\s]?CODE[_\s]?(\d{2})/i);
+    if (shCodeChapterMatch && mentionedChapters.has(shCodeChapterMatch[1])) {
+      return true;
+    }
+    // Also match "Chapitre XX" or "Chapter XX" in title
+    const chapterMatch = pdfTitle.match(/CHAPITRE?\s*(\d{1,2})/i);
+    if (chapterMatch) {
+      const chapNum = chapterMatch[1].padStart(2, '0');
+      if (mentionedChapters.has(chapNum)) return true;
+    }
+    
+    // 5. Generic: check if reference_number digits/text appear in content
     if (c.reference_number) {
       const ref = c.reference_number.replace(/[.\-\s]/g, '').toLowerCase();
       if (ref.length >= 6 && normalizedContent.includes(ref)) return true;
@@ -192,7 +211,6 @@ const filterCitedSources = (circulars: CircularReference[], content: string): Ci
   });
   
   // If articles are matched, also include the parent document (Circulaire) they come from
-  // e.g. if Art. 102 from "Code des Douanes" is matched, show the Code des Douanes circulaire too
   if (matched.length > 0) {
     const matchedPdfTitles = new Set(
       matched.filter(m => m.pdf_title).map(m => m.pdf_title!.toLowerCase())
@@ -200,7 +218,6 @@ const filterCitedSources = (circulars: CircularReference[], content: string): Ci
     
     for (const c of circulars) {
       if (matched.includes(c)) continue;
-      // Include parent circulaire if child articles from the same document are matched
       if (c.reference_type === "Circulaire" && c.pdf_title && matchedPdfTitles.has(c.pdf_title.toLowerCase())) {
         matched.push(c);
       }
