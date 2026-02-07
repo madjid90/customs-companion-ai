@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -22,6 +22,13 @@ export function PdfViewer({ url, pageNumber, onError }: PdfViewerProps) {
   const [currentPage, setCurrentPage] = useState<number>(pageNumber || 1);
   const [scale, setScale] = useState<number>(1.0);
   const [loading, setLoading] = useState(true);
+
+  // Sync currentPage when pageNumber prop changes (e.g., different article clicked)
+  useEffect(() => {
+    if (pageNumber && pageNumber > 0) {
+      setCurrentPage(pageNumber);
+    }
+  }, [pageNumber]);
 
   const onDocumentLoadSuccess = useCallback(
     ({ numPages: total }: { numPages: number }) => {
