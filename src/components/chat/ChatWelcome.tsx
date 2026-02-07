@@ -78,30 +78,30 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-[calc(100dvh-10rem)] md:min-h-[calc(100dvh-200px)] px-3 md:px-4 py-4 md:py-8 animate-fade-in">
+    <div className="flex flex-col items-center justify-center h-[calc(100dvh-10rem)] px-3 md:px-6 py-4 md:py-6 animate-fade-in">
       {/* Robot icon */}
-      <div className="relative mb-4 md:mb-6">
-        <div className="absolute inset-0 w-16 h-16 md:w-24 md:h-24 rounded-full bg-success/6 blur-2xl -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
+      <div className="relative mb-3 md:mb-5 flex-shrink-0">
+        <div className="absolute inset-0 w-16 h-16 md:w-20 md:h-20 rounded-full bg-success/6 blur-2xl -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
         <div className="relative animate-float">
           <BotAvatar size="lg" className="border-0 bg-transparent" />
         </div>
       </div>
 
       {/* Title block */}
-      <h2 className="text-lg md:text-2xl font-extrabold text-foreground mb-1 tracking-tight text-center">
+      <h2 className="text-lg md:text-2xl font-extrabold text-foreground mb-1 tracking-tight text-center flex-shrink-0">
         Votre assistant douanier
       </h2>
-      <p className="text-xs md:text-base text-muted-foreground mb-5 md:mb-8 text-center max-w-md leading-relaxed">
+      <p className="text-xs md:text-sm text-muted-foreground mb-4 md:mb-6 text-center max-w-md leading-relaxed flex-shrink-0">
         Classification SH, tarifs, réglementations — obtenez des réponses précises et sourcées.
       </p>
 
-      {/* Suggestion cards – no separators */}
-      <div className="w-full max-w-xl space-y-2 md:space-y-0 md:bg-card md:rounded-2xl md:border md:border-border md:shadow-md md:overflow-hidden">
+      {/* Suggestion cards */}
+      <div className="w-full max-w-xl space-y-2 md:space-y-0 md:bg-card md:rounded-2xl md:border md:border-border md:shadow-md md:overflow-hidden flex-shrink-0">
         {suggestedQuestions.map((item, i) => (
           <button
             key={`${item.question}-${i}`}
             className={cn(
-              "group flex items-center gap-3 md:gap-4 text-left w-full px-4 py-3 md:px-5 md:py-4 rounded-xl md:rounded-none bg-card md:bg-transparent border border-border/50 md:border-0 shadow-sm md:shadow-none hover:bg-muted/50 transition-all duration-200",
+              "group flex items-center gap-3 md:gap-4 text-left w-full px-4 py-2.5 md:px-5 md:py-3.5 rounded-xl md:rounded-none bg-card md:bg-transparent border border-border/50 md:border-0 shadow-sm md:shadow-none hover:bg-muted/50 transition-all duration-200",
               i < suggestedQuestions.length - 1 && "md:border-b md:border-border"
             )}
             onClick={() => onQuestionClick(item.question)}
@@ -120,7 +120,7 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
       {/* Refresh link */}
       <button
         onClick={refreshQuestions}
-        className="mt-4 md:mt-5 text-xs text-muted-foreground/60 hover:text-primary transition-colors flex items-center gap-1.5"
+        className="mt-3 md:mt-4 text-xs text-muted-foreground/60 hover:text-primary transition-colors flex items-center gap-1.5 flex-shrink-0"
       >
         <Sparkles className="h-3 w-3" />
         Autres suggestions
