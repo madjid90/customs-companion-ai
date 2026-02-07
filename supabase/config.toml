@@ -26,3 +26,21 @@ verify_jwt = false
 
 [functions.invite-agent]
 verify_jwt = false
+
+[functions.approve-access]
+verify_jwt = false
+
+[functions.generate-embeddings]
+verify_jwt = false
+
+[functions.refresh-embeddings]
+verify_jwt = false
+
+[functions.purge-cache]
+verify_jwt = false
+
+[functions.cleanup-old-uploads]
+verify_jwt = false
+
+[functions.rename-storage-files]
+verify_jwt = false

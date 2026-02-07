@@ -7,6 +7,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
+import { requireAuth } from "../_shared/auth-check.ts";
 import { callOpenAIWithRetry } from "../_shared/retry.ts";
 
 const BATCH_SIZE = 20;   // Documents par batch
@@ -271,6 +272,11 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return handleCorsPreFlight(req);
   }
+
+  // Require admin authentication
+  const corsHeaders = getCorsHeaders(req);
+  const { error: authError } = await requireAuth(req, corsHeaders, true);
+  if (authError) return authError;
 
   const startTime = Date.now();
 

@@ -48,32 +48,50 @@ export default function AdminAccessRequests() {
     fetchRequests();
   }, [fetchRequests]);
 
-  const handleAction = async (id: string, status: "approved" | "rejected") => {
+  const handleAction = async (id: string, action: "approved" | "rejected") => {
     setProcessingId(id);
 
-    const { error } = await supabase
-      .from("access_requests")
-      .update({
-        status,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq("id", id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
 
-    if (error) {
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/approve-access`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({ requestId: id, action }),
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast({
+          title: "Erreur",
+          description: data.error || "Impossible de traiter la demande",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: action === "approved" ? "Demande approuvée ✓" : "Demande rejetée",
+          description:
+            action === "approved"
+              ? data.smsSent
+                ? "Le manager a été créé et un SMS d'invitation a été envoyé."
+                : "Le manager a été créé. SMS non envoyé (vérifiez la config Twilio)."
+              : "La demande a été rejetée.",
+        });
+        fetchRequests();
+      }
+    } catch {
       toast({
         title: "Erreur",
-        description: "Impossible de traiter la demande",
+        description: "Erreur de connexion au serveur",
         variant: "destructive",
       });
-    } else {
-      toast({
-        title: status === "approved" ? "Demande approuvée" : "Demande rejetée",
-        description:
-          status === "approved"
-            ? "L'utilisateur pourra être invité comme manager."
-            : "La demande a été rejetée.",
-      });
-      fetchRequests();
     }
 
     setProcessingId(null);
@@ -130,7 +148,7 @@ export default function AdminAccessRequests() {
               {pendingRequests.map((req) => (
                 <div
                   key={req.id}
-                  className="flex items-center justify-between p-4 rounded-xl border border-border/50 bg-card hover:bg-accent/5 transition-colors"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-border/50 bg-card hover:bg-accent/5 transition-colors"
                 >
                   <div className="flex items-center gap-4 min-w-0">
                     <div className="h-10 w-10 rounded-full bg-warning/10 flex items-center justify-center flex-shrink-0">
@@ -153,7 +171,7 @@ export default function AdminAccessRequests() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="flex items-center gap-2 flex-shrink-0 ml-14 sm:ml-0">
                     <Button
                       size="sm"
                       className="rounded-lg gap-1.5"

@@ -9,6 +9,7 @@ interface PhoneUser {
   phone: string;
   display_name: string | null;
   role: PhoneRole;
+  max_invites: number | null;
 }
 
 interface PhoneAuthContextType {
@@ -37,7 +38,7 @@ export function PhoneAuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data, error } = await supabase
         .from("phone_users")
-        .select("id, phone, display_name, role")
+        .select("id, phone, display_name, role, max_invites")
         .eq("auth_user_id", authUserId)
         .maybeSingle();
 

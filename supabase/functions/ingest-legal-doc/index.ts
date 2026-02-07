@@ -20,6 +20,7 @@ import {
 import { callAnthropicWithRetry } from "../_shared/retry.ts";
 
 import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
+import { requireAuth } from "../_shared/auth-check.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
@@ -1525,6 +1526,10 @@ serve(async (req) => {
   }
 
   const corsHeaders = getCorsHeaders(req);
+
+  // Require admin authentication
+  const { error: authError } = await requireAuth(req, corsHeaders, true);
+  if (authError) return authError;
 
   const startTime = Date.now();
 

@@ -3,6 +3,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
+import { requireAuth } from "../_shared/auth-check.ts";
 
 interface PDFWithExtraction {
   id: string;
@@ -56,6 +57,10 @@ Deno.serve(async (req) => {
   }
 
   const corsHeaders = getCorsHeaders(req);
+
+  // Require admin authentication
+  const { error: authError } = await requireAuth(req, corsHeaders, true);
+  if (authError) return authError;
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
