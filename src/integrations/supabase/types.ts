@@ -1480,6 +1480,7 @@ export type Database = {
           has_db_evidence: boolean | null
           hit_count: number | null
           id: string
+          last_hit_at: string | null
           question_embedding: string | null
           question_hash: string
           question_text: string
@@ -1496,6 +1497,7 @@ export type Database = {
           has_db_evidence?: boolean | null
           hit_count?: number | null
           id?: string
+          last_hit_at?: string | null
           question_embedding?: string | null
           question_hash: string
           question_text: string
@@ -1512,6 +1514,7 @@ export type Database = {
           has_db_evidence?: boolean | null
           hit_count?: number | null
           id?: string
+          last_hit_at?: string | null
           question_embedding?: string | null
           question_hash?: string
           question_text?: string
@@ -2003,6 +2006,32 @@ export type Database = {
       }
     }
     Views: {
+      cache_dashboard: {
+        Row: {
+          avg_hits_used_entries: number | null
+          expired: number | null
+          health_status: string | null
+          never_used_entries: number | null
+          new_last_24h: number | null
+          size: string | null
+          total_entries: number | null
+          total_hits: number | null
+        }
+        Relationships: []
+      }
+      cache_stats: {
+        Row: {
+          avg_hits_per_entry: number | null
+          entries_last_24h: number | null
+          expired_entries: number | null
+          newest_entry: string | null
+          oldest_entry: string | null
+          total_entries: number | null
+          total_hits: number | null
+          total_size: string | null
+        }
+        Relationships: []
+      }
       documents_missing_embeddings: {
         Row: {
           count: number | null
@@ -2082,6 +2111,15 @@ export type Database = {
         }
         Returns: boolean
       }
+      increment_cache_hit: { Args: { cache_id: string }; Returns: undefined }
+      purge_expired_cache: {
+        Args: never
+        Returns: {
+          deleted_count: number
+          remaining_count: number
+        }[]
+      }
+      purge_lru_cache: { Args: { max_entries?: number }; Returns: number }
       search_all_semantic: {
         Args: {
           match_count?: number

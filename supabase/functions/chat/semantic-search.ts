@@ -168,7 +168,10 @@ export async function checkResponseCache(
       return { found: false };
     }
 
-    await supabase.rpc("update_cache_hit", { cache_id: data[0].id });
+    // Incrémenter le compteur de hits (async, non-bloquant) + prolonger TTL
+    supabase.rpc("increment_cache_hit", { cache_id: data[0].id })
+      .then(() => console.log(`[Cache] Hit incremented for ${data[0].id}`))
+      .catch((e: any) => console.warn("[Cache] Failed to increment hit:", e));
 
     return {
       found: true,
@@ -201,7 +204,8 @@ export async function saveToResponseCache(
   confidenceLevel: string,
   citedCirculars?: any[],
   hasDbEvidence?: boolean,
-  validationMessage?: string
+  validationMessage?: string,
+  ttlDays: number = 7
 ): Promise<void> {
   try {
     const encoder = new TextEncoder();
@@ -211,6 +215,7 @@ export async function saveToResponseCache(
     const questionHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 
     const embeddingString = `[${questionEmbedding.join(",")}]`;
+    const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
     
     await supabase.from("response_cache").upsert(
       {
@@ -223,10 +228,14 @@ export async function saveToResponseCache(
         cited_circulars: citedCirculars || [],
         has_db_evidence: hasDbEvidence ?? true,
         validation_message: validationMessage || null,
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        expires_at: expiresAt.toISOString(),
+        hit_count: 0,
+        last_hit_at: new Date().toISOString(),
       },
       { onConflict: "question_hash" }
     );
+
+    console.log(`[Cache] Response cached, expires: ${expiresAt.toISOString()}`);
   } catch (error) {
     console.error("Failed to save to cache:", error);
   }
