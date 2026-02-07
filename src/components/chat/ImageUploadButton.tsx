@@ -49,7 +49,7 @@ export function ImageUploadButton({
     const files = Array.from(e.target.files || []);
     const processed: UploadedFile[] = files.map((file) => ({
       file,
-      preview: file.name,
+      preview: URL.createObjectURL(file),
       type: "document" as const,
     }));
     onFilesSelected(processed);

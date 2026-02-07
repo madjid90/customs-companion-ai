@@ -738,6 +738,12 @@ export function ChatMessage({
                     className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
                   />
                 </div>
+              ) : previewAttachment.preview && (previewAttachment.preview.startsWith("blob:") || previewAttachment.preview.startsWith("data:")) ? (
+                <iframe
+                  src={previewAttachment.preview}
+                  className="w-full h-full min-h-[350px] md:min-h-[500px] rounded-lg border bg-white"
+                  title={previewAttachment.name}
+                />
               ) : (
                 <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
                   <div className="w-24 h-24 rounded-2xl bg-primary/10 flex items-center justify-center">
@@ -749,19 +755,6 @@ export function ChatMessage({
                       {(previewAttachment.size / 1024).toFixed(1)} Ko
                     </p>
                   </div>
-                  {previewAttachment.preview && previewAttachment.preview.startsWith("data:application/pdf") && (
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        const link = document.createElement('a');
-                        link.href = previewAttachment.preview;
-                        link.download = previewAttachment.name;
-                        link.click();
-                      }}
-                    >
-                      Télécharger
-                    </Button>
-                  )}
                 </div>
               )}
             </div>
