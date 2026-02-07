@@ -292,7 +292,7 @@ export function ChatHistory({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         className={cn(
-          "fixed left-0 top-16 h-[calc(100vh-4rem)] bg-card/90 backdrop-blur-xl border-r border-border/50 z-30 flex flex-col",
+          "fixed left-0 top-16 h-[calc(100vh-4rem)] bg-white/95 backdrop-blur-xl z-30 flex flex-col",
           isOpen ? "w-[85vw] max-w-[320px] md:w-72" : "w-0 overflow-hidden",
           !isSwiping && "transition-all duration-300 ease-in-out"
         )}
@@ -301,7 +301,7 @@ export function ChatHistory({
           opacity: isOpen && swipeOffset > 0 ? Math.max(0.3, 1 - swipeOffset / 320) : undefined,
         }}
       >
-        <div className="flex items-center justify-between p-3 border-b flex-shrink-0">
+        <div className="flex items-center justify-between p-3 border-b border-border/30 flex-shrink-0">
           <div className="flex items-center gap-2">
             <History className="h-5 w-5 text-primary/70" />
             <h2 className="font-semibold text-sm">Historique</h2>

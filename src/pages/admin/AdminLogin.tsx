@@ -104,13 +104,13 @@ export default function AdminLogin() {
 
   return (
     <div className="min-h-screen flex items-center justify-center page-gradient p-4">
-      <Card className="w-full max-w-md animate-slide-up card-elevated border-0">
+      <Card className="w-full max-w-md animate-slide-up card-elevated border border-border/30">
         <CardHeader className="text-center space-y-4">
           <div className="mx-auto">
             <Logo size="lg" />
           </div>
           <div>
-            <CardTitle className="text-2xl font-serif-display">
+            <CardTitle className="text-2xl font-display font-extrabold tracking-tight">
               {mode === "login" ? "Administration" : "Créer un compte Admin"}
             </CardTitle>
             <CardDescription>

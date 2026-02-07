@@ -20,8 +20,8 @@
     --gold: 45 65% 52%;
     --gold-foreground: 262 40% 20%;
 
-    /* Background – soft lavender gradient base */
-    --background: 255 30% 96%;
+    /* Background – saturated lavender gradient base */
+    --background: 258 40% 95%;
     --foreground: 240 20% 16%;
 
     /* Cards – pure white with glassmorphic depth */
@@ -49,9 +49,9 @@
     --destructive: 0 72% 56%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Borders & Inputs – soft lavender */
-    --border: 255 18% 90%;
-    --input: 255 18% 90%;
+    /* Borders & Inputs – very subtle, almost invisible */
+    --border: 260 12% 92%;
+    --input: 260 12% 92%;
     --ring: 262 55% 52%;
 
     --radius: 0.875rem;
@@ -75,24 +75,25 @@
     --chat-input-bg: 0 0% 100%;
     --chat-typing-dot: 262 55% 52%;
 
-    /* Gradients – Prodify-inspired lavender gradients */
+    /* Gradients – Prodify-inspired saturated lavender gradients */
     --gradient-hero: linear-gradient(145deg, hsl(262 55% 52%), hsl(280 50% 60%));
     --gradient-accent: linear-gradient(135deg, hsl(170 65% 50%), hsl(175 60% 55%));
     --gradient-gold: linear-gradient(135deg, hsl(45 65% 52%), hsl(45 75% 60%));
     --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(255 30% 97%));
-    --gradient-surface: radial-gradient(ellipse at top, hsl(260 40% 95%), hsl(250 30% 92%));
-    --gradient-page: linear-gradient(145deg, hsl(260 40% 90%), hsl(220 50% 92%), hsl(260 35% 94%));
+    --gradient-surface: radial-gradient(ellipse at top, hsl(260 50% 93%), hsl(250 40% 90%));
+    --gradient-page: linear-gradient(145deg, hsl(260 55% 88%), hsl(220 55% 90%), hsl(260 45% 92%));
     --gradient-violet: linear-gradient(135deg, hsl(262 55% 52%), hsl(280 50% 58%));
+    --gradient-teal: linear-gradient(135deg, hsl(170 65% 45%), hsl(160 55% 55%));
 
-    /* Shadows – Prodify-inspired ultra-soft floating shadows */
-    --shadow-xs: 0 1px 2px 0 hsl(262 30% 50% / 0.03);
-    --shadow-sm: 0 1px 3px 0 hsl(262 30% 50% / 0.04), 0 1px 2px -1px hsl(262 30% 50% / 0.04);
-    --shadow-md: 0 4px 14px -2px hsl(262 30% 50% / 0.06), 0 2px 6px -2px hsl(262 30% 50% / 0.04);
-    --shadow-lg: 0 12px 32px -6px hsl(262 30% 50% / 0.08), 0 4px 12px -4px hsl(262 30% 50% / 0.04);
-    --shadow-xl: 0 24px 48px -12px hsl(262 30% 50% / 0.12), 0 8px 16px -6px hsl(262 30% 50% / 0.05);
-    --shadow-accent: 0 4px 14px 0 hsl(262 55% 52% / 0.25);
+    /* Shadows – ultra-soft diffuse floating shadows */
+    --shadow-xs: 0 1px 2px 0 hsl(260 20% 50% / 0.02);
+    --shadow-sm: 0 1px 4px 0 hsl(260 20% 50% / 0.03), 0 1px 2px -1px hsl(260 20% 50% / 0.03);
+    --shadow-md: 0 4px 20px -4px hsl(260 20% 50% / 0.05), 0 2px 8px -3px hsl(260 20% 50% / 0.03);
+    --shadow-lg: 0 12px 36px -8px hsl(260 20% 50% / 0.06), 0 4px 16px -6px hsl(260 20% 50% / 0.03);
+    --shadow-xl: 0 24px 56px -16px hsl(260 20% 50% / 0.08), 0 8px 20px -8px hsl(260 20% 50% / 0.04);
+    --shadow-accent: 0 4px 16px 0 hsl(262 55% 52% / 0.2);
     --shadow-gold: 0 4px 14px 0 hsl(45 65% 52% / 0.3);
-    --shadow-card-hover: 0 16px 36px -8px hsl(262 30% 50% / 0.12), 0 6px 12px -4px hsl(262 30% 50% / 0.06);
+    --shadow-card-hover: 0 16px 40px -10px hsl(260 20% 50% / 0.08), 0 6px 16px -6px hsl(260 20% 50% / 0.04);
   }
 
   .dark {
@@ -221,18 +222,18 @@
 
   /* Glassmorphism – Prodify-style frosted glass */
   .glass-effect {
-    @apply backdrop-blur-xl bg-white/70 border border-white/30;
+    @apply backdrop-blur-xl bg-white/75 border border-white/40;
     box-shadow: var(--shadow-sm);
   }
 
   .glass-effect-strong {
-    @apply backdrop-blur-2xl bg-white/85 border border-white/40;
+    @apply backdrop-blur-2xl bg-white/90 border border-white/50;
     box-shadow: var(--shadow-md);
   }
 
   .glass-sidebar {
-    @apply backdrop-blur-2xl bg-white/80 border-r border-white/30;
-    box-shadow: 4px 0 24px -4px hsl(262 30% 50% / 0.06);
+    @apply bg-white/95 backdrop-blur-xl;
+    /* No border-r – Prodify style: clean edge, no visible separator */
   }
 
   /* Badge chip style – Prodify status badges */
@@ -278,6 +279,11 @@
   .text-gradient-violet {
     @apply bg-clip-text text-transparent;
     background-image: var(--gradient-violet);
+  }
+
+  .text-gradient-teal {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-teal);
   }
 
   /* Display serif font utility */
