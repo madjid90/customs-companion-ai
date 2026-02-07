@@ -29,7 +29,7 @@ const menuItems: MenuItem[] = [
   { type: "link", icon: Package, label: "Codes SH", href: "/admin/hs-codes" },
   { type: "link", icon: FileText, label: "Documents", href: "/admin/documents" },
   { type: "separator" },
-  { type: "link", icon: MessageSquare, label: "Chat public", href: "/chat" },
+  { type: "link", icon: MessageSquare, label: "Chat public", href: "/app/chat" },
 ];
 
 export function AdminSidebar() {

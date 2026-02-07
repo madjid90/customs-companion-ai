@@ -1,14 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Lock, Eye, EyeOff, AlertCircle, Mail, UserPlus, LogIn } from "lucide-react";
+import { Lock, Eye, EyeOff, AlertCircle, Mail, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Logo } from "@/components/ui/Logo";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
 
 export default function AdminLogin() {
   const [email, setEmail] = useState("");
@@ -16,11 +14,9 @@ export default function AdminLogin() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [mode, setMode] = useState<"login" | "signup">("login");
   const navigate = useNavigate();
   const location = useLocation();
   const { user, isAdmin, signIn, isLoading: authLoading } = useAuth();
-  const { toast } = useToast();
 
   // Redirect if already authenticated and admin
   useEffect(() => {
@@ -35,47 +31,6 @@ export default function AdminLogin() {
     setError("");
     setIsLoading(true);
 
-    if (mode === "signup") {
-      // Sign up new user
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: window.location.origin,
-        },
-      });
-
-      if (signUpError) {
-        setError(signUpError.message);
-        setIsLoading(false);
-        return;
-      }
-
-      if (data.user) {
-        // Add admin role to user_roles table
-        const { error: roleError } = await supabase
-          .from("user_roles")
-          .insert({ user_id: data.user.id, role: "admin" });
-
-        if (roleError) {
-          console.error("Error adding admin role:", roleError);
-          setError("Compte créé mais erreur lors de l'attribution du rôle admin.");
-          setIsLoading(false);
-          return;
-        }
-
-        toast({
-          title: "Compte admin créé !",
-          description: "Vous pouvez maintenant vous connecter.",
-        });
-        setMode("login");
-        setPassword("");
-      }
-      setIsLoading(false);
-      return;
-    }
-
-    // Login
     const { error } = await signIn(email, password);
 
     if (error) {
@@ -111,12 +66,10 @@ export default function AdminLogin() {
           </div>
           <div>
             <CardTitle className="text-2xl font-display font-extrabold tracking-tight">
-              {mode === "login" ? "Administration" : "Créer un compte Admin"}
+              Administration
             </CardTitle>
             <CardDescription>
-              {mode === "login"
-                ? "Connectez-vous pour accéder au panneau d'administration"
-                : "Créez votre premier compte administrateur"}
+              Connectez-vous pour accéder au panneau d'administration
             </CardDescription>
           </div>
         </CardHeader>
@@ -148,9 +101,8 @@ export default function AdminLogin() {
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder={mode === "signup" ? "Minimum 6 caractères" : "Entrez votre mot de passe"}
+                  placeholder="Entrez votre mot de passe"
                   className="pl-10 pr-10 rounded-xl"
-                  minLength={mode === "signup" ? 6 : undefined}
                   required
                 />
                 <Button
@@ -182,39 +134,15 @@ export default function AdminLogin() {
               disabled={isLoading || !email || !password}
             >
               {isLoading ? (
-                mode === "login" ? "Connexion..." : "Création..."
+                "Connexion..."
               ) : (
                 <>
-                  {mode === "login" ? (
-                    <>
-                      <LogIn className="mr-2 h-4 w-4" />
-                      Se connecter
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="mr-2 h-4 w-4" />
-                      Créer le compte admin
-                    </>
-                  )}
+                  <LogIn className="mr-2 h-4 w-4" />
+                  Se connecter
                 </>
               )}
             </Button>
           </form>
-
-          <div className="mt-6 text-center">
-            <Button
-              variant="link"
-              className="text-muted-foreground hover:text-primary"
-              onClick={() => {
-                setMode(mode === "login" ? "signup" : "login");
-                setError("");
-              }}
-            >
-              {mode === "login"
-                ? "Créer un compte admin"
-                : "Déjà un compte ? Se connecter"}
-            </Button>
-          </div>
         </CardContent>
       </Card>
     </div>

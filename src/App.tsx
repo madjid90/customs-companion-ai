@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -22,13 +22,19 @@ import RequestAccess from "@/pages/RequestAccess";
 import Chat from "@/pages/Chat";
 import ManagerUsers from "@/pages/manager/ManagerUsers";
 
-// Admin pages (email auth - legacy)
-import AdminLogin from "@/pages/admin/AdminLogin";
-import AdminHSCodes from "@/pages/admin/AdminHSCodes";
-import AdminUpload from "@/pages/admin/AdminUpload";
-import AdminDocuments from "@/pages/admin/AdminDocuments";
-import AdminAccessRequests from "@/pages/admin/AdminAccessRequests";
+// Admin pages — lazy loaded
+const AdminLogin = lazy(() => import("@/pages/admin/AdminLogin"));
+const AdminHSCodes = lazy(() => import("@/pages/admin/AdminHSCodes"));
+const AdminUpload = lazy(() => import("@/pages/admin/AdminUpload"));
+const AdminDocuments = lazy(() => import("@/pages/admin/AdminDocuments"));
+const AdminAccessRequests = lazy(() => import("@/pages/admin/AdminAccessRequests"));
 import NotFound from "@/pages/NotFound";
+
+const AdminFallback = () => (
+  <div className="min-h-screen flex items-center justify-center page-gradient">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+  </div>
+);
 
 const App = () => {
   const [queryClient] = useState(() => new QueryClient());
@@ -71,7 +77,11 @@ const App = () => {
                     </Route>
 
                     {/* Admin routes (email auth - legacy) */}
-                    <Route path="/admin/login" element={<AdminLogin />} />
+                    <Route path="/admin/login" element={
+                      <Suspense fallback={<AdminFallback />}>
+                        <AdminLogin />
+                      </Suspense>
+                    } />
                     <Route
                       path="/admin"
                       element={
@@ -81,10 +91,18 @@ const App = () => {
                       }
                     >
                       <Route index element={<Navigate to="/admin/upload" replace />} />
-                      <Route path="upload" element={<AdminUpload />} />
-                      <Route path="hs-codes" element={<AdminHSCodes />} />
-                      <Route path="documents" element={<AdminDocuments />} />
-                      <Route path="access-requests" element={<AdminAccessRequests />} />
+                      <Route path="upload" element={
+                        <Suspense fallback={<AdminFallback />}><AdminUpload /></Suspense>
+                      } />
+                      <Route path="hs-codes" element={
+                        <Suspense fallback={<AdminFallback />}><AdminHSCodes /></Suspense>
+                      } />
+                      <Route path="documents" element={
+                        <Suspense fallback={<AdminFallback />}><AdminDocuments /></Suspense>
+                      } />
+                      <Route path="access-requests" element={
+                        <Suspense fallback={<AdminFallback />}><AdminAccessRequests /></Suspense>
+                      } />
                     </Route>
 
                     {/* Legacy redirect */}
