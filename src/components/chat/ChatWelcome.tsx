@@ -92,7 +92,7 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
             className="h-12 w-12 md:h-14 md:w-14"
           >
             <defs>
-              <linearGradient id="bot-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <linearGradient id="bot-grad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
                 <stop offset="0%" stopColor="hsl(217, 91%, 55%)" />
                 <stop offset="50%" stopColor="hsl(180, 70%, 45%)" />
                 <stop offset="100%" stopColor="hsl(145, 65%, 50%)" />
