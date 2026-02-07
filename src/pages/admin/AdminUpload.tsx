@@ -406,6 +406,21 @@ export default function AdminUpload() {
       throw new Error(firstResult.error || "Erreur lors de l'ingestion");
     }
 
+    // Handle already-complete documents (all pages already processed in a previous run)
+    if (firstResult.already_complete) {
+      console.log(`[LegalIngestion] Document already fully ingested (${firstResult.total_pages} pages)`);
+      updateFileStatus(fileId, {
+        status: "success",
+        progress: 100,
+        error: undefined,
+      });
+      toast({
+        title: "✅ Document déjà traité",
+        description: `Ce document (${firstResult.total_pages} pages) a déjà été entièrement ingéré.`,
+      });
+      return;
+    }
+
     sourceId = firstResult.source_id || sourceId;
     totalPages = firstResult.total_pages || BATCH_SIZE;
     processedPages += firstResult.pages_processed || BATCH_SIZE;
