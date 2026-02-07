@@ -80,8 +80,8 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
       {/* Robot icon */}
       <div className="relative mb-6">
         <div className="absolute inset-0 w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-primary/8 blur-xl -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
-        <div className="relative w-14 h-14 md:w-16 md:h-16 flex items-center justify-center animate-float">
-          <Bot className="h-8 w-8 md:h-9 md:w-9 text-primary" strokeWidth={1.5} />
+        <div className="relative w-20 h-20 md:w-24 md:h-24 flex items-center justify-center animate-float">
+          <Bot className="h-12 w-12 md:h-14 md:w-14 text-primary" strokeWidth={1.5} />
         </div>
       </div>
 
