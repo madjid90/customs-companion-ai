@@ -100,6 +100,40 @@ async function withTimeout<T>(
   return Promise.race([promise, timeout]);
 }
 
+/**
+ * Nettoie les URLs inventées par le LLM dans la réponse (défense en profondeur)
+ * Appliqué côté serveur AVANT envoi au client
+ */
+function stripUrlsFromResponse(text: string): string {
+  if (!text) return text;
+  
+  return text
+    // 1. Liens markdown [texte](url)
+    .replace(/\[([^\]]+)\]\(https?:\/\/[^)]+\)/g, '$1')
+    
+    // 2. URLs Supabase brutes (storage, API, etc.)
+    .replace(/https?:\/\/[a-z0-9-]+\.supabase\.co\/[^\s"'<>\])}]+/gi, '[source validée ci-dessous]')
+    
+    // 3. URLs génériques brutes dans le texte (pas dans les balises de code)
+    .replace(/(?<![`])https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b[-a-zA-Z0-9()@:%_+.~#?&/=]*(?![`])/gi, (match) => {
+      // Autoriser certains domaines officiels
+      const allowedDomains = ['douane.gov.ma', 'adii.gov.ma', 'ompic.ma'];
+      const isAllowed = allowedDomains.some(domain => match.includes(domain));
+      return isAllowed ? match : '[voir sources ci-dessous]';
+    })
+    
+    // 4. Section "Sources" générée par l'IA avec des liens
+    .replace(/📎\s*\*?\*?Sources?\*?\*?:?\s*\n?(?:[-•*]\s*\[[^\]]+\]\([^)]+\)\s*\n?)+/gi, '')
+    .replace(/\*?\*?Sources?\s*:?\*?\*?\s*\n?(?:[-•*]\s*\[[^\]]+\]\([^)]+\)\s*\n?)+/gi, '')
+    
+    // 5. Liens HTML (au cas où)
+    .replace(/<a[^>]*href=["'][^"']*["'][^>]*>([^<]*)<\/a>/gi, '$1')
+    
+    // 6. Nettoyer les doubles espaces et lignes vides multiples
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 // =============================================================================
 // HANDLER PRINCIPAL
 // =============================================================================
@@ -197,9 +231,11 @@ serve(async (req) => {
         const cachedResponse = await checkResponseCache(supabase, queryEmbedding, 0.92);
         if (cachedResponse.found && cachedResponse.response) {
           console.log("Cache hit! Similarity:", cachedResponse.response.similarity);
+          // Nettoyer la réponse en cache (peut contenir d'anciennes URLs)
+          const cleanedCachedText = stripUrlsFromResponse(cachedResponse.response.text);
           return new Response(
             JSON.stringify({
-              response: cachedResponse.response.text,
+              response: cleanedCachedText,
               confidence: cachedResponse.response.confidence,
               cached: true,
               metadata: { cached: true, similarity: cachedResponse.response.similarity },
@@ -1033,7 +1069,9 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
 
     const aiData = await aiResponse.json();
     const responseTime = Date.now() - startTime;
-    const responseText = aiData.choices?.[0]?.message?.content || "Je n'ai pas pu générer de réponse.";
+    const rawResponseText = aiData.choices?.[0]?.message?.content || "Je n'ai pas pu générer de réponse.";
+    // Strip URLs from response (server-side defense in depth)
+    const responseText = stripUrlsFromResponse(rawResponseText);
 
     // Determine confidence
     const confidence = determineConfidence(responseText, context);
