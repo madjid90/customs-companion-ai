@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Download, AlertCircle, ExternalLink, FileText, RefreshCw } from "lucide-react";
@@ -30,6 +30,12 @@ export function DocumentPreviewDialog({
   const [hasError, setHasError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const isMobile = useIsMobile();
+
+  // Reset error state when URL or page changes
+  useEffect(() => {
+    setHasError(false);
+    setRetryKey(k => k + 1);
+  }, [url, pageNumber]);
 
   const hasValidUrl = url && url.length > 0 && (url.startsWith('http://') || url.startsWith('https://'));
 
