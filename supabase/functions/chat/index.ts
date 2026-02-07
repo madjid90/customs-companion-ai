@@ -1219,6 +1219,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       download_url: string | null;
       pdf_title: string | null;
       validated: boolean;
+      page_number?: number;
     }> = [];
     
     // Convert validated sources to cited circulars format
@@ -1247,6 +1248,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         download_url: validSource.download_url,
         pdf_title: validSource.title,
         validated: true,
+        page_number: validSource.page_number,
       });
     }
 
