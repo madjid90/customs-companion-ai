@@ -1728,6 +1728,23 @@ serve(async (req) => {
       body.country_code || "MA"
     );
 
+    // 8. Update total_chunks counter on legal_sources
+    try {
+      const { count: actualChunkCount } = await supabase
+        .from("legal_chunks")
+        .select("id", { count: "exact", head: true })
+        .eq("source_id", sourceId);
+      
+      await supabase
+        .from("legal_sources")
+        .update({ total_chunks: actualChunkCount || chunksCreated })
+        .eq("id", sourceId);
+      
+      console.log(`[ingest-legal-doc] Updated total_chunks to ${actualChunkCount || chunksCreated} for source ${sourceId}`);
+    } catch (updateErr) {
+      console.warn(`[ingest-legal-doc] Failed to update total_chunks: ${updateErr}`);
+    }
+
     const duration = Date.now() - startTime;
     console.log(`[ingest-legal-doc] Completed in ${duration}ms`);
 
