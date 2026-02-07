@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
-import { Bot, User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle, ExternalLink, Eye, Image, Scale } from "lucide-react";
+import { User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle, ExternalLink, Eye, Image, Scale } from "lucide-react";
+import { BotAvatar } from "./BotAvatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -359,9 +360,7 @@ export function ChatMessage({
     >
       {/* Bot avatar */}
       {!isUser && (
-        <div className="flex-shrink-0 w-7 h-7 md:w-8 md:h-8 rounded-lg bg-primary/15 flex items-center justify-center hidden md:flex border border-primary/20">
-          <Bot className="h-3.5 w-3.5 md:h-4 md:w-4 text-primary" />
-        </div>
+        <BotAvatar size="sm" className="hidden md:flex" />
       )}
 
       <div
@@ -697,9 +696,7 @@ export function ChatMessage({
 export function ChatTypingIndicator() {
   return (
     <div className="flex gap-2.5 md:gap-3 animate-fade-in px-1 md:px-0">
-      <div className="flex-shrink-0 w-7 h-7 md:w-8 md:h-8 rounded-lg bg-primary/15 flex items-center justify-center hidden md:flex border border-primary/20">
-        <Bot className="h-3.5 w-3.5 md:h-4 md:w-4 text-primary" />
-      </div>
+      <BotAvatar size="sm" className="hidden md:flex" />
       <div className="bg-card border border-border/40 text-foreground rounded-2xl px-4 py-3 shadow-sm">
         <div className="flex items-center gap-2.5">
           <div className="typing-indicator flex gap-1">
