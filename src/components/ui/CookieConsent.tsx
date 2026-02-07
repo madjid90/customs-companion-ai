@@ -56,13 +56,7 @@ export function CookieConsent() {
               Nous respectons votre vie privée
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Nous utilisons des cookies essentiels pour le fonctionnement du site. Aucun cookie publicitaire n'est utilisé.{" "}
-              <a
-                href="#"
-                className="underline underline-offset-2 hover:text-foreground transition-colors"
-              >
-                En savoir plus
-              </a>
+              Nous utilisons des cookies essentiels pour le fonctionnement du site. Aucun cookie publicitaire n'est utilisé.
             </p>
 
             <div className="flex items-center gap-3 mt-4">

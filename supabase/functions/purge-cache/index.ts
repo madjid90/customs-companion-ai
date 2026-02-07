@@ -6,6 +6,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getCorsHeaders, handleCorsPreFlight, errorResponse, successResponse } from "../_shared/cors.ts";
+import { requireAuth } from "../_shared/auth-check.ts";
 
 interface PurgeResult {
   expired_deleted: number;
@@ -19,6 +20,11 @@ serve(async (req) => {
   if (req.method === "OPTIONS") {
     return handleCorsPreFlight(req);
   }
+
+  // Require admin authentication
+  const corsHeaders = getCorsHeaders(req);
+  const { error: authError } = await requireAuth(req, corsHeaders, true);
+  if (authError) return authError;
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");

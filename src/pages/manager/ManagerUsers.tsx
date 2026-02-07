@@ -62,27 +62,36 @@ export default function ManagerUsers() {
     setIsLoading(false);
   }, []);
 
-  // Fetch conversation counts per user
+  // Fetch conversation counts per user (optimized - only counts)
   const fetchConversationCounts = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("conversations")
-      .select("user_id");
+    // Get all auth_user_ids we care about
+    const userIds = users
+      .filter((u) => u.auth_user_id)
+      .map((u) => u.auth_user_id!);
+    
+    if (userIds.length === 0) return;
 
-    if (!error && data) {
-      const counts: Record<string, number> = {};
-      data.forEach((conv: { user_id: string | null }) => {
-        if (conv.user_id) {
-          counts[conv.user_id] = (counts[conv.user_id] || 0) + 1;
-        }
-      });
-      setConversations(counts);
+    // Fetch counts per user_id efficiently
+    const counts: Record<string, number> = {};
+    for (const uid of userIds) {
+      const { count } = await supabase
+        .from("conversations")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", uid);
+      if (count) counts[uid] = count;
     }
-  }, []);
+    setConversations(counts);
+  }, [users]);
 
   useEffect(() => {
     fetchUsers();
-    fetchConversationCounts();
-  }, [fetchUsers, fetchConversationCounts]);
+  }, [fetchUsers]);
+
+  useEffect(() => {
+    if (users.length > 0) {
+      fetchConversationCounts();
+    }
+  }, [users, fetchConversationCounts]);
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,6 +188,7 @@ export default function ManagerUsers() {
   const agents = users.filter(
     (u) => u.role === "agent" && u.id !== phoneUser?.id
   );
+  const maxInvites = phoneUser?.max_invites ?? 2;
   const agentCount = agents.length;
 
   return (
@@ -271,12 +281,12 @@ export default function ManagerUsers() {
 
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted-foreground">
-                {agentCount}/2 agents invités
+                {agentCount}/{maxInvites} agents invités
               </p>
               <Button
                 type="submit"
                 className="cta-gradient rounded-xl"
-                disabled={isInviting || !invitePhoneLocal.trim() || agentCount >= 2}
+                disabled={isInviting || !invitePhoneLocal.trim() || agentCount >= maxInvites}
               >
                 {isInviting ? (
                   <>

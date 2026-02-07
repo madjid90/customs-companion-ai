@@ -12,6 +12,7 @@ import {
 import { validateGenerateEmbeddingsRequest } from "../_shared/validation.ts";
 import { callOpenAIWithRetry } from "../_shared/retry.ts";
 import { createLogger } from "../_shared/logger.ts";
+import { requireAuth } from "../_shared/auth-check.ts";
 
 // Generate embedding using OpenAI API with retry
 async function generateEmbedding(text: string, apiKey: string): Promise<number[]> {
@@ -65,6 +66,11 @@ serve(async (req) => {
   if (req.method === "OPTIONS") {
     return handleCorsPreFlight(req);
   }
+
+  // Require admin authentication
+  const corsHeaders = getCorsHeaders(req);
+  const { error: authError } = await requireAuth(req, corsHeaders, true);
+  if (authError) return authError;
 
   // Rate limiting distribué (10 requests per minute for batch processing)
   const clientId = getClientId(req);

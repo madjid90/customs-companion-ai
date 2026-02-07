@@ -32,7 +32,7 @@ const menuItems: MenuItem[] = [
   { type: "link", icon: MessageSquare, label: "Chat public", href: "/app/chat" },
 ];
 
-export function AdminSidebar() {
+export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut } = useAuth();
@@ -87,6 +87,7 @@ export function AdminSidebar() {
               <Link
                 key={item.href}
                 to={item.href}
+                onClick={onNavigate}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
                   isActive
