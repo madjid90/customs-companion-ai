@@ -47,6 +47,7 @@ export default function AdminUpload() {
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null);
   const [selectedDocType, setSelectedDocType] = useState<DocumentType>("tarif");
+  const [isRetryingAll, setIsRetryingAll] = useState(false);
   const { toast } = useToast();
   const processingRef = useRef(false);
   
@@ -988,6 +989,46 @@ export default function AdminUpload() {
     }
   };
 
+  // Relancer tous les fichiers en erreur séquentiellement
+  const retryAllErrors = async () => {
+    const errorFiles = files.filter(f => f.status === "error");
+    if (errorFiles.length === 0) return;
+
+    setIsRetryingAll(true);
+    toast({
+      title: "🔄 Relance globale",
+      description: `${errorFiles.length} fichier(s) en erreur à traiter...`,
+    });
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const file of errorFiles) {
+      try {
+        if (file.pdfId && file.filePath) {
+          // pdfId déjà connu → relancer directement
+          await retryAnalysis(file);
+        } else {
+          // pdfId inconnu → récupérer depuis la DB puis relancer
+          await recoverAndRetry(file);
+        }
+        successCount++;
+      } catch (err) {
+        console.error(`Retry failed for ${file.name}:`, err);
+        failCount++;
+      }
+      // Pause entre chaque fichier pour éviter la surcharge
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
+    setIsRetryingAll(false);
+    toast({
+      title: successCount > 0 ? "✅ Relance terminée" : "❌ Échec",
+      description: `${successCount} réussi(s), ${failCount} échoué(s) sur ${errorFiles.length}`,
+      variant: failCount === errorFiles.length ? "destructive" : "default",
+    });
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
     if (!selectedFiles) return;
@@ -1249,23 +1290,43 @@ export default function AdminUpload() {
                   : `${files.filter((f) => f.status === "success").length}/${files.length} traités`}
               </CardDescription>
             </div>
-            {files.length > 0 && !isProcessing && (
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => {
-                  clearAll();
-                  toast({
-                    title: "Historique vidé",
-                    description: "La liste des uploads a été effacée.",
-                  });
-                }}
-                className="text-muted-foreground hover:text-destructive"
-              >
-                <Trash2 className="h-4 w-4 mr-1" />
-                Vider
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {/* Relancer tout - visible quand il y a des fichiers en erreur */}
+              {files.some(f => f.status === "error") && !isProcessing && !isRetryingAll && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={retryAllErrors}
+                  className="gap-1 text-accent hover:text-accent"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Relancer tout ({files.filter(f => f.status === "error").length})
+                </Button>
+              )}
+              {isRetryingAll && (
+                <Button variant="outline" size="sm" disabled className="gap-1">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Relance en cours...
+                </Button>
+              )}
+              {files.length > 0 && !isProcessing && !isRetryingAll && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => {
+                    clearAll();
+                    toast({
+                      title: "Historique vidé",
+                      description: "La liste des uploads a été effacée.",
+                    });
+                  }}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Vider
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {files.length === 0 ? (
