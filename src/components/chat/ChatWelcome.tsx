@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ShieldCheck, Sparkles, FileImage, Search, Scale, Package, FileCheck, Globe, Truck, ShieldAlert, Calculator, BookOpen, ArrowRight, Users, Zap, CheckCircle2 } from "lucide-react";
+import { Bot, Sparkles, FileImage, Search, Scale, Package, FileCheck, Globe, Truck, ShieldAlert, Calculator, BookOpen, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface ChatWelcomeProps {
@@ -62,11 +62,6 @@ const getRandomQuestions = (count: number) => {
   return shuffled.slice(0, count);
 };
 
-const stats = [
-  { icon: Users, value: "10K+", label: "Questions traitées" },
-  { icon: Zap, value: "< 3s", label: "Temps de réponse" },
-  { icon: CheckCircle2, value: "97%", label: "Satisfaction" },
-];
 
 export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
   const [suggestedQuestions, setSuggestedQuestions] = useState(() => getRandomQuestions(4));
@@ -87,8 +82,8 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
       {/* Logo Icon with glow */}
       <div className="relative inline-flex items-center justify-center mb-4 md:mb-6">
         <div className="absolute inset-0 w-20 h-20 md:w-28 md:h-28 rounded-full bg-primary/10 blur-2xl animate-pulse-slow"></div>
-        <div className="relative w-16 h-16 md:w-20 md:h-20 rounded-2xl blue-gradient flex items-center justify-center shadow-accent">
-          <ShieldCheck className="h-8 w-8 md:h-10 md:w-10 text-white" strokeWidth={2} />
+        <div className="relative w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-primary/10 flex items-center justify-center">
+          <Bot className="h-8 w-8 md:h-10 md:w-10 text-primary" strokeWidth={1.5} />
         </div>
       </div>
       
