@@ -426,7 +426,7 @@ export default function AdminHSCodes() {
             Gérer la nomenclature douanière ({totalCount.toLocaleString()} codes)
           </p>
         </div>
-        <Button onClick={openCreateDialog} className="violet-gradient hover:opacity-90 text-white accent-glow rounded-xl">
+        <Button onClick={openCreateDialog} className="blue-gradient hover:opacity-90 text-white accent-glow rounded-xl">
           <Plus className="h-4 w-4 mr-2" />
           Nouveau code
         </Button>

@@ -2,42 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
-/* DouaneAI Design System v4 – Prodify-inspired: lavender, glassmorphism, premium serif */
+/* DouaneAI Design System v5 – Clean blue, white & grey */
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 
 @layer base {
   :root {
-    /* Primary – rich violet for authority & premium feel */
-    --primary: 262 55% 52%;
+    /* Primary – professional blue */
+    --primary: 217 72% 50%;
     --primary-foreground: 0 0% 100%;
 
-    /* Accent – vibrant teal/cyan for action & highlights */
-    --accent: 170 65% 50%;
+    /* Accent – lighter blue for highlights */
+    --accent: 210 85% 58%;
     --accent-foreground: 0 0% 100%;
 
-    /* Gold – warm secondary accent for premium feel */
+    /* Gold – kept for premium indicators */
     --gold: 45 65% 52%;
-    --gold-foreground: 262 40% 20%;
+    --gold-foreground: 217 40% 20%;
 
-    /* Background – rich saturated lavender */
-    --background: 258 50% 93%;
-    --foreground: 240 20% 16%;
+    /* Background – very light cool grey */
+    --background: 210 20% 96%;
+    --foreground: 215 25% 15%;
 
-    /* Cards – pure white with glassmorphic depth */
+    /* Cards – pure white */
     --card: 0 0% 100%;
-    --card-foreground: 240 20% 16%;
+    --card-foreground: 215 25% 15%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 240 20% 16%;
+    --popover-foreground: 215 25% 15%;
 
-    /* Secondary – light violet tint */
-    --secondary: 260 25% 94%;
-    --secondary-foreground: 262 55% 42%;
+    /* Secondary – soft blue-grey tint */
+    --secondary: 210 18% 94%;
+    --secondary-foreground: 217 55% 40%;
 
-    /* Muted */
-    --muted: 255 20% 93%;
-    --muted-foreground: 250 12% 50%;
+    /* Muted – neutral grey */
+    --muted: 210 14% 93%;
+    --muted-foreground: 215 12% 50%;
 
     /* Status Colors */
     --success: 160 84% 39%;
@@ -49,105 +49,105 @@
     --destructive: 0 72% 56%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Borders & Inputs – very subtle */
-    --border: 260 15% 90%;
-    --input: 260 15% 90%;
-    --ring: 262 55% 52%;
+    /* Borders & Inputs */
+    --border: 214 18% 89%;
+    --input: 214 18% 89%;
+    --ring: 217 72% 50%;
 
-    --radius: 0.875rem;
+    --radius: 0.75rem;
 
     /* Sidebar */
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 240 20% 16%;
-    --sidebar-primary: 262 55% 52%;
+    --sidebar-foreground: 215 25% 15%;
+    --sidebar-primary: 217 72% 50%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 260 30% 96%;
-    --sidebar-accent-foreground: 240 20% 16%;
-    --sidebar-border: 255 18% 90%;
-    --sidebar-ring: 262 55% 52%;
+    --sidebar-accent: 210 25% 96%;
+    --sidebar-accent-foreground: 215 25% 15%;
+    --sidebar-border: 214 18% 91%;
+    --sidebar-ring: 217 72% 50%;
 
     /* Chat */
-    --chat-user: 262 55% 52%;
+    --chat-user: 217 72% 50%;
     --chat-user-foreground: 0 0% 100%;
     --chat-ai: 0 0% 100%;
-    --chat-ai-foreground: 240 20% 16%;
-    --chat-ai-border: 260 15% 92%;
+    --chat-ai-foreground: 215 25% 15%;
+    --chat-ai-border: 214 18% 92%;
     --chat-input-bg: 0 0% 100%;
-    --chat-typing-dot: 262 55% 52%;
+    --chat-typing-dot: 217 72% 50%;
 
-    /* Gradients – RICH saturated Prodify-inspired */
-    --gradient-hero: linear-gradient(145deg, hsl(262 55% 52%), hsl(280 50% 60%));
-    --gradient-accent: linear-gradient(135deg, hsl(170 65% 50%), hsl(175 60% 55%));
+    /* Gradients – blue-centric */
+    --gradient-hero: linear-gradient(145deg, hsl(217 72% 50%), hsl(210 80% 58%));
+    --gradient-accent: linear-gradient(135deg, hsl(210 85% 55%), hsl(200 75% 60%));
     --gradient-gold: linear-gradient(135deg, hsl(45 65% 52%), hsl(45 75% 60%));
-    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(255 30% 97%));
-    --gradient-surface: radial-gradient(ellipse at top, hsl(260 50% 93%), hsl(250 40% 90%));
-    --gradient-page: linear-gradient(145deg, hsl(260 55% 88%), hsl(225 50% 90%), hsl(260 45% 92%));
-    --gradient-violet: linear-gradient(135deg, hsl(262 55% 52%), hsl(280 50% 58%));
-    --gradient-teal: linear-gradient(135deg, hsl(170 65% 45%), hsl(160 55% 55%));
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(210 20% 97%));
+    --gradient-surface: radial-gradient(ellipse at top, hsl(210 20% 96%), hsl(210 18% 94%));
+    --gradient-page: linear-gradient(145deg, hsl(210 25% 95%), hsl(215 20% 96%), hsl(210 22% 97%));
+    --gradient-blue: linear-gradient(135deg, hsl(217 72% 50%), hsl(210 75% 55%));
+    --gradient-teal: linear-gradient(135deg, hsl(200 70% 48%), hsl(195 60% 55%));
 
-    /* Shadows – ultra-soft diffuse floating shadows */
-    --shadow-xs: 0 1px 2px 0 hsl(260 20% 50% / 0.03);
-    --shadow-sm: 0 2px 6px 0 hsl(260 20% 50% / 0.04), 0 1px 2px -1px hsl(260 20% 50% / 0.03);
-    --shadow-md: 0 6px 24px -4px hsl(260 30% 50% / 0.07), 0 2px 8px -3px hsl(260 20% 50% / 0.04);
-    --shadow-lg: 0 16px 40px -8px hsl(260 30% 50% / 0.08), 0 6px 18px -6px hsl(260 20% 50% / 0.04);
-    --shadow-xl: 0 28px 60px -16px hsl(260 30% 50% / 0.10), 0 10px 24px -8px hsl(260 20% 50% / 0.05);
-    --shadow-accent: 0 6px 20px 0 hsl(262 55% 52% / 0.25);
+    /* Shadows – cool-toned soft shadows */
+    --shadow-xs: 0 1px 2px 0 hsl(215 20% 50% / 0.04);
+    --shadow-sm: 0 2px 6px 0 hsl(215 20% 50% / 0.05), 0 1px 2px -1px hsl(215 20% 50% / 0.03);
+    --shadow-md: 0 6px 24px -4px hsl(215 25% 50% / 0.08), 0 2px 8px -3px hsl(215 20% 50% / 0.04);
+    --shadow-lg: 0 16px 40px -8px hsl(215 25% 50% / 0.10), 0 6px 18px -6px hsl(215 20% 50% / 0.05);
+    --shadow-xl: 0 28px 60px -16px hsl(215 25% 50% / 0.12), 0 10px 24px -8px hsl(215 20% 50% / 0.06);
+    --shadow-accent: 0 6px 20px 0 hsl(217 72% 50% / 0.25);
     --shadow-gold: 0 6px 18px 0 hsl(45 65% 52% / 0.3);
-    --shadow-card-hover: 0 20px 48px -12px hsl(260 30% 50% / 0.10), 0 8px 20px -6px hsl(260 20% 50% / 0.05);
+    --shadow-card-hover: 0 20px 48px -12px hsl(215 25% 50% / 0.12), 0 8px 20px -6px hsl(215 20% 50% / 0.06);
   }
 
   .dark {
-    --background: 260 20% 8%;
+    --background: 215 20% 8%;
     --foreground: 210 40% 96%;
 
-    --card: 260 18% 12%;
+    --card: 215 18% 12%;
     --card-foreground: 210 40% 96%;
 
-    --popover: 260 18% 12%;
+    --popover: 215 18% 12%;
     --popover-foreground: 210 40% 96%;
 
-    --primary: 262 60% 60%;
-    --primary-foreground: 260 20% 8%;
+    --primary: 217 72% 58%;
+    --primary-foreground: 215 20% 8%;
 
-    --secondary: 260 15% 18%;
+    --secondary: 215 15% 18%;
     --secondary-foreground: 210 40% 96%;
 
-    --muted: 260 15% 18%;
-    --muted-foreground: 250 12% 58%;
+    --muted: 215 15% 18%;
+    --muted-foreground: 215 12% 58%;
 
-    --accent: 170 65% 50%;
-    --accent-foreground: 260 20% 8%;
+    --accent: 210 80% 55%;
+    --accent-foreground: 215 20% 8%;
 
     --gold: 45 65% 52%;
-    --gold-foreground: 260 20% 8%;
+    --gold-foreground: 215 20% 8%;
 
     --destructive: 0 62% 45%;
     --destructive-foreground: 210 40% 96%;
 
-    --border: 260 15% 20%;
-    --input: 260 15% 20%;
-    --ring: 262 60% 60%;
+    --border: 215 15% 20%;
+    --input: 215 15% 20%;
+    --ring: 217 72% 58%;
 
-    --sidebar-background: 260 20% 7%;
+    --sidebar-background: 215 20% 7%;
     --sidebar-foreground: 210 40% 96%;
-    --sidebar-primary: 262 60% 60%;
-    --sidebar-primary-foreground: 260 20% 8%;
-    --sidebar-accent: 260 15% 14%;
+    --sidebar-primary: 217 72% 58%;
+    --sidebar-primary-foreground: 215 20% 8%;
+    --sidebar-accent: 215 15% 14%;
     --sidebar-accent-foreground: 210 40% 96%;
-    --sidebar-border: 260 15% 16%;
-    --sidebar-ring: 262 60% 60%;
+    --sidebar-border: 215 15% 16%;
+    --sidebar-ring: 217 72% 58%;
 
-    --chat-user: 262 60% 60%;
-    --chat-user-foreground: 260 20% 8%;
-    --chat-ai: 260 15% 15%;
+    --chat-user: 217 72% 58%;
+    --chat-user-foreground: 215 20% 8%;
+    --chat-ai: 215 15% 15%;
     --chat-ai-foreground: 210 40% 96%;
-    --chat-ai-border: 260 15% 20%;
-    --chat-input-bg: 260 18% 12%;
-    --chat-typing-dot: 262 60% 60%;
+    --chat-ai-border: 215 15% 20%;
+    --chat-input-bg: 215 18% 12%;
+    --chat-typing-dot: 217 72% 58%;
 
-    --gradient-hero: linear-gradient(145deg, hsl(260 20% 8%), hsl(260 18% 16%));
-    --gradient-accent: linear-gradient(135deg, hsl(170 65% 50%), hsl(175 60% 55%));
-    --gradient-page: linear-gradient(145deg, hsl(260 20% 8%), hsl(260 18% 12%));
+    --gradient-hero: linear-gradient(145deg, hsl(215 20% 8%), hsl(215 18% 16%));
+    --gradient-accent: linear-gradient(135deg, hsl(210 80% 55%), hsl(200 70% 60%));
+    --gradient-page: linear-gradient(145deg, hsl(215 20% 8%), hsl(215 18% 12%));
 
     --shadow-md: 0 4px 12px -2px hsl(0 0% 0% / 0.3);
     --shadow-lg: 0 12px 28px -6px hsl(0 0% 0% / 0.4);
@@ -186,8 +186,8 @@
     background: var(--gradient-accent);
   }
 
-  .violet-gradient {
-    background: var(--gradient-violet);
+  .blue-gradient {
+    background: var(--gradient-blue);
   }
 
   .gold-gradient {
@@ -261,7 +261,7 @@
 
   /* Background pattern – subtle dot grid */
   .bg-dot-pattern {
-    background-image: radial-gradient(circle, hsl(var(--primary) / 0.04) 1px, transparent 1px);
+    background-image: radial-gradient(circle, hsl(var(--primary) / 0.03) 1px, transparent 1px);
     background-size: 28px 28px;
   }
 
@@ -302,9 +302,9 @@
     background-image: var(--gradient-gold);
   }
 
-  .text-gradient-violet {
+  .text-gradient-blue {
     @apply bg-clip-text text-transparent;
-    background-image: var(--gradient-violet);
+    background-image: var(--gradient-blue);
   }
 
   .text-gradient-teal {
@@ -312,9 +312,9 @@
     background-image: var(--gradient-teal);
   }
 
-  /* Display serif font utility */
+  /* Display font utility */
   .font-serif-display {
-    font-family: 'DM Serif Display', Georgia, serif;
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
   }
 
   .animate-fade-in {
@@ -392,9 +392,9 @@
   box-shadow: var(--shadow-sm);
 }
 
-.chat-input-wrapper {
+  .chat-input-wrapper {
   @apply relative;
-  box-shadow: 0 -4px 24px -4px hsl(262 30% 50% / 0.06);
+  box-shadow: 0 -4px 24px -4px hsl(215 25% 50% / 0.06);
 }
 
 /* Safe area for mobile devices */

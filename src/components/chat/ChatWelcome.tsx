@@ -87,16 +87,16 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
       {/* Logo Icon with glow */}
       <div className="relative inline-flex items-center justify-center mb-4 md:mb-6">
         <div className="absolute inset-0 w-20 h-20 md:w-28 md:h-28 rounded-full bg-primary/10 blur-2xl animate-pulse-slow"></div>
-        <div className="relative w-16 h-16 md:w-20 md:h-20 rounded-2xl violet-gradient flex items-center justify-center shadow-accent">
+        <div className="relative w-16 h-16 md:w-20 md:h-20 rounded-2xl blue-gradient flex items-center justify-center shadow-accent">
           <ShieldCheck className="h-8 w-8 md:h-10 md:w-10 text-white" strokeWidth={2} />
         </div>
       </div>
       
-      {/* Title – Prodify-inspired: SANS-SERIF bold + teal gradient serif subtitle */}
+      {/* Title */}
       <h2 className="text-2xl md:text-4xl font-display font-extrabold text-foreground mb-1 md:mb-2 tracking-tight">
         Votre assistant douanier
       </h2>
-      <p className="text-xl md:text-2xl font-serif-display italic text-gradient-teal mb-3 md:mb-4">
+      <p className="text-xl md:text-2xl font-display font-bold text-gradient-blue mb-3 md:mb-4">
         Comment puis-je vous aider ?
       </p>
       <p className="text-muted-foreground max-w-lg mx-auto mb-5 md:mb-8 text-sm md:text-base leading-relaxed px-2">

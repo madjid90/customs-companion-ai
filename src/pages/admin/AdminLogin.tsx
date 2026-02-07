@@ -178,7 +178,7 @@ export default function AdminLogin() {
 
             <Button
               type="submit"
-              className="w-full h-11 violet-gradient hover:opacity-90 text-white font-semibold rounded-xl shadow-accent"
+              className="w-full h-11 blue-gradient hover:opacity-90 text-white font-semibold rounded-xl shadow-accent"
               disabled={isLoading || !email || !password}
             >
               {isLoading ? (
