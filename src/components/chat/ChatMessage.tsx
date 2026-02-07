@@ -463,15 +463,16 @@ export function ChatMessage({
 
       <div
         className={cn(
-          "max-w-[88%] md:max-w-[75%] rounded-2xl px-3.5 py-3 md:px-5 md:py-4 transition-all overflow-hidden",
+          "max-w-[88%] md:max-w-[75%] rounded-2xl px-3.5 py-3 md:px-5 md:py-4 transition-all",
           isUser
             ? "bg-primary/10 text-foreground"
             : "bg-card border border-border/40 text-foreground shadow-sm"
         )}
+        style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}
       >
         {!isUser && !isError ? (
           <div 
-            className="prose prose-sm dark:prose-invert max-w-none overflow-hidden break-words"
+            className="prose prose-sm dark:prose-invert max-w-none break-words [&>*]:overflow-x-auto"
             onClick={(e) => {
               // Event delegation for source links - capture clicks on <a> elements
               const target = e.target as HTMLElement;
