@@ -75,15 +75,15 @@
     --chat-input-bg: 0 0% 100%;
     --chat-typing-dot: 192 70% 48%;
 
-    /* Gradients – blue-green */
-    --gradient-hero: linear-gradient(135deg, hsl(192 70% 48%), hsl(155 55% 48%));
-    --gradient-accent: linear-gradient(135deg, hsl(192 70% 50%), hsl(155 55% 50%));
+    /* Gradients – blue-green matching logo */
+    --gradient-hero: linear-gradient(135deg, hsl(197 68% 55%), hsl(152 52% 52%));
+    --gradient-accent: linear-gradient(135deg, hsl(197 68% 55%), hsl(152 52% 52%));
     --gradient-gold: linear-gradient(135deg, hsl(45 65% 52%), hsl(45 75% 60%));
     --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(170 12% 97%));
     --gradient-surface: radial-gradient(ellipse at top, hsl(170 12% 96%), hsl(170 10% 94%));
     --gradient-page: linear-gradient(145deg, hsl(170 14% 95%), hsl(175 12% 96%), hsl(170 14% 97%));
-    --gradient-blue: linear-gradient(135deg, hsl(192 70% 48%), hsl(170 60% 45%));
-    --gradient-teal: linear-gradient(135deg, hsl(175 60% 45%), hsl(155 55% 48%));
+    --gradient-blue: linear-gradient(135deg, hsl(197 68% 55%), hsl(165 55% 48%));
+    --gradient-teal: linear-gradient(135deg, hsl(170 55% 48%), hsl(152 52% 52%));
 
     /* Shadows – cool-toned soft shadows */
     --shadow-xs: 0 1px 2px 0 hsl(195 20% 50% / 0.04);
