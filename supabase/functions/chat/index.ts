@@ -133,6 +133,116 @@ function stripUrlsFromResponse(text: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+// =============================================================================
+// STREAMING SSE UTILITIES
+// =============================================================================
+
+interface StreamChunk {
+  type: 'content' | 'done' | 'error';
+  content?: string;
+  error?: string;
+  metadata?: {
+    confidence: string;
+    cited_circulars: any[];
+    has_db_evidence: boolean;
+    validation_message?: string;
+    context: any;
+    conversationId?: string;
+  };
+}
+
+function createSSEStream(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder
+) {
+  return {
+    sendChunk(chunk: StreamChunk) {
+      const data = `data: ${JSON.stringify(chunk)}\n\n`;
+      controller.enqueue(encoder.encode(data));
+    },
+    sendContent(content: string) {
+      this.sendChunk({ type: 'content', content });
+    },
+    sendDone(metadata: StreamChunk['metadata']) {
+      this.sendChunk({ type: 'done', metadata });
+      controller.close();
+    },
+    sendError(error: string) {
+      this.sendChunk({ type: 'error', error });
+      controller.close();
+    }
+  };
+}
+
+/**
+ * Appelle Lovable AI avec streaming activé et retourne la réponse complète
+ */
+async function streamLovableAI(
+  systemPrompt: string,
+  messages: Array<{ role: string; content: string }>,
+  apiKey: string,
+  onChunk: (text: string) => void
+): Promise<string> {
+  const response = await fetch(LOVABLE_AI_GATEWAY, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: LOVABLE_AI_MODEL,
+      max_tokens: 4096,
+      stream: true,
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...messages,
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Lovable AI error: ${response.status} - ${errorText}`);
+  }
+
+  if (!response.body) {
+    throw new Error("No response body for streaming");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let fullResponse = "";
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6).trim();
+        if (data === '[DONE]') continue;
+
+        try {
+          const parsed = JSON.parse(data);
+          const content = parsed.choices?.[0]?.delta?.content;
+          if (content) {
+            fullResponse += content;
+            onChunk(content);
+          }
+        } catch {
+          // Ignore parse errors (incomplete JSON across chunks)
+        }
+      }
+    }
+  }
+
+  return fullResponse;
+}
 
 // =============================================================================
 // HANDLER PRINCIPAL
@@ -177,7 +287,8 @@ serve(async (req) => {
     }
 
     const { question, sessionId, images, pdfDocuments, conversationHistory } = validation.data!;
-    logger.info("Request validated", { sessionId, hasImages: !!images?.length, hasPdfs: !!pdfDocuments?.length });
+    const enableStreaming = req.headers.get('accept')?.includes('text/event-stream') || false;
+    logger.info("Request validated", { sessionId, hasImages: !!images?.length, hasPdfs: !!pdfDocuments?.length, streaming: enableStreaming });
 
     if (!question && (!images || images.length === 0) && (!pdfDocuments || pdfDocuments.length === 0)) {
       return errorResponse(req, "Question, images or PDF documents required", 400);
@@ -1014,9 +1125,221 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     });
 
     // =========================================================================
-    // CALL LOVABLE AI
+    // CALL LOVABLE AI (avec support streaming)
     // =========================================================================
     const startTime = Date.now();
+
+    if (enableStreaming) {
+      // =====================================================================
+      // MODE STREAMING (SSE) - Réponse progressive token par token
+      // =====================================================================
+      const encoder = new TextEncoder();
+      
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          const sse = createSSEStream(controller, encoder);
+          
+          try {
+            const fullResponseText = await streamLovableAI(
+              systemPrompt,
+              claudeMessages,
+              LOVABLE_API_KEY!,
+              (chunk) => sse.sendContent(chunk)
+            );
+            
+            const responseTime = Date.now() - startTime;
+            const responseText = stripUrlsFromResponse(fullResponseText);
+            const confidence = determineConfidence(responseText, context);
+            
+            // Post-processing: source validation
+            const responseCodes = extractCodesFromResponse(responseText);
+            const questionKeywords = extractProductKeywords(question || enrichedQuestion);
+            const codesForValidation = responseCodes.length > 0 
+              ? responseCodes 
+              : analysis.detectedCodes.slice(0, 5);
+            
+            const responseChapters = new Set<string>();
+            for (const code of codesForValidation) {
+              const clean = String(code).replace(/\D/g, '');
+              if (clean.length >= 2) {
+                responseChapters.add(clean.substring(0, 2).padStart(2, "0"));
+              }
+            }
+            
+            let filteredTariffs = [
+              ...context.tariffs,
+              ...context.tariffs_with_inheritance.map((t: TariffWithInheritance) => ({
+                country_code: analysis.country,
+                national_code: t.code_clean,
+                description_local: t.description,
+                duty_rate: t.duty_rate,
+                source_pdf: null,
+                source_evidence: t.legal_notes.join("; "),
+              })),
+            ].filter(t => {
+              const code = String(t.national_code || t.hs_code_6 || '').replace(/\D/g, '');
+              if (code.length < 2) return false;
+              const chapter = code.substring(0, 2).padStart(2, "0");
+              return responseChapters.has(chapter);
+            });
+            
+            if (filteredTariffs.length === 0 && codesForValidation.length === 0 && questionKeywords.length > 0) {
+              const keywordSearchTerms = questionKeywords.slice(0, 3).filter(k => k.length >= 4);
+              if (keywordSearchTerms.length > 0) {
+                const { data: keywordTariffs } = await supabase
+                  .from('country_tariffs')
+                  .select('national_code, hs_code_6, description_local, duty_rate, vat_rate, source_pdf, source_evidence')
+                  .eq('country_code', analysis.country)
+                  .eq('is_active', true)
+                  .or(keywordSearchTerms.map(kw => `description_local.ilike.%${kw}%`).join(','))
+                  .limit(10);
+                if (keywordTariffs && keywordTariffs.length > 0) {
+                  filteredTariffs = keywordTariffs;
+                  for (const t of keywordTariffs) {
+                    const code = String(t.national_code || t.hs_code_6 || '').replace(/\D/g, '');
+                    if (code.length >= 2) {
+                      responseChapters.add(code.substring(0, 2).padStart(2, "0"));
+                    }
+                  }
+                }
+              }
+            }
+            
+            const filteredPdfs = context.pdf_summaries.filter((p: any) => {
+              const chapter = String(p.chapter_number || '').padStart(2, "0");
+              return responseChapters.has(chapter);
+            });
+            
+            const dbEvidence: DBEvidence = {
+              tariffs: filteredTariffs,
+              notes: [],
+              evidence: [],
+              pdfSummaries: filteredPdfs,
+              legalRefs: context.legal_references.filter((ref: any) => {
+                const refContext = (ref.context || "").toLowerCase();
+                const refTitle = (ref.title || "").toLowerCase();
+                if (codesForValidation.some(code => {
+                  const clean = String(code).replace(/\D/g, '');
+                  return refContext.includes(clean) || refContext.includes(clean.substring(0, 4));
+                })) return true;
+                if (codesForValidation.length === 0) {
+                  return questionKeywords.some(kw => 
+                    kw.length >= 4 && (refContext.includes(kw.toLowerCase()) || refTitle.includes(kw.toLowerCase()))
+                  );
+                }
+                return false;
+              }),
+              legalChunks: ((context as any)._legalChunks || []).filter((chunk: any) => {
+                const chunkText = (chunk.chunk_text || "").toLowerCase();
+                const hasKeywordMatch = questionKeywords.some(kw => 
+                  kw.length >= 4 && chunkText.includes(kw.toLowerCase())
+                );
+                const hasHighSimilarity = chunk.similarity && chunk.similarity >= 0.6;
+                const hasArticleNumber = !!chunk.article_number;
+                return hasKeywordMatch || hasHighSimilarity || hasArticleNumber;
+              }),
+            };
+            
+            const sourceValidation = await validateAllSources(
+              supabase, responseText, question || "", dbEvidence, SUPABASE_URL!
+            );
+            
+            // Build citations
+            const citedCirculars: Array<{
+              id: string; reference_type: string; reference_number: string;
+              title: string; reference_date: string | null; download_url: string | null;
+              pdf_title: string | null; validated: boolean; page_number?: number;
+            }> = [];
+            
+            for (const validSource of sourceValidation.sources_validated.slice(0, 8)) {
+              let refType = "Preuve";
+              if (validSource.type === "pdf") refType = "Tarif";
+              else if (validSource.type === "legal") {
+                refType = (validSource.title?.toLowerCase().includes("article") || validSource.reference?.includes("Art.")) ? "Article" : "Circulaire";
+              } else if (validSource.type === "tariff") refType = "Ligne tarifaire";
+              
+              citedCirculars.push({
+                id: validSource.id, reference_type: refType,
+                reference_number: validSource.reference || validSource.chapter || "",
+                title: validSource.title, reference_date: null,
+                download_url: validSource.download_url, pdf_title: validSource.title,
+                validated: true, page_number: validSource.page_number,
+              });
+            }
+            
+            // Save conversation
+            const contextUsed = {
+              tariffs_with_inheritance: context.tariffs_with_inheritance.length,
+              hs_codes: context.hs_codes.length, tariffs: context.tariffs.length,
+              controlled: context.controlled_products.length,
+              documents: context.knowledge_documents.length,
+              pdfs: context.pdf_summaries.length,
+              semantic_search_used: useSemanticSearch,
+              sources_validated: sourceValidation.sources_validated.length,
+              sources_rejected: sourceValidation.sources_rejected.length,
+            };
+            
+            const { data: conversation } = await supabase
+              .from('conversations')
+              .insert({
+                session_id: sessionId, question: question,
+                response: responseText, detected_intent: analysis.intent,
+                detected_hs_codes: codesForValidation, context_used: contextUsed,
+                pdfs_used: context.pdf_summaries.map((p: any) => p.title),
+                confidence_level: confidence, response_time_ms: responseTime,
+              })
+              .select('id').single();
+            
+            // Save to cache
+            let responseWithValidation = responseText;
+            if (!sourceValidation.has_evidence && codesForValidation.length > 0) {
+              responseWithValidation += "\n\n---\n⚠️ **Note**: Aucune source interne ne confirme ce code SH. Cette classification est indicative et nécessite vérification auprès des autorités douanières.";
+            }
+            
+            if (queryEmbedding && confidence !== "low" && (!images || images.length === 0) && question) {
+              saveToResponseCache(
+                supabase, question, queryEmbedding, responseWithValidation, contextUsed,
+                confidence, citedCirculars, sourceValidation.has_evidence, sourceValidation.message
+              ).catch((err: any) => console.error("Cache save error:", err));
+            }
+            
+            // Send final metadata via SSE
+            sse.sendDone({
+              confidence,
+              cited_circulars: citedCirculars,
+              has_db_evidence: sourceValidation.has_evidence,
+              validation_message: sourceValidation.message,
+              context: {
+                tariffs_with_inheritance: context.tariffs_with_inheritance.length,
+                hs_codes_found: context.hs_codes.length,
+                tariffs_found: context.tariffs.length,
+                controlled_found: context.controlled_products.length,
+                documents_found: context.knowledge_documents.length,
+                pdfs_used: context.pdf_summaries.length,
+                legal_references_found: context.legal_references.length,
+              },
+              conversationId: conversation?.id,
+            });
+          } catch (error) {
+            logger.error("Stream error", error as Error);
+            sse.sendError("Erreur de génération. Veuillez réessayer.");
+          }
+        }
+      });
+      
+      return new Response(stream, {
+        headers: {
+          ...getCorsHeaders(req),
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      });
+    }
+
+    // =========================================================================
+    // MODE CLASSIQUE (sans streaming) - Rétrocompatibilité
+    // =========================================================================
     
     const lovableRetryConfig: RetryConfig = {
       maxRetries: 3,

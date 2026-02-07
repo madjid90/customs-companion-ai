@@ -39,6 +39,7 @@ interface Message {
   citedCirculars?: CircularReference[];
   hasDbEvidence?: boolean;
   validationMessage?: string;
+  isStreaming?: boolean;
   context?: {
     hs_codes_found: number;
     tariffs_found: number;
@@ -48,6 +49,113 @@ interface Message {
     legal_references_found?: number;
     sources_validated?: number;
   };
+}
+
+// Stream chat response via SSE with JSON fallback for cache hits
+const CHAT_STREAM_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+
+async function streamChatResponse(params: {
+  question: string;
+  sessionId: string;
+  images?: { type: "image"; base64: string; mediaType: string }[];
+  pdfDocuments?: { type: "pdf"; base64: string; fileName: string }[];
+  conversationHistory?: { role: string; content: string }[];
+  onChunk: (text: string) => void;
+  onDone: (metadata: any) => void;
+  onError: (error: string) => void;
+}) {
+  const response = await fetch(CHAT_STREAM_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      'Accept': 'text/event-stream',
+    },
+    body: JSON.stringify({
+      question: params.question,
+      sessionId: params.sessionId,
+      images: params.images,
+      pdfDocuments: params.pdfDocuments,
+      conversationHistory: params.conversationHistory,
+    }),
+  });
+
+  if (!response.ok) {
+    let errorMsg = `Erreur ${response.status}`;
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.error || errorMsg;
+    } catch { /* ignore */ }
+    
+    if (response.status === 429) errorMsg = "Trop de requêtes. Veuillez patienter quelques instants.";
+    if (response.status === 402) errorMsg = "Limite d'utilisation atteinte.";
+    
+    params.onError(errorMsg);
+    return;
+  }
+
+  const contentType = response.headers.get('Content-Type') || '';
+
+  // JSON response (cache hit or non-streaming fallback)
+  if (contentType.includes('application/json')) {
+    const data = await response.json();
+    if (data.response) {
+      params.onChunk(data.response);
+      params.onDone({
+        confidence: data.confidence,
+        cited_circulars: data.cited_circulars || [],
+        has_db_evidence: data.has_db_evidence ?? true,
+        validation_message: data.validation_message,
+        context: data.context,
+        conversationId: data.conversationId,
+      });
+    } else {
+      params.onError('Réponse invalide du serveur');
+    }
+    return;
+  }
+
+  // SSE stream
+  const reader = response.body?.getReader();
+  if (!reader) {
+    params.onError('Streaming non supporté');
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6).trim();
+        if (!data || data === '[DONE]') continue;
+
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.type === 'content' && parsed.content) {
+            params.onChunk(parsed.content);
+          } else if (parsed.type === 'done') {
+            params.onDone(parsed.metadata);
+          } else if (parsed.type === 'error') {
+            params.onError(parsed.error || 'Erreur inconnue');
+          }
+        } catch {
+          // Ignore parse errors (partial JSON)
+        }
+      }
+    }
+  } catch {
+    params.onError('Connexion interrompue');
+  }
 }
 
 // Remove confidence indicators, emojis, and decorative icons from AI response content
@@ -290,6 +398,8 @@ export default function Chat() {
       attachedFiles: attachedFilesForHistory.length > 0 ? attachedFilesForHistory : undefined,
     };
 
+    const assistantMessageId = (Date.now() + 1).toString();
+    
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setUploadedFiles([]);
@@ -301,59 +411,78 @@ export default function Chat() {
         content: msg.content,
       }));
       
-      const { data, error } = await supabase.functions.invoke('chat', {
-        body: {
-          question: enhancedMessage || "Analyse ce document et donne-moi les informations pertinentes",
-          sessionId,
-          images: imagesToSend.length > 0 ? imagesToSend : undefined,
-          pdfDocuments: pdfsToSend.length > 0 ? pdfsToSend : undefined,
-          conversationHistory,
+      await streamChatResponse({
+        question: enhancedMessage || "Analyse ce document et donne-moi les informations pertinentes",
+        sessionId,
+        images: imagesToSend.length > 0 ? imagesToSend : undefined,
+        pdfDocuments: pdfsToSend.length > 0 ? pdfsToSend : undefined,
+        conversationHistory,
+        onChunk: (chunk) => {
+          setMessages(prev => {
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg?.id === assistantMessageId) {
+              return prev.map(msg =>
+                msg.id === assistantMessageId
+                  ? { ...msg, content: msg.content + chunk }
+                  : msg
+              );
+            }
+            // First chunk: create the assistant message
+            return [...prev, {
+              id: assistantMessageId,
+              role: "assistant" as const,
+              content: chunk,
+              isStreaming: true,
+            }];
+          });
+        },
+        onDone: (metadata) => {
+          setMessages(prev => prev.map(msg =>
+            msg.id === assistantMessageId
+              ? {
+                  ...msg,
+                  isStreaming: false,
+                  confidence: metadata?.confidence as "high" | "medium" | "low",
+                  conversationId: metadata?.conversationId,
+                  context: metadata?.context ? {
+                    ...metadata.context,
+                    sources_validated: metadata.context.sources_validated || 0,
+                  } : undefined,
+                  citedCirculars: metadata?.cited_circulars || [],
+                  hasDbEvidence: metadata?.has_db_evidence ?? true,
+                  validationMessage: metadata?.validation_message,
+                }
+              : msg
+          ));
+          setIsLoading(false);
+        },
+        onError: (error) => {
+          setMessages(prev => {
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg?.id === assistantMessageId) {
+              return prev.map(msg =>
+                msg.id === assistantMessageId
+                  ? { ...msg, content: `⚠️ ${error}`, isStreaming: false }
+                  : msg
+              );
+            }
+            return [...prev, {
+              id: assistantMessageId,
+              role: "assistant" as const,
+              content: `⚠️ ${error}`,
+              confidence: "low" as const,
+            }];
+          });
+          setIsLoading(false);
+          toast({
+            title: "Erreur",
+            description: error,
+            variant: "destructive",
+          });
         },
       });
-
-      if (error) throw error;
-      if (!data || !data.response) throw new Error("Réponse invalide du serveur");
-
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: data.response,
-        confidence: data.confidence as "high" | "medium" | "low",
-        conversationId: data.conversationId,
-        context: {
-          ...data.context,
-          sources_validated: data.sources_validated?.length || 0,
-        },
-        citedCirculars: data.cited_circulars || [],
-        hasDbEvidence: data.has_db_evidence ?? true,
-        validationMessage: data.validation_message,
-      };
-
-      setMessages((prev) => [...prev, aiMessage]);
     } catch (error: any) {
       console.error("Chat error:", error);
-      
-      let errorMessage = "Une erreur est survenue. Veuillez réessayer.";
-      if (error.message?.includes("429")) {
-        errorMessage = "Trop de requêtes. Veuillez patienter quelques instants.";
-      } else if (error.message?.includes("402")) {
-        errorMessage = "Limite d'utilisation atteinte.";
-      }
-
-      toast({
-        title: "Erreur",
-        description: errorMessage,
-        variant: "destructive",
-      });
-
-      const errorMessageObj: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: `⚠️ ${errorMessage}`,
-        confidence: "low",
-      };
-      setMessages((prev) => [...prev, errorMessageObj]);
-    } finally {
       setIsLoading(false);
     }
   };
@@ -445,7 +574,7 @@ export default function Chat() {
               />
             ))}
 
-            {isLoading && <ChatTypingIndicator />}
+            {isLoading && !messages.some(m => m.isStreaming && m.content.length > 0) && <ChatTypingIndicator />}
           </div>
         </ScrollArea>
 
