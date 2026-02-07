@@ -4,7 +4,7 @@ import { AdminSidebar } from "./AdminSidebar";
 export function AdminLayout() {
   // Authentication is handled by ProtectedRoute wrapper
   return (
-    <div className="min-h-screen page-gradient">
+    <div className="min-h-screen page-gradient bg-dot-pattern">
       <AdminSidebar />
       <main className="pl-64 transition-all duration-300">
         <div className="p-8">

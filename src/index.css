@@ -8,7 +8,7 @@
 
 @layer base {
   :root {
-    /* Primary – soft violet for modern, approachable authority */
+    /* Primary – rich violet for authority & premium feel */
     --primary: 262 55% 52%;
     --primary-foreground: 0 0% 100%;
 
@@ -20,8 +20,8 @@
     --gold: 45 65% 52%;
     --gold-foreground: 262 40% 20%;
 
-    /* Background – saturated lavender gradient base */
-    --background: 258 40% 95%;
+    /* Background – rich saturated lavender */
+    --background: 258 50% 93%;
     --foreground: 240 20% 16%;
 
     /* Cards – pure white with glassmorphic depth */
@@ -32,11 +32,11 @@
     --popover-foreground: 240 20% 16%;
 
     /* Secondary – light violet tint */
-    --secondary: 260 20% 94%;
+    --secondary: 260 25% 94%;
     --secondary-foreground: 262 55% 42%;
 
     /* Muted */
-    --muted: 255 15% 93%;
+    --muted: 255 20% 93%;
     --muted-foreground: 250 12% 50%;
 
     /* Status Colors */
@@ -49,19 +49,19 @@
     --destructive: 0 72% 56%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Borders & Inputs – very subtle, almost invisible */
-    --border: 260 12% 92%;
-    --input: 260 12% 92%;
+    /* Borders & Inputs – very subtle */
+    --border: 260 15% 90%;
+    --input: 260 15% 90%;
     --ring: 262 55% 52%;
 
     --radius: 0.875rem;
 
-    /* Sidebar – light glassmorphic */
+    /* Sidebar */
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 240 20% 16%;
     --sidebar-primary: 262 55% 52%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 260 25% 96%;
+    --sidebar-accent: 260 30% 96%;
     --sidebar-accent-foreground: 240 20% 16%;
     --sidebar-border: 255 18% 90%;
     --sidebar-ring: 262 55% 52%;
@@ -71,29 +71,29 @@
     --chat-user-foreground: 0 0% 100%;
     --chat-ai: 0 0% 100%;
     --chat-ai-foreground: 240 20% 16%;
-    --chat-ai-border: 255 18% 90%;
+    --chat-ai-border: 260 15% 92%;
     --chat-input-bg: 0 0% 100%;
     --chat-typing-dot: 262 55% 52%;
 
-    /* Gradients – Prodify-inspired saturated lavender gradients */
+    /* Gradients – RICH saturated Prodify-inspired */
     --gradient-hero: linear-gradient(145deg, hsl(262 55% 52%), hsl(280 50% 60%));
     --gradient-accent: linear-gradient(135deg, hsl(170 65% 50%), hsl(175 60% 55%));
     --gradient-gold: linear-gradient(135deg, hsl(45 65% 52%), hsl(45 75% 60%));
     --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(255 30% 97%));
     --gradient-surface: radial-gradient(ellipse at top, hsl(260 50% 93%), hsl(250 40% 90%));
-    --gradient-page: linear-gradient(145deg, hsl(260 55% 88%), hsl(220 55% 90%), hsl(260 45% 92%));
+    --gradient-page: linear-gradient(145deg, hsl(260 55% 88%), hsl(225 50% 90%), hsl(260 45% 92%));
     --gradient-violet: linear-gradient(135deg, hsl(262 55% 52%), hsl(280 50% 58%));
     --gradient-teal: linear-gradient(135deg, hsl(170 65% 45%), hsl(160 55% 55%));
 
     /* Shadows – ultra-soft diffuse floating shadows */
-    --shadow-xs: 0 1px 2px 0 hsl(260 20% 50% / 0.02);
-    --shadow-sm: 0 1px 4px 0 hsl(260 20% 50% / 0.03), 0 1px 2px -1px hsl(260 20% 50% / 0.03);
-    --shadow-md: 0 4px 20px -4px hsl(260 20% 50% / 0.05), 0 2px 8px -3px hsl(260 20% 50% / 0.03);
-    --shadow-lg: 0 12px 36px -8px hsl(260 20% 50% / 0.06), 0 4px 16px -6px hsl(260 20% 50% / 0.03);
-    --shadow-xl: 0 24px 56px -16px hsl(260 20% 50% / 0.08), 0 8px 20px -8px hsl(260 20% 50% / 0.04);
-    --shadow-accent: 0 4px 16px 0 hsl(262 55% 52% / 0.2);
-    --shadow-gold: 0 4px 14px 0 hsl(45 65% 52% / 0.3);
-    --shadow-card-hover: 0 16px 40px -10px hsl(260 20% 50% / 0.08), 0 6px 16px -6px hsl(260 20% 50% / 0.04);
+    --shadow-xs: 0 1px 2px 0 hsl(260 20% 50% / 0.03);
+    --shadow-sm: 0 2px 6px 0 hsl(260 20% 50% / 0.04), 0 1px 2px -1px hsl(260 20% 50% / 0.03);
+    --shadow-md: 0 6px 24px -4px hsl(260 30% 50% / 0.07), 0 2px 8px -3px hsl(260 20% 50% / 0.04);
+    --shadow-lg: 0 16px 40px -8px hsl(260 30% 50% / 0.08), 0 6px 18px -6px hsl(260 20% 50% / 0.04);
+    --shadow-xl: 0 28px 60px -16px hsl(260 30% 50% / 0.10), 0 10px 24px -8px hsl(260 20% 50% / 0.05);
+    --shadow-accent: 0 6px 20px 0 hsl(262 55% 52% / 0.25);
+    --shadow-gold: 0 6px 18px 0 hsl(45 65% 52% / 0.3);
+    --shadow-card-hover: 0 20px 48px -12px hsl(260 30% 50% / 0.10), 0 8px 20px -6px hsl(260 20% 50% / 0.05);
   }
 
   .dark {
@@ -174,6 +174,7 @@
   /* Prodify-inspired gradient page background */
   .page-gradient {
     background: var(--gradient-page);
+    min-height: 100vh;
   }
 
   /* Hero gradient backgrounds */
@@ -196,7 +197,7 @@
   /* Card styles – Prodify-inspired floating cards */
   .card-elevated {
     box-shadow: var(--shadow-md);
-    @apply bg-card rounded-2xl border border-border/40 transition-all duration-300;
+    @apply bg-card rounded-2xl border border-border/30 transition-all duration-300;
   }
 
   .card-elevated:hover {
@@ -222,24 +223,24 @@
 
   /* Glassmorphism – Prodify-style frosted glass */
   .glass-effect {
-    @apply backdrop-blur-xl bg-white/75 border border-white/40;
+    @apply backdrop-blur-xl bg-white/70 border border-white/30;
     box-shadow: var(--shadow-sm);
   }
 
   .glass-effect-strong {
-    @apply backdrop-blur-2xl bg-white/90 border border-white/50;
+    @apply backdrop-blur-2xl bg-white/85 border border-white/40;
     box-shadow: var(--shadow-md);
   }
 
   .glass-sidebar {
-    @apply bg-white/95 backdrop-blur-xl;
-    /* No border-r – Prodify style: clean edge, no visible separator */
+    @apply bg-white/90 backdrop-blur-xl;
+    box-shadow: var(--shadow-sm);
   }
 
   /* Badge chip style – Prodify status badges */
   .chip {
     @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border;
-    @apply bg-card border-border/60 text-muted-foreground;
+    @apply bg-card border-border/50 text-muted-foreground;
   }
 
   .chip-accent {
@@ -260,8 +261,33 @@
 
   /* Background pattern – subtle dot grid */
   .bg-dot-pattern {
-    background-image: radial-gradient(circle, hsl(var(--primary) / 0.05) 1px, transparent 1px);
-    background-size: 24px 24px;
+    background-image: radial-gradient(circle, hsl(var(--primary) / 0.04) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  /* Step card – for process flows */
+  .step-card {
+    @apply relative bg-card rounded-2xl border border-border/30 p-6 text-center transition-all duration-300;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .step-card:hover {
+    box-shadow: var(--shadow-md);
+    @apply -translate-y-0.5;
+  }
+
+  /* Admin page header */
+  .admin-page-header {
+    @apply mb-8;
+  }
+
+  .admin-page-header h1 {
+    @apply text-3xl font-extrabold tracking-tight;
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  }
+
+  .admin-page-header p {
+    @apply text-muted-foreground mt-1.5 text-base;
   }
 }
 
@@ -368,7 +394,7 @@
 
 .chat-input-wrapper {
   @apply relative;
-  box-shadow: 0 -4px 24px -4px hsl(262 30% 50% / 0.05);
+  box-shadow: 0 -4px 24px -4px hsl(262 30% 50% / 0.06);
 }
 
 /* Safe area for mobile devices */

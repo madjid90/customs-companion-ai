@@ -485,9 +485,9 @@ export default function AdminDocuments() {
     <div className="space-y-6">
       {/* Header */}
       <div className="animate-fade-in flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Documents analysés</h1>
-          <p className="text-muted-foreground mt-1">
+        <div className="admin-page-header">
+          <h1>Documents analysés</h1>
+          <p>
             Consultez les PDFs uploadés et leurs codes SH extraits
           </p>
         </div>
@@ -524,9 +524,9 @@ export default function AdminDocuments() {
                   Analyse en cours: {batchProgress.current} / {batchProgress.total}
                 </p>
                 <div className="flex gap-4 text-sm text-muted-foreground mt-1">
-                  <span className="text-green-600">✓ {batchProgress.success} réussies</span>
+                  <span className="text-success">✓ {batchProgress.success} réussies</span>
                   {batchProgress.failed > 0 && (
-                    <span className="text-red-600">✗ {batchProgress.failed} échouées</span>
+                    <span className="text-destructive">✗ {batchProgress.failed} échouées</span>
                   )}
                 </div>
                 <div className="h-2 bg-muted rounded-full mt-2 overflow-hidden">
@@ -542,55 +542,55 @@ export default function AdminDocuments() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold">{documents?.length || 0}</p>
-                <p className="text-sm text-muted-foreground">Documents</p>
-              </div>
-              <FileText className="h-8 w-8 text-muted-foreground/50" />
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 animate-slide-up">
+        <div className="step-card text-left p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-2xl font-bold">{documents?.length || 0}</p>
+              <p className="text-sm text-muted-foreground">Documents</p>
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold">{analyzedCount}</p>
-                <p className="text-sm text-muted-foreground">Analysés</p>
-              </div>
-              <CheckCircle className="h-8 w-8 text-green-600/50" />
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <FileText className="h-5 w-5 text-primary" />
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold">{hsCodesStats || 0}</p>
-                <p className="text-sm text-muted-foreground">Codes SH extraits</p>
-              </div>
-              <Badge variant="outline" className="text-lg px-3">SH</Badge>
+          </div>
+        </div>
+        <div className="step-card text-left p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-2xl font-bold">{analyzedCount}</p>
+              <p className="text-sm text-muted-foreground">Analysés</p>
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold text-destructive">{pendingCount}</p>
-                <p className="text-sm text-muted-foreground">Non analysés</p>
-              </div>
-              <AlertCircle className="h-8 w-8 text-destructive/50" />
+            <div className="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center">
+              <CheckCircle className="h-5 w-5 text-success" />
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+        <div className="step-card text-left p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-2xl font-bold">{hsCodesStats || 0}</p>
+              <p className="text-sm text-muted-foreground">Codes SH extraits</p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
+              <Badge variant="outline" className="text-xs px-2 border-accent text-accent">SH</Badge>
+            </div>
+          </div>
+        </div>
+        <div className="step-card text-left p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-2xl font-bold text-destructive">{pendingCount}</p>
+              <p className="text-sm text-muted-foreground">Non analysés</p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-destructive/10 flex items-center justify-center">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Search & Table */}
-      <Card>
+      <Card className="card-elevated border-border/20">
         <CardHeader>
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
@@ -642,7 +642,7 @@ export default function AdminDocuments() {
                       <TableRow key={doc.id}>
                         <TableCell>
                           <div className="flex items-center gap-3">
-                            <FileText className="h-5 w-5 text-red-500 shrink-0" />
+                            <FileText className="h-5 w-5 text-destructive shrink-0" />
                             <div className="min-w-0">
                               <p className="font-medium truncate max-w-[200px]">
                                 {doc.title}
@@ -678,7 +678,7 @@ export default function AdminDocuments() {
                         </TableCell>
                         <TableCell>
                           {doc.is_verified ? (
-                            <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
+                            <Badge className="bg-success/10 text-success border-success/20">
                               <CheckCircle className="h-3 w-3 mr-1" />
                               Analysé
                             </Badge>
@@ -705,7 +705,7 @@ export default function AdminDocuments() {
                                 {analyzingIds.has(doc.id) ? (
                                   <Loader2 className="h-4 w-4 animate-spin" />
                                 ) : (
-                                  <Sparkles className="h-4 w-4 text-amber-500" />
+                                  <Sparkles className="h-4 w-4 text-warning" />
                                 )}
                               </Button>
                             )}
@@ -751,7 +751,7 @@ export default function AdminDocuments() {
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-red-500" />
+              <FileText className="h-5 w-5 text-destructive" />
               {selectedDoc?.title}
             </DialogTitle>
             <DialogDescription>
