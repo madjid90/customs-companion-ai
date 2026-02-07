@@ -45,7 +45,7 @@ export function ChatInput({
 
   return (
     <>
-      <div className="border-t bg-card/95 backdrop-blur-xl p-2.5 md:p-4 chat-input-wrapper sticky bottom-0 safe-area-bottom">
+      <div className="border-t border-border/40 bg-card/80 backdrop-blur-xl p-2.5 md:p-4 chat-input-wrapper sticky bottom-0 safe-area-bottom">
         <div className="max-w-3xl mx-auto">
           {/* Uploaded files preview - horizontal scroll on mobile */}
           {uploadedFiles.length > 0 && (
@@ -129,14 +129,14 @@ export function ChatInput({
                 placeholder={uploadedFiles.length > 0 
                   ? "Décrivez votre produit..." 
                   : "Posez votre question..."}
-                className="min-h-[44px] md:min-h-[52px] max-h-24 md:max-h-32 pr-12 md:pr-14 resize-none rounded-2xl border-border/50 focus:border-accent/40 focus:ring-2 focus:ring-accent/10 bg-background shadow-sm transition-all text-sm md:text-base"
+                className="min-h-[44px] md:min-h-[52px] max-h-24 md:max-h-32 pr-12 md:pr-14 resize-none rounded-2xl border-border/40 focus:border-primary/40 focus:ring-2 focus:ring-primary/10 bg-background/50 shadow-sm transition-all text-sm md:text-base"
                 rows={1}
               />
               <Button
                 onClick={onSend}
                 disabled={(!input.trim() && uploadedFiles.length === 0) || isLoading || isUploading}
                 size="icon"
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 w-8 md:h-9 md:w-9 rounded-lg bg-accent hover:bg-accent/90 shadow-md transition-all hover:scale-105 disabled:hover:scale-100"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 w-8 md:h-9 md:w-9 rounded-xl violet-gradient hover:opacity-90 shadow-accent transition-all hover:scale-105 disabled:hover:scale-100 text-white"
               >
                 {isUploading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

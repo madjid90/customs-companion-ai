@@ -2,42 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
-/* DouaneAI Design System v3 – Switchly-inspired: clean, airy, modern */
+/* DouaneAI Design System v4 – Prodify-inspired: lavender, glassmorphism, premium serif */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 
 @layer base {
   :root {
-    /* Primary – deep navy for trust & authority */
-    --primary: 213 52% 24%;
+    /* Primary – soft violet for modern, approachable authority */
+    --primary: 262 55% 52%;
     --primary-foreground: 0 0% 100%;
 
-    /* Accent – vibrant teal/emerald (like Switchly green) */
-    --accent: 166 72% 40%;
+    /* Accent – vibrant teal/cyan for action & highlights */
+    --accent: 170 65% 50%;
     --accent-foreground: 0 0% 100%;
 
     /* Gold – warm secondary accent for premium feel */
     --gold: 45 65% 52%;
-    --gold-foreground: 213 52% 15%;
+    --gold-foreground: 262 40% 20%;
 
-    /* Background – very soft cool gray, almost white */
-    --background: 216 33% 97%;
-    --foreground: 220 25% 16%;
+    /* Background – soft lavender gradient base */
+    --background: 255 30% 96%;
+    --foreground: 240 20% 16%;
 
-    /* Cards – pure white with depth */
+    /* Cards – pure white with glassmorphic depth */
     --card: 0 0% 100%;
-    --card-foreground: 220 25% 16%;
+    --card-foreground: 240 20% 16%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 25% 16%;
+    --popover-foreground: 240 20% 16%;
 
-    /* Secondary – subtle cool gray */
-    --secondary: 214 20% 94%;
-    --secondary-foreground: 213 52% 24%;
+    /* Secondary – light violet tint */
+    --secondary: 260 20% 94%;
+    --secondary-foreground: 262 55% 42%;
 
     /* Muted */
-    --muted: 216 18% 93%;
-    --muted-foreground: 215 16% 52%;
+    --muted: 255 15% 93%;
+    --muted-foreground: 250 12% 50%;
 
     /* Status Colors */
     --success: 160 84% 39%;
@@ -49,101 +49,104 @@
     --destructive: 0 72% 56%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Borders & Inputs – very light */
-    --border: 216 20% 92%;
-    --input: 216 20% 92%;
-    --ring: 166 72% 40%;
+    /* Borders & Inputs – soft lavender */
+    --border: 255 18% 90%;
+    --input: 255 18% 90%;
+    --ring: 262 55% 52%;
 
-    --radius: 0.75rem;
+    --radius: 0.875rem;
 
-    /* Admin Sidebar */
-    --sidebar-background: 220 26% 14%;
-    --sidebar-foreground: 210 40% 96%;
-    --sidebar-primary: 166 72% 40%;
+    /* Sidebar – light glassmorphic */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 240 20% 16%;
+    --sidebar-primary: 262 55% 52%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 20% 20%;
-    --sidebar-accent-foreground: 210 40% 96%;
-    --sidebar-border: 220 20% 22%;
-    --sidebar-ring: 166 72% 40%;
+    --sidebar-accent: 260 25% 96%;
+    --sidebar-accent-foreground: 240 20% 16%;
+    --sidebar-border: 255 18% 90%;
+    --sidebar-ring: 262 55% 52%;
 
     /* Chat */
-    --chat-user: 213 52% 24%;
+    --chat-user: 262 55% 52%;
     --chat-user-foreground: 0 0% 100%;
     --chat-ai: 0 0% 100%;
-    --chat-ai-foreground: 220 25% 16%;
-    --chat-ai-border: 216 20% 92%;
+    --chat-ai-foreground: 240 20% 16%;
+    --chat-ai-border: 255 18% 90%;
     --chat-input-bg: 0 0% 100%;
-    --chat-typing-dot: 166 72% 40%;
+    --chat-typing-dot: 262 55% 52%;
 
-    /* Gradients */
-    --gradient-hero: linear-gradient(145deg, hsl(213 52% 24%), hsl(213 48% 32%));
-    --gradient-accent: linear-gradient(135deg, hsl(166 72% 40%), hsl(170 65% 48%));
+    /* Gradients – Prodify-inspired lavender gradients */
+    --gradient-hero: linear-gradient(145deg, hsl(262 55% 52%), hsl(280 50% 60%));
+    --gradient-accent: linear-gradient(135deg, hsl(170 65% 50%), hsl(175 60% 55%));
     --gradient-gold: linear-gradient(135deg, hsl(45 65% 52%), hsl(45 75% 60%));
-    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(216 33% 97%));
-    --gradient-surface: radial-gradient(ellipse at top, hsl(216 33% 97%), hsl(220 20% 95%));
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(255 30% 97%));
+    --gradient-surface: radial-gradient(ellipse at top, hsl(260 40% 95%), hsl(250 30% 92%));
+    --gradient-page: linear-gradient(145deg, hsl(260 40% 90%), hsl(220 50% 92%), hsl(260 35% 94%));
+    --gradient-violet: linear-gradient(135deg, hsl(262 55% 52%), hsl(280 50% 58%));
 
-    /* Shadows – Switchly-inspired soft floating shadows */
-    --shadow-xs: 0 1px 2px 0 hsl(220 25% 16% / 0.03);
-    --shadow-sm: 0 1px 3px 0 hsl(220 25% 16% / 0.04), 0 1px 2px -1px hsl(220 25% 16% / 0.04);
-    --shadow-md: 0 4px 12px -2px hsl(220 25% 16% / 0.06), 0 2px 6px -2px hsl(220 25% 16% / 0.04);
-    --shadow-lg: 0 12px 28px -6px hsl(220 25% 16% / 0.08), 0 4px 10px -4px hsl(220 25% 16% / 0.04);
-    --shadow-xl: 0 24px 48px -12px hsl(220 25% 16% / 0.10), 0 8px 16px -6px hsl(220 25% 16% / 0.04);
-    --shadow-accent: 0 4px 14px 0 hsl(166 72% 40% / 0.25);
+    /* Shadows – Prodify-inspired ultra-soft floating shadows */
+    --shadow-xs: 0 1px 2px 0 hsl(262 30% 50% / 0.03);
+    --shadow-sm: 0 1px 3px 0 hsl(262 30% 50% / 0.04), 0 1px 2px -1px hsl(262 30% 50% / 0.04);
+    --shadow-md: 0 4px 14px -2px hsl(262 30% 50% / 0.06), 0 2px 6px -2px hsl(262 30% 50% / 0.04);
+    --shadow-lg: 0 12px 32px -6px hsl(262 30% 50% / 0.08), 0 4px 12px -4px hsl(262 30% 50% / 0.04);
+    --shadow-xl: 0 24px 48px -12px hsl(262 30% 50% / 0.12), 0 8px 16px -6px hsl(262 30% 50% / 0.05);
+    --shadow-accent: 0 4px 14px 0 hsl(262 55% 52% / 0.25);
     --shadow-gold: 0 4px 14px 0 hsl(45 65% 52% / 0.3);
-    --shadow-card-hover: 0 16px 32px -8px hsl(220 25% 16% / 0.10), 0 6px 12px -4px hsl(220 25% 16% / 0.05);
+    --shadow-card-hover: 0 16px 36px -8px hsl(262 30% 50% / 0.12), 0 6px 12px -4px hsl(262 30% 50% / 0.06);
   }
 
   .dark {
-    --background: 222 26% 9%;
+    --background: 260 20% 8%;
     --foreground: 210 40% 96%;
 
-    --card: 222 24% 13%;
+    --card: 260 18% 12%;
     --card-foreground: 210 40% 96%;
 
-    --popover: 222 24% 13%;
+    --popover: 260 18% 12%;
     --popover-foreground: 210 40% 96%;
 
-    --primary: 166 72% 45%;
-    --primary-foreground: 222 26% 9%;
+    --primary: 262 60% 60%;
+    --primary-foreground: 260 20% 8%;
 
-    --secondary: 220 20% 18%;
+    --secondary: 260 15% 18%;
     --secondary-foreground: 210 40% 96%;
 
-    --muted: 220 20% 18%;
-    --muted-foreground: 215 16% 58%;
+    --muted: 260 15% 18%;
+    --muted-foreground: 250 12% 58%;
 
-    --accent: 166 72% 45%;
-    --accent-foreground: 222 26% 9%;
+    --accent: 170 65% 50%;
+    --accent-foreground: 260 20% 8%;
 
     --gold: 45 65% 52%;
-    --gold-foreground: 222 26% 9%;
+    --gold-foreground: 260 20% 8%;
 
     --destructive: 0 62% 45%;
     --destructive-foreground: 210 40% 96%;
 
-    --border: 222 20% 20%;
-    --input: 222 20% 20%;
-    --ring: 166 72% 45%;
+    --border: 260 15% 20%;
+    --input: 260 15% 20%;
+    --ring: 262 60% 60%;
 
-    --sidebar-background: 222 26% 7%;
+    --sidebar-background: 260 20% 7%;
     --sidebar-foreground: 210 40% 96%;
-    --sidebar-primary: 166 72% 45%;
-    --sidebar-primary-foreground: 222 26% 9%;
-    --sidebar-accent: 222 20% 14%;
+    --sidebar-primary: 262 60% 60%;
+    --sidebar-primary-foreground: 260 20% 8%;
+    --sidebar-accent: 260 15% 14%;
     --sidebar-accent-foreground: 210 40% 96%;
-    --sidebar-border: 222 20% 16%;
-    --sidebar-ring: 166 72% 45%;
+    --sidebar-border: 260 15% 16%;
+    --sidebar-ring: 262 60% 60%;
 
-    --chat-user: 166 72% 45%;
-    --chat-user-foreground: 222 26% 9%;
-    --chat-ai: 222 20% 15%;
+    --chat-user: 262 60% 60%;
+    --chat-user-foreground: 260 20% 8%;
+    --chat-ai: 260 15% 15%;
     --chat-ai-foreground: 210 40% 96%;
-    --chat-ai-border: 222 20% 20%;
-    --chat-input-bg: 222 24% 13%;
-    --chat-typing-dot: 166 72% 45%;
+    --chat-ai-border: 260 15% 20%;
+    --chat-input-bg: 260 18% 12%;
+    --chat-typing-dot: 262 60% 60%;
 
-    --gradient-hero: linear-gradient(145deg, hsl(222 26% 9%), hsl(222 24% 16%));
-    --gradient-accent: linear-gradient(135deg, hsl(166 72% 45%), hsl(170 65% 52%));
+    --gradient-hero: linear-gradient(145deg, hsl(260 20% 8%), hsl(260 18% 16%));
+    --gradient-accent: linear-gradient(135deg, hsl(170 65% 50%), hsl(175 60% 55%));
+    --gradient-page: linear-gradient(145deg, hsl(260 20% 8%), hsl(260 18% 12%));
 
     --shadow-md: 0 4px 12px -2px hsl(0 0% 0% / 0.3);
     --shadow-lg: 0 12px 28px -6px hsl(0 0% 0% / 0.4);
@@ -167,6 +170,11 @@
 }
 
 @layer components {
+  /* Prodify-inspired gradient page background */
+  .page-gradient {
+    background: var(--gradient-page);
+  }
+
   /* Hero gradient backgrounds */
   .hero-gradient {
     background: var(--gradient-hero);
@@ -176,14 +184,18 @@
     background: var(--gradient-accent);
   }
 
+  .violet-gradient {
+    background: var(--gradient-violet);
+  }
+
   .gold-gradient {
     background: var(--gradient-gold);
   }
 
-  /* Card styles – Switchly-inspired floating cards */
+  /* Card styles – Prodify-inspired floating cards */
   .card-elevated {
     box-shadow: var(--shadow-md);
-    @apply bg-card rounded-2xl border border-border/50 transition-all duration-300;
+    @apply bg-card rounded-2xl border border-border/40 transition-all duration-300;
   }
 
   .card-elevated:hover {
@@ -207,16 +219,23 @@
     box-shadow: var(--shadow-gold);
   }
 
-  /* Glassmorphism */
+  /* Glassmorphism – Prodify-style frosted glass */
   .glass-effect {
-    @apply backdrop-blur-lg bg-white/80 border border-white/20;
+    @apply backdrop-blur-xl bg-white/70 border border-white/30;
+    box-shadow: var(--shadow-sm);
   }
 
   .glass-effect-strong {
-    @apply backdrop-blur-xl bg-white/90 border border-white/30;
+    @apply backdrop-blur-2xl bg-white/85 border border-white/40;
+    box-shadow: var(--shadow-md);
   }
 
-  /* Badge chip style (like Switchly's "100% digital") */
+  .glass-sidebar {
+    @apply backdrop-blur-2xl bg-white/80 border-r border-white/30;
+    box-shadow: 4px 0 24px -4px hsl(262 30% 50% / 0.06);
+  }
+
+  /* Badge chip style – Prodify status badges */
   .chip {
     @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border;
     @apply bg-card border-border/60 text-muted-foreground;
@@ -226,9 +245,21 @@
     @apply bg-accent/10 border-accent/20 text-accent;
   }
 
+  .chip-primary {
+    @apply bg-primary/10 border-primary/20 text-primary;
+  }
+
+  .chip-warning {
+    @apply bg-warning/10 border-warning/20 text-warning;
+  }
+
+  .chip-success {
+    @apply bg-success/10 border-success/20 text-success;
+  }
+
   /* Background pattern – subtle dot grid */
   .bg-dot-pattern {
-    background-image: radial-gradient(circle, hsl(var(--muted-foreground) / 0.07) 1px, transparent 1px);
+    background-image: radial-gradient(circle, hsl(var(--primary) / 0.05) 1px, transparent 1px);
     background-size: 24px 24px;
   }
 }
@@ -242,6 +273,16 @@
   .text-gradient-gold {
     @apply bg-clip-text text-transparent;
     background-image: var(--gradient-gold);
+  }
+
+  .text-gradient-violet {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-violet);
+  }
+
+  /* Display serif font utility */
+  .font-serif-display {
+    font-family: 'DM Serif Display', Georgia, serif;
   }
 
   .animate-fade-in {
@@ -310,7 +351,7 @@
   content: '';
   @apply absolute -bottom-1 -right-1 w-3 h-3 rounded-full;
   background: hsl(var(--chat-user));
-  opacity: 0.2;
+  opacity: 0.15;
 }
 
 .chat-message-ai {
@@ -321,7 +362,7 @@
 
 .chat-input-wrapper {
   @apply relative;
-  box-shadow: 0 -4px 24px -4px hsl(220 25% 16% / 0.06);
+  box-shadow: 0 -4px 24px -4px hsl(262 30% 50% / 0.05);
 }
 
 /* Safe area for mobile devices */

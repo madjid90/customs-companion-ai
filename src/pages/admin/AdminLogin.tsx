@@ -96,21 +96,21 @@ export default function AdminLogin() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sidebar to-sidebar/95">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent"></div>
+      <div className="min-h-screen flex items-center justify-center page-gradient">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sidebar to-sidebar/95 p-4">
-      <Card className="w-full max-w-md animate-slide-up">
+    <div className="min-h-screen flex items-center justify-center page-gradient p-4">
+      <Card className="w-full max-w-md animate-slide-up card-elevated border-0">
         <CardHeader className="text-center space-y-4">
           <div className="mx-auto">
             <Logo size="lg" />
           </div>
           <div>
-            <CardTitle className="text-2xl">
+            <CardTitle className="text-2xl font-serif-display">
               {mode === "login" ? "Administration" : "Créer un compte Admin"}
             </CardTitle>
             <CardDescription>
@@ -132,7 +132,7 @@ export default function AdminLogin() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@example.com"
-                  className="pl-10"
+                  className="pl-10 rounded-xl"
                   autoFocus
                   required
                 />
@@ -149,7 +149,7 @@ export default function AdminLogin() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={mode === "signup" ? "Minimum 6 caractères" : "Entrez votre mot de passe"}
-                  className="pl-10 pr-10"
+                  className="pl-10 pr-10 rounded-xl"
                   minLength={mode === "signup" ? 6 : undefined}
                   required
                 />
@@ -170,7 +170,7 @@ export default function AdminLogin() {
             </div>
 
             {error && (
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 text-destructive text-sm">
                 <AlertCircle className="h-4 w-4 flex-shrink-0" />
                 <span>{error}</span>
               </div>
@@ -178,7 +178,7 @@ export default function AdminLogin() {
 
             <Button
               type="submit"
-              className="w-full h-11 bg-accent hover:bg-accent/90 text-accent-foreground font-semibold"
+              className="w-full h-11 violet-gradient hover:opacity-90 text-white font-semibold rounded-xl shadow-accent"
               disabled={isLoading || !email || !password}
             >
               {isLoading ? (
@@ -204,7 +204,7 @@ export default function AdminLogin() {
           <div className="mt-6 text-center">
             <Button
               variant="link"
-              className="text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-primary"
               onClick={() => {
                 setMode(mode === "login" ? "signup" : "login");
                 setError("");

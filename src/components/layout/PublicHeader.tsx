@@ -12,13 +12,13 @@ export function PublicHeader() {
 
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex items-center gap-2">
-              <span className="chip">
+              <span className="chip chip-success">
                 <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
                 En ligne
               </span>
             </div>
             <Link to="/admin/login">
-              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground rounded-xl">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground hover:bg-primary/5 rounded-xl">
                 <Settings className="h-4 w-4 mr-2" />
                 <span className="hidden sm:inline">Admin</span>
               </Button>
