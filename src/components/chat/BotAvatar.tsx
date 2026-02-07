@@ -21,7 +21,7 @@ export function BotAvatar({ size = "sm", className }: BotAvatarProps) {
   return (
     <div
       className={cn(
-        "flex-shrink-0 flex items-center justify-center rounded-xl bg-primary/10",
+        "flex-shrink-0 flex items-center justify-center",
         sizeClasses[size],
         className
       )}
