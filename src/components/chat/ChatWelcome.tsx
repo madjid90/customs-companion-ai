@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Bot, Sparkles, FileImage, Search, Scale, Package, FileCheck, Globe, Truck, ShieldAlert, Calculator, BookOpen, ArrowRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ChatWelcomeProps {
   onQuestionClick: (question: string) => void;
@@ -79,7 +80,7 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
     <div className="flex flex-col items-center justify-center min-h-[calc(100dvh-200px)] px-4 py-8 animate-fade-in">
       {/* Robot icon */}
       <div className="relative mb-6">
-        <div className="absolute inset-0 w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-primary/8 blur-xl -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
+        <div className="absolute inset-0 w-20 h-20 md:w-24 md:h-24 rounded-full bg-primary/6 blur-2xl -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
         <div className="relative w-20 h-20 md:w-24 md:h-24 flex items-center justify-center animate-float">
           <Bot className="h-12 w-12 md:h-14 md:w-14 text-primary" strokeWidth={1.5} />
         </div>
@@ -93,20 +94,24 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
         Classification SH, tarifs, réglementations — obtenez des réponses précises et sourcées.
       </p>
 
-      {/* Suggestion cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-xl">
+      {/* Suggestion cards – Switchly-style with arrow */}
+      <div className="w-full max-w-xl bg-card rounded-2xl border border-border/20 shadow-sm overflow-hidden">
         {suggestedQuestions.map((item, i) => (
           <button
             key={`${item.question}-${i}`}
-            className="group flex items-start gap-3 text-left p-3.5 rounded-xl bg-card border border-border/40 hover:border-primary/20 hover:shadow-sm transition-all duration-200"
+            className={cn(
+              "group flex items-center gap-3.5 text-left w-full p-4 hover:bg-muted/40 transition-all duration-200",
+              i < suggestedQuestions.length - 1 && "border-b border-border/20"
+            )}
             onClick={() => onQuestionClick(item.question)}
           >
-            <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-primary/8 flex items-center justify-center group-hover:bg-primary/12 transition-colors">
+            <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-primary/8 flex items-center justify-center group-hover:bg-primary/12 transition-colors">
               <item.icon className="h-4 w-4 text-primary/70" />
             </div>
-            <span className="text-[13px] leading-snug text-muted-foreground group-hover:text-foreground transition-colors line-clamp-2 pt-0.5">
+            <span className="flex-1 text-[13px] md:text-sm leading-snug text-muted-foreground group-hover:text-foreground transition-colors">
               {item.question}
             </span>
+            <ArrowRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-primary/60 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
           </button>
         ))}
       </div>

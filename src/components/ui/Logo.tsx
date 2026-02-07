@@ -21,7 +21,7 @@ export function Logo({ variant = "default", size = "md", showText = true }: Logo
       <div className={`${config.container} rounded-xl flex items-center justify-center transition-all duration-300 ${
         variant === "light" 
           ? "bg-white/20 group-hover:bg-white/30" 
-          : "blue-gradient accent-glow"
+          : "cta-gradient"
       }`}>
         <ShieldCheck className={`${config.icon} text-white`} strokeWidth={2.5} />
       </div>
