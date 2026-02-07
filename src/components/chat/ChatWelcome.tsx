@@ -104,16 +104,6 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
         et sourcées en quelques secondes.
       </p>
 
-      {/* Stats chips – Prodify style */}
-      <div className="flex items-center justify-center gap-3 md:gap-4 mb-6 md:mb-8">
-        {stats.map((stat, i) => (
-          <div key={i} className="chip chip-primary">
-            <stat.icon className="h-3.5 w-3.5" />
-            <span className="font-semibold">{stat.value}</span>
-            <span className="hidden sm:inline text-muted-foreground">{stat.label}</span>
-          </div>
-        ))}
-      </div>
 
       {/* Suggested questions – floating card style */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 md:gap-3 max-w-2xl mx-auto">
