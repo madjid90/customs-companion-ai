@@ -34,6 +34,45 @@ export const SEMANTIC_THRESHOLDS: SemanticThresholds = {
   minResultsForFallback: 3, // Si moins de 3 résultats, élargir la recherche
 };
 
+// ============================================================================
+// SCORE DISTRIBUTION MONITORING
+// ============================================================================
+
+/**
+ * Log la distribution des scores pour analyse et monitoring des seuils
+ */
+export function logScoreDistribution(
+  searchType: string,
+  results: Array<{ similarity?: number; combined_score?: number }>,
+  threshold: number
+): void {
+  if (results.length === 0) return;
+
+  const scores = results
+    .map(r => r.similarity ?? r.combined_score ?? 0)
+    .filter(s => s > 0)
+    .sort((a, b) => b - a);
+
+  if (scores.length === 0) return;
+
+  const stats = {
+    type: 'score_distribution',
+    search_type: searchType,
+    threshold,
+    count: scores.length,
+    above_threshold: scores.filter(s => s >= threshold).length,
+    below_threshold: scores.filter(s => s < threshold).length,
+    max: Math.round(scores[0] * 1000) / 1000,
+    min: Math.round(scores[scores.length - 1] * 1000) / 1000,
+    avg: Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 1000) / 1000,
+    median: Math.round(scores[Math.floor(scores.length / 2)] * 1000) / 1000,
+    p75: Math.round(scores[Math.floor(scores.length * 0.25)] * 1000) / 1000,
+    timestamp: new Date().toISOString(),
+  };
+
+  console.log(JSON.stringify(stats));
+}
+
 /**
  * Seuils adaptatifs selon l'intention détectée
  */
@@ -214,6 +253,8 @@ export async function searchHSCodesSemantic(
       return [];
     }
 
+    let finalResults = data || [];
+
     if ((!data || data.length < SEMANTIC_THRESHOLDS.minResultsForFallback) && threshold > SEMANTIC_THRESHOLDS.hsCodesLow) {
       console.log(`Semantic HS: only ${data?.length || 0} results at threshold ${threshold}, retrying at ${SEMANTIC_THRESHOLDS.hsCodesLow}`);
       const { data: fallbackData } = await supabase.rpc("search_hs_codes_semantic", {
@@ -221,10 +262,11 @@ export async function searchHSCodesSemantic(
         match_threshold: SEMANTIC_THRESHOLDS.hsCodesLow,
         match_count: limit + 5,
       });
-      return fallbackData || data || [];
+      finalResults = fallbackData || data || [];
     }
 
-    return data || [];
+    logScoreDistribution('hs_codes_semantic', finalResults, threshold);
+    return finalResults;
   } catch (error) {
     console.error("Semantic HS search failed:", error);
     return [];
@@ -731,7 +773,9 @@ export async function searchHSCodesHybrid(
       return searchHSCodesSemantic(supabase, queryEmbedding, SEMANTIC_THRESHOLDS.hsCodesMedium, limit);
     }
 
-    return data || [];
+    const results = data || [];
+    logScoreDistribution('hs_codes_hybrid', results, 0.6);
+    return results;
   } catch (error) {
     console.error('Hybrid HS search failed:', error);
     return [];
@@ -766,7 +810,9 @@ export async function searchTariffNotesHybridRRF(
       return [];
     }
 
-    return data || [];
+    const results = data || [];
+    logScoreDistribution('tariff_notes_hybrid', results, 0.5);
+    return results;
   } catch (error) {
     console.error('Hybrid tariff notes search failed:', error);
     return [];
@@ -798,6 +844,8 @@ export async function searchLegalChunksHybrid(
     }
 
     if (!data || data.length === 0) return [];
+
+    logScoreDistribution('legal_chunks_hybrid', data, 0.5);
 
     // Enrich with source metadata (title, PDF path)
     const sourceIds = [...new Set(data.map((d: any) => d.source_id).filter(Boolean))];
