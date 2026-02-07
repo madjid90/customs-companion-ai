@@ -1,7 +1,7 @@
 // ============================================================================
 // AUTHENTICATION CHECK - Production Hardening
 // ============================================================================
-// Validates requests are authenticated in production mode
+// Validates requests are authenticated using getClaims() for signing-keys
 // ============================================================================
 
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -23,7 +23,7 @@ export function isProductionMode(): boolean {
 }
 
 /**
- * Extract and validate JWT from Authorization header
+ * Extract and validate JWT from Authorization header using getClaims()
  */
 export async function checkAuthentication(req: Request): Promise<AuthResult> {
   const authHeader = req.headers.get("Authorization");
@@ -63,17 +63,27 @@ export async function checkAuthentication(req: Request): Promise<AuthResult> {
       global: { headers: { Authorization: authHeader } },
     });
     
-    // Validate JWT claims
-    const { data, error } = await supabase.auth.getUser(token);
+    // Use getClaims() instead of getUser() for signing-keys compatibility
+    const { data, error } = await supabase.auth.getClaims(token);
     
-    if (error || !data?.user) {
+    if (error || !data?.claims) {
+      console.error("[Auth] getClaims error:", error?.message || "No claims");
       return {
         authenticated: false,
         error: error?.message || "Invalid token",
       };
     }
     
-    const user = data.user;
+    const claims = data.claims;
+    const userId = claims.sub as string;
+    const userEmail = claims.email as string | undefined;
+    
+    if (!userId) {
+      return {
+        authenticated: false,
+        error: "Token missing user ID (sub claim)",
+      };
+    }
     
     // Check for admin role
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -84,7 +94,7 @@ export async function checkAuthentication(req: Request): Promise<AuthResult> {
       const { data: roleData } = await adminClient
         .from("user_roles")
         .select("role")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .eq("role", "admin")
         .maybeSingle();
       
@@ -93,8 +103,8 @@ export async function checkAuthentication(req: Request): Promise<AuthResult> {
     
     return {
       authenticated: true,
-      userId: user.id,
-      userEmail: user.email,
+      userId,
+      userEmail,
       isAdmin,
     };
   } catch (err) {
