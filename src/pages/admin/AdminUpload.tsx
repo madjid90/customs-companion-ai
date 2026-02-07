@@ -1264,8 +1264,8 @@ export default function AdminUpload() {
           <p className="text-xs text-muted-foreground mt-1">Extraction automatique</p>
         </div>
         <div className="step-card">
-          <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
-            <Eye className="h-5 w-5 text-primary" />
+          <div className="w-11 h-11 rounded-xl bg-secondary/10 flex items-center justify-center mx-auto mb-3">
+            <Eye className="h-5 w-5 text-secondary" />
           </div>
           <p className="font-semibold text-sm">3. Prévisualisation</p>
           <p className="text-xs text-muted-foreground mt-1">Correction manuelle</p>
