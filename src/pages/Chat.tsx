@@ -376,12 +376,10 @@ export default function Chat() {
         : `J'ai des questions concernant ces documents: ${docList}`;
     }
 
-    // Build display message
+    // Build display message (never append PDF count - files are shown as attachments)
     let displayContent = enhancedMessage;
-    if (pdfsToSend.length > 0 && !displayContent) {
-      displayContent = `📄 Analyse de ${pdfsToSend.length} document(s) PDF`;
-    } else if (pdfsToSend.length > 0) {
-      displayContent = `${displayContent} (+ ${pdfsToSend.length} PDF)`;
+    if (!displayContent && pdfsToSend.length > 0) {
+      displayContent = `Analyse de ${pdfsToSend.length} document(s) PDF`;
     }
 
     // Build attached files for history display
