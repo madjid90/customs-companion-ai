@@ -441,6 +441,12 @@
   }
 }
 
+/* Gradient icon – force gradient stroke on all SVG children */
+.gradient-icon,
+.gradient-icon * {
+  stroke: url(#bot-icon-gradient) !important;
+}
+
 /* Chat specific styles */
 .chat-message-user {
   @apply relative;
