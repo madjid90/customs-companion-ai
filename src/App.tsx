@@ -16,6 +16,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 // Public pages
 import Landing from "@/pages/Landing";
 import PhoneLogin from "@/pages/PhoneLogin";
+import RequestAccess from "@/pages/RequestAccess";
 
 // App pages (phone auth)
 import Chat from "@/pages/Chat";
@@ -26,6 +27,7 @@ import AdminLogin from "@/pages/admin/AdminLogin";
 import AdminHSCodes from "@/pages/admin/AdminHSCodes";
 import AdminUpload from "@/pages/admin/AdminUpload";
 import AdminDocuments from "@/pages/admin/AdminDocuments";
+import AdminAccessRequests from "@/pages/admin/AdminAccessRequests";
 import NotFound from "@/pages/NotFound";
 
 const App = () => {
@@ -44,6 +46,7 @@ const App = () => {
                   <Routes>
                     {/* Public: Landing & Login */}
                     <Route path="/" element={<Landing />} />
+                    <Route path="/demander-acces" element={<RequestAccess />} />
                     <Route path="/login" element={<PhoneLogin />} />
 
                     {/* Authenticated app routes (phone auth) */}
@@ -81,6 +84,7 @@ const App = () => {
                       <Route path="upload" element={<AdminUpload />} />
                       <Route path="hs-codes" element={<AdminHSCodes />} />
                       <Route path="documents" element={<AdminDocuments />} />
+                      <Route path="access-requests" element={<AdminAccessRequests />} />
                     </Route>
 
                     {/* Legacy redirect */}

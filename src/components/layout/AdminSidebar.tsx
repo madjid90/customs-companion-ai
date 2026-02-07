@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   MessageSquare,
+  Inbox,
   LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -21,6 +22,8 @@ type MenuItem =
   | { type: "separator" };
 
 const menuItems: MenuItem[] = [
+  { type: "link", icon: Inbox, label: "Demandes d'accès", href: "/admin/access-requests" },
+  { type: "separator" },
   { type: "link", icon: Upload, label: "Upload fichiers", href: "/admin/upload" },
   { type: "separator" },
   { type: "link", icon: Package, label: "Codes SH", href: "/admin/hs-codes" },
