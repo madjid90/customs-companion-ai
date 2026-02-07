@@ -219,19 +219,26 @@ async function splitPdfPages(
   return result;
 }
 
-// Get actual page count from PDF (memory-optimized)
+// Get actual page count from PDF (memory-optimized, with fallback)
 async function getPdfPageCount(pdfBase64: string): Promise<number> {
   const estimatedSize = Math.floor(pdfBase64.length * 3 / 4);
   if (estimatedSize > MAX_PDF_SIZE_BYTES) {
     throw new Error(`PDF trop volumineux (${(estimatedSize / 1024 / 1024).toFixed(1)}MB). Max: ${MAX_PDF_SIZE_BYTES / 1024 / 1024}MB`);
   }
   
-  const pdfBytes = base64ToUint8Array(pdfBase64);
-  const srcDoc = await PDFDocument.load(pdfBytes, {
-    ignoreEncryption: true,
-    updateMetadata: false,
-  });
-  return srcDoc.getPageCount();
+  try {
+    const pdfBytes = base64ToUint8Array(pdfBase64);
+    const srcDoc = await PDFDocument.load(pdfBytes, {
+      ignoreEncryption: true,
+      updateMetadata: false,
+    });
+    return srcDoc.getPageCount();
+  } catch (error) {
+    console.warn(`[ingest-legal-doc] pdf-lib failed to parse PDF: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[ingest-legal-doc] Falling back to single-page mode (sending entire PDF to Claude)`);
+    // Return 1 so the caller sends the entire PDF as a single chunk
+    return 1;
+  }
 }
 
 // Extract text from a small PDF chunk via Claude - WITH RETRY for transient 500 errors
@@ -394,7 +401,7 @@ async function extractTextFromPDF(pdfBase64: string): Promise<ExtractedPage[]> {
     throw new Error("ANTHROPIC_API_KEY not configured");
   }
 
-  // Get actual page count using pdf-lib
+  // Get actual page count using pdf-lib (returns 1 as fallback if PDF can't be parsed)
   const totalPages = await getPdfPageCount(pdfBase64);
   console.log(`[ingest-legal-doc] PDF has ${totalPages} pages`);
 
@@ -437,6 +444,13 @@ async function extractTextFromPDF(pdfBase64: string): Promise<ExtractedPage[]> {
       if (errorMsg.includes("out of bounds")) {
         break;
       }
+      
+      // If pdf-lib splitting failed (malformed PDF), fall back to sending entire PDF
+      if (errorMsg.includes("PDFDict") || errorMsg.includes("undefined") || errorMsg.includes("Expected instance")) {
+        console.warn(`[ingest-legal-doc] pdf-lib split failed, falling back to sending entire PDF to Claude`);
+        return await extractTextFromPDFChunk(pdfBase64, 1);
+      }
+      
       throw error;
     }
   }
@@ -1526,9 +1540,19 @@ serve(async (req) => {
         
         console.log(`[ingest-legal-doc] Batch mode: extracting pages ${startPage}-${endPage}`);
         
-        // Split PDF to just the pages we need
-        const chunkBase64 = await splitPdfPages(pdfBase64, startPage, endPage);
-        pages = await extractTextFromPDFChunk(chunkBase64, startPage);
+        try {
+          // Split PDF to just the pages we need
+          const chunkBase64 = await splitPdfPages(pdfBase64, startPage, endPage);
+          pages = await extractTextFromPDFChunk(chunkBase64, startPage);
+        } catch (splitError) {
+          const splitMsg = splitError instanceof Error ? splitError.message : String(splitError);
+          if (splitMsg.includes("PDFDict") || splitMsg.includes("Expected instance") || splitMsg.includes("undefined")) {
+            console.warn(`[ingest-legal-doc] pdf-lib split failed in batch mode, sending entire PDF to Claude`);
+            pages = await extractTextFromPDFChunk(pdfBase64, startPage);
+          } else {
+            throw splitError;
+          }
+        }
         
       } else {
         // FULL MODE: Extract all pages using batching
