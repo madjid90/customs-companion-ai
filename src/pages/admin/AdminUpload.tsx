@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getAuthHeaders } from "@/lib/authHeaders";
 import { useToast } from "@/hooks/use-toast";
 import { useUploadState, UploadedFile, ExtractionData, DocumentType } from "@/hooks/useUploadState";
 import { storeFile, getStoredFile, removeStoredFile, removeStoredFiles, clearAllStoredFiles, cleanupOldFiles } from "@/lib/fileStorage";
@@ -119,11 +120,7 @@ export default function AdminUpload() {
             `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-pdf`,
             {
               method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-                "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-              },
+              headers: await getAuthHeaders(),
               body: JSON.stringify(body),
               signal: controller.signal,
             }
@@ -349,11 +346,7 @@ export default function AdminUpload() {
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ingest-legal-doc`,
           {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-              "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            },
+            headers: await getAuthHeaders(),
             body: JSON.stringify(body),
             signal: controller.signal,
           }
