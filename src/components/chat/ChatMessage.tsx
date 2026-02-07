@@ -132,50 +132,82 @@ const extractChapterFromContent = (content: string): string | null => {
 // Filter cited sources to only keep those actually referenced in the response text
 const filterCitedSources = (circulars: CircularReference[], content: string): CircularReference[] => {
   if (!circulars || circulars.length === 0) return [];
-  const normalizedContent = content.toLowerCase().replace(/[.\-\s]/g, '');
   
-  return circulars.filter((c) => {
-    // Check if article number is mentioned (e.g. "Art. 102", "Article 3")
+  const contentLower = content.toLowerCase();
+  // Normalized version without dots/dashes/spaces for code matching
+  const normalizedContent = contentLower.replace(/[.\-\s]/g, '');
+  
+  const matched = circulars.filter((c) => {
+    // 1. Articles: check if "Art. X" or "Article X" appears in text
     if (c.reference_type === "Article" || c.reference_type === "Preuve") {
+      // Extract article number from reference or title
       const articleMatch = c.reference_number?.match(/Art\.?\s*(\d+(?:\s*(?:bis|ter|quater))?(?:\s*-\s*\d+)?)/i)
         || c.title?.match(/Art(?:icle)?\.?\s*(\d+(?:\s*(?:bis|ter|quater))?(?:\s*-\s*\d+)?)/i);
       if (articleMatch) {
         const artNum = articleMatch[1].trim();
-        // Check for "Art. X", "Article X", "article X", "l'article X"
-        const artPatterns = [
-          new RegExp(`\\b(?:Art\\.?|Article|l['']article)\\s*${artNum}\\b`, 'i'),
-        ];
-        if (artPatterns.some(p => p.test(content))) return true;
+        // Match "Art. 102", "Article 102", "article 102", "l'article 102", "المادة 102"
+        const artPattern = new RegExp(`(?:Art\\.?\\s*|Article\\s+|l[''\u2019]article\\s+|المادة\\s+)${artNum}\\b`, 'i');
+        if (artPattern.test(content)) return true;
       }
     }
     
-    // Check if HS code / tariff line is mentioned
+    // 2. Tariff lines / HS codes: check if the code digits appear
     if (c.reference_type === "Ligne tarifaire" || c.reference_type === "Tarif") {
       const code = (c.reference_number || '').replace(/[.\-\s]/g, '');
-      if (code.length >= 4 && normalizedContent.includes(code)) return true;
-      // Also check shorter prefix (6 digits)
-      if (code.length >= 6 && normalizedContent.includes(code.substring(0, 6))) return true;
-    }
-    
-    // Check if circulaire reference is mentioned
-    if (c.reference_type === "Circulaire") {
-      const refNum = c.reference_number?.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-      if (refNum && refNum.length > 3 && normalizedContent.includes(refNum)) return true;
-      // Also check by PDF title keywords
-      if (c.pdf_title) {
-        const keywords = c.pdf_title.toLowerCase().split(/[\s\-_]+/).filter(w => w.length > 4);
-        if (keywords.length > 0 && keywords.every(kw => content.toLowerCase().includes(kw))) return true;
+      if (code.length >= 4) {
+        // Check full code or 6-digit prefix
+        if (normalizedContent.includes(code)) return true;
+        if (code.length >= 6 && normalizedContent.includes(code.substring(0, 6))) return true;
+        // Also check formatted version (e.g. "0403.20")
+        if (code.length >= 6) {
+          const formatted = code.substring(0, 4) + '.' + code.substring(4, 6);
+          if (contentLower.includes(formatted)) return true;
+        }
       }
     }
     
-    // Generic fallback: check if reference_number appears anywhere in the text
+    // 3. Circulaires: check if the circulaire number or document name is mentioned
+    if (c.reference_type === "Circulaire") {
+      // Check circulaire number patterns (e.g. "circulaire 1234", "circulaire n° 1234")
+      const circNum = c.reference_number?.match(/(\d[\d\/\-]+\d)/);
+      if (circNum) {
+        const numPattern = new RegExp(`circulaire\\s+(?:n[°o]?\\.?\\s*)?${circNum[1].replace(/[\/\-]/g, '[/\\-]')}`, 'i');
+        if (numPattern.test(content)) return true;
+      }
+      // Check if referenced as "Code des Douanes" when the source IS the Code des Douanes
+      if (c.reference_number?.toLowerCase().includes('codedesdouanes') || 
+          c.pdf_title?.toLowerCase().includes('code des douanes') ||
+          c.reference_number?.toLowerCase().includes('codedesDouanesimpotsindirects')) {
+        if (contentLower.includes('code des douanes') || contentLower.includes('cdii')) return true;
+      }
+    }
+    
+    // 4. Generic: check if reference_number digits/text appear in content
     if (c.reference_number) {
       const ref = c.reference_number.replace(/[.\-\s]/g, '').toLowerCase();
-      if (ref.length >= 4 && normalizedContent.includes(ref)) return true;
+      if (ref.length >= 6 && normalizedContent.includes(ref)) return true;
     }
     
     return false;
   });
+  
+  // If articles are matched, also include the parent document (Circulaire) they come from
+  // e.g. if Art. 102 from "Code des Douanes" is matched, show the Code des Douanes circulaire too
+  if (matched.length > 0) {
+    const matchedPdfTitles = new Set(
+      matched.filter(m => m.pdf_title).map(m => m.pdf_title!.toLowerCase())
+    );
+    
+    for (const c of circulars) {
+      if (matched.includes(c)) continue;
+      // Include parent circulaire if child articles from the same document are matched
+      if (c.reference_type === "Circulaire" && c.pdf_title && matchedPdfTitles.has(c.pdf_title.toLowerCase())) {
+        matched.push(c);
+      }
+    }
+  }
+  
+  return matched;
 };
 
 // Remove any generated links from AI response - sources are handled automatically by CitedCirculars
