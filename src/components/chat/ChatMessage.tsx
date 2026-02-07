@@ -41,6 +41,7 @@ interface Message {
   citedCirculars?: CircularReference[];
   hasDbEvidence?: boolean;
   validationMessage?: string;
+  isStreaming?: boolean;
 }
 
 interface ChatMessageProps {
@@ -465,9 +466,13 @@ export function ChatMessage({
               {processedContent}
             </ReactMarkdown>
             
+            {/* Streaming cursor */}
+            {message.isStreaming && (
+              <span className="inline-block w-1.5 h-4 bg-primary/70 animate-pulse rounded-sm ml-0.5 align-text-bottom" />
+            )}
             
-            {/* Display validated sources - always show if there are citations OR if there's a validation message */}
-            {(message.citedCirculars || message.validationMessage) && (
+            {/* Display validated sources - only after streaming is complete */}
+            {!message.isStreaming && (message.citedCirculars || message.validationMessage) && (
               <CitedCirculars
                 circulars={message.citedCirculars || []}
                 onDocumentClick={handleLinkClick}
