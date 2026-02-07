@@ -7,7 +7,7 @@ export function PublicLayout() {
   const isChat = location.pathname === "/chat";
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col page-gradient">
       <PublicHeader />
       <main className="flex-1 pt-16">
         <Outlet />

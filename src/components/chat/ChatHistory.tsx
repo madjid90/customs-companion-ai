@@ -270,7 +270,7 @@ export function ChatHistory({
           variant="ghost"
           size="icon"
           onClick={onToggle}
-          className="fixed left-2 md:left-4 top-[4.5rem] md:top-20 z-40 h-9 w-9 md:h-10 md:w-10 rounded-full bg-background/80 backdrop-blur-sm border shadow-md hover:bg-accent"
+          className="fixed left-2 md:left-4 top-[4.5rem] md:top-20 z-40 h-9 w-9 md:h-10 md:w-10 rounded-full bg-card/80 backdrop-blur-sm border border-border/50 shadow-card hover:bg-primary/5 hover:text-primary"
           title="Ouvrir l'historique"
         >
           <History className="h-4 w-4 md:h-5 md:w-5" />
@@ -292,7 +292,7 @@ export function ChatHistory({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         className={cn(
-          "fixed left-0 top-16 h-[calc(100vh-4rem)] bg-background border-r z-30 flex flex-col",
+          "fixed left-0 top-16 h-[calc(100vh-4rem)] bg-card/90 backdrop-blur-xl border-r border-border/50 z-30 flex flex-col",
           isOpen ? "w-[85vw] max-w-[320px] md:w-72" : "w-0 overflow-hidden",
           !isSwiping && "transition-all duration-300 ease-in-out"
         )}
@@ -303,7 +303,7 @@ export function ChatHistory({
       >
         <div className="flex items-center justify-between p-3 border-b flex-shrink-0">
           <div className="flex items-center gap-2">
-            <History className="h-5 w-5 text-primary" />
+            <History className="h-5 w-5 text-primary/70" />
             <h2 className="font-semibold text-sm">Historique</h2>
           </div>
           <div className="flex items-center gap-1">
@@ -353,8 +353,8 @@ export function ChatHistory({
                           key={session.session_id}
                           className={cn(
                             "group flex items-center gap-1 rounded-lg transition-colors",
-                            "hover:bg-accent/50",
-                            session.session_id === currentSessionId && "bg-accent"
+                            "hover:bg-primary/5",
+                            session.session_id === currentSessionId && "bg-primary/10"
                           )}
                         >
                           <button

@@ -43,17 +43,17 @@ export function AdminSidebar() {
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 h-screen bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col transition-all duration-300",
+        "fixed left-0 top-0 h-screen glass-sidebar flex flex-col transition-all duration-300 z-40",
         collapsed ? "w-16" : "w-64"
       )}
     >
       {/* Header */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-sidebar-border">
-        {!collapsed && <Logo variant="light" size="md" />}
+      <div className="h-16 flex items-center justify-between px-4 border-b border-border/50">
+        {!collapsed && <Logo size="md" />}
         <Button
           variant="ghost"
           size="icon"
-          className="text-sidebar-foreground hover:bg-sidebar-accent ml-auto"
+          className="text-muted-foreground hover:text-foreground hover:bg-primary/5 ml-auto rounded-xl"
           onClick={() => setCollapsed(!collapsed)}
         >
           {collapsed ? (
@@ -72,7 +72,7 @@ export function AdminSidebar() {
               return (
                 <div
                   key={`sep-${index}`}
-                  className="h-px bg-sidebar-border my-4"
+                  className="h-px bg-border/50 my-4"
                 />
               );
             }
@@ -85,10 +85,10 @@ export function AdminSidebar() {
                 key={item.href}
                 to={item.href}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
                   isActive
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    ? "bg-primary text-primary-foreground shadow-accent"
+                    : "text-muted-foreground hover:bg-primary/5 hover:text-foreground"
                 )}
               >
                 <Icon className="h-5 w-5 flex-shrink-0" />
@@ -100,11 +100,11 @@ export function AdminSidebar() {
       </ScrollArea>
 
       {/* Footer */}
-      <div className="p-2 border-t border-sidebar-border">
+      <div className="p-2 border-t border-border/50">
         <Button
           variant="ghost"
           className={cn(
-            "w-full justify-start text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            "w-full justify-start text-muted-foreground hover:bg-destructive/5 hover:text-destructive rounded-xl",
             collapsed && "justify-center px-0"
           )}
           onClick={handleLogout}
