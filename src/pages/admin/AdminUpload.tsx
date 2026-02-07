@@ -1337,7 +1337,7 @@ export default function AdminUpload() {
                 onChange={handleFileSelect}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
-              <div className={`w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center transition-all ${isDragging ? "violet-gradient accent-glow" : "bg-primary/10"}`}>
+              <div className={`w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center transition-all ${isDragging ? "blue-gradient accent-glow" : "bg-primary/10"}`}>
                 <Upload className={`h-6 w-6 transition-colors ${isDragging ? "text-white" : "text-primary"}`} />
               </div>
               <p className="text-lg font-semibold mb-1">
