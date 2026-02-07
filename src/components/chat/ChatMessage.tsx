@@ -56,9 +56,9 @@ interface ChatMessageProps {
 }
 
 const confidenceConfig = {
-  high: { icon: "🟢", label: "Confiance haute", className: "text-success" },
-  medium: { icon: "🟡", label: "Confiance moyenne", className: "text-warning" },
-  low: { icon: "🔴", label: "Confiance faible", className: "text-destructive" },
+  high: { color: "bg-success", label: "Confiance haute", className: "text-success" },
+  medium: { color: "bg-warning", label: "Confiance moyenne", className: "text-warning" },
+  low: { color: "bg-destructive", label: "Confiance faible", className: "text-destructive" },
 };
 
 // Check if a URL is a document (PDF, etc.)
@@ -662,7 +662,7 @@ export function ChatMessage({
                   "text-xs flex items-center gap-1.5 font-medium",
                   confidenceConfig[message.confidence].className
                 )}>
-                  <span className="text-sm">{confidenceConfig[message.confidence].icon}</span>
+                  <span className={cn("inline-block w-2.5 h-2.5 rounded-full", confidenceConfig[message.confidence].color)} />
                   {confidenceConfig[message.confidence].label}
                 </span>
               )}
