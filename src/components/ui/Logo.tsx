@@ -8,31 +8,28 @@ interface LogoProps {
 }
 
 export function Logo({ variant = "default", size = "md", showText = true }: LogoProps) {
-  const sizeClasses = {
-    sm: "h-6 w-6",
-    md: "h-8 w-8",
-    lg: "h-10 w-10",
+  const sizeConfig = {
+    sm: { icon: "h-5 w-5", container: "h-7 w-7", text: "text-base" },
+    md: { icon: "h-5 w-5", container: "h-9 w-9", text: "text-lg" },
+    lg: { icon: "h-6 w-6", container: "h-11 w-11", text: "text-xl" },
   };
 
-  const textSizeClasses = {
-    sm: "text-lg",
-    md: "text-xl",
-    lg: "text-2xl",
-  };
-
-  const colorClasses = {
-    default: "text-primary",
-    light: "text-primary-foreground",
-  };
+  const config = sizeConfig[size];
 
   return (
-    <Link to="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
-      <div className={`${colorClasses[variant]} flex items-center justify-center`}>
-        <ShieldCheck className={sizeClasses[size]} strokeWidth={2.5} />
+    <Link to="/" className="flex items-center gap-2.5 hover:opacity-90 transition-opacity group">
+      <div className={`${config.container} rounded-xl flex items-center justify-center transition-all duration-300 ${
+        variant === "light" 
+          ? "bg-white/20 group-hover:bg-white/30" 
+          : "accent-gradient shadow-accent"
+      }`}>
+        <ShieldCheck className={`${config.icon} ${variant === "light" ? "text-white" : "text-accent-foreground"}`} strokeWidth={2.5} />
       </div>
       {showText && (
-        <span className={`${textSizeClasses[size]} font-bold tracking-tight ${colorClasses[variant]}`}>
-          Douane<span className="text-accent">AI</span>
+        <span className={`${config.text} font-bold tracking-tight font-display ${
+          variant === "light" ? "text-white" : "text-foreground"
+        }`}>
+          Douane<span className="text-gradient-accent">AI</span>
         </span>
       )}
     </Link>

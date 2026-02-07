@@ -1,6 +1,6 @@
 import { Logo } from "@/components/ui/Logo";
 import { Link } from "react-router-dom";
-import { Bot } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 
 export function PublicFooter() {
   return (
@@ -8,7 +8,7 @@ export function PublicFooter() {
       <div className="container mx-auto px-4 py-8">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Bot className="h-4 w-4" />
+            <ShieldCheck className="h-4 w-4 text-accent" />
             <span>Propulsé par IA</span>
           </div>
 

@@ -2,37 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
-/* DouaneAI Design System - Professional Customs Assistant */
+/* DouaneAI Design System v3 – Switchly-inspired: clean, airy, modern */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 
 @layer base {
   :root {
-    /* Navy Blue Primary - #1e3a5f */
-    --primary: 213 52% 25%;
-    --primary-foreground: 45 100% 97%;
+    /* Primary – deep navy for trust & authority */
+    --primary: 213 52% 24%;
+    --primary-foreground: 0 0% 100%;
 
-    /* Gold Accent - #d4af37 */
-    --accent: 45 65% 52%;
-    --accent-foreground: 213 52% 15%;
+    /* Accent – vibrant teal/emerald (like Switchly green) */
+    --accent: 166 72% 40%;
+    --accent-foreground: 0 0% 100%;
 
-    /* Background & Surfaces */
-    --background: 210 40% 98%;
-    --foreground: 213 52% 15%;
+    /* Gold – warm secondary accent for premium feel */
+    --gold: 45 65% 52%;
+    --gold-foreground: 213 52% 15%;
 
+    /* Background – very soft cool gray, almost white */
+    --background: 216 33% 97%;
+    --foreground: 220 25% 16%;
+
+    /* Cards – pure white with depth */
     --card: 0 0% 100%;
-    --card-foreground: 213 52% 15%;
+    --card-foreground: 220 25% 16%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 213 52% 15%;
+    --popover-foreground: 220 25% 16%;
 
-    /* Secondary - Softer navy */
-    --secondary: 210 25% 93%;
-    --secondary-foreground: 213 52% 25%;
+    /* Secondary – subtle cool gray */
+    --secondary: 214 20% 94%;
+    --secondary-foreground: 213 52% 24%;
 
-    /* Muted for subtle elements */
-    --muted: 210 25% 93%;
-    --muted-foreground: 213 20% 50%;
+    /* Muted */
+    --muted: 216 18% 93%;
+    --muted-foreground: 215 16% 52%;
 
     /* Status Colors */
     --success: 160 84% 39%;
@@ -41,93 +46,107 @@
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 0 72% 56%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Borders & Inputs */
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 213 52% 25%;
+    /* Borders & Inputs – very light */
+    --border: 216 20% 92%;
+    --input: 216 20% 92%;
+    --ring: 166 72% 40%;
 
-    --radius: 0.5rem;
+    --radius: 0.75rem;
 
-    /* Admin Sidebar - Dark #1a202c */
+    /* Admin Sidebar */
     --sidebar-background: 220 26% 14%;
     --sidebar-foreground: 210 40% 96%;
-    --sidebar-primary: 45 65% 52%;
-    --sidebar-primary-foreground: 220 26% 14%;
+    --sidebar-primary: 166 72% 40%;
+    --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 220 20% 20%;
     --sidebar-accent-foreground: 210 40% 96%;
     --sidebar-border: 220 20% 22%;
-    --sidebar-ring: 45 65% 52%;
+    --sidebar-ring: 166 72% 40%;
 
-    /* Chat specific */
-    --chat-user: 213 52% 25%;
+    /* Chat */
+    --chat-user: 213 52% 24%;
     --chat-user-foreground: 0 0% 100%;
     --chat-ai: 0 0% 100%;
-    --chat-ai-foreground: 213 52% 15%;
-    --chat-ai-border: 214 32% 91%;
+    --chat-ai-foreground: 220 25% 16%;
+    --chat-ai-border: 216 20% 92%;
     --chat-input-bg: 0 0% 100%;
-    --chat-typing-dot: 45 65% 52%;
+    --chat-typing-dot: 166 72% 40%;
 
     /* Gradients */
-    --gradient-hero: linear-gradient(135deg, hsl(213 52% 25%), hsl(213 52% 35%));
+    --gradient-hero: linear-gradient(145deg, hsl(213 52% 24%), hsl(213 48% 32%));
+    --gradient-accent: linear-gradient(135deg, hsl(166 72% 40%), hsl(170 65% 48%));
     --gradient-gold: linear-gradient(135deg, hsl(45 65% 52%), hsl(45 75% 60%));
-    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(210 40% 98%));
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(216 33% 97%));
+    --gradient-surface: radial-gradient(ellipse at top, hsl(216 33% 97%), hsl(220 20% 95%));
 
-    /* Shadows */
-    --shadow-sm: 0 1px 2px 0 hsl(213 52% 15% / 0.05);
-    --shadow-md: 0 4px 6px -1px hsl(213 52% 15% / 0.1), 0 2px 4px -2px hsl(213 52% 15% / 0.1);
-    --shadow-lg: 0 10px 15px -3px hsl(213 52% 15% / 0.1), 0 4px 6px -4px hsl(213 52% 15% / 0.1);
-    --shadow-xl: 0 20px 25px -5px hsl(213 52% 15% / 0.1), 0 8px 10px -6px hsl(213 52% 15% / 0.1);
-    --shadow-gold: 0 4px 14px 0 hsl(45 65% 52% / 0.4);
+    /* Shadows – Switchly-inspired soft floating shadows */
+    --shadow-xs: 0 1px 2px 0 hsl(220 25% 16% / 0.03);
+    --shadow-sm: 0 1px 3px 0 hsl(220 25% 16% / 0.04), 0 1px 2px -1px hsl(220 25% 16% / 0.04);
+    --shadow-md: 0 4px 12px -2px hsl(220 25% 16% / 0.06), 0 2px 6px -2px hsl(220 25% 16% / 0.04);
+    --shadow-lg: 0 12px 28px -6px hsl(220 25% 16% / 0.08), 0 4px 10px -4px hsl(220 25% 16% / 0.04);
+    --shadow-xl: 0 24px 48px -12px hsl(220 25% 16% / 0.10), 0 8px 16px -6px hsl(220 25% 16% / 0.04);
+    --shadow-accent: 0 4px 14px 0 hsl(166 72% 40% / 0.25);
+    --shadow-gold: 0 4px 14px 0 hsl(45 65% 52% / 0.3);
+    --shadow-card-hover: 0 16px 32px -8px hsl(220 25% 16% / 0.10), 0 6px 12px -4px hsl(220 25% 16% / 0.05);
   }
 
   .dark {
-    --background: 220 26% 10%;
+    --background: 222 26% 9%;
     --foreground: 210 40% 96%;
 
-    --card: 220 26% 14%;
+    --card: 222 24% 13%;
     --card-foreground: 210 40% 96%;
 
-    --popover: 220 26% 14%;
+    --popover: 222 24% 13%;
     --popover-foreground: 210 40% 96%;
 
-    --primary: 45 65% 52%;
-    --primary-foreground: 220 26% 10%;
+    --primary: 166 72% 45%;
+    --primary-foreground: 222 26% 9%;
 
-    --secondary: 220 20% 20%;
+    --secondary: 220 20% 18%;
     --secondary-foreground: 210 40% 96%;
 
-    --muted: 220 20% 20%;
-    --muted-foreground: 210 20% 60%;
+    --muted: 220 20% 18%;
+    --muted-foreground: 215 16% 58%;
 
-    --accent: 45 65% 52%;
-    --accent-foreground: 220 26% 10%;
+    --accent: 166 72% 45%;
+    --accent-foreground: 222 26% 9%;
+
+    --gold: 45 65% 52%;
+    --gold-foreground: 222 26% 9%;
 
     --destructive: 0 62% 45%;
     --destructive-foreground: 210 40% 96%;
 
-    --border: 220 20% 22%;
-    --input: 220 20% 22%;
-    --ring: 45 65% 52%;
+    --border: 222 20% 20%;
+    --input: 222 20% 20%;
+    --ring: 166 72% 45%;
 
-    --sidebar-background: 220 26% 8%;
+    --sidebar-background: 222 26% 7%;
     --sidebar-foreground: 210 40% 96%;
-    --sidebar-primary: 45 65% 52%;
-    --sidebar-primary-foreground: 220 26% 10%;
-    --sidebar-accent: 220 20% 15%;
+    --sidebar-primary: 166 72% 45%;
+    --sidebar-primary-foreground: 222 26% 9%;
+    --sidebar-accent: 222 20% 14%;
     --sidebar-accent-foreground: 210 40% 96%;
-    --sidebar-border: 220 20% 18%;
-    --sidebar-ring: 45 65% 52%;
+    --sidebar-border: 222 20% 16%;
+    --sidebar-ring: 166 72% 45%;
 
-    --chat-user: 45 65% 52%;
-    --chat-user-foreground: 220 26% 10%;
-    --chat-ai: 220 20% 16%;
+    --chat-user: 166 72% 45%;
+    --chat-user-foreground: 222 26% 9%;
+    --chat-ai: 222 20% 15%;
     --chat-ai-foreground: 210 40% 96%;
-    --chat-ai-border: 220 20% 22%;
-    --chat-input-bg: 220 26% 14%;
-    --chat-typing-dot: 45 65% 52%;
+    --chat-ai-border: 222 20% 20%;
+    --chat-input-bg: 222 24% 13%;
+    --chat-typing-dot: 166 72% 45%;
+
+    --gradient-hero: linear-gradient(145deg, hsl(222 26% 9%), hsl(222 24% 16%));
+    --gradient-accent: linear-gradient(135deg, hsl(166 72% 45%), hsl(170 65% 52%));
+
+    --shadow-md: 0 4px 12px -2px hsl(0 0% 0% / 0.3);
+    --shadow-lg: 0 12px 28px -6px hsl(0 0% 0% / 0.4);
   }
 }
 
@@ -137,22 +156,39 @@
   }
 
   body {
-    @apply bg-background text-foreground font-sans antialiased;
-    font-family: 'Inter', system-ui, sans-serif;
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    @apply font-semibold tracking-tight;
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+    @apply font-bold tracking-tight;
   }
 }
 
 @layer components {
+  /* Hero gradient backgrounds */
   .hero-gradient {
     background: var(--gradient-hero);
   }
 
+  .accent-gradient {
+    background: var(--gradient-accent);
+  }
+
   .gold-gradient {
     background: var(--gradient-gold);
+  }
+
+  /* Card styles – Switchly-inspired floating cards */
+  .card-elevated {
+    box-shadow: var(--shadow-md);
+    @apply bg-card rounded-2xl border border-border/50 transition-all duration-300;
+  }
+
+  .card-elevated:hover {
+    box-shadow: var(--shadow-card-hover);
+    @apply -translate-y-0.5;
   }
 
   .card-shadow {
@@ -163,27 +199,61 @@
     box-shadow: var(--shadow-lg);
   }
 
+  .accent-glow {
+    box-shadow: var(--shadow-accent);
+  }
+
   .gold-glow {
     box-shadow: var(--shadow-gold);
   }
 
+  /* Glassmorphism */
   .glass-effect {
-    @apply backdrop-blur-sm bg-white/80;
+    @apply backdrop-blur-lg bg-white/80 border border-white/20;
+  }
+
+  .glass-effect-strong {
+    @apply backdrop-blur-xl bg-white/90 border border-white/30;
+  }
+
+  /* Badge chip style (like Switchly's "100% digital") */
+  .chip {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border;
+    @apply bg-card border-border/60 text-muted-foreground;
+  }
+
+  .chip-accent {
+    @apply bg-accent/10 border-accent/20 text-accent;
+  }
+
+  /* Background pattern – subtle dot grid */
+  .bg-dot-pattern {
+    background-image: radial-gradient(circle, hsl(var(--muted-foreground) / 0.07) 1px, transparent 1px);
+    background-size: 24px 24px;
   }
 }
 
 @layer utilities {
+  .text-gradient-accent {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-accent);
+  }
+
   .text-gradient-gold {
     @apply bg-clip-text text-transparent;
     background-image: var(--gradient-gold);
   }
 
   .animate-fade-in {
-    animation: fadeIn 0.4s ease-out;
+    animation: fadeIn 0.5s ease-out;
   }
 
   .animate-slide-up {
-    animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
   }
 
   .animate-pulse-slow {
@@ -214,6 +284,11 @@
     }
   }
 
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
   @keyframes typing {
     0%, 100% { opacity: 0.3; }
     50% { opacity: 1; }
@@ -235,26 +310,26 @@
   content: '';
   @apply absolute -bottom-1 -right-1 w-3 h-3 rounded-full;
   background: hsl(var(--chat-user));
-  opacity: 0.3;
+  opacity: 0.2;
 }
 
 .chat-message-ai {
   @apply relative border;
   border-color: hsl(var(--chat-ai-border));
-  box-shadow: 0 2px 8px -2px hsl(213 52% 15% / 0.08);
+  box-shadow: var(--shadow-sm);
 }
 
 .chat-input-wrapper {
   @apply relative;
-  box-shadow: 0 -4px 20px -4px hsl(213 52% 15% / 0.08);
+  box-shadow: 0 -4px 24px -4px hsl(220 25% 16% / 0.06);
 }
 
-/* Safe area for mobile devices with notch/home bar */
+/* Safe area for mobile devices */
 .safe-area-bottom {
   padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
 }
 
-/* Hide scrollbar for horizontal scroll */
+/* Hide scrollbar */
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -279,6 +354,6 @@
   }
   
   .chat-message-ai {
-    box-shadow: 0 1px 4px -1px hsl(213 52% 15% / 0.06);
+    box-shadow: var(--shadow-xs);
   }
 }

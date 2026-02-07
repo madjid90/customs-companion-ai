@@ -45,7 +45,7 @@ export function ChatInput({
 
   return (
     <>
-      <div className="border-t bg-card/95 backdrop-blur-md p-2 md:p-4 chat-input-wrapper sticky bottom-0 safe-area-bottom">
+      <div className="border-t bg-card/95 backdrop-blur-xl p-2.5 md:p-4 chat-input-wrapper sticky bottom-0 safe-area-bottom">
         <div className="max-w-3xl mx-auto">
           {/* Uploaded files preview - horizontal scroll on mobile */}
           {uploadedFiles.length > 0 && (
@@ -129,7 +129,7 @@ export function ChatInput({
                 placeholder={uploadedFiles.length > 0 
                   ? "Décrivez votre produit..." 
                   : "Posez votre question..."}
-                className="min-h-[44px] md:min-h-[52px] max-h-24 md:max-h-32 pr-12 md:pr-14 resize-none rounded-xl border-border/50 focus:border-accent/50 bg-background shadow-sm transition-all text-sm md:text-base"
+                className="min-h-[44px] md:min-h-[52px] max-h-24 md:max-h-32 pr-12 md:pr-14 resize-none rounded-2xl border-border/50 focus:border-accent/40 focus:ring-2 focus:ring-accent/10 bg-background shadow-sm transition-all text-sm md:text-base"
                 rows={1}
               />
               <Button
