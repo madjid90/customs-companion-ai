@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Sparkles, FileImage, Search, Scale, Package, FileCheck, Globe, Truck, ShieldAlert, Calculator, BookOpen, ArrowRight, Bot } from "lucide-react";
+import { Sparkles, FileImage, Search, Scale, Package, FileCheck, Globe, Truck, ShieldAlert, Calculator, BookOpen, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChatWelcomeProps {
@@ -79,9 +79,32 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100dvh-200px)] px-4 py-8 animate-fade-in">
       {/* Robot icon */}
-      <div className="relative mb-6 animate-float">
-        <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-primary/10 flex items-center justify-center">
-          <Bot className="h-9 w-9 md:h-10 md:w-10 text-primary" strokeWidth={1.5} />
+      <div className="relative mb-6">
+        <div className="absolute inset-0 w-20 h-20 md:w-24 md:h-24 rounded-full bg-primary/6 blur-2xl -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
+        <div className="relative w-20 h-20 md:w-24 md:h-24 flex items-center justify-center animate-float">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            className="h-12 w-12 md:h-14 md:w-14"
+          >
+            <defs>
+              <linearGradient id="bot-grad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="hsl(217, 91%, 55%)" />
+                <stop offset="50%" stopColor="hsl(180, 70%, 45%)" />
+                <stop offset="100%" stopColor="hsl(145, 65%, 50%)" />
+              </linearGradient>
+            </defs>
+            <path d="M12 8V4H8" stroke="url(#bot-grad)" />
+            <rect width="16" height="12" x="4" y="8" rx="2" stroke="url(#bot-grad)" />
+            <path d="M2 14h2" stroke="url(#bot-grad)" />
+            <path d="M20 14h2" stroke="url(#bot-grad)" />
+            <path d="M15 13v2" stroke="url(#bot-grad)" />
+            <path d="M9 13v2" stroke="url(#bot-grad)" />
+          </svg>
         </div>
       </div>
 
