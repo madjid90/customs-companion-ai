@@ -14,7 +14,7 @@ import { createLogger, Logger } from "../_shared/logger.ts";
 import { maskSensitiveData, safeLog } from "../_shared/masking.ts";
 import { parseJsonResilient } from "../_shared/json-resilient.ts";
 import { requireAuth, isProductionMode } from "../_shared/auth-check.ts";
-import { callLLMWithMetrics } from "../_shared/retry.ts";
+import { callLLMWithMetrics, callAnthropicWithRetry } from "../_shared/retry.ts";
 
 // =============================================================================
 // PDF UTILITIES - Split large PDFs for Claude's 100 page limit
@@ -1671,22 +1671,12 @@ Format de réponse (texte brut, pas JSON):
   };
   
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s max
-    
-    const response = await fetch(ANTHROPIC_API_URL, {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "pdfs-2024-09-25",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-      signal: controller.signal,
-    });
-    
-    clearTimeout(timeoutId);
+    const response = await callAnthropicWithRetry(
+      apiKey,
+      requestBody,
+      60000,
+      { "anthropic-beta": "pdfs-2024-09-25" }
+    );
     
     if (!response.ok) {
       console.warn("[Summary] API error, skipping summary generation");
@@ -1804,22 +1794,12 @@ IMPORTANT: Inclure TOUTES les pages dans l'une des deux catégories.`
   };
   
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 45000);
-    
-    const response = await fetch(ANTHROPIC_API_URL, {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "pdfs-2024-09-25",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-      signal: controller.signal,
-    });
-    
-    clearTimeout(timeoutId);
+    const response = await callAnthropicWithRetry(
+      apiKey,
+      requestBody,
+      45000,
+      { "anthropic-beta": "pdfs-2024-09-25" }
+    );
     
     if (!response.ok) {
       console.warn("[Page Scan] API error, processing all pages as tariff");
@@ -2224,34 +2204,15 @@ async function analyzePageWithClaude(
     }],
   };
   
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 min par page
-  
   try {
-    const response = await fetch(ANTHROPIC_API_URL, {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "pdfs-2024-09-25",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-      signal: controller.signal,
-    });
+    const response = await callAnthropicWithRetry(
+      apiKey,
+      requestBody,
+      120000,
+      { "anthropic-beta": "pdfs-2024-09-25" }
+    );
     
-    clearTimeout(timeoutId);
-    
-    if (response.status === 429 || response.status === 529) {
-      if (retryCount < MAX_RETRIES) {
-        const retryAfter = response.headers.get("Retry-After");
-        const delayMs = retryAfter ? parseInt(retryAfter) * 1000 : BASE_DELAY * Math.pow(2, retryCount);
-        console.log(`[Page ${pageNumber}] Rate limited, retry ${retryCount + 1}/${MAX_RETRIES} after ${delayMs}ms...`);
-        await new Promise(r => setTimeout(r, delayMs));
-        return analyzePageWithClaude(base64Pdf, pageNumber, totalPages, title, apiKey, retryCount + 1);
-      }
-      return { raw_lines: [], notes: [], has_tariff_table: false, error: "Rate limit exceeded" };
-    }
+    // Note: 429/529 retries are now handled by callAnthropicWithRetry automatically
     
     if (!response.ok) {
       const errorText = await response.text();

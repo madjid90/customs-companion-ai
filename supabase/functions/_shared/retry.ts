@@ -1,5 +1,5 @@
 // ============================================================================
-// RETRY AVEC EXPONENTIAL BACKOFF - Production Hardening
+// RETRY MODULE AMÉLIORÉ - PRODUCTION READY
 // ============================================================================
 
 export interface RetryConfig {
@@ -7,115 +7,265 @@ export interface RetryConfig {
   initialDelayMs: number;
   maxDelayMs: number;
   retryableStatuses: number[];
-  timeoutMs?: number;
+  retryableErrors?: string[];  // Patterns d'erreurs à retry
+  timeoutMs?: number;          // Timeout par tentative (compat legacy)
+  timeout?: number;            // Alias pour timeoutMs
+  onRetry?: (attempt: number, error: Error, delay: number) => void;
 }
 
 export interface RetryResult<T> {
   success: boolean;
   data?: T;
+  error?: Error;
   attempts: number;
   lastError?: string;
   totalDurationMs: number;
 }
 
-// Configuration par défaut STRICTE pour production (2 retries max)
+// Configuration par défaut STRICTE pour production
 const DEFAULT_CONFIG: RetryConfig = {
-  maxRetries: 2,  // PRODUCTION: 2 retries max (total 3 tentatives)
+  maxRetries: 3,
   initialDelayMs: 1000,
-  maxDelayMs: 10000,
+  maxDelayMs: 30000,
   retryableStatuses: [429, 500, 502, 503, 504],
+  retryableErrors: [
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'ENOTFOUND',
+    'socket hang up',
+    'network',
+    'timeout',
+    'aborted',
+  ],
   timeoutMs: 60000,
 };
 
-// Configuration LLM spécifique
-const LLM_CONFIG: RetryConfig = {
-  maxRetries: 1,        // PRODUCTION: 1 retry max (total 2 attempts) to avoid cascading timeouts
-  initialDelayMs: 2000, // 2s between attempts
-  maxDelayMs: 10000,    // Max 10s wait
-  retryableStatuses: [429, 500, 502, 503, 504, 529], // 529 = Anthropic overloaded
-  timeoutMs: 120000,    // 2 minutes default for LLM calls
-};
+// ============================================================================
+// CONFIGURATIONS PRÉ-DÉFINIES PAR SERVICE
+// ============================================================================
+
+export const RETRY_CONFIGS = {
+  // Lovable AI - génération de texte (chat)
+  lovableAI: {
+    maxRetries: 3,
+    initialDelayMs: 2000,
+    maxDelayMs: 15000,
+    retryableStatuses: [429, 500, 502, 503, 504],
+    retryableErrors: ['timeout', 'aborted', 'network', 'socket hang up'],
+    timeoutMs: 60000,
+  } as RetryConfig,
+
+  // OpenAI Embeddings - rapide
+  openaiEmbeddings: {
+    maxRetries: 2,
+    initialDelayMs: 500,
+    maxDelayMs: 5000,
+    retryableStatuses: [429, 500, 502, 503, 504],
+    retryableErrors: ['timeout', 'aborted', 'network'],
+    timeoutMs: 10000,
+  } as RetryConfig,
+
+  // Anthropic Claude - analyse PDF (long)
+  anthropicPDF: {
+    maxRetries: 2,
+    initialDelayMs: 3000,
+    maxDelayMs: 20000,
+    retryableStatuses: [429, 500, 502, 503, 504, 529], // 529 = overloaded
+    retryableErrors: ['timeout', 'aborted', 'network', 'socket hang up'],
+    timeoutMs: 180000, // 3 minutes pour gros PDFs
+  } as RetryConfig,
+
+  // Requêtes Supabase DB
+  supabaseDB: {
+    maxRetries: 3,
+    initialDelayMs: 100,
+    maxDelayMs: 2000,
+    retryableStatuses: [500, 502, 503, 504],
+    retryableErrors: ['timeout', 'network'],
+    timeoutMs: 10000,
+  } as RetryConfig,
+} as const;
+
+// ============================================================================
+// UTILITAIRES INTERNES
+// ============================================================================
 
 /**
- * Fonction générique de fetch avec retry et timeout
+ * Calcule le délai avec exponential backoff + jitter (30%)
+ */
+function calculateBackoff(attempt: number, config: RetryConfig): number {
+  const exponentialDelay = config.initialDelayMs * Math.pow(2, attempt);
+  const jitter = Math.random() * 0.3 * exponentialDelay;
+  return Math.min(exponentialDelay + jitter, config.maxDelayMs);
+}
+
+/**
+ * Vérifie si une erreur est retryable par son message
+ */
+function isRetryableError(error: Error, config: RetryConfig): boolean {
+  const message = error.message.toLowerCase();
+  return (config.retryableErrors || []).some(pattern =>
+    message.includes(pattern.toLowerCase())
+  );
+}
+
+/**
+ * Résout le timeout effectif depuis les deux alias possibles
+ */
+function resolveTimeout(config: RetryConfig): number {
+  return config.timeoutMs ?? config.timeout ?? 60000;
+}
+
+// ============================================================================
+// FETCH AVEC RETRY ET BACKOFF EXPONENTIEL
+// ============================================================================
+
+/**
+ * Fetch avec retry, timeout par tentative, et backoff exponentiel + jitter
  */
 export async function fetchWithRetry(
   url: string,
   options: RequestInit,
-  config: RetryConfig = DEFAULT_CONFIG
+  config: Partial<RetryConfig> = {}
 ): Promise<Response> {
+  const finalConfig: RetryConfig = { ...DEFAULT_CONFIG, ...config };
+  const effectiveTimeout = resolveTimeout(finalConfig);
   let lastError: Error | null = null;
-  let delay = config.initialDelayMs;
   const startTime = Date.now();
-  
-  for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
-    // Create abort controller for timeout
+
+  for (let attempt = 0; attempt <= finalConfig.maxRetries; attempt++) {
     const controller = new AbortController();
-    const timeoutId = config.timeoutMs 
-      ? setTimeout(() => controller.abort(), config.timeoutMs)
-      : null;
-    
+    const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
+
     try {
-      console.log(`[Retry] Attempt ${attempt + 1}/${config.maxRetries + 1} for ${url.split("?")[0]}`);
-      
+      console.log(`[Retry] Attempt ${attempt + 1}/${finalConfig.maxRetries + 1} for ${url.split("?")[0]}`);
+
       const response = await fetch(url, {
         ...options,
         signal: controller.signal,
       });
-      
-      if (timeoutId) clearTimeout(timeoutId);
-      
+
+      clearTimeout(timeoutId);
+
       // Si succès ou erreur non-retryable, retourner
-      if (response.ok || !config.retryableStatuses.includes(response.status)) {
+      if (response.ok || !finalConfig.retryableStatuses.includes(response.status)) {
         return response;
       }
-      
+
+      const errorMessage = `HTTP ${response.status}`;
       console.warn(`[Retry] Status ${response.status}, will retry...`);
-      
-      // Extraire Retry-After si disponible
-      const retryAfter = response.headers.get("Retry-After");
-      if (retryAfter) {
-        const retryMs = parseInt(retryAfter) * 1000;
-        if (!isNaN(retryMs) && retryMs > 0) {
-          delay = Math.min(retryMs, config.maxDelayMs);
+
+      if (attempt < finalConfig.maxRetries) {
+        // Extraire Retry-After si disponible
+        let delay = calculateBackoff(attempt, finalConfig);
+        const retryAfter = response.headers.get("Retry-After");
+        if (retryAfter) {
+          const retryMs = parseInt(retryAfter) * 1000;
+          if (!isNaN(retryMs) && retryMs > 0) {
+            delay = Math.min(retryMs, finalConfig.maxDelayMs);
+          }
         }
-      }
-      
-      if (attempt < config.maxRetries) {
-        console.log(`[Retry] Waiting ${delay}ms before retry...`);
+
+        finalConfig.onRetry?.(attempt + 1, new Error(errorMessage), delay);
+        console.log(`[Retry] Waiting ${Math.round(delay)}ms before retry...`);
         await new Promise(r => setTimeout(r, delay));
-        delay = Math.min(delay * 2, config.maxDelayMs); // Exponential backoff
-      } else {
-        return response; // Dernière tentative, retourner la réponse
+        continue;
       }
-      
+
+      return response; // Dernière tentative, retourner la réponse
     } catch (error) {
-      if (timeoutId) clearTimeout(timeoutId);
+      clearTimeout(timeoutId);
       lastError = error as Error;
-      
-      const isAbort = (error as Error).name === "AbortError";
-      console.error(`[Retry] Attempt ${attempt + 1} ${isAbort ? "timeout" : "error"}:`, 
-        isAbort ? "Request timed out" : (error as Error).message);
-      
-      if (attempt < config.maxRetries) {
+
+      const isAbort = lastError.name === "AbortError";
+      const isRetryable = isAbort || isRetryableError(lastError, finalConfig);
+
+      console.error(
+        `[Retry] Attempt ${attempt + 1} ${isAbort ? "timeout" : "error"}:`,
+        isAbort ? "Request timed out" : lastError.message
+      );
+
+      if (isRetryable && attempt < finalConfig.maxRetries) {
+        const delay = calculateBackoff(attempt, finalConfig);
+        finalConfig.onRetry?.(attempt + 1, lastError, delay);
+        console.log(`[Retry] Waiting ${Math.round(delay)}ms before retry...`);
         await new Promise(r => setTimeout(r, delay));
-        delay = Math.min(delay * 2, config.maxDelayMs);
+        continue;
       }
+
+      throw lastError;
     }
   }
-  
+
   const duration = Date.now() - startTime;
   throw new Error(`Max retries exceeded after ${duration}ms: ${lastError?.message || "Unknown error"}`);
 }
 
+// ============================================================================
+// WRAPPER GÉNÉRIQUE POUR RETRY DE FONCTIONS ASYNC
+// ============================================================================
+
 /**
- * Fonction spécifique pour Anthropic avec timeout étendu
- * PRODUCTION: 2 retries max, timeout 3 minutes
+ * Wrapper générique: retry une fonction async quelconque (pas forcément fetch)
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  config: Partial<RetryConfig> = {}
+): Promise<RetryResult<T>> {
+  const finalConfig: RetryConfig = { ...DEFAULT_CONFIG, ...config };
+  const startTime = Date.now();
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= finalConfig.maxRetries; attempt++) {
+    try {
+      const data = await fn();
+      return {
+        success: true,
+        data,
+        attempts: attempt + 1,
+        totalDurationMs: Date.now() - startTime,
+      };
+    } catch (error) {
+      lastError = error as Error;
+
+      const isRetryable = isRetryableError(lastError, finalConfig);
+
+      if (isRetryable && attempt < finalConfig.maxRetries) {
+        const delay = calculateBackoff(attempt, finalConfig);
+        console.warn(
+          `[withRetry] Attempt ${attempt + 1} failed: ${lastError.message}. ` +
+          `Retrying in ${Math.round(delay)}ms...`
+        );
+        finalConfig.onRetry?.(attempt + 1, lastError, delay);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  return {
+    success: false,
+    error: lastError || new Error('Unknown error'),
+    lastError: lastError?.message,
+    attempts: finalConfig.maxRetries + 1,
+    totalDurationMs: Date.now() - startTime,
+  };
+}
+
+// ============================================================================
+// FONCTIONS SPÉCIFIQUES PAR SERVICE (rétrocompatibilité)
+// ============================================================================
+
+/**
+ * Appel Anthropic Claude avec retry et timeout étendu
  */
 export async function callAnthropicWithRetry(
   apiKey: string,
   body: object,
-  timeoutMs: number = 180000 // 3 minutes par défaut
+  timeoutMs: number = 180000,
+  extraHeaders: Record<string, string> = {}
 ): Promise<Response> {
   return await fetchWithRetry(
     "https://api.anthropic.com/v1/messages",
@@ -125,19 +275,19 @@ export async function callAnthropicWithRetry(
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
+        ...extraHeaders,
       },
       body: JSON.stringify(body),
     },
     {
-      ...LLM_CONFIG,
+      ...RETRY_CONFIGS.anthropicPDF,
       timeoutMs,
     }
   );
 }
 
 /**
- * Fonction spécifique pour OpenAI
- * PRODUCTION: 2 retries max
+ * Appel OpenAI avec retry
  */
 export async function callOpenAIWithRetry(
   apiKey: string,
@@ -156,10 +306,7 @@ export async function callOpenAIWithRetry(
       body: JSON.stringify(body),
     },
     {
-      maxRetries: 2,
-      initialDelayMs: 1000,
-      maxDelayMs: 10000,
-      retryableStatuses: [429, 500, 502, 503],
+      ...RETRY_CONFIGS.openaiEmbeddings,
       timeoutMs,
     }
   );
@@ -173,7 +320,7 @@ export async function callLLMWithMetrics<T>(
   callFn: () => Promise<T>
 ): Promise<{ result: T; metrics: { durationMs: number; success: boolean; error?: string } }> {
   const startTime = Date.now();
-  
+
   try {
     const result = await callFn();
     return {

@@ -15,7 +15,8 @@ import {
 } from "../_shared/cors.ts";
 import { validateChatRequest } from "../_shared/validation.ts";
 import { createLogger } from "../_shared/logger.ts";
-import { fetchWithRetry, type RetryConfig } from "../_shared/retry.ts";
+import { fetchWithRetry, RETRY_CONFIGS, type RetryConfig } from "../_shared/retry.ts";
+import { withCircuitBreaker } from "../_shared/circuit-breaker.ts";
 
 // Modules refactorisés
 import { cleanHSCode, escapeSearchTerm } from "./hs-utils.ts";
@@ -1341,35 +1342,37 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     // MODE CLASSIQUE (sans streaming) - Rétrocompatibilité
     // =========================================================================
     
-    const lovableRetryConfig: RetryConfig = {
-      maxRetries: 3,
-      initialDelayMs: 2000,
-      maxDelayMs: 15000,
-      retryableStatuses: [429, 500, 502, 503, 504]
-    };
-
     let aiResponse: Response;
     try {
-      logger.info("Calling Lovable AI with retry", { model: LOVABLE_AI_MODEL });
+      logger.info("Calling Lovable AI with retry + circuit breaker", { model: LOVABLE_AI_MODEL });
       
-      aiResponse = await fetchWithRetry(
-        LOVABLE_AI_GATEWAY,
-        {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-            "Content-Type": "application/json",
+      aiResponse = await withCircuitBreaker(
+        'lovable-ai',
+        async () => fetchWithRetry(
+          LOVABLE_AI_GATEWAY,
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: LOVABLE_AI_MODEL,
+              max_tokens: 4096,
+              messages: [
+                { role: "system", content: systemPrompt },
+                ...claudeMessages,
+              ],
+            }),
           },
-          body: JSON.stringify({
-            model: LOVABLE_AI_MODEL,
-            max_tokens: 4096,
-            messages: [
-              { role: "system", content: systemPrompt },
-              ...claudeMessages,
-            ],
-          }),
-        },
-        lovableRetryConfig
+          {
+            ...RETRY_CONFIGS.lovableAI,
+            onRetry: (attempt, error, delay) => {
+              logger.warn(`LLM retry ${attempt}`, { error: error.message, delay });
+            },
+          }
+        ),
+        { failureThreshold: 5, resetTimeoutMs: 60000 }
       );
       
     } catch (fetchError: any) {

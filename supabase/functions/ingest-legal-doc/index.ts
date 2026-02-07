@@ -369,7 +369,8 @@ Réponds en JSON strict uniquement.`,
   const response = await callAnthropicWithRetry(
     ANTHROPIC_API_KEY,
     requestBody,
-    timeout
+    timeout,
+    { "anthropic-beta": "pdfs-2024-09-25" }
   );
 
   if (!response.ok) {
