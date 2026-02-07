@@ -1164,11 +1164,11 @@ export default function AdminUpload() {
       case "queued":
         return <Clock className="h-5 w-5 text-muted-foreground" />;
       case "uploading":
-        return <Loader2 className="h-5 w-5 animate-spin text-accent" />;
+        return <Loader2 className="h-5 w-5 animate-spin text-primary" />;
       case "analyzing":
         return <Brain className="h-5 w-5 animate-pulse text-warning" />;
       case "preview":
-        return <Eye className="h-5 w-5 text-accent" />;
+        return <Eye className="h-5 w-5 text-primary" />;
       case "success":
         return <CheckCircle2 className="h-5 w-5 text-success" />;
       case "error":
@@ -1264,8 +1264,8 @@ export default function AdminUpload() {
           <p className="text-xs text-muted-foreground mt-1">Extraction automatique</p>
         </div>
         <div className="step-card">
-          <div className="w-11 h-11 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-3">
-            <Eye className="h-5 w-5 text-accent" />
+          <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
+            <Eye className="h-5 w-5 text-primary" />
           </div>
           <p className="font-semibold text-sm">3. Prévisualisation</p>
           <p className="text-xs text-muted-foreground mt-1">Correction manuelle</p>
@@ -1376,7 +1376,7 @@ export default function AdminUpload() {
                   variant="outline" 
                   size="sm" 
                   onClick={retryAllErrors}
-                  className="gap-1 text-accent hover:text-accent"
+                  className="gap-1 text-primary hover:text-primary"
                 >
                   <RotateCcw className="h-4 w-4" />
                   Relancer tout ({files.filter(f => f.status === "error").length})
@@ -1509,7 +1509,7 @@ export default function AdminUpload() {
                               {/* Affichage adapté selon le type de document */}
                                   {file.analysis.document_type === "regulatory" ? (
                                 <>
-                                  <Badge variant="outline" className="text-xs bg-accent/10">
+                                  <Badge variant="outline" className="text-xs bg-muted">
                                     📋 Réglementaire
                                   </Badge>
                                   {file.analysis.document_reference && (
