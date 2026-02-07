@@ -588,40 +588,32 @@ export function ChatMessage({
             
             {/* Attached files in user message */}
             {isUser && message.attachedFiles && message.attachedFiles.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-primary/15">
+              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-primary/20">
                 {message.attachedFiles.map((file, index) => (
                   <button
                     key={index}
                     onClick={() => setPreviewAttachment(file)}
                     className={cn(
-                      "relative group flex items-center gap-2.5 rounded-lg p-2 pr-3",
-                      "hover:bg-primary/5 transition-all duration-200 cursor-pointer"
+                      "flex items-center gap-2 rounded-lg px-3 py-2",
+                      "bg-primary/10 border border-primary/20",
+                      "hover:bg-primary/15 hover:border-primary/30 transition-all duration-200 cursor-pointer"
                     )}
                   >
                     {file.type === "image" ? (
-                      <div className="relative w-9 h-9 rounded overflow-hidden flex-shrink-0">
+                      <div className="relative w-8 h-8 rounded overflow-hidden flex-shrink-0">
                         <img
                           src={file.preview}
                           alt={file.name}
                           className="w-full h-full object-cover"
                         />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <Eye className="h-3 w-3 text-white" />
-                        </div>
                       </div>
                     ) : (
-                      <div className="w-9 h-9 flex items-center justify-center flex-shrink-0">
-                        <FileText className="h-5 w-5 text-primary" />
-                      </div>
+                      <FileText className="h-4 w-4 text-primary flex-shrink-0" />
                     )}
-                    <div className="flex flex-col items-start min-w-0">
-                      <span className="text-xs font-medium text-foreground max-w-[120px] truncate">
-                        {file.name}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {(file.size / 1024).toFixed(0)} Ko
-                      </span>
-                    </div>
+                    <span className="text-xs font-medium text-foreground max-w-[140px] truncate">
+                      {file.name}
+                    </span>
+                    <Eye className="h-3 w-3 text-primary/50 flex-shrink-0" />
                   </button>
                 ))}
               </div>
