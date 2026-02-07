@@ -538,7 +538,7 @@ export default function Chat() {
   }, [uploadedFiles]);
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] h-[calc(100dvh-4rem)] bg-background overflow-hidden">
+    <div className="flex h-[calc(100vh-4rem)] h-[calc(100dvh-4rem)] bg-background/50 overflow-hidden">
       {/* History sidebar */}
       <ChatHistory
         currentSessionId={sessionId}

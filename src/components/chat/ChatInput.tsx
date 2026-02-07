@@ -45,9 +45,9 @@ export function ChatInput({
 
   return (
     <>
-      <div className="border-t border-border/20 bg-card/90 backdrop-blur-xl p-3 md:p-4 sticky bottom-0 safe-area-bottom">
+      <div className="border-t border-border/20 bg-card/95 backdrop-blur-xl p-3 md:p-4 sticky bottom-0 safe-area-bottom">
         <div className="max-w-3xl mx-auto">
-          {/* Uploaded files preview - horizontal scroll on mobile */}
+          {/* Uploaded files preview */}
           {uploadedFiles.length > 0 && (
             <div className="flex gap-2 mb-2 md:mb-3 p-2 bg-muted/30 rounded-xl border border-border/50 overflow-x-auto scrollbar-hide">
               {uploadedFiles.map((upload, index) => (
@@ -129,19 +129,20 @@ export function ChatInput({
                 placeholder={uploadedFiles.length > 0 
                   ? "Décrivez votre produit..." 
                   : "Posez votre question..."}
-                className="min-h-[44px] md:min-h-[48px] max-h-24 md:max-h-32 pr-12 md:pr-14 resize-none rounded-xl border-border/30 focus:border-primary/30 focus:ring-1 focus:ring-primary/10 bg-background text-sm md:text-base"
+                className="min-h-[44px] md:min-h-[48px] max-h-24 md:max-h-32 pr-14 resize-none rounded-2xl border-border/30 focus:border-primary/30 focus:ring-2 focus:ring-primary/10 bg-background text-sm md:text-base shadow-sm"
                 rows={1}
               />
               <Button
                 onClick={onSend}
                 disabled={(!input.trim() && uploadedFiles.length === 0) || isLoading || isUploading}
                 size="icon"
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 w-8 md:h-8 md:w-8 rounded-lg bg-primary hover:bg-primary/90 transition-colors text-primary-foreground disabled:opacity-40"
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-xl text-white disabled:opacity-30 shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 border-0"
+                style={{ background: "var(--gradient-hero)" }}
               >
                 {isUploading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Send className="h-3.5 w-3.5" />
+                  <Send className="h-4 w-4" />
                 )}
               </Button>
             </div>
