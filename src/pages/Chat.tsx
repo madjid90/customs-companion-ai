@@ -554,8 +554,8 @@ export default function Chat() {
         )}
       >
         {/* Chat messages area */}
-        <ScrollArea ref={scrollRef} className="flex-1 px-3 md:px-4 py-3 md:py-6">
-          <div className="max-w-3xl mx-auto space-y-4 md:space-y-6">
+        <ScrollArea ref={scrollRef} className="flex-1 px-2 md:px-4 py-3 md:py-6">
+          <div className="max-w-3xl mx-auto space-y-3 md:space-y-6">
             {messages.length === 0 && (
               <ChatWelcome onQuestionClick={handleSend} />
             )}
