@@ -163,8 +163,8 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-// Maximum PDF size in bytes for edge function processing (5MB raw = ~6.7MB base64)
-const MAX_PDF_SIZE_BYTES = 5 * 1024 * 1024;
+// Maximum PDF size in bytes for edge function processing (15MB raw)
+const MAX_PDF_SIZE_BYTES = 15 * 1024 * 1024;
 
 // Split a PDF into a subset of pages using pdf-lib (memory-optimized)
 async function splitPdfPages(
