@@ -100,15 +100,16 @@ export function ImageUploadButton({
             variant="outline"
             size="icon"
             className={cn(
-              "h-11 w-11 rounded-xl border-border/50 bg-background hover:bg-primary/10 hover:border-primary/30 transition-all duration-200 shadow-sm hover:shadow-md",
+              "h-10 w-10 md:h-11 md:w-11 rounded-xl border-border/50 bg-background hover:bg-primary/10 hover:border-primary/30 transition-all duration-200 shadow-sm hover:shadow-md flex-shrink-0",
               uploadedFiles.length > 0 && "border-primary/50 bg-primary/5 text-primary"
             )}
+            style={{ minHeight: 'auto' }}
             disabled={disabled || isUploading}
           >
             {isUploading ? (
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
             ) : (
-              <ImagePlus className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+              <ImagePlus className="h-5 w-5 text-muted-foreground" />
             )}
           </Button>
         </PopoverTrigger>

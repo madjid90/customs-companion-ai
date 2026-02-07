@@ -452,7 +452,7 @@ export function ChatMessage({
   return (
     <div
       className={cn(
-        "flex gap-2.5 md:gap-3 animate-slide-up px-1 md:px-0",
+        "flex gap-2 md:gap-3 animate-slide-up",
         isUser ? "justify-end" : "justify-start"
       )}
     >
@@ -463,7 +463,7 @@ export function ChatMessage({
 
       <div
         className={cn(
-          "max-w-[92%] md:max-w-[75%] rounded-2xl px-3.5 py-3 md:px-5 md:py-4 transition-all",
+          "max-w-[88%] md:max-w-[75%] rounded-2xl px-3.5 py-3 md:px-5 md:py-4 transition-all overflow-hidden",
           isUser
             ? "bg-primary/10 text-foreground"
             : "bg-card border border-border/40 text-foreground shadow-sm"
@@ -471,7 +471,7 @@ export function ChatMessage({
       >
         {!isUser && !isError ? (
           <div 
-            className="prose prose-sm dark:prose-invert max-w-none"
+            className="prose prose-sm dark:prose-invert max-w-none overflow-hidden break-words"
             onClick={(e) => {
               // Event delegation for source links - capture clicks on <a> elements
               const target = e.target as HTMLElement;
@@ -499,16 +499,16 @@ export function ChatMessage({
                 },
               }]]}
               components={{
-                h2: ({ children }) => <h2 className="text-base font-semibold mt-4 mb-2 first:mt-0 text-foreground">{children}</h2>,
-                h3: ({ children }) => <h3 className="text-sm font-semibold mt-3 mb-1 text-foreground">{children}</h3>,
-                ul: ({ children }) => <ul className="my-2 space-y-1.5">{children}</ul>,
+                h2: ({ children }) => <h2 className="text-base font-semibold mt-4 mb-2 first:mt-0 text-foreground break-words">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-sm font-semibold mt-3 mb-1 text-foreground break-words">{children}</h3>,
+                ul: ({ children }) => <ul className="my-2 space-y-1.5 pl-4">{children}</ul>,
                 ol: ({ children }) => <ol className="my-2 space-y-1.5 list-decimal pl-4">{children}</ol>,
-                li: ({ children }) => <li className="text-sm leading-relaxed">{children}</li>,
-                p: ({ children }) => <p className="text-sm leading-relaxed my-2 first:mt-0 last:mb-0">{children}</p>,
+                li: ({ children }) => <li className="text-sm leading-relaxed break-words">{children}</li>,
+                p: ({ children }) => <p className="text-sm leading-relaxed my-2 first:mt-0 last:mb-0 break-words">{children}</p>,
                 strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
-                code: ({ children }) => <code className="bg-muted/50 px-1.5 py-0.5 rounded text-xs font-mono text-primary">{children}</code>,
+                code: ({ children }) => <code className="bg-muted/50 px-1.5 py-0.5 rounded text-xs font-mono text-primary break-all">{children}</code>,
                 table: ({ children }) => (
-                  <div className="overflow-x-auto my-3 rounded-lg border border-border">
+                  <div className="overflow-x-auto my-3 rounded-lg border border-border -mx-1">
                     <table className="min-w-full text-sm border-collapse">{children}</table>
                   </div>
                 ),
@@ -778,7 +778,7 @@ export function ChatMessage({
 
 export function ChatTypingIndicator() {
   return (
-    <div className="flex gap-2.5 md:gap-3 animate-fade-in px-1 md:px-0">
+    <div className="flex gap-2 md:gap-3 animate-fade-in">
       <BotAvatar size="sm" className="hidden md:flex" />
       <div className="bg-card border border-border/40 text-foreground rounded-2xl px-4 py-3 shadow-sm">
         <div className="flex items-center gap-2.5">

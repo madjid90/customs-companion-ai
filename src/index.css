@@ -189,9 +189,9 @@
     @apply font-bold tracking-tight;
   }
 
-  /* Touch-friendly tap targets on mobile */
+  /* Touch-friendly tap targets on mobile - only standalone interactive elements */
   @media (max-width: 768px) {
-    button, a, [role="button"] {
+    .touch-target {
       min-height: 44px;
     }
   }
