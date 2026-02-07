@@ -1588,6 +1588,21 @@ serve(async (req) => {
         const startPage = Math.max(1, body.start_page!);
         const endPage = Math.min(totalPages, body.end_page!);
         
+        // Guard: if start_page > totalPages, document is already fully processed
+        if (startPage > totalPages) {
+          console.log(`[ingest-legal-doc] start_page ${startPage} > totalPages ${totalPages} — already complete`);
+          return new Response(JSON.stringify({
+            success: true,
+            source_id: body.source_id || null,
+            total_pages: totalPages,
+            pages_processed: 0,
+            chunks_created: 0,
+            detected_codes_count: 0,
+            evidence_created: 0,
+            already_complete: true,
+          }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        
         console.log(`[ingest-legal-doc] Batch mode: extracting pages ${startPage}-${endPage}`);
         
         try {
