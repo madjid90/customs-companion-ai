@@ -67,9 +67,9 @@ const features = [
 
 /* ─── Steps ─────────────────────────────────────────────── */
 const steps = [
-  { num: "1", title: "Connexion", desc: "Connectez-vous avec votre numéro de téléphone invité." },
-  { num: "2", title: "Posez votre question", desc: "Décrivez votre produit ou posez votre question douanière." },
-  { num: "3", title: "Réponse sourcée", desc: "Recevez une réponse précise avec les sources légales citées." },
+  { num: "1", title: "Demandez l'accès", desc: "Remplissez le formulaire avec le nom de votre société et votre numéro." },
+  { num: "2", title: "Validation", desc: "L'administrateur valide votre demande et vous recevez vos accès par SMS." },
+  { num: "3", title: "Posez vos questions", desc: "Accédez au chat et obtenez des réponses précises avec sources légales." },
 ];
 
 export default function Landing() {
@@ -120,12 +120,12 @@ export default function Landing() {
                 réponses précises et sourcées en quelques secondes.
               </p>
 
-              <Link to="/login" className="inline-block animate-slide-up">
+              <Link to="/demander-acces" className="inline-block animate-slide-up">
                 <Button
                   size="lg"
                   className="cta-gradient rounded-full px-10 h-14 md:h-16 text-base md:text-lg font-semibold gap-3 shadow-xl hover:shadow-2xl"
                 >
-                  Accéder au chat
+                  Demander mes accès
                   <ArrowRight className="h-5 w-5" />
                 </Button>
               </Link>
@@ -297,15 +297,15 @@ export default function Landing() {
                 Prêt à commencer ?
               </h2>
               <p className="text-muted-foreground mb-10">
-                Connectez-vous avec votre numéro de téléphone pour accéder à
+                Demandez votre accès en quelques clics pour commencer à utiliser
                 l'assistant douanier.
               </p>
-              <Link to="/login">
+              <Link to="/demander-acces">
                 <Button
                   size="lg"
                   className="cta-gradient rounded-full px-10 h-14 md:h-16 text-base md:text-lg font-semibold gap-3 shadow-xl hover:shadow-2xl"
                 >
-                  Se connecter
+                  Demander mes accès
                   <ArrowRight className="h-5 w-5" />
                 </Button>
               </Link>
