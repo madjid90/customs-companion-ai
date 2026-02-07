@@ -1103,6 +1103,36 @@ export type Database = {
           },
         ]
       }
+      otp_codes: {
+        Row: {
+          attempts: number | null
+          code: string
+          created_at: string | null
+          expires_at: string
+          id: string
+          is_used: boolean | null
+          phone: string
+        }
+        Insert: {
+          attempts?: number | null
+          code: string
+          created_at?: string | null
+          expires_at: string
+          id?: string
+          is_used?: boolean | null
+          phone: string
+        }
+        Update: {
+          attempts?: number | null
+          code?: string
+          created_at?: string | null
+          expires_at?: string
+          id?: string
+          is_used?: boolean | null
+          phone?: string
+        }
+        Relationships: []
+      }
       pdf_documents: {
         Row: {
           category: string
@@ -1327,6 +1357,53 @@ export type Database = {
             columns: ["pdf_id"]
             isOneToOne: false
             referencedRelation: "pdf_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      phone_users: {
+        Row: {
+          auth_user_id: string | null
+          created_at: string | null
+          display_name: string | null
+          id: string
+          invited_by: string | null
+          is_active: boolean | null
+          max_invites: number | null
+          phone: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at: string | null
+        }
+        Insert: {
+          auth_user_id?: string | null
+          created_at?: string | null
+          display_name?: string | null
+          id?: string
+          invited_by?: string | null
+          is_active?: boolean | null
+          max_invites?: number | null
+          phone: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string | null
+        }
+        Update: {
+          auth_user_id?: string | null
+          created_at?: string | null
+          display_name?: string | null
+          id?: string
+          invited_by?: string | null
+          is_active?: boolean | null
+          max_invites?: number | null
+          phone?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phone_users_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "phone_users"
             referencedColumns: ["id"]
           },
         ]
@@ -2087,6 +2164,7 @@ export type Database = {
           veille_pending_count: number
         }[]
       }
+      get_phone_user_id: { Args: { _auth_user_id: string }; Returns: string }
       get_tariff_details: {
         Args: { p_country_code: string; p_hs_code: string }
         Returns: {
@@ -2112,6 +2190,7 @@ export type Database = {
         Returns: boolean
       }
       increment_cache_hit: { Args: { cache_id: string }; Returns: undefined }
+      is_phone_manager: { Args: { _auth_user_id: string }; Returns: boolean }
       purge_expired_cache: {
         Args: never
         Returns: {
@@ -2432,7 +2511,7 @@ export type Database = {
       update_cache_hit: { Args: { cache_id: string }; Returns: undefined }
     }
     Enums: {
-      app_role: "admin" | "user"
+      app_role: "admin" | "user" | "manager" | "agent"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2560,7 +2639,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "user"],
+      app_role: ["admin", "user", "manager", "agent"],
     },
   },
 } as const

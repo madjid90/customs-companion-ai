@@ -17,3 +17,12 @@ verify_jwt = false
 
 [functions.analyze-product-image]
 verify_jwt = false
+
+[functions.send-otp]
+verify_jwt = false
+
+[functions.verify-otp]
+verify_jwt = false
+
+[functions.invite-agent]
+verify_jwt = false
