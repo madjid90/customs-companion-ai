@@ -2143,22 +2143,46 @@ export type Database = {
           chunk_type: string
           combined_score: number
           id: number
+          page_number: number
           section_title: string
           source_id: number
         }[]
       }
-      search_legal_chunks_multilingual: {
-        Args: { lang_config?: string; match_count?: number; query_text: string }
-        Returns: {
-          article_number: string
-          chunk_text: string
-          chunk_type: string
-          id: number
-          relevance_score: number
-          section_title: string
-          source_id: number
-        }[]
-      }
+      search_legal_chunks_multilingual:
+        | {
+            Args: {
+              lang_config?: string
+              match_count?: number
+              query_text: string
+            }
+            Returns: {
+              article_number: string
+              chunk_text: string
+              chunk_type: string
+              id: number
+              relevance_score: number
+              section_title: string
+              source_id: number
+            }[]
+          }
+        | {
+            Args: {
+              lang_config?: string
+              match_count?: number
+              query_embedding: string
+              query_text: string
+            }
+            Returns: {
+              article_number: string
+              chunk_text: string
+              chunk_type: string
+              id: number
+              page_number: number
+              relevance_score: number
+              section_title: string
+              source_id: number
+            }[]
+          }
       search_legal_chunks_semantic: {
         Args: {
           match_count?: number
