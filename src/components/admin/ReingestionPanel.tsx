@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getAuthHeaders } from "@/lib/authHeaders";
 import { useToast } from "@/hooks/use-toast";
@@ -16,6 +16,9 @@ import {
   Database,
   Layers,
   Hash,
+  PlayCircle,
+  StopCircle,
+  ListFilter,
 } from "lucide-react";
 
 // ============================================================================
@@ -51,6 +54,15 @@ interface ReingestionProgress {
   error?: string;
 }
 
+interface BatchProgress {
+  total: number;
+  completed: number;
+  failed: number;
+  skipped: number;
+  currentSourceTitle: string;
+  isRunning: boolean;
+}
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -59,6 +71,8 @@ export default function ReingestionPanel() {
   const [sources, setSources] = useState<LegalSourceStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState<ReingestionProgress | null>(null);
+  const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
+  const cancelBatchRef = useRef(false);
   const { toast } = useToast();
 
   // Load legal sources with stats
@@ -361,6 +375,90 @@ export default function ReingestionPanel() {
     }
   }, [toast, loadSources]);
 
+  // Check if a source needs re-ingestion
+  const needsReingest = (source: LegalSourceStats): boolean => {
+    if (!source.pdf_file_path) return false;
+    if (source.actual_chunks === 0) return true;
+    const hasEmbeddings = source.chunks_with_embeddings > 0;
+    const hasHierarchy = source.chunks_with_hierarchy > 0;
+    return !hasEmbeddings || !hasHierarchy;
+  };
+
+  // Batch re-ingest all documents that need it
+  const reingestAll = useCallback(async () => {
+    const toProcess = sources.filter(needsReingest);
+    if (toProcess.length === 0) {
+      toast({ title: "Rien à faire", description: "Tous les documents sont déjà en bon état." });
+      return;
+    }
+
+    cancelBatchRef.current = false;
+    setBatchProgress({
+      total: toProcess.length,
+      completed: 0,
+      failed: 0,
+      skipped: 0,
+      currentSourceTitle: toProcess[0].title || toProcess[0].source_ref,
+      isRunning: true,
+    });
+
+    let completed = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    for (const source of toProcess) {
+      if (cancelBatchRef.current) {
+        skipped = toProcess.length - completed - failed;
+        break;
+      }
+
+      setBatchProgress(prev => prev ? {
+        ...prev,
+        currentSourceTitle: source.title || source.source_ref,
+      } : null);
+
+      try {
+        await reingest(source);
+        completed++;
+      } catch {
+        failed++;
+      }
+
+      setBatchProgress(prev => prev ? {
+        ...prev,
+        completed,
+        failed,
+        skipped,
+      } : null);
+
+      // Small delay between documents to avoid overwhelming the server
+      if (!cancelBatchRef.current) {
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
+
+    setBatchProgress(prev => prev ? {
+      ...prev,
+      isRunning: false,
+      completed,
+      failed,
+      skipped,
+    } : null);
+
+    toast({
+      title: cancelBatchRef.current ? "⏹️ Ré-ingestion interrompue" : "✅ Ré-ingestion globale terminée",
+      description: `${completed} réussis, ${failed} échoués${skipped > 0 ? `, ${skipped} ignorés` : ""}`,
+    });
+
+    // Reload stats
+    await loadSources();
+  }, [sources, reingest, toast, loadSources]);
+
+  const cancelBatch = useCallback(() => {
+    cancelBatchRef.current = true;
+    toast({ title: "Arrêt demandé", description: "La ré-ingestion s'arrêtera après le document en cours." });
+  }, [toast]);
+
   // Compute quality score
   const getQualityScore = (source: LegalSourceStats) => {
     if (source.actual_chunks === 0) return 0;
@@ -383,6 +481,8 @@ export default function ReingestionPanel() {
   };
 
   const isReingesting = progress?.status === "cleaning" || progress?.status === "ingesting";
+  const isBatchRunning = batchProgress?.isRunning === true;
+  const sourcesToFix = sources.filter(needsReingest).length;
 
   return (
     <Card className="animate-slide-up card-elevated border-border/20">
@@ -396,16 +496,82 @@ export default function ReingestionPanel() {
             Relancer le pipeline amélioré (contextual chunking + article-aware) sur les documents existants
           </CardDescription>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={loadSources}
-          disabled={loading || isReingesting}
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={loadSources}
+            disabled={loading || isReingesting || isBatchRunning}
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
+        {/* Batch controls */}
+        {!loading && sources.length > 0 && (
+          <div className="mb-4 p-3 rounded-lg border bg-muted/30 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm">
+                <ListFilter className="h-4 w-4 text-muted-foreground" />
+                <span>
+                  <strong>{sourcesToFix}</strong> document{sourcesToFix > 1 ? "s" : ""} à ré-ingérer
+                  {" "}sur {sources.length} total
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {isBatchRunning ? (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={cancelBatch}
+                    className="gap-2"
+                  >
+                    <StopCircle className="h-4 w-4" />
+                    Arrêter
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={reingestAll}
+                    disabled={sourcesToFix === 0 || isReingesting}
+                    className="gap-2"
+                  >
+                    <PlayCircle className="h-4 w-4" />
+                    Ré-ingérer tout ({sourcesToFix})
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Batch progress */}
+            {batchProgress && (
+              <div className="space-y-2">
+                <Progress
+                  value={batchProgress.total > 0
+                    ? Math.round(((batchProgress.completed + batchProgress.failed) / batchProgress.total) * 100)
+                    : 0
+                  }
+                  className="h-2"
+                />
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    {batchProgress.isRunning
+                      ? `📄 ${batchProgress.currentSourceTitle}`
+                      : "Terminé"
+                    }
+                  </span>
+                  <span>
+                    {batchProgress.completed + batchProgress.failed}/{batchProgress.total}
+                    {batchProgress.failed > 0 && ` (${batchProgress.failed} échoués)`}
+                    {batchProgress.skipped > 0 && ` (${batchProgress.skipped} ignorés)`}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <div className="flex items-center justify-center py-12 text-muted-foreground">
             <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -537,7 +703,7 @@ export default function ReingestionPanel() {
                         size="sm"
                         variant={qualityScore < 80 ? "default" : "outline"}
                         onClick={() => reingest(source)}
-                        disabled={isReingesting || !source.pdf_file_path}
+                        disabled={isReingesting || isBatchRunning || !source.pdf_file_path}
                         className="gap-2"
                       >
                         {isActive && isReingesting ? (
