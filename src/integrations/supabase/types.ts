@@ -2196,29 +2196,42 @@ export type Database = {
       get_dashboard_stats: {
         Args: never
         Returns: {
-          alerts_unread_count: number
-          conversations_count: number
-          documents_count: number
-          hs_codes_count: number
-          pdfs_count: number
-          tariffs_count: number
-          veille_pending_count: number
+          avg_rating: number
+          today_conversations: number
+          total_conversations: number
+          total_documents: number
+          total_hs_codes: number
+          total_tariffs: number
         }[]
       }
       get_phone_user_id: { Args: { _auth_user_id: string }; Returns: string }
-      get_tariff_details: {
-        Args: { p_country_code: string; p_hs_code: string }
-        Returns: {
-          control_authority: string
-          control_type: string
-          description: string
-          duty_rate: number
-          hs_code: string
-          is_controlled: boolean
-          national_code: string
-          vat_rate: number
-        }[]
-      }
+      get_tariff_details:
+        | {
+            Args: { p_country_code: string; p_hs_code: string }
+            Returns: {
+              control_authority: string
+              control_type: string
+              description: string
+              duty_rate: number
+              hs_code: string
+              is_controlled: boolean
+              national_code: string
+              vat_rate: number
+            }[]
+          }
+        | {
+            Args: { p_country?: string; p_hs_code: string }
+            Returns: {
+              description_local: string
+              duty_rate: number
+              hs_code_6: string
+              is_prohibited: boolean
+              is_restricted: boolean
+              national_code: string
+              other_taxes: Json
+              vat_rate: number
+            }[]
+          }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
@@ -2254,15 +2267,28 @@ export type Database = {
           title: string
         }[]
       }
-      search_hs_codes: {
-        Args: { limit_count?: number; search_term: string }
-        Returns: {
-          chapter_number: number
-          code: string
-          description_fr: string
-          id: string
-        }[]
-      }
+      search_hs_codes:
+        | {
+            Args: { search_term: string }
+            Returns: {
+              chapter_number: number
+              code: string
+              code_clean: string
+              description_en: string
+              description_fr: string
+              level: string
+              section_number: number
+            }[]
+          }
+        | {
+            Args: { limit_count?: number; search_term: string }
+            Returns: {
+              chapter_number: number
+              code: string
+              description_fr: string
+              id: string
+            }[]
+          }
       search_hs_codes_hybrid: {
         Args: {
           match_count?: number
