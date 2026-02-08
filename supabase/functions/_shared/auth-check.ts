@@ -28,12 +28,12 @@ export function isProductionMode(): boolean {
 export async function checkAuthentication(req: Request): Promise<AuthResult> {
   const authHeader = req.headers.get("Authorization");
   
+  const devMode = !isProductionMode();
+
   // In development, allow unauthenticated requests
-  if (!isProductionMode()) {
-    if (!authHeader) {
-      console.log("[Auth] Dev mode: allowing unauthenticated request");
-      return { authenticated: true, userId: "dev-user" };
-    }
+  if (devMode && !authHeader) {
+    console.log("[Auth] Dev mode: allowing unauthenticated request");
+    return { authenticated: true, userId: "dev-user" };
   }
   
   // Check for Authorization header
@@ -68,6 +68,11 @@ export async function checkAuthentication(req: Request): Promise<AuthResult> {
     
     if (error || !data?.claims) {
       console.error("[Auth] getClaims error:", error?.message || "No claims");
+      // In dev mode, allow request even if token is invalid/expired
+      if (devMode) {
+        console.log("[Auth] Dev mode: allowing request despite invalid token");
+        return { authenticated: true, userId: "dev-user" };
+      }
       return {
         authenticated: false,
         error: error?.message || "Invalid token",
@@ -109,6 +114,11 @@ export async function checkAuthentication(req: Request): Promise<AuthResult> {
     };
   } catch (err) {
     console.error("[Auth] Validation error:", err);
+    // In dev mode, allow request even if token validation fails (e.g. expired token)
+    if (devMode) {
+      console.log("[Auth] Dev mode: allowing request despite validation error");
+      return { authenticated: true, userId: "dev-user" };
+    }
     return {
       authenticated: false,
       error: "Authentication validation failed",
