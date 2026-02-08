@@ -375,9 +375,8 @@ export default function ReingestionPanel() {
     }
   }, [toast, loadSources]);
 
-  // Check if a source needs re-ingestion
+  // Check if a source needs re-ingestion (regardless of PDF availability)
   const needsReingest = (source: LegalSourceStats): boolean => {
-    if (!source.pdf_file_path) return false;
     if (source.actual_chunks === 0) return true;
     const hasEmbeddings = source.chunks_with_embeddings > 0;
     const hasHierarchy = source.chunks_with_hierarchy > 0;
