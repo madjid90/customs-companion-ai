@@ -65,7 +65,16 @@ const CLAUDE_PDF_API_URL = "https://api.anthropic.com/v1/messages";
 /**
  * Analyse une question pour extraire l'intention, les codes et les mots-clés
  */
-export function analyzeQuestion(question: string): QuestionAnalysis {
+export interface QuestionAnalysisV2 extends QuestionAnalysis {
+  intents: string[]; // Multi-intent support
+  primaryIntent: string;
+}
+
+/**
+ * Analyse une question pour extraire l'intention, les codes et les mots-clés
+ * V2: Support multi-intent + regex arabes
+ */
+export function analyzeQuestion(question: string): QuestionAnalysisV2 {
   const lowerQ = question.toLowerCase();
   
   // Detect HS codes (various formats)
@@ -74,30 +83,77 @@ export function analyzeQuestion(question: string): QuestionAnalysis {
     .map(m => m[1].replace(/[\.\s]/g, ''))
     .filter(c => c.length >= 4);
   
-  // Detect intent
-  let intent = 'info';
-  if (/class|code|position|nomenclature|sh\s/i.test(lowerQ)) intent = 'classify';
-  else if (/droit|ddi|tva|tax|payer|combien|calcul|coût|prix/i.test(lowerQ)) intent = 'calculate';
-  else if (/origine|eur\.?1|préférentiel|accord|certificat/i.test(lowerQ)) intent = 'origin';
-  else if (/contrôl|interdit|autoris|mcinet|onssa|anrt|permis|licence/i.test(lowerQ)) intent = 'control';
-  else if (/document|formalité|procédure|étape/i.test(lowerQ)) intent = 'procedure';
+  // Multi-intent detection (French + Arabic)
+  const intents: string[] = [];
   
-  // Extract meaningful keywords (remove stop words)
-  const stopWords = ['le','la','les','un','une','des','pour','sur','est','que','quel','quels','quelle',
+  // Classification intent (FR + AR)
+  if (/class|code|position|nomenclature|sh\s/i.test(lowerQ) ||
+      /(?:رمز|تصنيف|بند|موقع)\s*(?:جمركي|تعريف)/i.test(question)) {
+    intents.push('classify');
+  }
+  
+  // Calculate intent (FR + AR: رسوم = rusūm/duties, ضريبة = ḍarība/tax, مبلغ = mablaġ/amount)
+  if (/droit|ddi|tva|tax|payer|combien|calcul|coût|prix/i.test(lowerQ) ||
+      /(?:رسوم|ضريبة|مبلغ|كم|حساب|تكلفة|ثمن)/i.test(question)) {
+    intents.push('calculate');
+  }
+  
+  // Origin intent (FR + AR: منشأ = manšaʾ/origin, شهادة = šahāda/certificate)
+  if (/origine|eur\.?1|préférentiel|accord|certificat/i.test(lowerQ) ||
+      /(?:منشأ|شهادة|تفضيلي|اتفاقية)/i.test(question)) {
+    intents.push('origin');
+  }
+  
+  // Control intent (FR + AR: ممنوع = mamnūʿ/forbidden, رخصة = ruḫṣa/license)
+  if (/contrôl|interdit|autoris|mcinet|onssa|anrt|permis|licence/i.test(lowerQ) ||
+      /(?:ممنوع|مراقب|رخصة|ترخيص|محظور|مقيد)/i.test(question)) {
+    intents.push('control');
+  }
+  
+  // Procedure intent (FR + AR: إجراء = ʾijrāʾ/procedure, وثيقة = waṯīqa/document)
+  if (/document|formalité|procédure|étape/i.test(lowerQ) ||
+      /(?:إجراء|إجراءات|وثيقة|مستند|خطوة|كيف)/i.test(question)) {
+    intents.push('procedure');
+  }
+  
+  // Legal intent (FR + AR: مادة = mādda/article, قانون = qānūn/law)
+  if (/article|loi|circulaire|réglementation|obligation|infraction|sanction/i.test(lowerQ) ||
+      /(?:مادة|قانون|دورية|منشور|عقوبة|مخالفة)/i.test(question)) {
+    intents.push('legal');
+  }
+  
+  // Default to 'info' if no intent detected
+  if (intents.length === 0) intents.push('info');
+  
+  // Primary intent is the first detected one (priority order above matters)
+  const primaryIntent = intents[0];
+  
+  // Extract meaningful keywords (remove stop words - FR + AR)
+  const stopWordsFR = ['le','la','les','un','une','des','pour','sur','est','que','quel','quels','quelle',
     'quelles','comment','combien','dans','avec','sans','par','vers','chez','être','avoir','faire',
     'douane','maroc','marocain','produit','marchandise'];
+  const stopWordsAR = ['هل','ما','من','في','على','إلى','هذا','هذه','ذلك','تلك','التي','الذي','أن','عن'];
+  const allStopWords = [...stopWordsFR, ...stopWordsAR];
+  
   const keywords = lowerQ
-    .replace(/[^\w\sàâäéèêëïîôùûüç]/g, ' ')
+    .replace(/[^\w\sàâäéèêëïîôùûüçأ-ي]/g, ' ')
     .split(/\s+/)
-    .filter(w => w.length > 3 && !stopWords.includes(w));
+    .filter(w => w.length > 2 && !allStopWords.includes(w));
   
-  // Detect country (default to Morocco)
+  // Detect country (default to Morocco) - FR + AR
   let country = 'MA';
-  if (/sénégal|senegal/i.test(lowerQ)) country = 'SN';
-  else if (/côte d'ivoire|cote d'ivoire|ivoirien/i.test(lowerQ)) country = 'CI';
-  else if (/cameroun/i.test(lowerQ)) country = 'CM';
+  if (/sénégal|senegal|السنغال/i.test(question)) country = 'SN';
+  else if (/côte d'ivoire|cote d'ivoire|ivoirien|ساحل العاج/i.test(question)) country = 'CI';
+  else if (/cameroun|الكاميرون/i.test(question)) country = 'CM';
   
-  return { detectedCodes, intent, keywords, country };
+  return { 
+    detectedCodes, 
+    intent: primaryIntent, 
+    keywords, 
+    country,
+    intents,
+    primaryIntent,
+  };
 }
 
 /**

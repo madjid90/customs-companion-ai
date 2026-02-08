@@ -181,3 +181,130 @@ export function formatPassagesForPrompt(
   
   return output;
 }
+
+// ============================================================================
+// EXTENDED SCORING - Score ALL result types (HS codes, legal chunks, knowledge)
+// ============================================================================
+
+export interface UnifiedScoredResult {
+  text: string;
+  score: number;
+  type: 'hs_code' | 'legal_chunk' | 'knowledge_doc' | 'tariff_note' | 'pdf_extraction' | 'controlled_product';
+  matchedCodes: string[];
+  matchedKeywords: string[];
+  metadata?: any;
+}
+
+/**
+ * Score a unified result (any type) against question context.
+ * Extends the passage scorer to ALL result types, not just PDFs.
+ */
+export function scoreUnifiedResult(
+  text: string,
+  type: UnifiedScoredResult['type'],
+  targetCodes: string[],
+  keywords: string[],
+  metadata?: any
+): UnifiedScoredResult {
+  // Use base passage scoring
+  const baseScore = scorePassage(text, targetCodes, keywords);
+  let score = baseScore.score;
+  
+  // Type-specific bonuses
+  switch (type) {
+    case 'legal_chunk':
+      // Bonus for article references
+      if (/\bart(?:icle)?\.?\s*\d+/i.test(text) || /(?:المادة|الفصل)\s*\d+/.test(text)) {
+        score += 3;
+      }
+      // Bonus for circulaire references
+      if (/circulaire|دورية|منشور/i.test(text)) {
+        score += 2;
+      }
+      // Bonus for section_title or hierarchy_path in metadata
+      if (metadata?.hierarchy_path) score += 1;
+      if (metadata?.article_number) score += 2;
+      break;
+      
+    case 'hs_code':
+      // Bonus for exact chapter match
+      if (metadata?.chapter_number && targetCodes.some(c => c.startsWith(String(metadata.chapter_number).padStart(2, '0')))) {
+        score += 5;
+      }
+      // Bonus for having legal notes
+      if (metadata?.legal_notes) score += 2;
+      break;
+      
+    case 'tariff_note':
+      // Bonus for definitions and chapter notes
+      if (metadata?.note_type === 'definition') score += 3;
+      if (metadata?.note_type === 'chapter_note') score += 2;
+      if (metadata?.note_type === 'exclusion') score += 2;
+      break;
+      
+    case 'knowledge_doc':
+      // Bonus for category relevance
+      if (metadata?.category) score += 1;
+      if (metadata?.reference) score += 1;
+      break;
+      
+    case 'controlled_product':
+      // Bonus for control type specificity
+      if (metadata?.control_type === 'prohibition') score += 3;
+      if (metadata?.control_type === 'restriction') score += 2;
+      if (metadata?.control_authority) score += 1;
+      break;
+  }
+  
+  return {
+    text,
+    score: Math.max(0, score),
+    type,
+    matchedCodes: baseScore.matchedCodes,
+    matchedKeywords: baseScore.matchedKeywords,
+    metadata,
+  };
+}
+
+/**
+ * Score and rank ALL retrieved results from different sources.
+ * Returns top N results sorted by relevance.
+ */
+export function scoreAndRankAllResults(
+  results: Array<{ text: string; type: UnifiedScoredResult['type']; metadata?: any }>,
+  targetCodes: string[],
+  keywords: string[],
+  maxResults: number = 15,
+  maxTotalChars: number = 4000
+): UnifiedScoredResult[] {
+  if (!results || results.length === 0) return [];
+  
+  // Score all results
+  const scored = results
+    .map(r => scoreUnifiedResult(r.text, r.type, targetCodes, keywords, r.metadata))
+    .filter(r => r.score > 0)
+    .sort((a, b) => b.score - a.score);
+  
+  // Select top results within char limit
+  const selected: UnifiedScoredResult[] = [];
+  let totalChars = 0;
+  
+  for (const result of scored) {
+    if (selected.length >= maxResults) break;
+    if (totalChars + result.text.length > maxTotalChars) {
+      if (result.score >= 8 && totalChars < maxTotalChars - 200) {
+        const remaining = maxTotalChars - totalChars - 50;
+        selected.push({
+          ...result,
+          text: result.text.substring(0, remaining) + "...",
+        });
+        break;
+      }
+      continue;
+    }
+    selected.push(result);
+    totalChars += result.text.length;
+  }
+  
+  return selected;
+}
