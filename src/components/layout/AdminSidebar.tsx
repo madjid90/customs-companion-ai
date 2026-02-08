@@ -13,6 +13,7 @@ import {
   ChevronRight,
   MessageSquare,
   Inbox,
+  Library,
   LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -28,6 +29,7 @@ const menuItems: MenuItem[] = [
   { type: "separator" },
   { type: "link", icon: Package, label: "Codes SH", href: "/admin/hs-codes" },
   { type: "link", icon: FileText, label: "Documents", href: "/admin/documents" },
+  { type: "link", icon: Library, label: "Références", href: "/admin/references" },
   { type: "separator" },
   { type: "link", icon: MessageSquare, label: "Chat public", href: "/app/chat" },
 ];

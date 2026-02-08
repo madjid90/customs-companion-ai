@@ -28,6 +28,7 @@ const AdminHSCodes = lazy(() => import("@/pages/admin/AdminHSCodes"));
 const AdminUpload = lazy(() => import("@/pages/admin/AdminUpload"));
 const AdminDocuments = lazy(() => import("@/pages/admin/AdminDocuments"));
 const AdminAccessRequests = lazy(() => import("@/pages/admin/AdminAccessRequests"));
+const AdminReferences = lazy(() => import("@/pages/admin/AdminReferences"));
 import NotFound from "@/pages/NotFound";
 
 const AdminFallback = () => (
@@ -99,6 +100,9 @@ const App = () => {
                       } />
                       <Route path="documents" element={
                         <Suspense fallback={<AdminFallback />}><AdminDocuments /></Suspense>
+                      } />
+                      <Route path="references" element={
+                        <Suspense fallback={<AdminFallback />}><AdminReferences /></Suspense>
                       } />
                       <Route path="access-requests" element={
                         <Suspense fallback={<AdminFallback />}><AdminAccessRequests /></Suspense>
