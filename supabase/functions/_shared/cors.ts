@@ -25,8 +25,8 @@ const DEVELOPMENT_ORIGINS = [
 
 // Lovable preview/published domains
 function isLovableDomain(origin: string): boolean {
-  // In production, only allow the specific Lovable published domain (listed in PRODUCTION_ORIGINS)
-  if (IS_PRODUCTION) return false;
+  // Allow all Lovable-managed domains (preview, published, dev)
+  // These are trusted origins managed by the Lovable platform
   return origin.includes('.lovableproject.com') || 
          origin.includes('.lovable.app') ||
          origin.includes('.lovableproject.dev');
@@ -36,14 +36,16 @@ function isLovableDomain(origin: string): boolean {
 export function isOriginAllowed(origin: string | null): boolean {
   if (!origin) return false;
 
-  // Production: uniquement les domaines listés explicitement
+  // Always allow Lovable platform domains (trusted infrastructure)
+  if (isLovableDomain(origin)) return true;
+
+  // Production: only explicitly listed domains
   if (IS_PRODUCTION) {
     return PRODUCTION_ORIGINS.includes(origin);
   }
 
-  // Development: autoriser localhost et Lovable
+  // Development: also allow localhost
   if (origin.startsWith("http://localhost:")) return true;
-  if (isLovableDomain(origin)) return true;
   
   return PRODUCTION_ORIGINS.includes(origin) || DEVELOPMENT_ORIGINS.includes(origin);
 }
