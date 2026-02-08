@@ -15,11 +15,13 @@ export interface AuthResult {
 }
 
 /**
- * Check if running in production mode
+ * Check if running in production mode.
+ * SECURITY: Default to production. Only dev if EXPLICITLY set to "development" or "dev".
+ * This prevents accidental auth bypass if ENVIRONMENT is not configured.
  */
 export function isProductionMode(): boolean {
-  const env = Deno.env.get("ENVIRONMENT") || Deno.env.get("DENO_ENV") || "";
-  return env === "production" || env === "prod";
+  const env = Deno.env.get("ENVIRONMENT") || "";
+  return env !== "development" && env !== "dev";
 }
 
 /**

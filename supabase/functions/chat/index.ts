@@ -13,6 +13,7 @@ import {
   errorResponse,
   successResponse,
 } from "../_shared/cors.ts";
+import { requireAuth } from "../_shared/auth-check.ts";
 import { validateChatRequest } from "../_shared/validation.ts";
 import { createLogger } from "../_shared/logger.ts";
 import { fetchWithRetry, RETRY_CONFIGS, type RetryConfig } from "../_shared/retry.ts";
@@ -258,6 +259,12 @@ serve(async (req) => {
   }
 
   logger.info("Request received", { method: req.method });
+
+  const corsHeaders = getCorsHeaders(req);
+
+  // Authentication check - REQUIRED
+  const { error: authError } = await requireAuth(req, corsHeaders);
+  if (authError) return authError;
 
   // Rate limiting
   const clientId = getClientId(req);

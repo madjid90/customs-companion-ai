@@ -2,15 +2,18 @@
 // SHARED CORS CONFIGURATION - PRODUCTION SECURE
 // ============================================================================
 
-// Environment detection
-const IS_PRODUCTION = Deno.env.get("ENVIRONMENT") === "production";
+// Environment detection - SECURITY: default to production unless explicitly dev
+const IS_PRODUCTION = (() => {
+  const env = Deno.env.get("ENVIRONMENT") || "";
+  return env !== "development" && env !== "dev";
+})();
 
-// Allowed origins - AJOUTEZ VOS DOMAINES DE PRODUCTION ICI
+// Allowed origins - Production domains
 const PRODUCTION_ORIGINS = [
   "https://customs-companion.vercel.app",
   "https://customs-companion.netlify.app",
-  // AJOUTEZ VOTRE DOMAINE DE PRODUCTION:
-  // "https://votre-domaine.com",
+  // Lovable Cloud published domain
+  "https://id-preview--51d41d3f-1b65-481d-b04a-12695ec7c38e.lovable.app",
 ];
 
 // Development origins (only used in non-production)
@@ -20,9 +23,10 @@ const DEVELOPMENT_ORIGINS = [
   "http://localhost:8080",
 ];
 
-// Lovable preview domains (only in development)
+// Lovable preview/published domains
 function isLovableDomain(origin: string): boolean {
-  if (IS_PRODUCTION) return false; // Désactivé en production
+  // In production, only allow the specific Lovable published domain (listed in PRODUCTION_ORIGINS)
+  if (IS_PRODUCTION) return false;
   return origin.includes('.lovableproject.com') || 
          origin.includes('.lovable.app') ||
          origin.includes('.lovableproject.dev');
