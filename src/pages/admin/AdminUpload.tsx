@@ -286,40 +286,11 @@ export default function AdminUpload() {
     };
 
     // === RESUME LOGIC: Check for existing chunks ===
+    // NOTE: The edge function may replace source_ref with the extracted reference
+    // (e.g., "4955/312" instead of "file_24976 (7)"), so we DON'T use resume logic
+    // based on source_ref. Instead, we always start fresh since cleanup already removed old data.
     const sourceRef = fileName.replace(".pdf", "");
-    let existingSourceId: number | null = null;
-    let resumeFromPage = 1;
-    
-    // Check if there's an existing legal_sources entry for this document
-    const { data: existingSource } = await supabase
-      .from("legal_sources")
-      .select("id, total_chunks")
-      .eq("source_ref", sourceRef)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
-    
-    if (existingSource) {
-      // Find the last processed page from existing chunks
-      const { data: lastChunk } = await supabase
-        .from("legal_chunks")
-        .select("page_number")
-        .eq("source_id", existingSource.id)
-        .order("page_number", { ascending: false })
-        .limit(1)
-        .single();
-      
-      if (lastChunk?.page_number) {
-        existingSourceId = existingSource.id;
-        resumeFromPage = lastChunk.page_number + 1;
-        console.log(`[LegalIngestion] Resuming from page ${resumeFromPage} (source_id=${existingSourceId})`);
-        
-        updateFileStatus(fileId, { 
-          progress: 62,
-          error: `Reprise à la page ${resumeFromPage}...`
-        });
-      }
-    }
+    const resumeFromPage = 1;
 
     // Récupérer le PDF depuis le storage pour l'envoyer en base64
     const { data: pdfBlob, error: downloadError } = await supabase.storage
@@ -360,18 +331,17 @@ export default function AdminUpload() {
       }
     };
 
-    let sourceId = existingSourceId;
+    let sourceId: number | null = null;
     let totalPages = 0;
-    let processedPages = resumeFromPage > 1 ? resumeFromPage - 1 : 0; // Pages already done
+    let processedPages = 0;
     let totalChunks = 0;
     let totalCodes = 0;
     let totalEvidence = 0;
     
-    // If resuming, we need to get total pages from first request
-    // If starting fresh, first batch creates the source
+    // Always start fresh (cleanup already removed old data)
     updateFileStatus(fileId, { 
       progress: 62,
-      error: resumeFromPage > 1 ? `Reprise page ${resumeFromPage}...` : "Ingestion batch 1..."
+      error: "Ingestion page 1..."
     });
 
     const firstBatchResponse = await fetchWithTimeout({
@@ -441,30 +411,46 @@ export default function AdminUpload() {
       
       updateFileStatus(fileId, { 
         progress: progressPercent,
-        error: `Batch ${batchNum}: pages ${currentPage}-${endPage}...`
+        error: `⏳ Page ${currentPage}/${totalPages} — envoi en cours...`
       });
 
       await new Promise(r => setTimeout(r, DELAY_BETWEEN_BATCHES));
 
-      try {
-        const batchResponse = await fetchWithTimeout({
-          source_type: sourceTypeMap[docType],
-          source_ref: fileName.replace(".pdf", ""),
-          pdf_base64: base64,
-          country_code: "MA",
-          generate_embeddings: true,
-          detect_hs_codes: true,
-          batch_mode: true,
-          start_page: currentPage,
-          end_page: endPage,
-          source_id: sourceId,
-        });
+      // Retry logic for individual batches (up to 2 retries)
+      let batchSuccess = false;
+      for (let attempt = 0; attempt < 3 && !batchSuccess; attempt++) {
+        try {
+          if (attempt > 0) {
+            updateFileStatus(fileId, { 
+              error: `🔄 Page ${currentPage}/${totalPages} — tentative ${attempt + 1}/3...`
+            });
+            await new Promise(r => setTimeout(r, 3000 * attempt));
+          }
 
-        if (!batchResponse.ok) {
-          const errorText = await batchResponse.text();
-          console.warn(`[LegalIngestion] Batch ${batchNum} error: ${errorText.substring(0, 100)}`);
-          // Continue with next batch on error
-        } else {
+          updateFileStatus(fileId, { 
+            error: `⏳ Page ${currentPage}/${totalPages} — analyse IA (~20s)...`
+          });
+
+          const batchResponse = await fetchWithTimeout({
+            source_type: sourceTypeMap[docType],
+            source_ref: fileName.replace(".pdf", ""),
+            pdf_base64: base64,
+            country_code: "MA",
+            generate_embeddings: true,
+            detect_hs_codes: true,
+            batch_mode: true,
+            start_page: currentPage,
+            end_page: endPage,
+            source_id: sourceId,
+          });
+
+          if (!batchResponse.ok) {
+            const errorText = await batchResponse.text();
+            console.warn(`[LegalIngestion] Batch ${batchNum} HTTP error: ${errorText.substring(0, 100)}`);
+            if (attempt === 2) break; // Last attempt, skip this batch
+            continue;
+          }
+          
           const batchResult = await batchResponse.json();
           
           if (batchResult.success) {
@@ -472,13 +458,21 @@ export default function AdminUpload() {
             totalChunks += batchResult.chunks_created || 0;
             totalCodes += batchResult.detected_codes_count || 0;
             totalEvidence += batchResult.evidence_created || 0;
+            batchSuccess = true;
             
             console.log(`[LegalIngestion] Batch ${batchNum} done: ${processedPages}/${totalPages} pages`);
+            
+            updateFileStatus(fileId, { 
+              progress: 62 + Math.round((processedPages / totalPages) * 35),
+              error: `✅ Page ${currentPage}/${totalPages} — ${totalChunks} segments`
+            });
+          }
+        } catch (batchError: any) {
+          console.warn(`[LegalIngestion] Batch ${batchNum} attempt ${attempt + 1} failed:`, batchError.message);
+          if (attempt === 2) {
+            console.error(`[LegalIngestion] Batch ${batchNum} failed after 3 attempts, skipping`);
           }
         }
-      } catch (batchError: any) {
-        console.warn(`[LegalIngestion] Batch ${batchNum} failed:`, batchError.message);
-        // Continue with next batch
       }
 
       currentPage = endPage + 1;
@@ -574,39 +568,81 @@ export default function AdminUpload() {
       
       // Also clean up legal_sources/legal_chunks from previous ingestion runs
       // This prevents the "already_complete" false positive when re-uploading
+      // IMPORTANT: The edge function may replace source_ref with the extracted reference
+      // (e.g., "4955/312" instead of "file_24976 (7)"), so we search broadly
       const sourceRef = file.name.replace(".pdf", "");
+      
+      // Search by exact filename-based ref AND by partial match (edge function may have changed it)
       const { data: existingLegalSources } = await supabase
         .from("legal_sources")
-        .select("id")
-        .eq("source_ref", sourceRef);
+        .select("id, source_ref")
+        .or(`source_ref.eq.${sourceRef},source_ref.ilike.%${sourceRef.replace(/[^a-zA-Z0-9]/g, '%')}%`);
       
-      if (existingLegalSources && existingLegalSources.length > 0) {
-        for (const src of existingLegalSources) {
-          console.log(`[Replace] Cleaning up legal_source ${src.id} for ref "${sourceRef}"`);
-          // Delete chunks and evidence linked to this source
+      // Also check if there's a legal_references entry linked to a pdf with this filename
+      const { data: linkedRefs } = await supabase
+        .from("legal_references")
+        .select("reference_number")
+        .ilike("context", `%${file.name.replace(".pdf", "").substring(0, 30)}%`)
+        .limit(5);
+      
+      // Collect all potential source_refs to clean up
+      const refsToClean = new Set<string>();
+      refsToClean.add(sourceRef);
+      if (linkedRefs) {
+        for (const ref of linkedRefs) {
+          refsToClean.add(ref.reference_number);
+        }
+      }
+      
+      // Clean up all matching legal_sources
+      const allSourcesToClean: { id: number; source_ref: string }[] = existingLegalSources || [];
+      
+      // Also search by linked refs from legal_references
+      for (const refNum of refsToClean) {
+        if (refNum !== sourceRef) {
+          const { data: additionalSources } = await supabase
+            .from("legal_sources")
+            .select("id, source_ref")
+            .eq("source_ref", refNum);
+          if (additionalSources) {
+            for (const src of additionalSources) {
+              if (!allSourcesToClean.some(s => s.id === src.id)) {
+                allSourcesToClean.push(src);
+              }
+            }
+          }
+        }
+      }
+      
+      if (allSourcesToClean.length > 0) {
+        for (const src of allSourcesToClean) {
+          console.log(`[Replace] Cleaning up legal_source ${src.id} (ref: "${src.source_ref}")`);
           await supabase.from("legal_chunks").delete().eq("source_id", src.id);
           await supabase.from("hs_evidence").delete().eq("source_id", src.id);
+          await supabase.from("legal_sources").delete().eq("id", src.id);
         }
-        // Delete the legal_sources entries themselves
-        await supabase.from("legal_sources").delete().eq("source_ref", sourceRef);
-        console.log(`[Replace] Cleaned up ${existingLegalSources.length} old legal_source(s)`);
+        console.log(`[Replace] Cleaned up ${allSourcesToClean.length} old legal_source(s)`);
       }
       
       // Also clean up any pdf_documents created by the edge function (stored at circulaires/...)
-      const { data: edgeFunctionDocs } = await supabase
-        .from("pdf_documents")
-        .select("id, file_path")
-        .ilike("file_path", `circulaires/%${sourceRef.replace(/[^a-zA-Z0-9]/g, '%')}%`)
-        .eq("is_active", true);
-      
-      if (edgeFunctionDocs && edgeFunctionDocs.length > 0) {
-        for (const efDoc of edgeFunctionDocs) {
-          console.log(`[Replace] Removing edge-function-created doc: ${efDoc.id}`);
-          if (efDoc.file_path) {
-            await supabase.storage.from("pdf-documents").remove([efDoc.file_path]);
+      // Search by all known refs
+      for (const refNum of refsToClean) {
+        const safeRef = refNum.replace(/[^a-zA-Z0-9]/g, '%');
+        const { data: edgeFunctionDocs } = await supabase
+          .from("pdf_documents")
+          .select("id, file_path")
+          .ilike("file_path", `circulaires/%${safeRef}%`)
+          .eq("is_active", true);
+        
+        if (edgeFunctionDocs && edgeFunctionDocs.length > 0) {
+          for (const efDoc of edgeFunctionDocs) {
+            console.log(`[Replace] Removing edge-function-created doc: ${efDoc.id}`);
+            if (efDoc.file_path) {
+              await supabase.storage.from("pdf-documents").remove([efDoc.file_path]);
+            }
+            await supabase.from("legal_references").delete().eq("pdf_id", efDoc.id);
+            await supabase.from("pdf_documents").delete().eq("id", efDoc.id);
           }
-          await supabase.from("legal_references").delete().eq("pdf_id", efDoc.id);
-          await supabase.from("pdf_documents").delete().eq("id", efDoc.id);
         }
       }
       
