@@ -12,7 +12,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 // CORS & CONFIG
 // ============================================================================
 
-import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
+import { getCorsHeaders, handleCorsPreFlight, checkRateLimitDistributed, rateLimitResponse, getClientId } from "../_shared/cors.ts";
+import { requireAuth } from "../_shared/auth-check.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -519,6 +520,21 @@ serve(async (req) => {
   }
 
   const corsHeaders = getCorsHeaders(req);
+
+  // Authentication check - REQUIRED
+  const { error: authError } = await requireAuth(req, corsHeaders);
+  if (authError) return authError;
+
+  // Rate limiting
+  const clientId = getClientId(req);
+  const rateLimit = await checkRateLimitDistributed(clientId, {
+    maxRequests: 20,
+    windowMs: 60000,
+    blockDurationMs: 300000,
+  });
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(req, rateLimit.resetAt);
+  }
 
   const startTime = Date.now();
 

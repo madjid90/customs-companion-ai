@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
+import { getAuthHeaders } from "@/lib/authHeaders";
 import { useToast } from "@/hooks/use-toast";
 import { ChatMessage, ChatTypingIndicator } from "@/components/chat/ChatMessage";
 import { ChatWelcome } from "@/components/chat/ChatWelcome";
@@ -66,13 +67,19 @@ async function streamChatResponse(params: {
   onDone: (metadata: any) => void;
   onError: (error: string) => void;
 }) {
+  // Get authenticated headers (JWT token)
+  let headers: Record<string, string>;
+  try {
+    headers = await getAuthHeaders(true);
+    headers['Accept'] = 'text/event-stream';
+  } catch (e: any) {
+    params.onError(e.message || "Session expirée. Veuillez vous reconnecter.");
+    return;
+  }
+
   const response = await fetch(CHAT_STREAM_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-      'Accept': 'text/event-stream',
-    },
+    headers,
     body: JSON.stringify({
       question: params.question,
       sessionId: params.sessionId,
