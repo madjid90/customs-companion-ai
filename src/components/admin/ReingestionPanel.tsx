@@ -87,11 +87,11 @@ export default function ReingestionPanel() {
           supabase.from("legal_chunks").select("id", { count: "exact", head: true }).eq("source_id", src.id).not("keywords", "is", null),
           supabase.from("hs_evidence").select("id", { count: "exact", head: true }).eq("source_id", src.id),
           supabase.from("legal_chunks").select("page_number").eq("source_id", src.id).not("page_number", "is", null),
-          // Find associated PDF document
+          // Find associated PDF document - use broader matching
           supabase.from("pdf_documents")
             .select("id, file_path, file_name")
-            .or(`document_reference.eq.${src.source_ref},file_name.ilike.%${src.source_ref.replace(/[^a-zA-Z0-9]/g, '%')}%`)
             .eq("is_active", true)
+            .or(`document_reference.eq.${src.source_ref},title.ilike.%${(src.title || src.source_ref).substring(0, 30)}%`)
             .limit(1),
         ]);
 
@@ -453,12 +453,16 @@ export default function ReingestionPanel() {
 
                       <div className="flex items-center gap-2">
                         <Badge
-                          variant={qualityScore >= 80 ? "default" : qualityScore >= 50 ? "secondary" : "destructive"}
-                          className="shrink-0"
+                          variant="outline"
+                          className={`shrink-0 ${
+                            qualityScore >= 80 
+                              ? "border-green-500 bg-green-500/10 text-green-700" 
+                              : qualityScore >= 50 
+                                ? "border-yellow-500 bg-yellow-500/10 text-yellow-700" 
+                                : "border-red-500 bg-red-500/10 text-red-700"
+                          }`}
                         >
-                          <span className={getQualityColor(qualityScore)}>
-                            {getQualityLabel(qualityScore)} ({qualityScore}%)
-                          </span>
+                          {getQualityLabel(qualityScore)} ({qualityScore}%)
                         </Badge>
                       </div>
                     </div>
