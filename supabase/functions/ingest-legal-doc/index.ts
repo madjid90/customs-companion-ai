@@ -745,16 +745,30 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
         currentSection = sectionMatch;
       }
 
-      // If adding this paragraph exceeds target, save current chunk
-      if (currentChunk && (currentChunk.length + trimmedPara.length) > CHUNK_SIZE_TARGET) {
+      // ARTICLE-AWARE CHUNKING: Force split on article boundaries
+      const isArticleBoundary = /^(?:Article|Art\.?)\s*\d+/i.test(trimmedPara) || 
+                                 /^(?:المادة|الفصل|البند)\s*\d+/.test(trimmedPara);
+      
+      const shouldSplit = currentChunk && (
+        (currentChunk.length + trimmedPara.length) > CHUNK_SIZE_TARGET ||
+        (isArticleBoundary && currentChunk.length >= MIN_CHUNK_SIZE)
+      );
+
+      if (shouldSplit) {
         if (currentChunk.length >= MIN_CHUNK_SIZE) {
           const chunkText = currentChunk.trim();
           const articleNumber = extractArticleNumber(chunkText);
           const sectionTitle = extractSectionTitle(chunkText) || currentSection;
+          const hierarchyPath = buildHierarchyPath(sectionTitle, articleNumber);
+          
+          // CONTEXTUAL CHUNKING: Prepend hierarchy_path to text for better embeddings
+          const contextualText = hierarchyPath 
+            ? `[${hierarchyPath}]\n${chunkText}` 
+            : chunkText;
           
           chunks.push({
             chunk_index: chunkIndex++,
-            text: chunkText,
+            text: contextualText,
             page_number: page.page_number,
             char_start: charStart,
             char_end: charStart + currentChunk.length,
@@ -762,7 +776,7 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
             section_title: sectionTitle,
             parent_section: parentSection,
             chunk_type: detectChunkType(chunkText),
-            hierarchy_path: buildHierarchyPath(sectionTitle, articleNumber),
+            hierarchy_path: hierarchyPath,
             keywords: extractKeywords(chunkText),
             mentioned_hs_codes: extractMentionedHSCodes(chunkText),
           });
@@ -782,10 +796,16 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
       const chunkText = currentChunk.trim();
       const articleNumber = extractArticleNumber(chunkText);
       const sectionTitle = extractSectionTitle(chunkText) || currentSection;
+      const hierarchyPath = buildHierarchyPath(sectionTitle, articleNumber);
+      
+      // CONTEXTUAL CHUNKING: Prepend hierarchy_path
+      const contextualText = hierarchyPath 
+        ? `[${hierarchyPath}]\n${chunkText}` 
+        : chunkText;
       
       chunks.push({
         chunk_index: chunkIndex++,
-        text: chunkText,
+        text: contextualText,
         page_number: page.page_number,
         char_start: charStart,
         char_end: charStart + currentChunk.length,
@@ -793,7 +813,7 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
         section_title: sectionTitle,
         parent_section: parentSection,
         chunk_type: detectChunkType(chunkText),
-        hierarchy_path: buildHierarchyPath(sectionTitle, articleNumber),
+        hierarchy_path: hierarchyPath,
         keywords: extractKeywords(chunkText),
         mentioned_hs_codes: extractMentionedHSCodes(chunkText),
       });

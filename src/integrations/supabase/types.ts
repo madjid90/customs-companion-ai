@@ -125,6 +125,45 @@ export type Database = {
           },
         ]
       }
+      classification_history: {
+        Row: {
+          confirmed_code: string | null
+          created_at: string
+          feedback_text: string | null
+          id: string
+          product_description: string | null
+          question: string
+          session_id: string | null
+          suggested_code: string | null
+          user_id: string | null
+          was_correct: boolean | null
+        }
+        Insert: {
+          confirmed_code?: string | null
+          created_at?: string
+          feedback_text?: string | null
+          id?: string
+          product_description?: string | null
+          question: string
+          session_id?: string | null
+          suggested_code?: string | null
+          user_id?: string | null
+          was_correct?: boolean | null
+        }
+        Update: {
+          confirmed_code?: string | null
+          created_at?: string
+          feedback_text?: string | null
+          id?: string
+          product_description?: string | null
+          question?: string
+          session_id?: string | null
+          suggested_code?: string | null
+          user_id?: string | null
+          was_correct?: boolean | null
+        }
+        Relationships: []
+      }
       classification_opinions: {
         Row: {
           adoption_date: string | null
@@ -386,6 +425,8 @@ export type Database = {
           duty_note: string | null
           duty_rate: number | null
           effective_date: string | null
+          embedding: string | null
+          embedding_updated_at: string | null
           expiry_date: string | null
           hs_code_6: string
           id: string
@@ -417,6 +458,8 @@ export type Database = {
           duty_note?: string | null
           duty_rate?: number | null
           effective_date?: string | null
+          embedding?: string | null
+          embedding_updated_at?: string | null
           expiry_date?: string | null
           hs_code_6: string
           id?: string
@@ -448,6 +491,8 @@ export type Database = {
           duty_note?: string | null
           duty_rate?: number | null
           effective_date?: string | null
+          embedding?: string | null
+          embedding_updated_at?: string | null
           expiry_date?: string | null
           hs_code_6?: string
           id?: string
@@ -697,6 +742,36 @@ export type Database = {
           status?: string | null
           table_name?: string
           text_content?: string
+        }
+        Relationships: []
+      }
+      hs_code_synonyms: {
+        Row: {
+          category: string | null
+          created_at: string
+          hs_code: string
+          id: number
+          synonym_ar: string | null
+          synonym_en: string | null
+          synonym_fr: string | null
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          hs_code: string
+          id?: number
+          synonym_ar?: string | null
+          synonym_en?: string | null
+          synonym_fr?: string | null
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          hs_code?: string
+          id?: number
+          synonym_ar?: string | null
+          synonym_en?: string | null
+          synonym_fr?: string | null
         }
         Relationships: []
       }
@@ -2267,6 +2342,25 @@ export type Database = {
           title: string
         }[]
       }
+      search_country_tariffs_semantic: {
+        Args: {
+          country?: string
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          description_local: string
+          duty_rate: number
+          hs_code_6: string
+          id: string
+          is_prohibited: boolean
+          is_restricted: boolean
+          national_code: string
+          similarity: number
+          vat_rate: number
+        }[]
+      }
       search_hs_codes:
         | {
             Args: { search_term: string }
@@ -2502,6 +2596,16 @@ export type Database = {
           penalties: string
           procedure_name: string
           required_documents: Json
+        }[]
+      }
+      search_synonyms: {
+        Args: { result_limit?: number; search_text: string }
+        Returns: {
+          category: string
+          hs_code: string
+          synonym_ar: string
+          synonym_en: string
+          synonym_fr: string
         }[]
       }
       search_tariff_notes_fts: {
