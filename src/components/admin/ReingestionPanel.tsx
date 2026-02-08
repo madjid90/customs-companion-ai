@@ -375,10 +375,10 @@ export default function ReingestionPanel() {
     }
   }, [toast, loadSources]);
 
-  // Check if a source needs full re-ingestion (hierarchy_path missing = V2 pipeline never ran)
-  // Embeddings are handled separately by the cron job, so don't count them here
+  // Check if a source needs full re-ingestion (has chunks but V2 pipeline never ran)
+  // Excludes: sources with no chunks (need re-upload), embeddings-only issues (cron handles those)
   const needsReingest = (source: LegalSourceStats): boolean => {
-    if (source.actual_chunks === 0) return true;
+    if (source.actual_chunks === 0) return false;
     return source.chunks_with_hierarchy === 0;
   };
 
