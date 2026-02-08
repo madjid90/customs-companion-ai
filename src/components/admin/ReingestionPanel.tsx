@@ -585,7 +585,7 @@ export default function ReingestionPanel() {
         ) : (
           <ScrollArea className="h-[500px]">
             <div className="space-y-4">
-              {sources.map((source) => {
+              {sources.filter(needsReingest).map((source) => {
                 const qualityScore = getQualityScore(source);
                 const isActive = progress?.sourceId === source.id;
                 const progressPercent = isActive && progress?.totalPages
