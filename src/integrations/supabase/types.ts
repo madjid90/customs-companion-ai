@@ -2172,6 +2172,13 @@ export type Database = {
       cleanup_expired_cache: { Args: never; Returns: number }
       cleanup_expired_otp_codes: { Args: never; Returns: number }
       cleanup_old_rate_limits: { Args: never; Returns: number }
+      count_conversations_by_users: {
+        Args: { user_ids: string[] }
+        Returns: {
+          conversation_count: number
+          user_id: string
+        }[]
+      }
       find_cached_response: {
         Args: { query_embedding: string; similarity_threshold?: number }
         Returns: {
