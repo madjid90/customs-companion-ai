@@ -375,12 +375,11 @@ export default function ReingestionPanel() {
     }
   }, [toast, loadSources]);
 
-  // Check if a source needs re-ingestion (regardless of PDF availability)
+  // Check if a source needs full re-ingestion (hierarchy_path missing = V2 pipeline never ran)
+  // Embeddings are handled separately by the cron job, so don't count them here
   const needsReingest = (source: LegalSourceStats): boolean => {
     if (source.actual_chunks === 0) return true;
-    const hasEmbeddings = source.chunks_with_embeddings > 0;
-    const hasHierarchy = source.chunks_with_hierarchy > 0;
-    return !hasEmbeddings || !hasHierarchy;
+    return source.chunks_with_hierarchy === 0;
   };
 
   // Batch re-ingest all documents that need it
