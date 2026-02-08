@@ -65,6 +65,9 @@ import {
   type DBEvidence,
   type ValidatedSource,
 } from "./source-validator.ts";
+// Nouveaux modules RAG V2
+import { expandQuery, expandWithSynonyms } from "./query-expander.ts";
+import { rerankWithLLM, rerankWithTFIDF, type RankedResult } from "./reranker.ts";
 
 // =============================================================================
 // CONFIGURATION
@@ -479,7 +482,57 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     console.log("Question analysis:", JSON.stringify(analysis));
 
     // Create a clean search query for semantic/hybrid search (no special characters)
-    const cleanSearchQuery = analysis.keywords.slice(0, 5).join(' ') || enrichedQuestion;
+    let cleanSearchQuery = analysis.keywords.slice(0, 5).join(' ') || enrichedQuestion;
+
+    // =========================================================================
+    // QUERY EXPANSION - Enrichissement sémantique (synonymes + traduction)
+    // =========================================================================
+    if (question && !pdfAnalysis?.isDUM) {
+      const [expandedText, synonymResults] = await Promise.all([
+        withTimeout(
+          expandQuery(question, LOVABLE_API_KEY!, { synonyms: true, translation: true, hsCodeHints: true }),
+          3000, question, "Query expansion"
+        ),
+        withTimeout(
+          expandWithSynonyms(supabase, analysis.keywords),
+          2000, { codes: [], terms: [] }, "Synonym lookup"
+        ),
+      ]);
+
+      // Update search query with expanded text
+      if (expandedText && expandedText !== question) {
+        cleanSearchQuery = expandedText;
+        console.log(`[query-expander] Search query enriched: "${cleanSearchQuery.substring(0, 120)}..."`);
+      }
+
+      // Add synonym-discovered codes to analysis
+      if (synonymResults.codes.length > 0) {
+        const existingCodes = new Set(analysis.detectedCodes);
+        const newCodes = synonymResults.codes.filter(c => !existingCodes.has(c));
+        analysis.detectedCodes = [...analysis.detectedCodes, ...newCodes].slice(0, 20);
+        console.log(`[query-expander] Added ${newCodes.length} codes from synonyms: ${newCodes.join(', ')}`);
+      }
+
+      // Add synonym terms to keywords
+      if (synonymResults.terms.length > 0) {
+        const existingKeywords = new Set(analysis.keywords.map(k => k.toLowerCase()));
+        const newTerms = synonymResults.terms.filter(t => !existingKeywords.has(t.toLowerCase()));
+        analysis.keywords = [...analysis.keywords, ...newTerms].slice(0, 15);
+      }
+
+      // Re-generate embedding with expanded query for better semantic search
+      if (OPENAI_API_KEY && expandedText && expandedText !== question) {
+        const expandedEmbedding = await withTimeout(
+          generateQueryEmbedding(expandedText, OPENAI_API_KEY),
+          TIMEOUTS.embedding, null, "Expanded embedding"
+        );
+        if (expandedEmbedding) {
+          queryEmbedding = expandedEmbedding;
+          useSemanticSearch = true;
+          console.log("[query-expander] Re-generated embedding with expanded query");
+        }
+      }
+    }
 
     // =========================================================================
     // COLLECTE DU CONTEXTE
@@ -1093,11 +1146,97 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       }
     }
 
-    console.log("Context collected:", {
+    // =========================================================================
+    // LLM RE-RANKING - Post-retrieval relevance filtering
+    // =========================================================================
+    const totalRetrievedPassages = context.knowledge_documents.length + 
+      context.tariff_notes.length + 
+      ((context as any)._legalChunks?.length || 0);
+
+    if (totalRetrievedPassages > 5 && LOVABLE_API_KEY) {
+      // Build unified passage list for re-ranking
+      const passagesForReranking: Array<{ text: string; type: string; metadata?: any }> = [];
+      const passageSourceMap: Array<{ type: string; index: number }> = [];
+
+      context.knowledge_documents.forEach((doc: any, i: number) => {
+        passagesForReranking.push({
+          text: (doc.content || doc.title || '').substring(0, 400),
+          type: 'knowledge_doc',
+        });
+        passageSourceMap.push({ type: 'knowledge_doc', index: i });
+      });
+
+      context.tariff_notes.forEach((note: any, i: number) => {
+        passagesForReranking.push({
+          text: (note.note_text || '').substring(0, 400),
+          type: 'tariff_note',
+        });
+        passageSourceMap.push({ type: 'tariff_note', index: i });
+      });
+
+      const legalChks = (context as any)._legalChunks || [];
+      legalChks.forEach((chunk: any, i: number) => {
+        passagesForReranking.push({
+          text: (chunk.chunk_text || '').substring(0, 400),
+          type: 'legal_chunk',
+        });
+        passageSourceMap.push({ type: 'legal_chunk', index: i });
+      });
+
+      if (passagesForReranking.length > 3) {
+        const reranked = await withTimeout(
+          rerankWithLLM(enrichedQuestion || question || '', passagesForReranking, LOVABLE_API_KEY!, 15),
+          5000,
+          rerankWithTFIDF(enrichedQuestion || question || '', passagesForReranking),
+          "LLM re-ranking"
+        );
+
+        // Build keep-sets per type (only passages with score >= 3)
+        const keepByType: Record<string, Set<number>> = {
+          knowledge_doc: new Set(),
+          tariff_note: new Set(),
+          legal_chunk: new Set(),
+        };
+
+        for (const r of reranked) {
+          if (r.score >= 3) {
+            const source = passageSourceMap[r.index];
+            if (source) keepByType[source.type]?.add(source.index);
+          }
+        }
+
+        // Filter knowledge_documents (only if we're keeping at least some)
+        const kKeep = keepByType.knowledge_doc;
+        if (kKeep.size > 0 && kKeep.size < context.knowledge_documents.length) {
+          const before = context.knowledge_documents.length;
+          context.knowledge_documents = context.knowledge_documents.filter((_: any, i: number) => kKeep.has(i));
+          console.log(`[reranker] knowledge_documents: ${before} → ${context.knowledge_documents.length}`);
+        }
+
+        // Filter tariff_notes
+        const nKeep = keepByType.tariff_note;
+        if (nKeep.size > 0 && nKeep.size < context.tariff_notes.length) {
+          const before = context.tariff_notes.length;
+          context.tariff_notes = context.tariff_notes.filter((_: any, i: number) => nKeep.has(i));
+          console.log(`[reranker] tariff_notes: ${before} → ${context.tariff_notes.length}`);
+        }
+
+        // Filter legal chunks
+        const cKeep = keepByType.legal_chunk;
+        if (cKeep.size > 0 && cKeep.size < legalChks.length) {
+          const before = legalChks.length;
+          (context as any)._legalChunks = legalChks.filter((_: any, i: number) => cKeep.has(i));
+          console.log(`[reranker] legal_chunks: ${before} → ${(context as any)._legalChunks.length}`);
+        }
+      }
+    }
+
+    console.log("Context collected (post re-ranking):", {
       tariffs_with_inheritance: context.tariffs_with_inheritance.length,
       hs_codes: context.hs_codes.length,
       pdfs: context.pdf_summaries.length,
       tariff_notes: context.tariff_notes.length,
+      knowledge_documents: context.knowledge_documents.length,
     });
 
     // =========================================================================
