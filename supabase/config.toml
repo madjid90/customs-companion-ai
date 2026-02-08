@@ -44,3 +44,6 @@ verify_jwt = false
 
 [functions.rename-storage-files]
 verify_jwt = false
+
+[functions.submit-access-request]
+verify_jwt = false

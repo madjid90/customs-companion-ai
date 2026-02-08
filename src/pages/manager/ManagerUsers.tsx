@@ -62,23 +62,28 @@ export default function ManagerUsers() {
     setIsLoading(false);
   }, []);
 
-  // Fetch conversation counts per user (optimized - only counts)
+  // Fetch conversation counts per user (optimized - single RPC call with GROUP BY)
   const fetchConversationCounts = useCallback(async () => {
-    // Get all auth_user_ids we care about
     const userIds = users
       .filter((u) => u.auth_user_id)
       .map((u) => u.auth_user_id!);
     
     if (userIds.length === 0) return;
 
-    // Fetch counts per user_id efficiently
+    const { data, error } = await supabase.rpc("count_conversations_by_users", {
+      user_ids: userIds,
+    });
+
+    if (error) {
+      console.error("Error fetching conversation counts:", error);
+      return;
+    }
+
     const counts: Record<string, number> = {};
-    for (const uid of userIds) {
-      const { count } = await supabase
-        .from("conversations")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", uid);
-      if (count) counts[uid] = count;
+    if (data) {
+      for (const row of data) {
+        counts[row.user_id] = Number(row.conversation_count);
+      }
     }
     setConversations(counts);
   }, [users]);

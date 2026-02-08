@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { Logo } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +27,8 @@ export default function RequestAccess() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState("");
+  // Honeypot field — hidden from real users, bots will fill it in
+  const [honeypot, setHoneypot] = useState("");
 
   const country = COUNTRY_CODES[countryIndex];
   const fullPhone = `${country.code}${phoneLocal.replace(/\s/g, "")}`;
@@ -48,16 +49,27 @@ export default function RequestAccess() {
     setIsSubmitting(true);
 
     try {
-      const { error: dbError } = await supabase
-        .from("access_requests")
-        .insert({
-          company_name: companyName.trim(),
-          phone: fullPhone,
-        });
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/submit-access-request`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({
+            company_name: companyName.trim(),
+            phone: fullPhone,
+            website: honeypot, // honeypot field
+          }),
+        }
+      );
 
-      if (dbError) {
-        console.error("Insert error:", dbError);
-        setError("Une erreur est survenue. Veuillez réessayer.");
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || "Une erreur est survenue. Veuillez réessayer.");
       } else {
         setIsSubmitted(true);
       }
@@ -186,6 +198,20 @@ export default function RequestAccess() {
                   />
                 </div>
               </div>
+            </div>
+
+            {/* Honeypot — invisible to humans, attracts bots */}
+            <div aria-hidden="true" style={{ position: "absolute", left: "-9999px", opacity: 0, height: 0, overflow: "hidden" }}>
+              <label htmlFor="website">Website</label>
+              <input
+                id="website"
+                name="website"
+                type="text"
+                tabIndex={-1}
+                autoComplete="off"
+                value={honeypot}
+                onChange={(e) => setHoneypot(e.target.value)}
+              />
             </div>
 
             {/* Error */}
