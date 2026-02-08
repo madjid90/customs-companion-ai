@@ -653,15 +653,27 @@ function extractMentionedHSCodes(text: string): string[] {
   return Array.from(codes).slice(0, 20);
 }
 
-// Build hierarchy path based on context
-function buildHierarchyPath(sectionTitle: string | null, articleNumber: string | null): string | null {
+// Build hierarchy path based on context, with document-level fallback
+function buildHierarchyPath(
+  sectionTitle: string | null, 
+  articleNumber: string | null, 
+  sourceLabel?: string | null, 
+  pageNumber?: number | null
+): string | null {
   const parts: string[] = [];
   if (sectionTitle) parts.push(sectionTitle.substring(0, 50));
   if (articleNumber) parts.push(`Art. ${articleNumber}`);
+  
+  // Fallback: use document title + page number when no structural markers found
+  if (parts.length === 0 && sourceLabel) {
+    parts.push(sourceLabel.substring(0, 60));
+    if (pageNumber) parts.push(`Page ${pageNumber}`);
+  }
+  
   return parts.length > 0 ? parts.join(" > ") : null;
 }
 
-function createChunks(pages: ExtractedPage[]): TextChunk[] {
+function createChunks(pages: ExtractedPage[], sourceLabel?: string): TextChunk[] {
   const chunks: TextChunk[] = [];
   let chunkIndex = 0;
   let currentSection: string | null = null;
@@ -686,7 +698,7 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
             section_title: table.description || currentSection,
             parent_section: parentSection,
             chunk_type: "table",
-            hierarchy_path: buildHierarchyPath(currentSection, null),
+            hierarchy_path: buildHierarchyPath(currentSection, null, sourceLabel, page.page_number),
             keywords: table.has_rates ? ["taux", "droit", "pourcentage"] : extractKeywords(table.markdown),
             mentioned_hs_codes: tableHsCodes,
           });
@@ -714,7 +726,7 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
               section_title: img.description.substring(0, 100),
               parent_section: parentSection,
               chunk_type: img.image_type === "form" ? "form" : "image",
-              hierarchy_path: buildHierarchyPath(currentSection, null),
+              hierarchy_path: buildHierarchyPath(currentSection, null, sourceLabel, page.page_number),
               keywords: img.image_type === "form" ? ["formulaire", "modèle", "template"] : [],
               mentioned_hs_codes: img.extracted_text ? extractMentionedHSCodes(img.extracted_text) : [],
             });
@@ -759,7 +771,7 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
           const chunkText = currentChunk.trim();
           const articleNumber = extractArticleNumber(chunkText);
           const sectionTitle = extractSectionTitle(chunkText) || currentSection;
-          const hierarchyPath = buildHierarchyPath(sectionTitle, articleNumber);
+          const hierarchyPath = buildHierarchyPath(sectionTitle, articleNumber, sourceLabel, page.page_number);
           
           // CONTEXTUAL CHUNKING: Prepend hierarchy_path to text for better embeddings
           const contextualText = hierarchyPath 
@@ -796,7 +808,7 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
       const chunkText = currentChunk.trim();
       const articleNumber = extractArticleNumber(chunkText);
       const sectionTitle = extractSectionTitle(chunkText) || currentSection;
-      const hierarchyPath = buildHierarchyPath(sectionTitle, articleNumber);
+      const hierarchyPath = buildHierarchyPath(sectionTitle, articleNumber, sourceLabel, page.page_number);
       
       // CONTEXTUAL CHUNKING: Prepend hierarchy_path
       const contextualText = hierarchyPath 
@@ -1650,8 +1662,9 @@ serve(async (req) => {
     // 2. Combine full text for this batch
     const fullText = pages.map((p) => p.text).join("\n\n---PAGE---\n\n");
 
-    // 3. Create chunks
-    const chunks = createChunks(pages);
+    // 3. Create chunks (pass source label for hierarchy fallback)
+    const sourceLabel = body.title || body.source_ref || null;
+    const chunks = createChunks(pages, sourceLabel);
     console.log(`[ingest-legal-doc] Created ${chunks.length} chunks`);
 
     // 4. Detect HS codes
