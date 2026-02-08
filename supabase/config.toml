@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.submit-access-request]
 verify_jwt = false
+
+[functions.populate-references]
+verify_jwt = false
