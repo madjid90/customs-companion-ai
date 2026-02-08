@@ -482,7 +482,8 @@ export default function ReingestionPanel() {
 
   const isReingesting = progress?.status === "cleaning" || progress?.status === "ingesting";
   const isBatchRunning = batchProgress?.isRunning === true;
-  const sourcesToFix = sources.filter(needsReingest).length;
+  const filteredSources = sources.filter(needsReingest);
+  const sourcesToFix = filteredSources.length;
 
   return (
     <Card className="animate-slide-up card-elevated border-border/20">
@@ -512,13 +513,12 @@ export default function ReingestionPanel() {
         {!loading && sources.length > 0 && (
           <div className="mb-4 p-3 rounded-lg border bg-muted/30 space-y-3">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm">
-                <ListFilter className="h-4 w-4 text-muted-foreground" />
-                <span>
-                  <strong>{sourcesToFix}</strong> document{sourcesToFix > 1 ? "s" : ""} à ré-ingérer
-                  {" "}sur {sources.length} total
-                </span>
-              </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <ListFilter className="h-4 w-4 text-muted-foreground" />
+                  <span>
+                    <strong>{sourcesToFix}</strong> document{sourcesToFix > 1 ? "s" : ""} à ré-ingérer
+                  </span>
+                </div>
               <div className="flex items-center gap-2">
                 {isBatchRunning ? (
                   <Button
