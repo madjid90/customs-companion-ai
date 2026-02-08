@@ -269,7 +269,7 @@ export default function AdminUpload() {
     docType: DocumentType
   ) => {
     const BATCH_SIZE = 1; // Single page per request for very dense legal docs
-    const FETCH_TIMEOUT_MS = 58000; // 58s per batch (within edge function limit)
+    const FETCH_TIMEOUT_MS = 180000; // 3 min - edge function can take 2min+ for dense pages with retries
     const DELAY_BETWEEN_BATCHES = 2500; // More buffer between batches to avoid rate limits
     
     updateFileStatus(fileId, { 
