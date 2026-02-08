@@ -367,7 +367,7 @@ export default function ReingestionPanel() {
     const embeddingRate = source.chunks_with_embeddings / source.actual_chunks;
     const hierarchyRate = source.chunks_with_hierarchy / source.actual_chunks;
     const keywordRate = source.chunks_with_keywords / source.actual_chunks;
-    return Math.round((embeddingRate * 40 + hierarchyRate * 40 + keywordRate * 20) * 100);
+    return Math.round(embeddingRate * 40 + hierarchyRate * 40 + keywordRate * 20);
   };
 
   const getQualityColor = (score: number) => {
