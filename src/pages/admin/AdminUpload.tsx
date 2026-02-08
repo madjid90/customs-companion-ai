@@ -558,6 +558,9 @@ export default function AdminUpload() {
         // Delete related extraction runs
         await supabase.from("pdf_extraction_runs").delete().eq("pdf_id", existing.id);
         
+        // Delete related legal_references
+        await supabase.from("legal_references").delete().eq("pdf_id", existing.id);
+        
         // Delete the old document record
         await supabase.from("pdf_documents").delete().eq("id", existing.id);
         
@@ -567,6 +570,44 @@ export default function AdminUpload() {
           .eq("source_pdf", existing.file_path);
         
         console.log(`[Replace] Old document ${existing.id} deleted, proceeding with new upload`);
+      }
+      
+      // Also clean up legal_sources/legal_chunks from previous ingestion runs
+      // This prevents the "already_complete" false positive when re-uploading
+      const sourceRef = file.name.replace(".pdf", "");
+      const { data: existingLegalSources } = await supabase
+        .from("legal_sources")
+        .select("id")
+        .eq("source_ref", sourceRef);
+      
+      if (existingLegalSources && existingLegalSources.length > 0) {
+        for (const src of existingLegalSources) {
+          console.log(`[Replace] Cleaning up legal_source ${src.id} for ref "${sourceRef}"`);
+          // Delete chunks and evidence linked to this source
+          await supabase.from("legal_chunks").delete().eq("source_id", src.id);
+          await supabase.from("hs_evidence").delete().eq("source_id", src.id);
+        }
+        // Delete the legal_sources entries themselves
+        await supabase.from("legal_sources").delete().eq("source_ref", sourceRef);
+        console.log(`[Replace] Cleaned up ${existingLegalSources.length} old legal_source(s)`);
+      }
+      
+      // Also clean up any pdf_documents created by the edge function (stored at circulaires/...)
+      const { data: edgeFunctionDocs } = await supabase
+        .from("pdf_documents")
+        .select("id, file_path")
+        .ilike("file_path", `circulaires/%${sourceRef.replace(/[^a-zA-Z0-9]/g, '%')}%`)
+        .eq("is_active", true);
+      
+      if (edgeFunctionDocs && edgeFunctionDocs.length > 0) {
+        for (const efDoc of edgeFunctionDocs) {
+          console.log(`[Replace] Removing edge-function-created doc: ${efDoc.id}`);
+          if (efDoc.file_path) {
+            await supabase.storage.from("pdf-documents").remove([efDoc.file_path]);
+          }
+          await supabase.from("legal_references").delete().eq("pdf_id", efDoc.id);
+          await supabase.from("pdf_documents").delete().eq("id", efDoc.id);
+        }
       }
       
       updateFileStatus(fileId, { progress: 15 });
