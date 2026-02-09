@@ -67,27 +67,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  async function fetchUserData(userId: string) {
-    try {
-      // Check if user has admin role
-      const { data: roleData } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", userId)
-        .maybeSingle();
+  async function fetchUserData(userId: string, retries = 3) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        // Check if user has admin role
+        const { data: roleData, error: roleError } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", userId)
+          .maybeSingle();
 
-      setIsAdmin(roleData?.role === "admin");
+        if (roleError) {
+          console.warn(`[Auth] Role check attempt ${attempt}/${retries} failed:`, roleError.message);
+          if (attempt < retries) {
+            await new Promise(r => setTimeout(r, 1000 * attempt));
+            continue;
+          }
+        }
 
-      // Fetch profile
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("user_id", userId)
-        .maybeSingle();
+        setIsAdmin(roleData?.role === "admin");
 
-      setProfile(profileData);
-    } catch (error) {
-      console.error("Error fetching user data:", error);
+        // Fetch profile
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("user_id", userId)
+          .maybeSingle();
+
+        setProfile(profileData);
+        return; // Success, exit retry loop
+      } catch (error) {
+        console.error(`[Auth] fetchUserData attempt ${attempt}/${retries} error:`, error);
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 1000 * attempt));
+        }
+      }
     }
   }
 
