@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import ExtractionPreviewDialog from "@/components/admin/ExtractionPreviewDialog";
 import ReingestionPanel from "@/components/admin/ReingestionPanel";
+import EmbeddingPanel from "@/components/admin/EmbeddingPanel";
 
 // Document type configuration
 const DOCUMENT_TYPES: { value: DocumentType; label: string; icon: React.ReactNode; description: string; pipeline: "analyze" | "ingest" }[] = [
@@ -1669,6 +1670,9 @@ export default function AdminUpload() {
 
       {/* Re-ingestion Panel */}
       <ReingestionPanel />
+
+      {/* Embedding Generation Panel */}
+      <EmbeddingPanel />
 
       {/* Preview Dialog */}
       {selectedFile && selectedFile.analysis && (

@@ -101,7 +101,7 @@ serve(async (req) => {
     logger.info("Starting embeddings generation", { table, limit, forceUpdate });
 
     // Validate table parameter to prevent injection
-    const validTables = ["hs_codes", "knowledge_documents", "pdf_extractions", "tariff_notes", "legal_chunks"];
+    const validTables = ["hs_codes", "knowledge_documents", "pdf_extractions", "tariff_notes", "legal_chunks", "country_tariffs"];
     if (table && !validTables.includes(table)) {
       return errorResponse(req, `Invalid table. Must be one of: ${validTables.join(", ")}`, 400);
     }
@@ -418,6 +418,64 @@ serve(async (req) => {
         results.details.push(`legal_chunks: ${chunks?.length || 0} found, ${results.processed - startProcessed} processed`);
       } catch (e) {
         results.details.push(`legal_chunks error: ${e}`);
+      }
+    }
+
+    // Process country tariffs
+    if (!table || table === "country_tariffs") {
+      const startProcessed = results.processed;
+      try {
+        let query = supabase
+          .from("country_tariffs")
+          .select("id, national_code, hs_code_6, description_local")
+          .eq("is_active", true)
+          .limit(limit);
+
+        if (!forceUpdate) {
+          query = query.is("embedding", null);
+        }
+
+        const { data: tariffs, error } = await query;
+
+        if (error) throw error;
+
+        if (tariffs && tariffs.length > 0) {
+          const batchSize = 20;
+          for (let i = 0; i < tariffs.length; i += batchSize) {
+            const batch = tariffs.slice(i, i + batchSize);
+            const texts = batch.map((t) =>
+              `Tarif douanier ${t.national_code} (SH ${t.hs_code_6}): ${t.description_local || ""}`
+            );
+
+            try {
+              const embeddings = await generateEmbeddingsBatch(texts, OPENAI_API_KEY);
+
+              for (let j = 0; j < batch.length; j++) {
+                const embeddingString = `[${embeddings[j].join(",")}]`;
+                const { error: updateError } = await supabase
+                  .from("country_tariffs")
+                  .update({
+                    embedding: embeddingString,
+                    embedding_updated_at: new Date().toISOString(),
+                  })
+                  .eq("id", batch[j].id);
+
+                if (updateError) {
+                  results.errors++;
+                } else {
+                  results.processed++;
+                }
+              }
+            } catch (batchError) {
+              results.errors += batch.length;
+            }
+
+            await new Promise((r) => setTimeout(r, 500));
+          }
+        }
+        results.details.push(`country_tariffs: ${tariffs?.length || 0} found, ${results.processed - startProcessed} processed`);
+      } catch (e) {
+        results.details.push(`country_tariffs error: ${e}`);
       }
     }
 
