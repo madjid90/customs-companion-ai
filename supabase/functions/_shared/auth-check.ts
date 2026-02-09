@@ -65,25 +65,41 @@ export async function checkAuthentication(req: Request): Promise<AuthResult> {
       global: { headers: { Authorization: authHeader } },
     });
     
-    // Use getClaims() instead of getUser() for signing-keys compatibility
-    const { data, error } = await supabase.auth.getClaims(token);
+    // Try getClaims() first, fall back to getUser() if it fails
+    let userId: string | undefined;
+    let userEmail: string | undefined;
     
-    if (error || !data?.claims) {
-      console.error("[Auth] getClaims error:", error?.message || "No claims");
-      // In dev mode, allow request even if token is invalid/expired
-      if (devMode) {
-        console.log("[Auth] Dev mode: allowing request despite invalid token");
-        return { authenticated: true, userId: "dev-user" };
+    try {
+      const { data, error } = await supabase.auth.getClaims(token);
+      if (!error && data?.claims?.sub) {
+        userId = data.claims.sub as string;
+        userEmail = data.claims.email as string | undefined;
+        console.log("[Auth] getClaims succeeded for user:", userId);
+      } else {
+        console.warn("[Auth] getClaims failed, trying getUser:", error?.message);
       }
-      return {
-        authenticated: false,
-        error: error?.message || "Invalid token",
-      };
+    } catch (claimsErr) {
+      console.warn("[Auth] getClaims threw, trying getUser:", claimsErr);
     }
     
-    const claims = data.claims;
-    const userId = claims.sub as string;
-    const userEmail = claims.email as string | undefined;
+    // Fallback to getUser() if getClaims didn't work
+    if (!userId) {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData?.user) {
+        console.error("[Auth] getUser also failed:", userError?.message);
+        if (devMode) {
+          console.log("[Auth] Dev mode: allowing request despite invalid token");
+          return { authenticated: true, userId: "dev-user" };
+        }
+        return {
+          authenticated: false,
+          error: userError?.message || "Invalid token",
+        };
+      }
+      userId = userData.user.id;
+      userEmail = userData.user.email;
+      console.log("[Auth] getUser succeeded for user:", userId);
+    }
     
     if (!userId) {
       return {
