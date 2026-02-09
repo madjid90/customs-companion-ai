@@ -4,9 +4,9 @@ import { usePhoneAuth } from "@/hooks/usePhoneAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import {
   UserPlus,
   Phone,
@@ -18,6 +18,7 @@ import {
   Trash2,
   MessageSquare,
   ChevronDown,
+  Users,
 } from "lucide-react";
 
 const COUNTRY_CODES = [
@@ -62,7 +63,6 @@ export default function ManagerUsers() {
     setIsLoading(false);
   }, []);
 
-  // Fetch conversation counts per user (optimized - single RPC call with GROUP BY)
   const fetchConversationCounts = useCallback(async () => {
     const userIds = users
       .filter((u) => u.auth_user_id)
@@ -197,55 +197,56 @@ export default function ManagerUsers() {
   const agentCount = agents.length;
 
   return (
-    <div className="container mx-auto max-w-3xl px-4 py-8">
-      <div className="admin-page-header">
-        <h1 className="flex items-center gap-3">
-          <Shield className="h-8 w-8 text-primary" />
-          Gestion des utilisateurs
-        </h1>
-        <p>Invitez et gérez les agents qui ont accès au chat DouaneAI.</p>
-      </div>
+    <div className="h-full overflow-y-auto">
+      <div className="max-w-2xl mx-auto px-4 py-5 md:py-8 space-y-5">
+        {/* Header */}
+        <div className="flex items-center gap-2.5">
+          <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center">
+            <Users className="h-4.5 w-4.5 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-lg md:text-xl font-bold tracking-tight">Utilisateurs</h1>
+            <p className="text-xs text-muted-foreground">Gérez les agents ayant accès au chat.</p>
+          </div>
+        </div>
 
-      {/* Invite Form */}
-      <Card className="card-elevated mb-8">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <UserPlus className="h-5 w-5 text-primary" />
+        {/* Invite Form — compact */}
+        <div className="rounded-xl border border-border/50 bg-card p-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <UserPlus className="h-4 w-4 text-primary" />
             Inviter un agent
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleInvite} className="space-y-4">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="invite-phone">Numéro de téléphone</Label>
-                <div className="flex gap-2">
-                  {/* Country selector */}
+          </div>
+          <form onSubmit={handleInvite} className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="invite-phone" className="text-xs">Téléphone</Label>
+                <div className="flex gap-1.5">
                   <div className="relative">
                     <button
                       type="button"
-                      className="flex items-center gap-1.5 h-10 px-3 rounded-xl border border-input bg-background text-sm hover:bg-accent/50 transition-colors whitespace-nowrap"
+                      className="flex items-center gap-1 h-9 px-2.5 rounded-lg border border-input bg-background text-xs hover:bg-accent/50 transition-colors whitespace-nowrap"
                       onClick={() => setInviteCountryOpen(!inviteCountryOpen)}
                     >
-                      <span className="text-lg leading-none">{COUNTRY_CODES[inviteCountryIndex].flag}</span>
+                      <span className="text-sm leading-none">{COUNTRY_CODES[inviteCountryIndex].flag}</span>
                       <span className="font-medium text-foreground">{COUNTRY_CODES[inviteCountryIndex].code}</span>
-                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                      <ChevronDown className="h-3 w-3 text-muted-foreground" />
                     </button>
                     {inviteCountryOpen && (
-                      <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-xl shadow-lg overflow-hidden min-w-[180px]">
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-lg shadow-lg overflow-hidden min-w-[160px]">
                         {COUNTRY_CODES.map((c, i) => (
                           <button
                             key={c.code}
                             type="button"
-                            className={`w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-accent/50 transition-colors ${
+                            className={cn(
+                              "w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-accent/50 transition-colors",
                               i === inviteCountryIndex ? "bg-primary/5 text-primary font-medium" : "text-foreground"
-                            }`}
+                            )}
                             onClick={() => {
                               setInviteCountryIndex(i);
                               setInviteCountryOpen(false);
                             }}
                           >
-                            <span className="text-lg leading-none">{c.flag}</span>
+                            <span className="text-sm leading-none">{c.flag}</span>
                             <span>{c.label}</span>
                             <span className="ml-auto text-muted-foreground">{c.code}</span>
                           </button>
@@ -254,30 +255,30 @@ export default function ManagerUsers() {
                     )}
                   </div>
                   <div className="relative flex-1">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                     <Input
                       id="invite-phone"
                       type="tel"
                       value={invitePhoneLocal}
                       onChange={(e) => setInvitePhoneLocal(e.target.value)}
                       placeholder={COUNTRY_CODES[inviteCountryIndex].placeholder}
-                      className="pl-10 rounded-xl"
+                      className="pl-8 h-9 rounded-lg text-sm"
                       required
                     />
                   </div>
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="invite-name">Nom (optionnel)</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="invite-name" className="text-xs">Nom (optionnel)</Label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <User className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
                     id="invite-name"
                     type="text"
                     value={inviteName}
                     onChange={(e) => setInviteName(e.target.value)}
                     placeholder="Nom de l'agent"
-                    className="pl-10 rounded-xl"
+                    className="pl-8 h-9 rounded-lg text-sm"
                     maxLength={100}
                   />
                 </div>
@@ -285,93 +286,86 @@ export default function ManagerUsers() {
             </div>
 
             <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                {agentCount}/{maxInvites} agents invités
+              <p className="text-xs text-muted-foreground">
+                {agentCount}/{maxInvites} agents
               </p>
               <Button
                 type="submit"
-                className="cta-gradient rounded-xl"
+                size="sm"
+                className="cta-gradient rounded-lg h-8 text-xs px-3"
                 disabled={isInviting || !invitePhoneLocal.trim() || agentCount >= maxInvites}
               >
                 {isInviting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Envoi...
-                  </>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <>
-                    <UserPlus className="mr-2 h-4 w-4" />
-                    Inviter par SMS
-                  </>
+                  <UserPlus className="mr-1.5 h-3.5 w-3.5" />
                 )}
+                {isInviting ? "Envoi..." : "Inviter"}
               </Button>
             </div>
           </form>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Users List */}
-      <Card className="card-elevated">
-        <CardHeader>
-          <CardTitle className="text-lg">
-            Utilisateurs ({users.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+        {/* Users List — compact rows */}
+        <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b border-border/50 flex items-center justify-between">
+            <span className="text-sm font-semibold">Équipe</span>
+            <span className="text-xs text-muted-foreground">{users.length} membre{users.length > 1 ? "s" : ""}</span>
+          </div>
+
           {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
             </div>
           ) : users.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">
-              Aucun utilisateur pour le moment
+            <p className="text-center text-muted-foreground py-10 text-sm">
+              Aucun utilisateur
             </p>
           ) : (
-            <div className="space-y-3">
+            <div className="divide-y divide-border/40">
               {users.map((user) => (
                 <div
                   key={user.id}
-                  className="flex items-center justify-between p-4 rounded-xl border border-border/50 bg-card hover:bg-accent/5 transition-colors"
+                  className="flex items-center justify-between px-4 py-2.5 hover:bg-accent/5 transition-colors"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
                     <div
-                      className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      className={cn(
+                        "h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0",
                         user.role === "manager"
                           ? "bg-primary/10 text-primary"
                           : "bg-secondary/10 text-secondary"
-                      }`}
+                      )}
                     >
                       {user.role === "manager" ? (
-                        <Shield className="h-5 w-5" />
+                        <Shield className="h-3.5 w-3.5" />
                       ) : (
-                        <User className="h-5 w-5" />
+                        <User className="h-3.5 w-3.5" />
                       )}
                     </div>
                     <div className="min-w-0">
-                      <p className="font-medium truncate">
+                      <p className="text-sm font-medium truncate leading-tight">
                         {user.display_name || user.phone}
                         {user.id === phoneUser?.id && (
-                          <span className="text-muted-foreground text-xs ml-2">
-                            (vous)
-                          </span>
+                          <span className="text-muted-foreground text-[10px] ml-1.5">(vous)</span>
                         )}
                       </p>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                         <span>{user.phone}</span>
                         {user.auth_user_id && conversations[user.auth_user_id] && (
-                          <span className="flex items-center gap-1">
-                            <MessageSquare className="h-3 w-3" />
-                            {conversations[user.auth_user_id]} conv.
+                          <span className="flex items-center gap-0.5">
+                            <MessageSquare className="h-2.5 w-2.5" />
+                            {conversations[user.auth_user_id]}
                           </span>
                         )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
                     <Badge
                       variant={user.role === "manager" ? "default" : "secondary"}
-                      className="capitalize"
+                      className="capitalize text-[10px] h-5 px-1.5"
                     >
                       {user.role}
                     </Badge>
@@ -380,28 +374,24 @@ export default function ManagerUsers() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8"
+                          className="h-7 w-7"
                           onClick={() => toggleUserActive(user)}
-                          title={
-                            user.is_active
-                              ? "Désactiver l'accès"
-                              : "Réactiver l'accès"
-                          }
+                          title={user.is_active ? "Désactiver" : "Réactiver"}
                         >
                           {user.is_active ? (
-                            <ToggleRight className="h-5 w-5 text-secondary" />
+                            <ToggleRight className="h-4 w-4 text-secondary" />
                           ) : (
-                            <ToggleLeft className="h-5 w-5 text-muted-foreground" />
+                            <ToggleLeft className="h-4 w-4 text-muted-foreground" />
                           )}
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 hover:text-destructive"
+                          className="h-7 w-7 hover:text-destructive"
                           onClick={() => deleteUser(user)}
                           title="Supprimer"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </>
                     )}
@@ -410,8 +400,8 @@ export default function ManagerUsers() {
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }
