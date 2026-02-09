@@ -52,29 +52,18 @@ const App = () => {
                 <BrowserRouter>
                   <Routes>
                     {/* Public: Landing & Login */}
-                    <Route path="/" element={<Landing />} />
+                    <Route path="/" element={<Navigate to="/app/chat" replace />} />
                     <Route path="/demander-acces" element={<RequestAccess />} />
                     <Route path="/login" element={<PhoneLogin />} />
 
-                    {/* Authenticated app routes (phone auth) */}
+                    {/* App routes — auth disabled temporarily */}
                     <Route
                       path="/app"
-                      element={
-                        <PhoneProtectedRoute>
-                          <AppLayout />
-                        </PhoneProtectedRoute>
-                      }
+                      element={<AppLayout />}
                     >
                       <Route index element={<Navigate to="/app/chat" replace />} />
                       <Route path="chat" element={<Chat />} />
-                      <Route
-                        path="manage"
-                        element={
-                          <PhoneProtectedRoute requireManager>
-                            <ManagerUsers />
-                          </PhoneProtectedRoute>
-                        }
-                      />
+                      <Route path="manage" element={<ManagerUsers />} />
                     </Route>
 
                     {/* Admin routes (email auth - legacy) */}
@@ -83,13 +72,10 @@ const App = () => {
                         <AdminLogin />
                       </Suspense>
                     } />
+                    {/* Admin routes — auth disabled temporarily */}
                     <Route
                       path="/admin"
-                      element={
-                        <ProtectedRoute requireAdmin>
-                          <AdminLayout />
-                        </ProtectedRoute>
-                      }
+                      element={<AdminLayout />}
                     >
                       <Route index element={<Navigate to="/admin/upload" replace />} />
                       <Route path="upload" element={
