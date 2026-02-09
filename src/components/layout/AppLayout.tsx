@@ -36,12 +36,12 @@ export function AppLayout() {
         setHistoryControls,
       }}
     >
-      <div className="min-h-screen flex flex-col page-gradient">
+      <div className="h-[100dvh] flex flex-col page-gradient">
         <AppHeader
           onHistoryToggle={isChat ? historyToggle : undefined}
           isHistoryOpen={isChat ? historyOpen : undefined}
         />
-        <main className="flex-1 pt-14 md:pt-16 pb-12 md:pb-0">
+        <main className="flex-1 pt-14 md:pt-16 pb-12 md:pb-0 overflow-hidden">
           <Outlet />
         </main>
       </div>
