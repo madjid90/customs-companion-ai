@@ -201,7 +201,7 @@ export function validateGenerateEmbeddingsRequest(body: unknown): { valid: boole
   
   const b = body as Record<string, unknown>;
   
-  const validTables = ["hs_codes", "knowledge_documents", "pdf_extractions", "tariff_notes", "legal_chunks"];
+  const validTables = ["hs_codes", "knowledge_documents", "pdf_extractions", "tariff_notes", "legal_chunks", "country_tariffs"];
   if (b.table !== undefined && !validTables.includes(b.table as string)) {
     return { valid: false, error: `table doit être: ${validTables.join(", ")}` };
   }
