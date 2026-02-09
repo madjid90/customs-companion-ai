@@ -543,129 +543,108 @@ function extractSectionTitle(text: string): string | null {
   return null;
 }
 
-// Determine chunk type based on content (French + Arabic)
-function detectChunkType(text: string): string {
-  const textLower = text.toLowerCase();
-  
-  // Definition patterns (French + Arabic: تعريف = taʿrīf, يقصد ب = yuqṣad bi)
-  if (/\b(définition|définit|entend par|au sens du présent)/i.test(text)) return "definition";
-  if (/(?:تعريف|يقصد ب|يراد ب|المقصود ب)/.test(text)) return "definition";
-  
-  // Header patterns
-  if (/^(CHAPITRE|TITRE|SECTION)/i.test(text.trim())) return "header";
-  if (/^(?:الباب|الفصل|القسم|الجزء)/.test(text.trim())) return "header";
-  
-  // Article patterns
-  if (/\bart(?:icle)?\.?\s*\d+/i.test(text)) return "article";
-  if (/(?:المادة|الفصل|البند)\s*\d+/.test(text)) return "article";
-  
-  // Note patterns (Arabic: ملاحظة = mulāḥaẓa)
-  if (/\b(note|nota|n\.b\.)/i.test(textLower)) return "note";
-  if (/(?:ملاحظة|ملحوظة|تنبيه)/.test(text)) return "note";
-  
-  // Exclusion patterns (Arabic: استثناء = istiṯnāʾ, لا يشمل = lā yašmal)
-  if (/\b(exception|exclut|ne comprend pas|à l'exclusion)/i.test(textLower)) return "exclusion";
-  if (/(?:استثناء|لا يشمل|باستثناء|يستثنى)/.test(text)) return "exclusion";
-  
-  // Procedure patterns (Arabic: إجراء = ʾijrāʾ)
-  if (/\b(procédure|formalité|déclaration|document)/i.test(textLower)) return "procedure";
-  if (/(?:إجراء|إجراءات|تصريح|وثيقة|مستند)/.test(text)) return "procedure";
-  
-  // Sanction patterns (Arabic: عقوبة = ʿuqūba, غرامة = ġarāma)
-  if (/\b(pénalité|sanction|amende|infraction)/i.test(textLower)) return "sanction";
-  if (/(?:عقوبة|غرامة|جزاء|مخالفة)/.test(text)) return "sanction";
-  
-  // Tariff patterns (Arabic: رسم = rasm, ضريبة = ḍarība)
-  if (/\b(taux|droit|taxe|%)/i.test(textLower)) return "tariff";
-  if (/(?:رسم|ضريبة|تعريفة|نسبة)/.test(text)) return "tariff";
-  
-  return "general";
+// ============================================================================
+// HIERARCHY TRACKER — maintains a full path: Titre > Chapitre > Section > Art.
+// ============================================================================
+
+// Hierarchy levels ordered from broadest to most specific
+const HIERARCHY_LEVELS: { level: number; patterns: RegExp[] }[] = [
+  {
+    level: 0, // PARTIE / LIVRE / الجزء
+    patterns: [
+      /^(?:PARTIE|LIVRE)\s+([IVXLCDM\d]+)/i,
+      /^(?:الجزء)\s+([IVXLCDM\d]+|الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر)/,
+    ],
+  },
+  {
+    level: 1, // TITRE / العنوان / الباب
+    patterns: [
+      /^TITRE\s+([IVXLCDM\d]+)/i,
+      /^(?:Titre)\s+([IVXLCDM\d]+)/,
+      /^(?:الباب|العنوان)\s+([IVXLCDM\d]+|الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر)/,
+    ],
+  },
+  {
+    level: 2, // CHAPITRE / الفصل
+    patterns: [
+      /^CHAPITRE\s+([IVXLCDM\d]+)/i,
+      /^(?:Chapitre)\s+([IVXLCDM\d]+)/,
+      /^(?:الفصل)\s+([IVXLCDM\d]+|الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر)/,
+    ],
+  },
+  {
+    level: 3, // SECTION / القسم
+    patterns: [
+      /^SECTION\s+([IVXLCDM\d]+)/i,
+      /^(?:Section)\s+([IVXLCDM\d]+)/,
+      /^(?:القسم)\s+([IVXLCDM\d]+|الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر)/,
+    ],
+  },
+  {
+    level: 4, // SOUS-SECTION
+    patterns: [
+      /^SOUS-SECTION\s+([IVXLCDM\d]+)/i,
+      /^(?:Sous-section)\s+([IVXLCDM\d]+)/,
+    ],
+  },
+];
+
+interface HierarchyEntry {
+  level: number;
+  label: string; // e.g. "TITRE II", "CHAPITRE IV", "Section I"
 }
 
-// Extract keywords from text (French + Arabic)
-function extractKeywords(text: string): string[] {
-  const keywords: Set<string> = new Set();
-  
-  // French legal/customs keywords
-  const frenchPatterns = [
-    /\b(importation|exportation|transit|admission temporaire|dédouanement|régime douanier)\b/gi,
-    /\b(certificat d'origine|EUR\.?\s*1|déclaration en douane|DUM)\b/gi,
-    /\b(franchise|exonération|suspension|drawback)\b/gi,
-    /\b(contrôle|visite|vérification|inspection)\b/gi,
-    /\b(valeur en douane|valeur transactionnelle|CIF|FOB)\b/gi,
-    /\b(origine préférentielle|origine non préférentielle|cumul)\b/gi,
-    /\b(contingent|quota|licence d'importation)\b/gi,
-  ];
-  
-  // Arabic legal/customs keywords
-  const arabicPatterns = [
-    // استيراد (istīrād = import), تصدير (taṣdīr = export), عبور (ʿubūr = transit)
-    /(استيراد|تصدير|عبور|إدخال مؤقت|تخليص جمركي|نظام جمركي)/g,
-    // شهادة المنشأ (šahādat al-manšaʾ = certificate of origin)
-    /(شهادة المنشأ|التصريح الجمركي|وثيقة الاستيراد)/g,
-    // إعفاء (ʾiʿfāʾ = exemption), تعليق (taʿlīq = suspension)
-    /(إعفاء|تعليق|امتياز جمركي)/g,
-    // مراقبة (murāqaba = control), تفتيش (taftīš = inspection)
-    /(مراقبة|تفتيش|فحص|معاينة)/g,
-    // القيمة الجمركية (al-qīma al-jumrukiyya = customs value)
-    /(القيمة الجمركية|قيمة المعاملة)/g,
-    // المنشأ التفضيلي (al-manšaʾ al-tafḍīlī = preferential origin)
-    /(المنشأ التفضيلي|المنشأ غير التفضيلي|التراكم)/g,
-    // حصة (ḥiṣṣa = quota), رخصة استيراد (ruḫṣat istīrād = import license)
-    /(حصة|رخصة استيراد|ترخيص)/g,
-  ];
-  
-  for (const pattern of frenchPatterns) {
-    let match;
-    while ((match = pattern.exec(text)) !== null) {
-      keywords.add(match[1].toLowerCase().trim());
+/**
+ * Maintains a stack of hierarchy entries.
+ * When a new entry is detected at level N, all entries at level >= N are replaced.
+ */
+class HierarchyTracker {
+  private stack: HierarchyEntry[] = [];
+
+  /** Try to detect a hierarchy heading in the given text. Returns true if detected. */
+  update(text: string): boolean {
+    const trimmed = text.trim();
+
+    for (const { level, patterns } of HIERARCHY_LEVELS) {
+      for (const pattern of patterns) {
+        const m = trimmed.match(pattern);
+        if (m) {
+          // Extract the full heading line (e.g. "TITRE II - Des droits de douane")
+          const fullLine = trimmed.split(/\n/)[0].substring(0, 80);
+          // Remove everything at this level or deeper
+          this.stack = this.stack.filter(e => e.level < level);
+          this.stack.push({ level, label: fullLine });
+          return true;
+        }
+      }
     }
+    return false;
   }
-  
-  for (const pattern of arabicPatterns) {
-    let match;
-    while ((match = pattern.exec(text)) !== null) {
-      keywords.add(match[1].trim());
-    }
-  }
-  
-  return Array.from(keywords).slice(0, 15);
-}
 
-// Extract HS codes mentioned in chunk
-function extractMentionedHSCodes(text: string): string[] {
-  const codes: Set<string> = new Set();
-  
-  // 10-digit codes
-  const pattern10 = /\b(\d{10})\b/g;
-  let match;
-  while ((match = pattern10.exec(text)) !== null) {
-    codes.add(match[1]);
+  /** Build a full hierarchy path like "TITRE II > CHAPITRE IV > Section I" */
+  getPath(articleNumber: string | null): string | null {
+    const parts = this.stack.map(e => e.label);
+    if (articleNumber) parts.push(`Art. ${articleNumber}`);
+    return parts.length > 0 ? parts.join(" > ") : null;
   }
-  
-  // Formatted codes like 84.71.30.00.10
-  const patternFormatted = /\b(\d{2}[.\s]\d{2}[.\s]\d{2}(?:[.\s]\d{2}){0,2})\b/g;
-  while ((match = patternFormatted.exec(text)) !== null) {
-    const normalized = match[1].replace(/[\s.]/g, "");
-    if (normalized.length >= 6) codes.add(normalized);
-  }
-  
-  return Array.from(codes).slice(0, 20);
-}
 
-// Build hierarchy path based on context (only for structured documents like legal codes)
-function buildHierarchyPath(sectionTitle: string | null, articleNumber: string | null): string | null {
-  const parts: string[] = [];
-  if (sectionTitle) parts.push(sectionTitle.substring(0, 50));
-  if (articleNumber) parts.push(`Art. ${articleNumber}`);
-  return parts.length > 0 ? parts.join(" > ") : null;
+  /** Get the current section title (deepest non-article level) */
+  getCurrentSection(): string | null {
+    if (this.stack.length === 0) return null;
+    return this.stack[this.stack.length - 1].label;
+  }
+
+  /** Get the parent section (one level above current) */
+  getParentSection(): string | null {
+    if (this.stack.length < 2) return null;
+    return this.stack[this.stack.length - 2].label;
+  }
 }
 
 function createChunks(pages: ExtractedPage[]): TextChunk[] {
   const chunks: TextChunk[] = [];
   let chunkIndex = 0;
-  let currentSection: string | null = null;
-  let parentSection: string | null = null;
+  const hierarchy = new HierarchyTracker();
 
   for (const page of pages) {
     // 1. FIRST: Process tables as separate chunks (they have high semantic value)
@@ -683,10 +662,10 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
             char_start: 0,
             char_end: tableText.length,
             article_number: null,
-            section_title: table.description || currentSection,
-            parent_section: parentSection,
+            section_title: table.description || hierarchy.getCurrentSection(),
+            parent_section: hierarchy.getParentSection(),
             chunk_type: "table",
-            hierarchy_path: buildHierarchyPath(currentSection, null),
+            hierarchy_path: hierarchy.getPath(null),
             keywords: table.has_rates ? ["taux", "droit", "pourcentage"] : extractKeywords(table.markdown),
             mentioned_hs_codes: tableHsCodes,
           });
@@ -712,9 +691,9 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
               char_end: imgText.length,
               article_number: null,
               section_title: img.description.substring(0, 100),
-              parent_section: parentSection,
+              parent_section: hierarchy.getParentSection(),
               chunk_type: img.image_type === "form" ? "form" : "image",
-              hierarchy_path: buildHierarchyPath(currentSection, null),
+              hierarchy_path: hierarchy.getPath(null),
               keywords: img.image_type === "form" ? ["formulaire", "modèle", "template"] : [],
               mentioned_hs_codes: img.extracted_text ? extractMentionedHSCodes(img.extracted_text) : [],
             });
@@ -738,12 +717,8 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
       const trimmedPara = para.trim();
       if (!trimmedPara) continue;
 
-      // Track section changes
-      const sectionMatch = extractSectionTitle(trimmedPara);
-      if (sectionMatch) {
-        parentSection = currentSection;
-        currentSection = sectionMatch;
-      }
+      // Track hierarchy changes (Titre > Chapitre > Section)
+      hierarchy.update(trimmedPara);
 
       // ARTICLE-AWARE CHUNKING: Force split on article boundaries
       const isArticleBoundary = /^(?:Article|Art\.?)\s*\d+/i.test(trimmedPara) || 
@@ -758,8 +733,8 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
         if (currentChunk.length >= MIN_CHUNK_SIZE) {
           const chunkText = currentChunk.trim();
           const articleNumber = extractArticleNumber(chunkText);
-          const sectionTitle = extractSectionTitle(chunkText) || currentSection;
-          const hierarchyPath = buildHierarchyPath(sectionTitle, articleNumber);
+          const sectionTitle = extractSectionTitle(chunkText) || hierarchy.getCurrentSection();
+          const hierarchyPath = hierarchy.getPath(articleNumber);
           
           // CONTEXTUAL CHUNKING: Prepend hierarchy_path to text for better embeddings
           const contextualText = hierarchyPath 
@@ -774,7 +749,7 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
             char_end: charStart + currentChunk.length,
             article_number: articleNumber,
             section_title: sectionTitle,
-            parent_section: parentSection,
+            parent_section: hierarchy.getParentSection(),
             chunk_type: detectChunkType(chunkText),
             hierarchy_path: hierarchyPath,
             keywords: extractKeywords(chunkText),
@@ -795,8 +770,8 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
     if (currentChunk.length >= MIN_CHUNK_SIZE) {
       const chunkText = currentChunk.trim();
       const articleNumber = extractArticleNumber(chunkText);
-      const sectionTitle = extractSectionTitle(chunkText) || currentSection;
-      const hierarchyPath = buildHierarchyPath(sectionTitle, articleNumber);
+      const sectionTitle = extractSectionTitle(chunkText) || hierarchy.getCurrentSection();
+      const hierarchyPath = hierarchy.getPath(articleNumber);
       
       // CONTEXTUAL CHUNKING: Prepend hierarchy_path
       const contextualText = hierarchyPath 
@@ -811,7 +786,7 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
         char_end: charStart + currentChunk.length,
         article_number: articleNumber,
         section_title: sectionTitle,
-        parent_section: parentSection,
+        parent_section: hierarchy.getParentSection(),
         chunk_type: detectChunkType(chunkText),
         hierarchy_path: hierarchyPath,
         keywords: extractKeywords(chunkText),
@@ -824,7 +799,8 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
   const tableChunks = chunks.filter(c => c.chunk_type === "table").length;
   const formChunks = chunks.filter(c => c.chunk_type === "form").length;
   const imageChunks = chunks.filter(c => c.chunk_type === "image").length;
-  console.log(`[ingest-legal-doc] Chunks created: ${chunks.length} total (${tableChunks} tables, ${formChunks} forms, ${imageChunks} images)`);
+  const withHierarchy = chunks.filter(c => c.hierarchy_path && c.hierarchy_path.includes(" > ")).length;
+  console.log(`[ingest-legal-doc] Chunks created: ${chunks.length} total (${tableChunks} tables, ${formChunks} forms, ${imageChunks} images, ${withHierarchy} with multi-level hierarchy)`);
 
   return chunks;
 }
