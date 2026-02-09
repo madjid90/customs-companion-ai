@@ -375,10 +375,11 @@ export default function ReingestionPanel() {
     }
   }, [toast, loadSources]);
 
-  // Check if a source needs full re-ingestion (has chunks but V2 pipeline never ran)
-  // Excludes: sources with no chunks (need re-upload), embeddings-only issues (cron handles those)
+  // Only structured documents (law/code) need hierarchy-based re-ingestion
+  // Circulars, notes, agreements don't have formal structure requiring hierarchy
   const needsReingest = (source: LegalSourceStats): boolean => {
     if (source.actual_chunks === 0) return false;
+    if (source.source_type !== "law") return false;
     return source.chunks_with_hierarchy === 0;
   };
 
