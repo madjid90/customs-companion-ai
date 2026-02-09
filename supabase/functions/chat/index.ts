@@ -264,6 +264,7 @@ serve(async (req) => {
   logger.info("Request received", { method: req.method });
 
   const corsHeaders = getCorsHeaders(req);
+
   // Authentication check - REQUIRED
   const { error: authError } = await requireAuth(req, corsHeaders);
   if (authError) return authError;
