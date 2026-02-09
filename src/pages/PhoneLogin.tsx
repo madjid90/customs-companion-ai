@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Phone, ArrowRight, Loader2, KeyRound, ArrowLeft, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Logo } from "@/components/ui/Logo";
 import { Label } from "@/components/ui/label";
 import { usePhoneAuth } from "@/hooks/usePhoneAuth";
@@ -38,7 +38,6 @@ export default function PhoneLogin() {
   const country = COUNTRY_CODES[countryIndex];
   const fullPhone = `${country.code}${phoneLocal.replace(/\s/g, "")}`;
 
-  // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
       const from = location.state?.from?.pathname || "/app/chat";
@@ -46,14 +45,12 @@ export default function PhoneLogin() {
     }
   }, [isAuthenticated, isManager, navigate, location]);
 
-  // Countdown for resend
   useEffect(() => {
     if (countdown <= 0) return;
     const timer = setInterval(() => setCountdown((c) => c - 1), 1000);
     return () => clearInterval(timer);
   }, [countdown]);
 
-  // Auto-focus OTP input
   useEffect(() => {
     if (step === "otp" && otpInputRef.current) {
       otpInputRef.current.focus();
@@ -124,7 +121,6 @@ export default function PhoneLogin() {
         return;
       }
 
-      // Set session in Supabase client
       await setSessionFromOtp(
         {
           access_token: data.session.access_token,
@@ -177,34 +173,46 @@ export default function PhoneLogin() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center page-gradient p-4">
-      <Card className="w-full max-w-md animate-slide-up card-elevated border border-border/20">
-        <CardHeader className="text-center space-y-4">
-          <div className="mx-auto">
-            <Logo size="lg" />
-          </div>
-          <div>
-            <CardTitle className="text-2xl font-display font-extrabold tracking-tight">
-              {step === "phone" ? "Connexion" : "Vérification"}
-            </CardTitle>
-            <CardDescription>
+    <div className="min-h-screen flex flex-col items-center justify-center page-gradient p-4">
+      {/* Back button */}
+      <div className="w-full max-w-md mb-6">
+        <Link
+          to="/"
+          className="inline-flex items-center justify-center h-10 w-10 rounded-xl border border-border/50 bg-card text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
+      </div>
+
+      <Card className="w-full max-w-md animate-slide-up card-elevated border border-border/20 rounded-3xl overflow-hidden">
+        <CardContent className="p-8 md:p-10">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="mx-auto mb-5">
+              <Logo size="lg" />
+            </div>
+            <h1 className="text-2xl font-extrabold tracking-tight mb-2">
+              {step === "phone" ? "Me connecter" : "Vérification"}
+            </h1>
+            <p className="text-sm text-muted-foreground">
               {step === "phone"
-                ? "Entrez votre numéro pour recevoir un code de vérification"
+                ? "Accédez à votre espace membre"
                 : `Code envoyé au ${country.code} ${phoneLocal}`}
-            </CardDescription>
+            </p>
           </div>
-        </CardHeader>
-        <CardContent>
+
           {step === "phone" ? (
-            <form onSubmit={handleSendOtp} className="space-y-5">
+            <form onSubmit={handleSendOtp} className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="phone">Numéro de téléphone</Label>
+                <Label htmlFor="phone" className="flex items-center gap-2 text-sm font-semibold">
+                  <Phone className="h-4 w-4 text-primary" />
+                  Téléphone
+                </Label>
                 <div className="flex gap-2">
-                  {/* Country selector */}
                   <div className="relative">
                     <button
                       type="button"
-                      className="flex items-center gap-1.5 h-10 px-3 rounded-xl border border-input bg-background text-sm hover:bg-accent/50 transition-colors whitespace-nowrap"
+                      className="flex items-center gap-1.5 h-12 px-3 rounded-xl border border-input bg-muted/50 text-sm hover:bg-accent/50 transition-colors whitespace-nowrap"
                       onClick={() => setCountryOpen(!countryOpen)}
                     >
                       <span className="text-lg leading-none">{country.flag}</span>
@@ -233,79 +241,14 @@ export default function PhoneLogin() {
                       </div>
                     )}
                   </div>
-                  {/* Phone input */}
-                  <div className="relative flex-1">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="phone"
-                      type="tel"
-                      value={phoneLocal}
-                      onChange={(e) => setPhoneLocal(e.target.value)}
-                      placeholder={country.placeholder}
-                      className="pl-10 rounded-xl"
-                      autoFocus
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {error && (
-                <div className="p-3 rounded-xl bg-destructive/10 text-destructive text-sm">
-                  {error}
-                </div>
-              )}
-
-              <Button
-                type="submit"
-                className="w-full h-12 cta-gradient rounded-xl text-base"
-                disabled={isLoading || !phoneLocal.trim()}
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Envoi en cours...
-                  </>
-                ) : (
-                  <>
-                    Recevoir le code
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </>
-                )}
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={handleVerifyOtp} className="space-y-5">
-              {isBootstrap && (
-                <div className="space-y-2">
-                  <Label htmlFor="displayName">Votre nom (premier manager)</Label>
                   <Input
-                    id="displayName"
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="Votre nom complet"
-                    className="rounded-xl"
-                    maxLength={100}
-                  />
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="otp">Code de vérification</Label>
-                <div className="relative">
-                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    ref={otpInputRef}
-                    id="otp"
-                    type="text"
-                    inputMode="numeric"
-                    pattern="\d{6}"
-                    maxLength={6}
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                    placeholder="000000"
-                    className="pl-10 rounded-xl text-center text-xl tracking-[0.5em] font-mono"
+                    id="phone"
+                    type="tel"
+                    value={phoneLocal}
+                    onChange={(e) => setPhoneLocal(e.target.value)}
+                    placeholder={country.placeholder}
+                    className="rounded-xl h-12 bg-muted/50 border-input"
+                    autoFocus
                     required
                   />
                 </div>
@@ -319,12 +262,82 @@ export default function PhoneLogin() {
 
               <Button
                 type="submit"
-                className="w-full h-12 cta-gradient rounded-xl text-base"
+                className="w-full h-14 cta-gradient rounded-2xl text-base font-semibold gap-2"
+                disabled={isLoading || !phoneLocal.trim()}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Envoi en cours...
+                  </>
+                ) : (
+                  <>
+                    Me connecter
+                    <ArrowRight className="h-5 w-5" />
+                  </>
+                )}
+              </Button>
+
+              <div className="text-center pt-2">
+                <p className="text-sm text-muted-foreground">
+                  Pas encore de compte ?{" "}
+                  <Link to="/demander-acces" className="text-primary font-medium hover:underline">
+                    Demander l'accès
+                  </Link>
+                </p>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleVerifyOtp} className="space-y-6">
+              {isBootstrap && (
+                <div className="space-y-2">
+                  <Label htmlFor="displayName" className="text-sm font-semibold">Votre nom (premier manager)</Label>
+                  <Input
+                    id="displayName"
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="Votre nom complet"
+                    className="rounded-xl h-12 bg-muted/50"
+                    maxLength={100}
+                  />
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="otp" className="flex items-center gap-2 text-sm font-semibold">
+                  <KeyRound className="h-4 w-4 text-primary" />
+                  Code de vérification
+                </Label>
+                <Input
+                  ref={otpInputRef}
+                  id="otp"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="\d{6}"
+                  maxLength={6}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                  placeholder="000000"
+                  className="rounded-xl h-12 bg-muted/50 text-center text-xl tracking-[0.5em] font-mono"
+                  required
+                />
+              </div>
+
+              {error && (
+                <div className="p-3 rounded-xl bg-destructive/10 text-destructive text-sm">
+                  {error}
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                className="w-full h-14 cta-gradient rounded-2xl text-base font-semibold"
                 disabled={isLoading || otp.length !== 6}
               >
                 {isLoading ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     Vérification...
                   </>
                 ) : (
@@ -361,12 +374,6 @@ export default function PhoneLogin() {
               </div>
             </form>
           )}
-
-          <div className="mt-6 text-center">
-            <p className="text-xs text-muted-foreground">
-              Accès sur invitation uniquement
-            </p>
-          </div>
         </CardContent>
       </Card>
     </div>

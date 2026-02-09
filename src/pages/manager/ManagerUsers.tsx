@@ -19,6 +19,7 @@ import {
   MessageSquare,
   ChevronDown,
   Users,
+  ArrowRight,
 } from "lucide-react";
 
 const COUNTRY_CODES = [
@@ -67,7 +68,7 @@ export default function ManagerUsers() {
     const userIds = users
       .filter((u) => u.auth_user_id)
       .map((u) => u.auth_user_id!);
-    
+
     if (userIds.length === 0) return;
 
     const { data, error } = await supabase.rpc("count_conversations_by_users", {
@@ -157,15 +158,9 @@ export default function ManagerUsers() {
       .eq("id", user.id);
 
     if (error) {
-      toast({
-        title: "Erreur",
-        description: "Impossible de modifier le statut",
-        variant: "destructive",
-      });
+      toast({ title: "Erreur", description: "Impossible de modifier le statut", variant: "destructive" });
     } else {
-      toast({
-        title: user.is_active ? "Accès désactivé" : "Accès réactivé",
-      });
+      toast({ title: user.is_active ? "Accès désactivé" : "Accès réactivé" });
       fetchUsers();
     }
   };
@@ -179,52 +174,49 @@ export default function ManagerUsers() {
       .eq("id", user.id);
 
     if (error) {
-      toast({
-        title: "Erreur",
-        description: "Impossible de supprimer l'utilisateur",
-        variant: "destructive",
-      });
+      toast({ title: "Erreur", description: "Impossible de supprimer l'utilisateur", variant: "destructive" });
     } else {
       toast({ title: "Utilisateur supprimé" });
       fetchUsers();
     }
   };
 
-  const agents = users.filter(
-    (u) => u.role === "agent" && u.id !== phoneUser?.id
-  );
+  const agents = users.filter((u) => u.role === "agent" && u.id !== phoneUser?.id);
   const maxInvites = phoneUser?.max_invites ?? 2;
   const agentCount = agents.length;
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-2xl mx-auto px-4 py-5 md:py-8 space-y-5">
+      <div className="max-w-2xl mx-auto px-4 py-5 md:py-8 space-y-6">
         {/* Header */}
-        <div className="flex items-center gap-2.5">
-          <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center">
-            <Users className="h-4.5 w-4.5 text-primary" />
+        <div className="flex items-center gap-3">
+          <div className="h-11 w-11 rounded-2xl bg-primary/10 flex items-center justify-center">
+            <Users className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-lg md:text-xl font-bold tracking-tight">Utilisateurs</h1>
+            <h1 className="text-xl md:text-2xl font-extrabold tracking-tight">Utilisateurs</h1>
             <p className="text-sm text-muted-foreground">Gérez les agents ayant accès au chat.</p>
           </div>
         </div>
 
-        {/* Invite Form — compact */}
-        <div className="rounded-xl border border-border/50 bg-card p-4 space-y-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        {/* Invite Form */}
+        <div className="card-elevated rounded-2xl p-5 md:p-6 space-y-4">
+          <div className="flex items-center gap-2 text-sm font-bold text-foreground">
             <UserPlus className="h-4 w-4 text-primary" />
             Inviter un agent
           </div>
-          <form onSubmit={handleInvite} className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="invite-phone" className="text-sm">Téléphone</Label>
+          <form onSubmit={handleInvite} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="invite-phone" className="flex items-center gap-2 text-sm font-semibold">
+                  <Phone className="h-3.5 w-3.5 text-primary" />
+                  Téléphone
+                </Label>
                 <div className="flex gap-1.5">
                   <div className="relative">
                     <button
                       type="button"
-                      className="flex items-center gap-1 h-10 px-2.5 rounded-lg border border-input bg-background text-sm hover:bg-accent/50 transition-colors whitespace-nowrap"
+                      className="flex items-center gap-1 h-12 px-2.5 rounded-xl border border-input bg-muted/50 text-sm hover:bg-accent/50 transition-colors whitespace-nowrap"
                       onClick={() => setInviteCountryOpen(!inviteCountryOpen)}
                     >
                       <span className="text-sm leading-none">{COUNTRY_CODES[inviteCountryIndex].flag}</span>
@@ -232,13 +224,13 @@ export default function ManagerUsers() {
                       <ChevronDown className="h-3 w-3 text-muted-foreground" />
                     </button>
                     {inviteCountryOpen && (
-                      <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-lg shadow-lg overflow-hidden min-w-[160px]">
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-xl shadow-lg overflow-hidden min-w-[160px]">
                         {COUNTRY_CODES.map((c, i) => (
                           <button
                             key={c.code}
                             type="button"
                             className={cn(
-                              "w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-accent/50 transition-colors",
+                              "w-full flex items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-accent/50 transition-colors",
                               i === inviteCountryIndex ? "bg-primary/5 text-primary font-medium" : "text-foreground"
                             )}
                             onClick={() => {
@@ -254,34 +246,31 @@ export default function ManagerUsers() {
                       </div>
                     )}
                   </div>
-                  <div className="relative flex-1">
-                    <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                    <Input
-                      id="invite-phone"
-                      type="tel"
-                      value={invitePhoneLocal}
-                      onChange={(e) => setInvitePhoneLocal(e.target.value)}
-                      placeholder={COUNTRY_CODES[inviteCountryIndex].placeholder}
-                      className="pl-8 h-10 rounded-lg text-sm"
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="invite-name" className="text-sm">Nom (optionnel)</Label>
-                <div className="relative">
-                  <User className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
-                    id="invite-name"
-                    type="text"
-                    value={inviteName}
-                    onChange={(e) => setInviteName(e.target.value)}
-                    placeholder="Nom de l'agent"
-                    className="pl-8 h-10 rounded-lg text-sm"
-                    maxLength={100}
+                    id="invite-phone"
+                    type="tel"
+                    value={invitePhoneLocal}
+                    onChange={(e) => setInvitePhoneLocal(e.target.value)}
+                    placeholder={COUNTRY_CODES[inviteCountryIndex].placeholder}
+                    className="h-12 rounded-xl bg-muted/50 text-sm"
+                    required
                   />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invite-name" className="flex items-center gap-2 text-sm font-semibold">
+                  <User className="h-3.5 w-3.5 text-primary" />
+                  Nom (optionnel)
+                </Label>
+                <Input
+                  id="invite-name"
+                  type="text"
+                  value={inviteName}
+                  onChange={(e) => setInviteName(e.target.value)}
+                  placeholder="Nom de l'agent"
+                  className="h-12 rounded-xl bg-muted/50 text-sm"
+                  maxLength={100}
+                />
               </div>
             </div>
 
@@ -291,34 +280,34 @@ export default function ManagerUsers() {
               </p>
               <Button
                 type="submit"
-                size="sm"
-                className="cta-gradient rounded-lg h-9 text-sm px-4"
+                className="cta-gradient rounded-xl h-12 text-sm px-6 font-semibold gap-2"
                 disabled={isInviting || !invitePhoneLocal.trim() || agentCount >= maxInvites}
               >
                 {isInviting ? (
-                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+                  <UserPlus className="h-4 w-4" />
                 )}
                 {isInviting ? "Envoi..." : "Inviter"}
+                {!isInviting && <ArrowRight className="h-4 w-4" />}
               </Button>
             </div>
           </form>
         </div>
 
-        {/* Users List — compact rows */}
-        <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
-          <div className="px-4 py-3 border-b border-border/50 flex items-center justify-between">
-            <span className="text-sm font-semibold">Équipe</span>
+        {/* Users List */}
+        <div className="card-elevated rounded-2xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
+            <span className="text-sm font-bold">Équipe</span>
             <span className="text-sm text-muted-foreground">{users.length} membre{users.length > 1 ? "s" : ""}</span>
           </div>
 
           {isLoading ? (
-            <div className="flex items-center justify-center py-10">
+            <div className="flex items-center justify-center py-12">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
             </div>
           ) : users.length === 0 ? (
-            <p className="text-center text-muted-foreground py-10 text-sm">
+            <p className="text-center text-muted-foreground py-12 text-sm">
               Aucun utilisateur
             </p>
           ) : (
@@ -326,31 +315,31 @@ export default function ManagerUsers() {
               {users.map((user) => (
                 <div
                   key={user.id}
-                  className="flex items-center justify-between px-4 py-2.5 hover:bg-accent/5 transition-colors"
+                  className="flex items-center justify-between px-5 py-3.5 hover:bg-accent/5 transition-colors"
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div
                       className={cn(
-                        "h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0",
+                        "h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0",
                         user.role === "manager"
                           ? "bg-primary/10 text-primary"
                           : "bg-secondary/10 text-secondary"
                       )}
                     >
                       {user.role === "manager" ? (
-                        <Shield className="h-3.5 w-3.5" />
+                        <Shield className="h-4 w-4" />
                       ) : (
-                        <User className="h-3.5 w-3.5" />
+                        <User className="h-4 w-4" />
                       )}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-medium truncate leading-tight">
+                      <p className="text-sm font-semibold truncate leading-tight">
                         {user.display_name || user.phone}
                         {user.id === phoneUser?.id && (
                           <span className="text-muted-foreground text-xs ml-1.5">(vous)</span>
                         )}
                       </p>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                         <span>{user.phone}</span>
                         {user.auth_user_id && conversations[user.auth_user_id] && (
                           <span className="flex items-center gap-0.5">
@@ -362,10 +351,10 @@ export default function ManagerUsers() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     <Badge
                       variant={user.role === "manager" ? "default" : "secondary"}
-                      className="capitalize text-xs h-5 px-1.5"
+                      className="capitalize text-xs h-6 px-2 rounded-lg"
                     >
                       {user.role}
                     </Badge>
@@ -374,7 +363,7 @@ export default function ManagerUsers() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7"
+                          className="h-8 w-8 rounded-lg"
                           onClick={() => toggleUserActive(user)}
                           title={user.is_active ? "Désactiver" : "Réactiver"}
                         >
@@ -387,7 +376,7 @@ export default function ManagerUsers() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 hover:text-destructive"
+                          className="h-8 w-8 rounded-lg hover:text-destructive"
                           onClick={() => deleteUser(user)}
                           title="Supprimer"
                         >
