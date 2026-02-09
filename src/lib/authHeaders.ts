@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
  * Uses the user's session JWT for authenticated requests,
  * falls back to the anon key for public endpoints.
  */
-export async function getAuthHeaders(requireSession = true): Promise<Record<string, string>> {
+export async function getAuthHeaders(requireSession = false): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
