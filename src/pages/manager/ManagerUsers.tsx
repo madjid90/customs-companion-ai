@@ -206,7 +206,7 @@ export default function ManagerUsers() {
           </div>
           <div>
             <h1 className="text-lg md:text-xl font-bold tracking-tight">Utilisateurs</h1>
-            <p className="text-xs text-muted-foreground">Gérez les agents ayant accès au chat.</p>
+            <p className="text-sm text-muted-foreground">Gérez les agents ayant accès au chat.</p>
           </div>
         </div>
 
@@ -286,13 +286,13 @@ export default function ManagerUsers() {
             </div>
 
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 {agentCount}/{maxInvites} agents
               </p>
               <Button
                 type="submit"
                 size="sm"
-                className="cta-gradient rounded-lg h-8 text-xs px-3"
+                className="cta-gradient rounded-lg h-9 text-sm px-4"
                 disabled={isInviting || !invitePhoneLocal.trim() || agentCount >= maxInvites}
               >
                 {isInviting ? (
@@ -310,7 +310,7 @@ export default function ManagerUsers() {
         <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
           <div className="px-4 py-3 border-b border-border/50 flex items-center justify-between">
             <span className="text-sm font-semibold">Équipe</span>
-            <span className="text-xs text-muted-foreground">{users.length} membre{users.length > 1 ? "s" : ""}</span>
+            <span className="text-sm text-muted-foreground">{users.length} membre{users.length > 1 ? "s" : ""}</span>
           </div>
 
           {isLoading ? (
@@ -347,10 +347,10 @@ export default function ManagerUsers() {
                       <p className="text-sm font-medium truncate leading-tight">
                         {user.display_name || user.phone}
                         {user.id === phoneUser?.id && (
-                          <span className="text-muted-foreground text-[10px] ml-1.5">(vous)</span>
+                          <span className="text-muted-foreground text-xs ml-1.5">(vous)</span>
                         )}
                       </p>
-                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <span>{user.phone}</span>
                         {user.auth_user_id && conversations[user.auth_user_id] && (
                           <span className="flex items-center gap-0.5">
@@ -365,7 +365,7 @@ export default function ManagerUsers() {
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     <Badge
                       variant={user.role === "manager" ? "default" : "secondary"}
-                      className="capitalize text-[10px] h-5 px-1.5"
+                      className="capitalize text-xs h-5 px-1.5"
                     >
                       {user.role}
                     </Badge>
