@@ -37,7 +37,7 @@ export async function checkAuthentication(req: Request): Promise<AuthResult> {
   // In development, allow unauthenticated requests
   if (devMode && !authHeader) {
     console.log("[Auth] Dev mode: allowing unauthenticated request");
-    return { authenticated: true, userId: "dev-user" };
+    return { authenticated: true, userId: "dev-user", isAdmin: true };
   }
   
   // Check for Authorization header
@@ -91,7 +91,7 @@ export async function checkAuthentication(req: Request): Promise<AuthResult> {
         console.error("[Auth] getUser also failed:", userError?.message);
         if (devMode) {
           console.log("[Auth] Dev mode: allowing request despite invalid token");
-          return { authenticated: true, userId: "dev-user" };
+          return { authenticated: true, userId: "dev-user", isAdmin: true };
         }
         return {
           authenticated: false,
@@ -137,7 +137,7 @@ export async function checkAuthentication(req: Request): Promise<AuthResult> {
     // In dev mode, allow request even if token validation fails (e.g. expired token)
     if (devMode) {
       console.log("[Auth] Dev mode: allowing request despite validation error");
-      return { authenticated: true, userId: "dev-user" };
+      return { authenticated: true, userId: "dev-user", isAdmin: true };
     }
     return {
       authenticated: false,
