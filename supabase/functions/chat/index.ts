@@ -264,9 +264,9 @@ serve(async (req) => {
   logger.info("Request received", { method: req.method });
 
   const corsHeaders = getCorsHeaders(req);
-  // Authentication check - TEMPORARILY DISABLED for development
-  // const { error: authError } = await requireAuth(req, corsHeaders);
-  // if (authError) return authError;
+  // Authentication check - REQUIRED
+  const { error: authError } = await requireAuth(req, corsHeaders);
+  if (authError) return authError;
 
   // Rate limiting
   const clientId = getClientId(req);
