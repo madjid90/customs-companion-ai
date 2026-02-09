@@ -52,30 +52,41 @@ const App = () => {
                 <BrowserRouter>
                   <Routes>
                     {/* Public: Landing & Login */}
-                    <Route path="/" element={<Navigate to="/app/chat" replace />} />
+                    <Route path="/" element={<Landing />} />
                     <Route path="/demander-acces" element={<RequestAccess />} />
                     <Route path="/login" element={<PhoneLogin />} />
 
-                    {/* App routes — auth disabled temporarily */}
+                    {/* App routes — phone auth protected */}
                     <Route
                       path="/app"
-                      element={<AppLayout />}
+                      element={
+                        <PhoneProtectedRoute>
+                          <AppLayout />
+                        </PhoneProtectedRoute>
+                      }
                     >
                       <Route index element={<Navigate to="/app/chat" replace />} />
                       <Route path="chat" element={<Chat />} />
-                      <Route path="manage" element={<ManagerUsers />} />
+                      <Route path="manage" element={
+                        <PhoneProtectedRoute requireManager>
+                          <ManagerUsers />
+                        </PhoneProtectedRoute>
+                      } />
                     </Route>
 
-                    {/* Admin routes (email auth - legacy) */}
+                    {/* Admin routes (email auth) */}
                     <Route path="/admin/login" element={
                       <Suspense fallback={<AdminFallback />}>
                         <AdminLogin />
                       </Suspense>
                     } />
-                    {/* Admin routes — auth disabled temporarily */}
                     <Route
                       path="/admin"
-                      element={<AdminLayout />}
+                      element={
+                        <ProtectedRoute requireAdmin>
+                          <AdminLayout />
+                        </ProtectedRoute>
+                      }
                     >
                       <Route index element={<Navigate to="/admin/upload" replace />} />
                       <Route path="upload" element={
