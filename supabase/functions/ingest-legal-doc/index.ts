@@ -641,6 +641,109 @@ class HierarchyTracker {
   }
 }
 
+// Determine chunk type based on content (French + Arabic)
+function detectChunkType(text: string): string {
+  const textLower = text.toLowerCase();
+  
+  // Definition patterns (French + Arabic: تعريف = taʿrīf, يقصد ب = yuqṣad bi)
+  if (/\b(définition|définit|entend par|au sens du présent)/i.test(text)) return "definition";
+  if (/(?:تعريف|يقصد ب|يراد ب|المقصود ب)/.test(text)) return "definition";
+  
+  // Header patterns
+  if (/^(CHAPITRE|TITRE|SECTION)/i.test(text.trim())) return "header";
+  if (/^(?:الباب|الفصل|القسم|الجزء)/.test(text.trim())) return "header";
+  
+  // Article patterns
+  if (/\bart(?:icle)?\.?\s*\d+/i.test(text)) return "article";
+  if (/(?:المادة|الفصل|البند)\s*\d+/.test(text)) return "article";
+  
+  // Note patterns (Arabic: ملاحظة = mulāḥaẓa)
+  if (/\b(note|nota|n\.b\.)/i.test(textLower)) return "note";
+  if (/(?:ملاحظة|ملحوظة|تنبيه)/.test(text)) return "note";
+  
+  // Exclusion patterns (Arabic: استثناء = istiṯnāʾ, لا يشمل = lā yašmal)
+  if (/\b(exception|exclut|ne comprend pas|à l'exclusion)/i.test(textLower)) return "exclusion";
+  if (/(?:استثناء|لا يشمل|باستثناء|يستثنى)/.test(text)) return "exclusion";
+  
+  // Procedure patterns (Arabic: إجراء = ʾijrāʾ)
+  if (/\b(procédure|formalité|déclaration|document)/i.test(textLower)) return "procedure";
+  if (/(?:إجراء|إجراءات|تصريح|وثيقة|مستند)/.test(text)) return "procedure";
+  
+  // Sanction patterns (Arabic: عقوبة = ʿuqūba, غرامة = ġarāma)
+  if (/\b(pénalité|sanction|amende|infraction)/i.test(textLower)) return "sanction";
+  if (/(?:عقوبة|غرامة|جزاء|مخالفة)/.test(text)) return "sanction";
+  
+  // Tariff patterns (Arabic: رسم = rasm, ضريبة = ḍarība)
+  if (/\b(taux|droit|taxe|%)/i.test(textLower)) return "tariff";
+  if (/(?:رسم|ضريبة|تعريفة|نسبة)/.test(text)) return "tariff";
+  
+  return "general";
+}
+
+// Extract keywords from text (French + Arabic)
+function extractKeywords(text: string): string[] {
+  const keywords: Set<string> = new Set();
+  
+  // French legal/customs keywords
+  const frenchPatterns = [
+    /\b(importation|exportation|transit|admission temporaire|dédouanement|régime douanier)\b/gi,
+    /\b(certificat d'origine|EUR\.?\s*1|déclaration en douane|DUM)\b/gi,
+    /\b(franchise|exonération|suspension|drawback)\b/gi,
+    /\b(contrôle|visite|vérification|inspection)\b/gi,
+    /\b(valeur en douane|valeur transactionnelle|CIF|FOB)\b/gi,
+    /\b(origine préférentielle|origine non préférentielle|cumul)\b/gi,
+    /\b(contingent|quota|licence d'importation)\b/gi,
+  ];
+  
+  // Arabic legal/customs keywords
+  const arabicPatterns = [
+    /(استيراد|تصدير|عبور|إدخال مؤقت|تخليص جمركي|نظام جمركي)/g,
+    /(شهادة المنشأ|التصريح الجمركي|وثيقة الاستيراد)/g,
+    /(إعفاء|تعليق|امتياز جمركي)/g,
+    /(مراقبة|تفتيش|فحص|معاينة)/g,
+    /(القيمة الجمركية|قيمة المعاملة)/g,
+    /(المنشأ التفضيلي|المنشأ غير التفضيلي|التراكم)/g,
+    /(حصة|رخصة استيراد|ترخيص)/g,
+  ];
+  
+  for (const pattern of frenchPatterns) {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      keywords.add(match[1].toLowerCase().trim());
+    }
+  }
+  
+  for (const pattern of arabicPatterns) {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      keywords.add(match[1].trim());
+    }
+  }
+  
+  return Array.from(keywords).slice(0, 15);
+}
+
+// Extract HS codes mentioned in chunk
+function extractMentionedHSCodes(text: string): string[] {
+  const codes: Set<string> = new Set();
+  
+  // 10-digit codes
+  const pattern10 = /\b(\d{10})\b/g;
+  let match;
+  while ((match = pattern10.exec(text)) !== null) {
+    codes.add(match[1]);
+  }
+  
+  // Formatted codes like 84.71.30.00.10
+  const patternFormatted = /\b(\d{2}[.\s]\d{2}[.\s]\d{2}(?:[.\s]\d{2}){0,2})\b/g;
+  while ((match = patternFormatted.exec(text)) !== null) {
+    const normalized = match[1].replace(/[\s.]/g, "");
+    if (normalized.length >= 6) codes.add(normalized);
+  }
+  
+  return Array.from(codes).slice(0, 20);
+}
+
 function createChunks(pages: ExtractedPage[]): TextChunk[] {
   const chunks: TextChunk[] = [];
   let chunkIndex = 0;
