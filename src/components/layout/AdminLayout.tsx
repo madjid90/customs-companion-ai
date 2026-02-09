@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 export function AdminLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (
     <div className="min-h-screen page-gradient bg-dot-pattern">
@@ -38,11 +39,14 @@ export function AdminLayout() {
           mobileOpen ? "block" : "hidden"
         )}
       >
-        <AdminSidebar onNavigate={() => setMobileOpen(false)} />
+        <AdminSidebar onNavigate={() => setMobileOpen(false)} onCollapseChange={setSidebarCollapsed} />
       </div>
 
       {/* Main content */}
-      <main className="pt-14 lg:pt-0 lg:pl-64 transition-all duration-300">
+      <main className={cn(
+        "pt-14 lg:pt-0 transition-all duration-300",
+        sidebarCollapsed ? "lg:pl-16" : "lg:pl-64"
+      )}>
         <div className="p-4 sm:p-6 lg:p-8">
           <Outlet />
         </div>

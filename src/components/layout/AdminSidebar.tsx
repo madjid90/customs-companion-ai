@@ -34,11 +34,16 @@ const menuItems: MenuItem[] = [
   { type: "link", icon: MessageSquare, label: "Chat public", href: "/app/chat" },
 ];
 
-export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
+export function AdminSidebar({ onNavigate, onCollapseChange }: { onNavigate?: () => void; onCollapseChange?: (collapsed: boolean) => void }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
+
+  const handleCollapse = (value: boolean) => {
+    setCollapsed(value);
+    onCollapseChange?.(value);
+  };
 
   const handleLogout = async () => {
     await signOut();
@@ -59,7 +64,7 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
           variant="ghost"
           size="icon"
           className="text-muted-foreground hover:text-foreground hover:bg-primary/5 ml-auto rounded-xl"
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={() => handleCollapse(!collapsed)}
         >
           {collapsed ? (
             <ChevronRight className="h-4 w-4" />
