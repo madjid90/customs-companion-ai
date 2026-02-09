@@ -11,7 +11,12 @@ export async function getAuthHeaders(requireSession = true): Promise<Record<stri
     "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
   };
 
-  const { data: { session } } = await supabase.auth.getSession();
+  // Get current session, refresh if expired or about to expire (within 60s)
+  let { data: { session } } = await supabase.auth.getSession();
+  if (session?.expires_at && session.expires_at * 1000 - Date.now() < 60_000) {
+    const { data } = await supabase.auth.refreshSession();
+    session = data.session;
+  }
 
   if (session?.access_token) {
     headers["Authorization"] = `Bearer ${session.access_token}`;
