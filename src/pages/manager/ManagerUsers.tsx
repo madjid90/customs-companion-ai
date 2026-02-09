@@ -219,7 +219,7 @@ export default function ManagerUsers() {
           <form onSubmit={handleInvite} className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="invite-phone" className="text-xs">Téléphone</Label>
+                <Label htmlFor="invite-phone" className="text-sm">Téléphone</Label>
                 <div className="flex gap-1.5">
                   <div className="relative">
                     <button
@@ -269,7 +269,7 @@ export default function ManagerUsers() {
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="invite-name" className="text-xs">Nom (optionnel)</Label>
+                <Label htmlFor="invite-name" className="text-sm">Nom (optionnel)</Label>
                 <div className="relative">
                   <User className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
