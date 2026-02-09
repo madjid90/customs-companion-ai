@@ -224,7 +224,7 @@ export default function ManagerUsers() {
                   <div className="relative">
                     <button
                       type="button"
-                      className="flex items-center gap-1 h-9 px-2.5 rounded-lg border border-input bg-background text-xs hover:bg-accent/50 transition-colors whitespace-nowrap"
+                      className="flex items-center gap-1 h-10 px-2.5 rounded-lg border border-input bg-background text-sm hover:bg-accent/50 transition-colors whitespace-nowrap"
                       onClick={() => setInviteCountryOpen(!inviteCountryOpen)}
                     >
                       <span className="text-sm leading-none">{COUNTRY_CODES[inviteCountryIndex].flag}</span>
@@ -262,7 +262,7 @@ export default function ManagerUsers() {
                       value={invitePhoneLocal}
                       onChange={(e) => setInvitePhoneLocal(e.target.value)}
                       placeholder={COUNTRY_CODES[inviteCountryIndex].placeholder}
-                      className="pl-8 h-9 rounded-lg text-sm"
+                      className="pl-8 h-10 rounded-lg"
                       required
                     />
                   </div>
@@ -278,7 +278,7 @@ export default function ManagerUsers() {
                     value={inviteName}
                     onChange={(e) => setInviteName(e.target.value)}
                     placeholder="Nom de l'agent"
-                    className="pl-8 h-9 rounded-lg text-sm"
+                    className="pl-8 h-10 rounded-lg"
                     maxLength={100}
                   />
                 </div>
