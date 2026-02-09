@@ -10,69 +10,60 @@ import {
   FileText,
   Zap,
   Globe,
-  Clock,
   CheckCircle2,
-  TrendingUp,
-  Bell,
   Monitor,
   Lock,
+  HelpCircle,
+  UserPlus,
+  Users,
+  Send,
+  Headphones,
+  Menu,
+  X,
 } from "lucide-react";
+import { useState } from "react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
-/* ─── Fake live-activity data for the floating card ────────────── */
-const stats = [
-  { value: "99%", label: "Précision", change: "+5%" },
-  { value: "< 3s", label: "Réponse", change: "-40%" },
-  { value: "10k+", label: "Documents", change: "" },
-];
-
-const recentQueries = [
-  { time: "10:12", user: "Agent M.", query: "Classification moteur 8501.10", status: "resolved" },
-  { time: "11:45", user: "Agent K.", query: "Droits de douane chapitre 84", status: "resolved" },
-  { time: "14:30", user: "Agent S.", query: "Règles d'origine ALE Maroc-UE", status: "pending" },
-];
-
-/* ─── Features data ──────────────────────────────────────── */
-const features = [
-  {
-    icon: Search,
-    title: "Recherche HS intelligente",
-    desc: "Trouvez le code SH exact grâce à la recherche sémantique alimentée par l'IA.",
-  },
-  {
-    icon: FileText,
-    title: "Analyse de documents",
-    desc: "Uploadez vos DUM, factures ou circulaires pour une analyse instantanée.",
-  },
-  {
-    icon: Globe,
-    title: "Réglementation à jour",
-    desc: "Base de données mise à jour avec les dernières circulaires et tarifs en vigueur.",
-  },
-  {
-    icon: Zap,
-    title: "Réponses instantanées",
-    desc: "Obtenez des réponses en temps réel avec des sources citées et vérifiables.",
-  },
-  {
-    icon: Shield,
-    title: "Données sécurisées",
-    desc: "Vos données et conversations sont protégées et confidentielles.",
-  },
-  {
-    icon: MessageSquare,
-    title: "Chat contextuel",
-    desc: "L'assistant comprend le contexte de vos questions pour des réponses pertinentes.",
-  },
-];
-
-/* ─── Steps ─────────────────────────────────────────────── */
+/* ─── Data ─────────────────────────────────────────────── */
 const steps = [
-  { num: "1", title: "Demandez l'accès", desc: "Remplissez le formulaire avec le nom de votre société et votre numéro." },
-  { num: "2", title: "Validation", desc: "L'administrateur valide votre demande et vous recevez vos accès par SMS." },
-  { num: "3", title: "Posez vos questions", desc: "Accédez au chat et obtenez des réponses précises avec sources légales." },
+  { icon: UserPlus, title: "Inscription en 30 sec", desc: "Téléphone + nom de société. Gratuit." },
+  { icon: Users, title: "Validation Admin", desc: "L'administrateur valide votre demande." },
+  { icon: Send, title: "Accédez au Chat", desc: "Posez vos questions, obtenez des réponses sourcées." },
+  { icon: Headphones, title: "Support continu", desc: "Assistance et mises à jour réglementaires." },
+];
+
+const features = [
+  { icon: MessageSquare, title: "100% digital par Chat", desc: "Par chat, zéro appel téléphonique." },
+  { icon: Zap, title: "Réponses en < 3s", desc: "Temps de réponse moyen constaté." },
+  { icon: Shield, title: "Sources vérifiables", desc: "Chaque réponse citée avec sa source légale." },
+  { icon: Globe, title: "Réglementation à jour", desc: "Base de données mise à jour en continu." },
+];
+
+const featureDetails = [
+  { icon: Search, title: "Recherche HS intelligente", desc: "Trouvez le code SH exact grâce à la recherche sémantique alimentée par l'IA." },
+  { icon: FileText, title: "Analyse de documents", desc: "Uploadez vos DUM, factures ou circulaires pour une analyse instantanée." },
+  { icon: Globe, title: "Réglementation à jour", desc: "Base de données mise à jour avec les dernières circulaires et tarifs en vigueur." },
+  { icon: Zap, title: "Réponses instantanées", desc: "Obtenez des réponses en temps réel avec des sources citées et vérifiables." },
+  { icon: Shield, title: "Données sécurisées", desc: "Vos données et conversations sont protégées et confidentielles." },
+  { icon: MessageSquare, title: "Chat contextuel", desc: "L'assistant comprend le contexte de vos questions pour des réponses pertinentes." },
+];
+
+const faqs = [
+  { q: "Comment fonctionne l'assistant douanier IA ?", a: "Notre assistant utilise l'intelligence artificielle pour analyser votre question, rechercher dans notre base de données de réglementations douanières, et vous fournir une réponse précise avec les sources légales citées." },
+  { q: "L'inscription est-elle vraiment gratuite ?", a: "Oui, l'inscription et l'accès à l'assistant sont entièrement gratuits. Vous n'avez besoin que de votre numéro de téléphone et du nom de votre société." },
+  { q: "Quels types de questions puis-je poser ?", a: "Vous pouvez poser des questions sur les codes SH, les tarifs douaniers, les règles d'origine, les procédures d'import/export, les circulaires et toute réglementation douanière." },
+  { q: "Comment sont vérifiées les réponses ?", a: "Chaque réponse est accompagnée de ses sources légales (circulaires, articles de loi, tarifs officiels). Vous pouvez vérifier chaque information." },
+  { q: "Puis-je utiliser l'assistant sur mobile ?", a: "Oui, l'assistant est 100% responsive et fonctionne parfaitement sur téléphone, tablette et ordinateur." },
 ];
 
 export default function Landing() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   return (
     <div className="min-h-screen page-gradient">
       {/* ─── Header ──────────────────────────────────── */}
@@ -83,180 +74,164 @@ export default function Landing() {
             <Link to="/login" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors hidden sm:inline-flex">
               Connexion
             </Link>
-            <Link to="/login">
-              <Button className="cta-gradient rounded-full px-5 h-10 text-sm font-semibold">
-                Se connecter
-              </Button>
-            </Link>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="sm:hidden"
+              onClick={() => setMobileMenuOpen(true)}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
           </div>
         </nav>
       </header>
 
-      {/* ─── Hero Section — Split Layout ────────────── */}
-      <section className="min-h-[calc(100dvh-4rem)] md:min-h-0 flex items-center md:block pt-0 md:pt-40 md:pb-28 px-4">
-        <div className="container mx-auto max-w-6xl">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
-            {/* Left — Copy */}
-            <div className="max-w-xl mx-auto md:mx-0 text-center md:text-left">
-              {/* Live badge */}
-              <div className="inline-flex items-center gap-2 mb-6 md:mb-8 animate-fade-in">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-secondary" />
-                </span>
-                <span className="text-sm font-medium text-muted-foreground">
-                  Sur invitation uniquement
-                </span>
-              </div>
+      {/* Mobile menu overlay */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[60] bg-background flex flex-col p-6 sm:hidden animate-fade-in">
+          <div className="flex items-center justify-between mb-10">
+            <Logo />
+            <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(false)}>
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+          <div className="space-y-6 text-lg font-medium">
+            <Link to="/" className="block" onClick={() => setMobileMenuOpen(false)}>Accueil</Link>
+            <Link to="/login" className="block" onClick={() => setMobileMenuOpen(false)}>Connexion</Link>
+          </div>
+          <div className="mt-auto pt-8">
+            <Link to="/demander-acces" onClick={() => setMobileMenuOpen(false)}>
+              <Button className="w-full cta-gradient rounded-2xl h-14 text-base font-semibold gap-2">
+                Demander mes accès
+                <ArrowRight className="h-5 w-5" />
+              </Button>
+            </Link>
+          </div>
+        </div>
+      )}
 
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[3.5rem] font-extrabold tracking-tight leading-[1.1] mb-6 md:mb-8 animate-slide-up">
-                Votre assistant{" "}
-                <span className="gradient-text">douanier intelligent</span>{" "}
-                propulsé par l'IA
-              </h1>
+      {/* ─── Hero Section ────────────────────────────── */}
+      <section className="pt-28 md:pt-40 pb-16 md:pb-28 px-4">
+        <div className="container mx-auto max-w-4xl text-center">
+          {/* Live badge */}
+          <div className="inline-flex items-center gap-2.5 mb-8 bg-card rounded-full px-5 py-2.5 border border-border/30 shadow-sm animate-fade-in">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-secondary" />
+            </span>
+            <span className="text-sm font-semibold text-foreground">en direct</span>
+            <span className="text-sm text-muted-foreground">Sur invitation uniquement</span>
+          </div>
 
-              <p className="text-base md:text-lg text-muted-foreground leading-relaxed mb-8 md:mb-10 animate-fade-in">
-                Codes SH, tarifs douaniers, réglementations — obtenez des
-                réponses précises et sourcées en quelques secondes.
-              </p>
+          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[3.5rem] font-extrabold tracking-tight leading-[1.1] mb-6 md:mb-8 animate-slide-up">
+            Votre assistant{" "}
+            <span className="gradient-text">douanier intelligent</span>{" "}
+            propulsé par l'IA
+          </h1>
 
-              <Link to="/demander-acces" className="inline-block animate-slide-up">
-                <Button
-                  size="lg"
-                  className="cta-gradient rounded-full px-10 h-14 md:h-16 text-base md:text-lg font-semibold gap-3 shadow-xl hover:shadow-2xl"
-                >
-                  Demander mes accès
-                  <ArrowRight className="h-5 w-5" />
-                </Button>
-              </Link>
+          <p className="text-base md:text-lg text-muted-foreground leading-relaxed mb-8 md:mb-10 max-w-2xl mx-auto animate-fade-in">
+            Codes SH, tarifs douaniers, réglementations — obtenez des
+            réponses précises et sourcées en quelques secondes.
+          </p>
 
-              {/* Chips */}
-              <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 mt-6 md:mt-8 animate-fade-in">
-                <span className="chip">
-                  <Lock className="h-3.5 w-3.5" />
-                  100% sécurisé
-                </span>
-                <span className="chip">
-                  <Monitor className="h-3.5 w-3.5" />
-                  100% digital
-                </span>
-              </div>
-            </div>
-
-            {/* Right — Floating Dashboard Card (hidden on mobile) */}
-            <div className="relative animate-slide-up lg:pl-4 hidden md:block">
-              {/* Notification toast - floating above card */}
-              <div className="absolute -top-4 right-4 z-10 bg-card rounded-2xl border border-border/30 px-4 py-3 flex items-center gap-3 shadow-lg animate-fade-in">
-                <div className="h-8 w-8 rounded-full bg-secondary/10 flex items-center justify-center">
-                  <Bell className="h-4 w-4 text-secondary" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Nouvelle recherche</p>
-                  <p className="text-sm font-semibold text-card-foreground flex items-center gap-1">
-                    Code SH trouvé
-                    <CheckCircle2 className="h-3.5 w-3.5 text-secondary" />
-                  </p>
-                </div>
-              </div>
-
-              {/* Main dashboard card */}
-              <div className="bg-card rounded-3xl border border-border/30 p-8 shadow-xl">
-                {/* Stats row */}
-                <div className="grid grid-cols-3 gap-5 mb-8">
-                  {stats.map((s, i) => (
-                    <div
-                      key={i}
-                      className="text-center p-4 rounded-xl bg-muted/40"
-                    >
-                      <p className="text-2xl lg:text-3xl font-bold text-card-foreground">{s.value}</p>
-                      <p className="text-sm text-muted-foreground mt-1">{s.label}</p>
-                      {s.change && (
-                        <p className="text-sm font-medium text-secondary mt-1.5">{s.change}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Activity feed */}
-                <div className="space-y-0">
-                  {recentQueries.map((q, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-4 py-4 border-b border-border/30 last:border-0"
-                    >
-                      <div className="flex items-center gap-2 text-muted-foreground shrink-0">
-                        <Clock className="h-4 w-4" />
-                        <span className="text-sm font-mono">{q.time}</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-base font-medium text-card-foreground">{q.user}</p>
-                        <p className="text-sm text-muted-foreground truncate">{q.query}</p>
-                      </div>
-                      <span
-                        className={`text-sm font-medium px-3 py-1.5 rounded-full shrink-0 ${
-                          q.status === "resolved"
-                            ? "bg-secondary/10 text-secondary"
-                            : "bg-warning/10 text-warning"
-                        }`}
-                      >
-                        {q.status === "resolved" ? "Résolu" : "En cours"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Trend badge - floating below card */}
-              <div className="absolute -bottom-4 left-8 z-10 bg-card rounded-2xl border border-border/30 px-4 py-2.5 flex items-center gap-2.5 shadow-lg animate-fade-in">
-                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <TrendingUp className="h-4 w-4 text-primary" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Ce mois</p>
-                  <p className="text-sm font-bold text-card-foreground">+35% de requêtes</p>
-                </div>
-              </div>
-            </div>
+          {/* Chips */}
+          <div className="flex flex-wrap items-center justify-center gap-3 mb-10 animate-fade-in">
+            <span className="chip">
+              <Lock className="h-3.5 w-3.5" />
+              100% sécurisé
+            </span>
+            <span className="chip">
+              <Monitor className="h-3.5 w-3.5" />
+              100% digital
+            </span>
           </div>
         </div>
       </section>
+
+      {/* ─── Sticky CTA bottom (mobile) ──────────────── */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 p-4 sm:hidden safe-area-bottom bg-background/80 backdrop-blur-lg border-t border-border/30">
+        <Link to="/demander-acces">
+          <Button className="w-full cta-gradient rounded-2xl h-14 text-base font-semibold gap-2 shadow-xl">
+            Demander mes accès — C'est parti !
+            <ArrowRight className="h-5 w-5" />
+          </Button>
+        </Link>
+        <p className="text-xs text-muted-foreground text-center mt-2 flex items-center justify-center gap-3">
+          <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> 30 sec</span>
+          <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Sans engagement</span>
+          <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Gratuit</span>
+        </p>
+      </div>
 
       {/* ─── How it works ────────────────────────────── */}
       <section className="py-16 md:py-28 px-4">
         <div className="container mx-auto max-w-4xl">
           <div className="text-center mb-14 md:mb-16">
-            <h2 className="text-2xl md:text-3xl font-bold mb-4">
-              Comment ça marche ?
+            <span className="text-sm font-semibold text-primary uppercase tracking-wider">Comment ça marche</span>
+            <h2 className="text-2xl md:text-3xl font-extrabold mt-3 mb-4">
+              Rejoignez DouaneAI en 4 étapes
             </h2>
             <p className="text-muted-foreground max-w-lg mx-auto">
-              Trois étapes simples pour obtenir votre réponse douanière
+              Un processus simple et transparent pour accéder à votre assistant douanier intelligent.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
             {steps.map((step, i) => (
-              <div key={i} className="step-card">
-                <div className="h-12 w-12 rounded-2xl cta-gradient flex items-center justify-center mx-auto mb-4">
-                  <span className="text-lg font-bold text-white">{step.num}</span>
-                </div>
-                <h3 className="font-semibold text-card-foreground mb-2">{step.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{step.desc}</p>
-                {i < steps.length - 1 && (
-                  <div className="hidden md:block absolute top-1/2 -right-3 transform -translate-y-1/2">
-                    <ArrowRight className="h-4 w-4 text-muted-foreground/40" />
+              <div key={i} className="relative">
+                <span className="absolute -top-3 left-4 z-10 text-xs font-bold text-white bg-primary rounded-full px-3 py-1">
+                  Étape {i + 1}
+                </span>
+                <div className="step-card pt-8 h-full">
+                  <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                    <step.icon className="h-5 w-5 text-primary" />
                   </div>
-                )}
+                  <h3 className="font-bold text-sm md:text-base text-card-foreground mb-1.5">{step.title}</h3>
+                  <p className="text-xs md:text-sm text-muted-foreground leading-relaxed">{step.desc}</p>
+                </div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ─── Features Grid ───────────────────────────── */}
+      {/* ─── Features Grid (Nos avantages) ───────────── */}
       <section className="py-16 md:py-28 px-4 bg-muted/30">
+        <div className="container mx-auto max-w-4xl">
+          <div className="text-center mb-14 md:mb-16">
+            <span className="text-sm font-semibold text-secondary uppercase tracking-wider">Nos avantages</span>
+            <h2 className="text-2xl md:text-3xl font-extrabold mt-3 mb-4">
+              Pourquoi choisir DouaneAI ?
+            </h2>
+            <div className="flex flex-wrap items-center justify-center gap-2 mb-4">
+              <span className="chip chip-primary"><Zap className="h-3.5 w-3.5" /> Codes SH</span>
+              <span className="chip chip-success"><Globe className="h-3.5 w-3.5" /> Tarifs</span>
+              <span className="chip"><FileText className="h-3.5 w-3.5" /> Circulaires</span>
+            </div>
+            <p className="text-muted-foreground max-w-xl mx-auto">
+              Des réponses précises, sans risque et sourcées.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 md:gap-6">
+            {features.map((feature, i) => (
+              <div key={i} className="card-elevated p-5 md:p-6 text-center">
+                <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                  <feature.icon className="h-5 w-5 text-primary" />
+                </div>
+                <h3 className="font-bold text-sm md:text-base text-card-foreground mb-1">{feature.title}</h3>
+                <p className="text-xs md:text-sm text-muted-foreground leading-relaxed">{feature.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Detailed features ───────────────────────── */}
+      <section className="py-16 md:py-28 px-4">
         <div className="container mx-auto max-w-5xl">
           <div className="text-center mb-14 md:mb-16">
-            <h2 className="text-2xl md:text-3xl font-bold mb-4">
+            <h2 className="text-2xl md:text-3xl font-extrabold mb-4">
               Tout ce dont vous avez besoin
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto">
@@ -264,25 +239,49 @@ export default function Landing() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6">
-            {features.map((feature, i) => (
-              <div
-                key={i}
-                className="card-elevated p-6 flex flex-col items-start gap-4"
-              >
+          <div className="grid md:grid-cols-3 gap-4 md:gap-6">
+            {featureDetails.map((feature, i) => (
+              <div key={i} className="card-elevated p-6 flex flex-col items-start gap-4">
                 <div className="h-11 w-11 rounded-xl cta-gradient flex items-center justify-center">
                   <feature.icon className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-card-foreground mb-1.5">
-                    {feature.title}
-                  </h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    {feature.desc}
-                  </p>
+                  <h3 className="font-semibold text-card-foreground mb-1.5">{feature.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{feature.desc}</p>
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── FAQ ─────────────────────────────────────── */}
+      <section className="py-16 md:py-28 px-4 bg-muted/30">
+        <div className="container mx-auto max-w-2xl">
+          <div className="text-center mb-10 md:mb-14">
+            <div className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground bg-card border border-border/50 rounded-full px-4 py-2 mb-4">
+              <HelpCircle className="h-4 w-4" />
+              FAQ
+            </div>
+            <h2 className="text-2xl md:text-3xl font-extrabold mb-3">Questions fréquentes</h2>
+            <p className="text-muted-foreground">
+              Tout ce que vous devez savoir sur DouaneAI.
+            </p>
+          </div>
+
+          <div className="card-elevated p-4 md:p-6">
+            <Accordion type="single" collapsible className="w-full">
+              {faqs.map((faq, i) => (
+                <AccordionItem key={i} value={`faq-${i}`} className="border-border/40">
+                  <AccordionTrigger className="text-left text-sm md:text-base font-medium hover:no-underline py-4">
+                    {faq.q}
+                  </AccordionTrigger>
+                  <AccordionContent className="text-sm text-muted-foreground leading-relaxed pb-4">
+                    {faq.a}
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
           </div>
         </div>
       </section>
@@ -293,7 +292,7 @@ export default function Landing() {
           <div className="card-elevated p-10 md:p-16 relative overflow-hidden">
             <div className="absolute inset-0 opacity-[0.03] hero-gradient" />
             <div className="relative z-10">
-              <h2 className="text-2xl md:text-3xl font-bold mb-4">
+              <h2 className="text-2xl md:text-3xl font-extrabold mb-4">
                 Prêt à commencer ?
               </h2>
               <p className="text-muted-foreground mb-10">
@@ -303,22 +302,16 @@ export default function Landing() {
               <Link to="/demander-acces">
                 <Button
                   size="lg"
-                  className="cta-gradient rounded-full px-10 h-14 md:h-16 text-base md:text-lg font-semibold gap-3 shadow-xl hover:shadow-2xl"
+                  className="cta-gradient rounded-2xl px-10 h-14 md:h-16 text-base md:text-lg font-semibold gap-3 shadow-xl hover:shadow-2xl"
                 >
                   Demander mes accès
                   <ArrowRight className="h-5 w-5" />
                 </Button>
               </Link>
               <p className="text-xs text-muted-foreground mt-4 flex items-center justify-center gap-4">
-                <span className="flex items-center gap-1">
-                  <CheckCircle2 className="h-3 w-3" /> Sur invitation
-                </span>
-                <span className="flex items-center gap-1">
-                  <CheckCircle2 className="h-3 w-3" /> Sans engagement
-                </span>
-                <span className="flex items-center gap-1">
-                  <CheckCircle2 className="h-3 w-3" /> 100% sécurisé
-                </span>
+                <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Sur invitation</span>
+                <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Sans engagement</span>
+                <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> 100% sécurisé</span>
               </p>
             </div>
           </div>
@@ -326,7 +319,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Footer ──────────────────────────────────── */}
-      <footer className="border-t border-border/40 py-8 px-4">
+      <footer className="border-t border-border/40 py-8 px-4 pb-24 sm:pb-8">
         <div className="container mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <Logo size="sm" />
           <p className="text-sm text-muted-foreground">
@@ -334,7 +327,7 @@ export default function Landing() {
           </p>
         </div>
       </footer>
-      {/* Cookie Consent */}
+
       <CookieConsent />
     </div>
   );

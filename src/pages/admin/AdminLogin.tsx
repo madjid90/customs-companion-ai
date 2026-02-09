@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { Lock, Eye, EyeOff, AlertCircle, Mail, LogIn } from "lucide-react";
+import { useNavigate, useLocation, Link } from "react-router-dom";
+import { Lock, Eye, EyeOff, AlertCircle, Mail, ArrowRight, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Logo } from "@/components/ui/Logo";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
@@ -18,7 +18,6 @@ export default function AdminLogin() {
   const location = useLocation();
   const { user, isAdmin, signIn, isLoading: authLoading } = useAuth();
 
-  // Redirect if already authenticated and admin
   useEffect(() => {
     if (!authLoading && user && isAdmin) {
       const from = location.state?.from?.pathname || "/admin/upload";
@@ -45,7 +44,6 @@ export default function AdminLogin() {
       return;
     }
 
-    // Auth state listener will handle redirect
     setIsLoading(false);
   };
 
@@ -58,58 +56,70 @@ export default function AdminLogin() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center page-gradient p-4">
-      <Card className="w-full max-w-md animate-slide-up card-elevated border border-border/20">
-        <CardHeader className="text-center space-y-4">
-          <div className="mx-auto">
-            <Logo size="lg" />
-          </div>
-          <div>
-            <CardTitle className="text-2xl font-display font-extrabold tracking-tight">
+    <div className="min-h-screen flex flex-col items-center justify-center page-gradient p-4">
+      {/* Back button */}
+      <div className="w-full max-w-md mb-6">
+        <Link
+          to="/"
+          className="inline-flex items-center justify-center h-10 w-10 rounded-xl border border-border/50 bg-card text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
+      </div>
+
+      <Card className="w-full max-w-md animate-slide-up card-elevated border border-border/20 rounded-3xl overflow-hidden">
+        <CardContent className="p-8 md:p-10">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="mx-auto mb-5">
+              <Logo size="lg" />
+            </div>
+            <h1 className="text-2xl font-extrabold tracking-tight mb-2">
               Administration
-            </CardTitle>
-            <CardDescription>
+            </h1>
+            <p className="text-sm text-muted-foreground">
               Connectez-vous pour accéder au panneau d'administration
-            </CardDescription>
+            </p>
           </div>
-        </CardHeader>
-        <CardContent>
+
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@example.com"
-                  className="pl-10 rounded-xl"
-                  autoFocus
-                  required
-                />
-              </div>
+              <Label htmlFor="email" className="flex items-center gap-2 text-sm font-semibold">
+                <Mail className="h-4 w-4 text-primary" />
+                Email
+              </Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="admin@example.com"
+                className="rounded-xl h-12 bg-muted/50"
+                autoFocus
+                required
+              />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Mot de passe</Label>
+              <Label htmlFor="password" className="flex items-center gap-2 text-sm font-semibold">
+                <Lock className="h-4 w-4 text-primary" />
+                Mot de passe
+              </Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Entrez votre mot de passe"
-                  className="pl-10 pr-10 rounded-xl"
+                  placeholder="Votre mot de passe"
+                  className="rounded-xl h-12 bg-muted/50 pr-12"
                   required
                 />
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-9 w-9"
                   onClick={() => setShowPassword(!showPassword)}
                 >
                   {showPassword ? (
@@ -130,15 +140,15 @@ export default function AdminLogin() {
 
             <Button
               type="submit"
-              className="w-full h-12 cta-gradient rounded-xl text-base"
+              className="w-full h-14 cta-gradient rounded-2xl text-base font-semibold gap-2"
               disabled={isLoading || !email || !password}
             >
               {isLoading ? (
                 "Connexion..."
               ) : (
                 <>
-                  <LogIn className="mr-2 h-4 w-4" />
-                  Se connecter
+                  Me connecter
+                  <ArrowRight className="h-5 w-5" />
                 </>
               )}
             </Button>
