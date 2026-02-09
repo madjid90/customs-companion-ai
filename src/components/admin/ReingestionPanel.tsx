@@ -75,65 +75,32 @@ export default function ReingestionPanel() {
   const cancelBatchRef = useRef(false);
   const { toast } = useToast();
 
-  // Load legal sources with stats
+  // Load legal sources with stats — single RPC call instead of 7*N queries
   const loadSources = useCallback(async () => {
     setLoading(true);
     try {
-      // Get all legal sources
-      const { data: legalSources, error } = await supabase
-        .from("legal_sources")
-        .select("id, source_ref, title, source_type, total_chunks, is_current")
-        .order("id", { ascending: true });
+      const { data, error } = await supabase.rpc("get_legal_source_stats");
 
       if (error) throw error;
-      if (!legalSources || legalSources.length === 0) {
-        setSources([]);
-        setLoading(false);
-        return;
-      }
 
-      // Get stats for each source in parallel
-      const statsPromises = legalSources.map(async (src) => {
-        const [chunksRes, embeddingsRes, hierarchyRes, keywordsRes, evidenceRes, pagesRes, pdfRes] = await Promise.all([
-          supabase.from("legal_chunks").select("id", { count: "exact", head: true }).eq("source_id", src.id),
-          supabase.from("legal_chunks").select("id", { count: "exact", head: true }).eq("source_id", src.id).not("embedding", "is", null),
-          supabase.from("legal_chunks").select("id", { count: "exact", head: true }).eq("source_id", src.id).not("hierarchy_path", "is", null),
-          supabase.from("legal_chunks").select("id", { count: "exact", head: true }).eq("source_id", src.id).not("keywords", "is", null),
-          supabase.from("hs_evidence").select("id", { count: "exact", head: true }).eq("source_id", src.id),
-          supabase.from("legal_chunks").select("page_number").eq("source_id", src.id).not("page_number", "is", null),
-          // Find associated PDF document - use broader matching
-          supabase.from("pdf_documents")
-            .select("id, file_path, file_name")
-            .eq("is_active", true)
-            .or(`document_reference.eq.${src.source_ref},title.ilike.%${(src.title || src.source_ref).substring(0, 30)}%`)
-            .limit(1),
-        ]);
+      const results: LegalSourceStats[] = (data || []).map((row: any) => ({
+        id: row.source_id,
+        source_ref: row.source_ref,
+        title: row.source_title,
+        source_type: row.source_type,
+        total_chunks: row.total_chunks_meta,
+        is_current: row.is_current,
+        actual_chunks: Number(row.actual_chunks),
+        chunks_with_embeddings: Number(row.chunks_with_embeddings),
+        chunks_with_hierarchy: Number(row.chunks_with_hierarchy),
+        chunks_with_keywords: Number(row.chunks_with_keywords),
+        evidence_count: Number(row.evidence_count),
+        distinct_pages: Number(row.distinct_pages),
+        pdf_id: row.pdf_id,
+        pdf_file_path: row.pdf_file_path,
+        pdf_file_name: row.pdf_file_name,
+      }));
 
-        const pdfDoc = pdfRes.data?.[0] || null;
-
-        // Count distinct pages from the page_number results
-        const pageNumbers = pagesRes.data || [];
-        const distinctPageCount = new Set(
-          (pageNumbers as { page_number: number | null }[])
-            .map(p => p.page_number)
-            .filter(Boolean)
-        ).size;
-
-        return {
-          ...src,
-          actual_chunks: chunksRes.count || 0,
-          chunks_with_embeddings: embeddingsRes.count || 0,
-          chunks_with_hierarchy: hierarchyRes.count || 0,
-          chunks_with_keywords: keywordsRes.count || 0,
-          evidence_count: evidenceRes.count || 0,
-          distinct_pages: distinctPageCount,
-          pdf_id: pdfDoc?.id || null,
-          pdf_file_path: pdfDoc?.file_path || null,
-          pdf_file_name: pdfDoc?.file_name || null,
-        } as LegalSourceStats;
-      });
-
-      const results = await Promise.all(statsPromises);
       setSources(results);
     } catch (err) {
       console.error("Error loading sources:", err);
