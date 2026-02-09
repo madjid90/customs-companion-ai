@@ -24,7 +24,7 @@ const TABLE_CONFIG = [
   { name: "country_tariffs", label: "Tarifs nationaux" },
   { name: "hs_codes", label: "Codes SH" },
   { name: "tariff_notes", label: "Notes tarifaires" },
-  { name: "knowledge_documents", label: "Documents de veille" },
+  
 ];
 
 const BATCH_LIMIT = 100;
