@@ -2,7 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import { Logo } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/button";
 import { usePhoneAuth } from "@/hooks/usePhoneAuth";
-import { LogOut, MessageSquare, Users, History } from "lucide-react";
+import { LogOut, MessageSquare, Users, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AppHeaderProps {
@@ -22,20 +22,22 @@ export function AppHeader({ onHistoryToggle, isHistoryOpen }: AppHeaderProps) {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 glass" role="banner">
       <nav className="container mx-auto px-4 sm:px-6 h-14 md:h-16 flex items-center justify-between">
-        {/* Mobile: history toggle */}
-        {onHistoryToggle && !isHistoryOpen ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onHistoryToggle}
-            className="md:hidden h-9 w-9 rounded-full hover:bg-primary/5 hover:text-primary"
-            title="Historique"
-          >
-            <History className="h-5 w-5" />
-          </Button>
-        ) : (
-          <div className="md:hidden w-9" />
-        )}
+        {/* Mobile: hamburger menu for history */}
+        <div className="md:hidden">
+          {onHistoryToggle ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onHistoryToggle}
+              className="h-9 w-9 rounded-full hover:bg-primary/5 hover:text-primary"
+              title="Historique"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+          ) : (
+            <div className="w-9" />
+          )}
+        </div>
 
         {/* Desktop logo + nav */}
         <div className="hidden md:flex items-center gap-6">
@@ -64,7 +66,25 @@ export function AppHeader({ onHistoryToggle, isHistoryOpen }: AppHeaderProps) {
         </div>
 
         {/* Right side */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Mobile nav links as icons */}
+          {isManager && (
+            <Link to="/app/manage" className="md:hidden">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-9 w-9 rounded-full",
+                  location.pathname.startsWith("/app/manage")
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                title="Utilisateurs"
+              >
+                <Users className="h-4 w-4" />
+              </Button>
+            </Link>
+          )}
           {phoneUser && (
             <span className="hidden sm:inline text-sm text-muted-foreground">
               {phoneUser.display_name || phoneUser.phone}
@@ -87,30 +107,6 @@ export function AppHeader({ onHistoryToggle, isHistoryOpen }: AppHeaderProps) {
           </Button>
         </div>
       </nav>
-
-      {/* Mobile bottom nav */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass border-t border-border/50 safe-area-bottom">
-        <div className="flex items-center justify-around h-12">
-          {navItems
-            .filter((item) => item.show)
-            .map((item) => (
-              <Link key={item.href} to={item.href} className="flex-1">
-                <Button
-                  variant="ghost"
-                  className={cn(
-                    "w-full h-full flex flex-col items-center gap-0.5 rounded-none text-xs",
-                    location.pathname.startsWith(item.href)
-                      ? "text-primary"
-                      : "text-muted-foreground"
-                  )}
-                >
-                  <item.icon className="h-5 w-5" />
-                  {item.label}
-                </Button>
-              </Link>
-            ))}
-        </div>
-      </div>
     </header>
   );
 }

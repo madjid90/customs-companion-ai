@@ -1,7 +1,6 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { AppHeader } from "./AppHeader";
 import { createContext, useContext, useState, useCallback } from "react";
-import { cn } from "@/lib/utils";
 
 interface AppHeaderContextType {
   onHistoryToggle?: () => void;
@@ -18,7 +17,6 @@ export const useAppHeaderContext = () => useContext(AppHeaderContext);
 export function AppLayout() {
   const location = useLocation();
   const isChat = location.pathname.includes("/chat");
-  const isFullHeight = isChat;
   const [historyToggle, setHistoryToggle] = useState<(() => void) | undefined>();
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -43,7 +41,7 @@ export function AppLayout() {
           onHistoryToggle={isChat ? historyToggle : undefined}
           isHistoryOpen={isChat ? historyOpen : undefined}
         />
-        <main className={cn("flex-1 pt-14 md:pt-16 overflow-hidden", isFullHeight ? "pb-0" : "pb-12 md:pb-0")}>
+        <main className="flex-1 pt-14 md:pt-16 overflow-hidden">
           <Outlet />
         </main>
       </div>
