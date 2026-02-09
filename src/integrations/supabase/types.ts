@@ -2279,6 +2279,26 @@ export type Database = {
           total_tariffs: number
         }[]
       }
+      get_legal_source_stats: {
+        Args: never
+        Returns: {
+          actual_chunks: number
+          chunks_with_embeddings: number
+          chunks_with_hierarchy: number
+          chunks_with_keywords: number
+          distinct_pages: number
+          evidence_count: number
+          is_current: boolean
+          pdf_file_name: string
+          pdf_file_path: string
+          pdf_id: string
+          source_id: number
+          source_ref: string
+          source_title: string
+          source_type: string
+          total_chunks_meta: number
+        }[]
+      }
       get_phone_user_id: { Args: { _auth_user_id: string }; Returns: string }
       get_tariff_details:
         | {
