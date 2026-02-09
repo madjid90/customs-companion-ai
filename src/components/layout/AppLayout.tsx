@@ -41,7 +41,7 @@ export function AppLayout() {
           onHistoryToggle={isChat ? historyToggle : undefined}
           isHistoryOpen={isChat ? historyOpen : undefined}
         />
-        <main className="flex-1 pt-14 md:pt-16 pb-14 md:pb-0">
+        <main className="flex-1 pt-14 md:pt-16 pb-12 md:pb-0">
           <Outlet />
         </main>
       </div>

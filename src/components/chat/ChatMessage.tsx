@@ -463,7 +463,7 @@ export function ChatMessage({
 
       <div
         className={cn(
-          "max-w-[88%] md:max-w-[75%] rounded-2xl px-3.5 py-3 md:px-5 md:py-4 transition-all",
+          "max-w-[92%] md:max-w-[75%] rounded-2xl px-3 py-2.5 md:px-5 md:py-4 transition-all",
           isUser
             ? "bg-primary/10 text-foreground"
             : "bg-card border border-border/40 text-foreground shadow-sm"
