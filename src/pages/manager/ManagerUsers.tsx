@@ -262,7 +262,7 @@ export default function ManagerUsers() {
                       value={invitePhoneLocal}
                       onChange={(e) => setInvitePhoneLocal(e.target.value)}
                       placeholder={COUNTRY_CODES[inviteCountryIndex].placeholder}
-                      className="pl-8 h-10 rounded-lg text-sm"
+                      className="pl-8 h-10 rounded-lg"
                       required
                     />
                   </div>
@@ -278,7 +278,7 @@ export default function ManagerUsers() {
                     value={inviteName}
                     onChange={(e) => setInviteName(e.target.value)}
                     placeholder="Nom de l'agent"
-                    className="pl-8 h-10 rounded-lg text-sm"
+                    className="pl-8 h-10 rounded-lg"
                     maxLength={100}
                   />
                 </div>
