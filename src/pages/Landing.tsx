@@ -339,7 +339,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Footer ──────────────────────────────────── */}
-      <footer className="border-t border-border/40 py-6 px-4 pb-20 sm:pb-6">
+      <footer className="border-t border-border/40 py-6 px-4">
         <div className="container mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <Logo size="sm" />
           <p className="text-xs text-muted-foreground">
@@ -348,15 +348,6 @@ export default function Landing() {
         </div>
       </footer>
 
-      {/* ─── Sticky CTA bottom (mobile) ──────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 p-3 sm:hidden safe-area-bottom bg-background/90 backdrop-blur-lg border-t border-border/30">
-        <Link to="/demander-acces">
-          <Button className="w-full cta-gradient rounded-xl h-11 text-sm font-semibold gap-2 shadow-lg">
-            Demander un accès
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-        </Link>
-      </div>
 
       <CookieConsent />
     </div>
