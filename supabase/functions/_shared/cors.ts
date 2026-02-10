@@ -159,7 +159,7 @@ export function checkRateLimit(
 // RATE LIMITING - Distributed (using Supabase rate_limits table)
 // ============================================================================
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 interface DistributedRateLimitResult {
   allowed: boolean;
