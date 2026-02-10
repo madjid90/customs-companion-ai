@@ -56,7 +56,7 @@ const features = [
 
 const faqs = [
   { q: "Comment fonctionne l'assistant douanier IA ?", a: "Notre assistant utilise l'intelligence artificielle pour analyser votre question, rechercher dans notre base de données de réglementations douanières, et vous fournir une réponse précise avec les sources légales citées." },
-  { q: "L'inscription est-elle vraiment gratuite ?", a: "Oui, l'inscription et l'accès à l'assistant sont entièrement gratuits. Vous n'avez besoin que de votre numéro de téléphone et du nom de votre société." },
+  { q: "Comment accéder à l'assistant ?", a: "L'accès se fait sur invitation. Remplissez le formulaire de demande avec votre numéro de téléphone et le nom de votre société, puis un administrateur validera votre demande." },
   { q: "Quels types de questions puis-je poser ?", a: "Vous pouvez poser des questions sur les codes SH, les tarifs douaniers, les règles d'origine, les procédures d'import/export, les circulaires et toute réglementation douanière." },
   { q: "Comment sont vérifiées les réponses ?", a: "Chaque réponse est accompagnée de ses sources légales (circulaires, articles de loi, tarifs officiels). Vous pouvez vérifier chaque information." },
   { q: "Puis-je utiliser l'assistant sur mobile ?", a: "Oui, l'assistant est 100% responsive et fonctionne parfaitement sur téléphone, tablette et ordinateur." },
