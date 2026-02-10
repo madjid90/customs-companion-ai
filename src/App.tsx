@@ -13,24 +13,20 @@ import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
-// Public pages
-import Landing from "@/pages/Landing";
-import PhoneLogin from "@/pages/PhoneLogin";
-import RequestAccess from "@/pages/RequestAccess";
-
-// App pages (phone auth)
-import Chat from "@/pages/Chat";
-
-// Admin pages — lazy loaded
+// All pages — lazy loaded for code splitting
+const Landing = lazy(() => import("@/pages/Landing"));
+const PhoneLogin = lazy(() => import("@/pages/PhoneLogin"));
+const RequestAccess = lazy(() => import("@/pages/RequestAccess"));
+const Chat = lazy(() => import("@/pages/Chat"));
 const AdminLogin = lazy(() => import("@/pages/admin/AdminLogin"));
 const AdminHSCodes = lazy(() => import("@/pages/admin/AdminHSCodes"));
 const AdminUpload = lazy(() => import("@/pages/admin/AdminUpload"));
 const AdminDocuments = lazy(() => import("@/pages/admin/AdminDocuments"));
 const AdminAccessRequests = lazy(() => import("@/pages/admin/AdminAccessRequests"));
 const AdminReferences = lazy(() => import("@/pages/admin/AdminReferences"));
-import NotFound from "@/pages/NotFound";
+const NotFound = lazy(() => import("@/pages/NotFound"));
 
-const AdminFallback = () => (
+const PageFallback = () => (
   <div className="min-h-screen flex items-center justify-center page-gradient">
     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
   </div>
@@ -51,9 +47,9 @@ const App = () => {
                 <BrowserRouter>
                   <Routes>
                     {/* Public: Landing & Login */}
-                    <Route path="/" element={<Landing />} />
-                    <Route path="/demander-acces" element={<RequestAccess />} />
-                    <Route path="/login" element={<PhoneLogin />} />
+                    <Route path="/" element={<Suspense fallback={<PageFallback />}><Landing /></Suspense>} />
+                    <Route path="/demander-acces" element={<Suspense fallback={<PageFallback />}><RequestAccess /></Suspense>} />
+                    <Route path="/login" element={<Suspense fallback={<PageFallback />}><PhoneLogin /></Suspense>} />
 
                     {/* App routes — phone auth protected */}
                     <Route
@@ -65,12 +61,12 @@ const App = () => {
                       }
                     >
                       <Route index element={<Navigate to="/app/chat" replace />} />
-                      <Route path="chat" element={<Chat />} />
+                      <Route path="chat" element={<Suspense fallback={<PageFallback />}><Chat /></Suspense>} />
                     </Route>
 
                     {/* Admin routes (email auth) */}
                     <Route path="/admin/login" element={
-                      <Suspense fallback={<AdminFallback />}>
+                      <Suspense fallback={<PageFallback />}>
                         <AdminLogin />
                       </Suspense>
                     } />
@@ -84,19 +80,19 @@ const App = () => {
                     >
                       <Route index element={<Navigate to="/admin/upload" replace />} />
                       <Route path="upload" element={
-                        <Suspense fallback={<AdminFallback />}><AdminUpload /></Suspense>
+                        <Suspense fallback={<PageFallback />}><AdminUpload /></Suspense>
                       } />
                       <Route path="hs-codes" element={
-                        <Suspense fallback={<AdminFallback />}><AdminHSCodes /></Suspense>
+                        <Suspense fallback={<PageFallback />}><AdminHSCodes /></Suspense>
                       } />
                       <Route path="documents" element={
-                        <Suspense fallback={<AdminFallback />}><AdminDocuments /></Suspense>
+                        <Suspense fallback={<PageFallback />}><AdminDocuments /></Suspense>
                       } />
                       <Route path="references" element={
-                        <Suspense fallback={<AdminFallback />}><AdminReferences /></Suspense>
+                        <Suspense fallback={<PageFallback />}><AdminReferences /></Suspense>
                       } />
                       <Route path="access-requests" element={
-                        <Suspense fallback={<AdminFallback />}><AdminAccessRequests /></Suspense>
+                        <Suspense fallback={<PageFallback />}><AdminAccessRequests /></Suspense>
                       } />
                     </Route>
 
@@ -104,7 +100,7 @@ const App = () => {
                     <Route path="/chat" element={<Navigate to="/app/chat" replace />} />
 
                     {/* 404 */}
-                    <Route path="*" element={<NotFound />} />
+                    <Route path="*" element={<Suspense fallback={<PageFallback />}><NotFound /></Suspense>} />
                   </Routes>
                 </BrowserRouter>
               </TooltipProvider>
