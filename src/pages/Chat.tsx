@@ -77,37 +77,68 @@ async function streamChatResponse(params: {
     return;
   }
 
-  const response = await fetch(CHAT_STREAM_URL, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      question: params.question,
-      sessionId: params.sessionId,
-      images: params.images,
-      pdfDocuments: params.pdfDocuments,
-      conversationHistory: params.conversationHistory,
-    }),
-  });
-
-  if (!response.ok) {
-    let errorMsg = `Erreur ${response.status}`;
+  let response: Response;
+  const MAX_RETRIES = 2;
+  let lastError = '';
+  
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const errorData = await response.json();
+      response = await fetch(CHAT_STREAM_URL, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          question: params.question,
+          sessionId: params.sessionId,
+          images: params.images,
+          pdfDocuments: params.pdfDocuments,
+          conversationHistory: params.conversationHistory,
+        }),
+      });
+      
+      if (response!.ok || response!.status < 500 || attempt === MAX_RETRIES) {
+        break;
+      }
+      
+      // Retry on 5xx errors
+      const delay = 1000 * Math.pow(2, attempt) + Math.random() * 500;
+      console.warn(`[Chat] Retry ${attempt + 1}/${MAX_RETRIES} after ${response!.status}`);
+      await new Promise(r => setTimeout(r, delay));
+    } catch (networkErr: any) {
+      lastError = networkErr?.message || 'Erreur réseau';
+      if (attempt === MAX_RETRIES) {
+        params.onError("Connexion impossible. Vérifiez votre connexion internet et réessayez.");
+        return;
+      }
+      const delay = 1000 * Math.pow(2, attempt) + Math.random() * 500;
+      console.warn(`[Chat] Network error, retry ${attempt + 1}/${MAX_RETRIES}`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+
+  if (!response!) {
+    params.onError(lastError || "Erreur de connexion");
+    return;
+  }
+
+  if (!response!.ok) {
+    let errorMsg = `Erreur ${response!.status}`;
+    try {
+      const errorData = await response!.json();
       errorMsg = errorData.error || errorMsg;
     } catch { /* ignore */ }
     
-    if (response.status === 429) errorMsg = "Trop de requêtes. Veuillez patienter quelques instants.";
-    if (response.status === 402) errorMsg = "Limite d'utilisation atteinte.";
+    if (response!.status === 429) errorMsg = "Trop de requêtes. Veuillez patienter quelques instants.";
+    if (response!.status === 402) errorMsg = "Limite d'utilisation atteinte.";
     
     params.onError(errorMsg);
     return;
   }
 
-  const contentType = response.headers.get('Content-Type') || '';
+  const contentType = response!.headers.get('Content-Type') || '';
 
   // JSON response (cache hit or non-streaming fallback)
   if (contentType.includes('application/json')) {
-    const data = await response.json();
+    const data = await response!.json();
     if (data.response) {
       params.onChunk(data.response);
       params.onDone({
@@ -125,7 +156,7 @@ async function streamChatResponse(params: {
   }
 
   // SSE stream
-  const reader = response.body?.getReader();
+  const reader = response!.body?.getReader();
   if (!reader) {
     params.onError('Streaming non supporté');
     return;

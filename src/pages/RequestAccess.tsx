@@ -50,32 +50,42 @@ export default function RequestAccess() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/submit-access-request`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({
-            company_name: companyName.trim(),
-            phone: fullPhone,
-            website: honeypot,
-          }),
+      let response: Response | null = null;
+      for (let attempt = 0; attempt <= 1; attempt++) {
+        try {
+          response = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/submit-access-request`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+              },
+              body: JSON.stringify({
+                company_name: companyName.trim(),
+                phone: fullPhone,
+                website: honeypot,
+              }),
+            }
+          );
+          if (response.ok || response.status < 500 || attempt === 1) break;
+          await new Promise(r => setTimeout(r, 1500));
+        } catch {
+          if (attempt === 1) throw new Error("network");
+          await new Promise(r => setTimeout(r, 1500));
         }
-      );
+      }
 
-      const data = await response.json();
+      const data = await response!.json();
 
-      if (!response.ok) {
+      if (!response!.ok) {
         setError(data.error || "Une erreur est survenue. Veuillez réessayer.");
       } else {
         setIsSubmitted(true);
       }
     } catch {
-      setError("Erreur de connexion. Veuillez réessayer.");
+      setError("Erreur de connexion. Vérifiez votre connexion internet et réessayez.");
     }
 
     setIsSubmitting(false);

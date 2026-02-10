@@ -127,6 +127,7 @@ export function ChatInput({
                 placeholder={uploadedFiles.length > 0 
                   ? "Décrivez votre produit..." 
                   : "Posez votre question..."}
+                aria-label="Message à envoyer"
                 className="min-h-[44px] max-h-24 md:max-h-32 pr-12 resize-none rounded-xl border-border focus:border-primary/40 focus:ring-1 focus:ring-primary/15 bg-background text-sm md:text-base"
                 rows={1}
               />
@@ -134,6 +135,7 @@ export function ChatInput({
                 onClick={onSend}
                 disabled={(!input.trim() && uploadedFiles.length === 0) || isLoading || isUploading}
                 size="icon"
+                aria-label="Envoyer le message"
                 className="absolute right-1.5 top-1/2 -translate-y-1/2 h-9 w-9 rounded-lg bg-primary hover:bg-primary/90 transition-colors text-primary-foreground disabled:opacity-50"
                 style={{ minHeight: 'auto' }}
               >
