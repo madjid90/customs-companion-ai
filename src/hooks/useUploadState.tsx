@@ -112,7 +112,9 @@ function serializeForStorage(files: UploadedFile[]): string {
       pdfId: f.analysis.pdfId,
       pdfTitle: f.analysis.pdfTitle,
       document_type: f.analysis.document_type,
-      // Compteurs seulement
+      full_text_length: f.analysis.full_text_length,
+      trade_agreements: f.analysis.trade_agreements,
+      // Compteurs seulement (les vrais tableaux sont trop gros)
       hs_codes_count: f.analysis.hs_codes?.length || 0,
       tariff_lines_count: f.analysis.tariff_lines?.length || 0,
       notes_count: f.analysis.notes?.length || 0,
@@ -136,15 +138,25 @@ function deserializeFromStorage(data: string): UploadedFile[] {
       error: f.status === "uploading" || f.status === "analyzing" || f.status === "queued"
         ? "Upload interrompu - rechargez le fichier"
         : f.error,
-      // Reconstituer un objet analysis minimal si présent
+      // Reconstituer un objet analysis minimal avec les compteurs préservés
       analysis: f.analysis ? {
         summary: f.analysis.summary || "",
         key_points: [],
-        hs_codes: [],
-        tariff_lines: [],
+        // Créer des tableaux placeholder de la bonne taille pour que .length fonctionne
+        hs_codes: Array.from({ length: f.analysis.hs_codes_count || 0 }, (_, i) => ({
+          code: "", code_clean: `placeholder_${i}`, description: "", level: "",
+        })),
+        tariff_lines: Array.from({ length: f.analysis.tariff_lines_count || 0 }, () => ({
+          national_code: "", hs_code_6: "", description: "", duty_rate: 0,
+        })),
+        notes: Array.from({ length: f.analysis.notes_count || 0 }, () => ({
+          note_type: "", note_text: "",
+        })),
         pdfId: f.analysis.pdfId,
         pdfTitle: f.analysis.pdfTitle,
         document_type: f.analysis.document_type,
+        full_text_length: f.analysis.full_text_length,
+        trade_agreements: f.analysis.trade_agreements,
       } : undefined,
     }));
   } catch {
