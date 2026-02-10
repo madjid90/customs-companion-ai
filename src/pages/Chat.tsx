@@ -653,7 +653,7 @@ export default function Chat() {
       {/* Main chat area */}
       <div 
         className={cn(
-          "flex flex-col flex-1 transition-all duration-300 min-w-0",
+          "flex flex-col flex-1 transition-all duration-300 min-w-0 min-h-0",
           isHistoryOpen ? "md:ml-72" : "ml-0"
         )}
       >
