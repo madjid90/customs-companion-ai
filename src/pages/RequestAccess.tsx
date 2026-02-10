@@ -143,7 +143,7 @@ export default function RequestAccess() {
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
                 placeholder="Ex: Import Export SARL"
-                className="rounded-xl h-12 bg-muted/50"
+                className="rounded-xl h-10 bg-muted/50 text-sm placeholder:text-xs"
                 maxLength={200}
                 required
               />
@@ -157,9 +157,9 @@ export default function RequestAccess() {
               </Label>
               <div className="flex gap-2">
                 <div className="relative">
-                  <button
-                    type="button"
-                    className="flex items-center gap-1.5 h-12 px-3 rounded-xl border border-input bg-muted/50 text-sm hover:bg-accent/50 transition-colors whitespace-nowrap"
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 h-10 px-3 rounded-xl border border-input bg-muted/50 text-sm hover:bg-accent/50 transition-colors whitespace-nowrap"
                     onClick={() => setCountryOpen(!countryOpen)}
                   >
                     <span className="text-lg leading-none">{country.flag}</span>
@@ -196,7 +196,7 @@ export default function RequestAccess() {
                   value={phoneLocal}
                   onChange={(e) => setPhoneLocal(e.target.value)}
                   placeholder={country.placeholder}
-                  className="rounded-xl h-12 bg-muted/50"
+                  className="rounded-xl h-10 bg-muted/50 text-sm placeholder:text-xs"
                   required
                 />
               </div>
