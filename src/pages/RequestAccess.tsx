@@ -19,6 +19,7 @@ import {
 const COUNTRY_CODES = [
   { code: "+212", label: "Maroc", placeholder: "6XX XXX XXX" },
   { code: "+33", label: "France", placeholder: "6 XX XX XX XX" },
+  { code: "+86", label: "Chine", placeholder: "1XX XXXX XXXX" },
 ];
 
 export default function RequestAccess() {
