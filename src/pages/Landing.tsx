@@ -236,7 +236,7 @@ export default function Landing() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             {steps.map((step, i) => (
               <div key={i} className="relative">
-                <span className="absolute -top-2.5 left-3 z-10 text-[10px] font-bold text-white bg-primary rounded-full px-2.5 py-0.5">
+                <span className="absolute -top-2.5 left-3 z-10 text-[10px] font-bold text-primary-foreground bg-primary rounded-full px-2.5 py-0.5">
                   {i + 1}
                 </span>
                 <div className="step-card pt-6 h-full !p-4 !pt-6">
