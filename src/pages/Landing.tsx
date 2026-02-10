@@ -68,15 +68,15 @@ export default function Landing() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <div className="min-h-screen page-gradient relative">
+    <div className="min-h-screen page-gradient relative" role="main">
       {/* Fixed background for entire page */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <PlexusBackground />
         <GradientMeshBackground variant="cyan-center" />
       </div>
       {/* ─── Header ──────────────────────────────────── */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border/40">
-        <nav className="container mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border/40" role="banner">
+        <nav className="container mx-auto px-4 sm:px-6 h-14 flex items-center justify-between" aria-label="Navigation principale">
           <Logo />
           <div className="hidden sm:flex items-center gap-6">
             <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Fonctionnalités</a>
@@ -97,19 +97,21 @@ export default function Landing() {
             size="icon"
             className="sm:hidden"
             onClick={() => setMobileMenuOpen(true)}
+            aria-label="Ouvrir le menu"
+            aria-expanded={mobileMenuOpen}
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-5 w-5" aria-hidden="true" />
           </Button>
         </nav>
       </header>
 
       {/* Mobile menu overlay */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-[60] bg-background flex flex-col p-6 sm:hidden animate-fade-in">
+        <div className="fixed inset-0 z-[60] bg-background flex flex-col p-6 sm:hidden animate-fade-in" role="dialog" aria-label="Menu de navigation">
           <div className="flex items-center justify-between mb-8">
             <Logo />
-            <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(false)}>
-              <X className="h-5 w-5" />
+            <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(false)} aria-label="Fermer le menu">
+              <X className="h-5 w-5" aria-hidden="true" />
             </Button>
           </div>
           <div className="space-y-5 text-base font-medium">
@@ -287,14 +289,14 @@ export default function Landing() {
       </section>
 
       {/* ─── FAQ ─────────────────────────────────────── */}
-      <section id="faq" className="relative py-12 md:py-16 px-0.5 sm:px-4">
+      <section id="faq" className="relative py-12 md:py-16 px-0.5 sm:px-4" aria-labelledby="faq-heading">
         <div className="container mx-auto max-w-3xl relative z-10">
           <div className="text-center mb-8 md:mb-10">
             <div className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-card border border-border/50 rounded-full px-3 py-1.5 mb-3">
               <HelpCircle className="h-3.5 w-3.5" />
               FAQ
             </div>
-            <h2 className="text-xl md:text-2xl font-extrabold mb-2">Questions fréquentes</h2>
+            <h2 id="faq-heading" className="text-xl md:text-2xl font-extrabold mb-2">Questions fréquentes</h2>
             <p className="text-sm text-muted-foreground">
               Tout ce que vous devez savoir sur DouaneAI.
             </p>
