@@ -26,6 +26,9 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
 
     let width = 0;
     let height = 0;
+    let isMobile = false;
+    let PARTICLE_COUNT = 60;
+    let MAX_DIST = 150;
 
     const resize = () => {
       const parent = canvas.parentElement;
@@ -34,12 +37,11 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
       height = parent.clientHeight;
       canvas.width = width;
       canvas.height = height;
+      isMobile = width < 768;
+      PARTICLE_COUNT = isMobile ? 30 : 60;
+      MAX_DIST = isMobile ? 120 : 150;
       initParticles();
     };
-
-    const isMobile = width < 768;
-    const PARTICLE_COUNT = isMobile ? 30 : 60;
-    const MAX_DIST = isMobile ? 120 : 150;
 
     const initParticles = () => {
       particlesRef.current = Array.from({ length: PARTICLE_COUNT }, () => ({
@@ -55,7 +57,6 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
       ctx.clearRect(0, 0, width, height);
       const particles = particlesRef.current;
 
-      // Move particles
       for (const p of particles) {
         p.x += p.vx;
         p.y += p.vy;
@@ -63,7 +64,6 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
         if (p.y < 0 || p.y > height) p.vy *= -1;
       }
 
-      // Draw connections
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
           const dx = particles[i].x - particles[j].x;
@@ -81,7 +81,6 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
         }
       }
 
-      // Draw particles
       for (const p of particles) {
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
