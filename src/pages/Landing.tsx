@@ -207,7 +207,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Stats bar ───────────────────────────────── */}
-      <section className="py-8 px-2 sm:px-4">
+      <section className="py-8 px-1 sm:px-4">
         <div className="container mx-auto max-w-6xl">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             {stats.map((s, i) => (
@@ -221,7 +221,7 @@ export default function Landing() {
       </section>
 
       {/* ─── How it works ────────────────────────────── */}
-      <section id="how" className="py-12 md:py-16 px-2 sm:px-4">
+      <section id="how" className="py-12 md:py-16 px-1 sm:px-4">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-8 md:mb-10">
             <span className="text-xs font-semibold text-primary uppercase tracking-wider">Comment ça marche</span>
@@ -253,7 +253,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Features Grid ───────────────────────────── */}
-      <section id="features" className="py-12 md:py-16 px-2 sm:px-4 bg-muted/30">
+      <section id="features" className="py-12 md:py-16 px-1 sm:px-4 bg-muted/30">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-8 md:mb-10">
             <span className="text-xs font-semibold text-secondary uppercase tracking-wider">Fonctionnalités</span>
@@ -280,7 +280,7 @@ export default function Landing() {
       </section>
 
       {/* ─── FAQ ─────────────────────────────────────── */}
-      <section id="faq" className="py-12 md:py-16 px-2 sm:px-4">
+      <section id="faq" className="py-12 md:py-16 px-1 sm:px-4">
         <div className="container mx-auto max-w-3xl">
           <div className="text-center mb-8 md:mb-10">
             <div className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-card border border-border/50 rounded-full px-3 py-1.5 mb-3">
@@ -311,7 +311,7 @@ export default function Landing() {
       </section>
 
       {/* ─── CTA Section ─────────────────────────────── */}
-      <section className="py-12 md:py-16 px-2 sm:px-4 bg-muted/30">
+      <section className="py-12 md:py-16 px-1 sm:px-4 bg-muted/30">
         <div className="container mx-auto max-w-2xl text-center">
           <div className="card-elevated p-8 md:p-10 relative overflow-hidden">
             <div className="absolute inset-0 opacity-[0.03] hero-gradient" />
@@ -339,7 +339,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Footer ──────────────────────────────────── */}
-      <footer className="border-t border-border/40 py-6 px-2 sm:px-4">
+      <footer className="border-t border-border/40 py-6 px-1 sm:px-4">
         <div className="container mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <Logo size="sm" />
           <p className="text-xs text-muted-foreground">
