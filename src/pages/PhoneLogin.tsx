@@ -135,7 +135,7 @@ export default function PhoneLogin() {
         description: `Bienvenue ${data.user.display_name || ""}`,
       });
 
-      navigate("/app/chat", { replace: true });
+      navigate("/app/chat");
     } catch (err) {
       setError("Erreur de connexion au serveur");
     }
