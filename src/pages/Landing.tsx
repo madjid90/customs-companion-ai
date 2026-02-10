@@ -2,6 +2,8 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/Logo";
 import { CookieConsent } from "@/components/ui/CookieConsent";
+import { PlexusBackground } from "@/components/ui/PlexusBackground";
+import { GradientMeshBackground } from "@/components/ui/GradientMeshBackground";
 import {
   ArrowRight,
   Shield,
@@ -123,8 +125,10 @@ export default function Landing() {
       )}
 
       {/* ─── Hero Section ────────────────────────────── */}
-      <section className="pt-20 pb-6 md:pt-28 md:pb-16 px-3 sm:px-4">
-        <div className="container mx-auto max-w-6xl">
+      <section className="relative pt-20 pb-6 md:pt-28 md:pb-16 px-3 sm:px-4 overflow-hidden">
+        <PlexusBackground />
+        <GradientMeshBackground variant="blue-green" />
+        <div className="container mx-auto max-w-6xl relative z-10">
           <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-center">
             {/* Left – Text */}
             <div className="animate-slide-up">
@@ -221,8 +225,9 @@ export default function Landing() {
       </section>
 
       {/* ─── How it works ────────────────────────────── */}
-      <section id="how" className="py-12 md:py-16 px-0.5 sm:px-4 bg-muted/30">
-        <div className="container mx-auto max-w-6xl">
+      <section id="how" className="relative py-12 md:py-16 px-0.5 sm:px-4 bg-muted/30 overflow-hidden">
+        <GradientMeshBackground variant="green-blue" />
+        <div className="container mx-auto max-w-6xl relative z-10">
           <div className="text-center mb-8 md:mb-10">
             <span className="text-xs font-semibold text-secondary uppercase tracking-wider">Comment ça marche</span>
             <h2 className="text-xl md:text-2xl font-extrabold mt-2 mb-2">
@@ -253,8 +258,9 @@ export default function Landing() {
       </section>
 
       {/* ─── Features Grid ───────────────────────────── */}
-      <section id="features" className="py-12 md:py-16 px-0.5 sm:px-4">
-        <div className="container mx-auto max-w-6xl">
+      <section id="features" className="relative py-12 md:py-16 px-0.5 sm:px-4 overflow-hidden">
+        <GradientMeshBackground variant="cyan-center" />
+        <div className="container mx-auto max-w-6xl relative z-10">
           <div className="text-center mb-8 md:mb-10">
             <span className="text-xs font-semibold text-secondary uppercase tracking-wider">Fonctionnalités</span>
             <h2 className="text-xl md:text-2xl font-extrabold mt-2 mb-2">
@@ -311,7 +317,8 @@ export default function Landing() {
       </section>
 
       {/* ─── CTA Section ─────────────────────────────── */}
-      <section className="py-12 md:py-16 px-0.5 sm:px-4 bg-muted/30">
+      <section className="relative py-12 md:py-16 px-0.5 sm:px-4 bg-muted/30 overflow-hidden">
+        <GradientMeshBackground variant="blue-green" />
         <div className="container mx-auto max-w-2xl text-center">
           <div className="card-elevated p-8 md:p-10 relative overflow-hidden">
             <div className="absolute inset-0 opacity-[0.03] hero-gradient" />
