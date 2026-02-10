@@ -777,6 +777,7 @@ export default function AdminUpload() {
             hs_codes: hsCodesFull,
             hs_codes_full: hsCodesFull,
             notes: notes,
+            chapter_info: undefined,
             document_type: "tariff" as const,
             trade_agreements: [],
             full_text: "",
