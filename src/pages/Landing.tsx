@@ -68,7 +68,11 @@ export default function Landing() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <div className="min-h-screen page-gradient">
+    <div className="min-h-screen page-gradient relative">
+      {/* Fixed Plexus background for entire page */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <PlexusBackground />
+      </div>
       {/* ─── Header ──────────────────────────────────── */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border/40">
         <nav className="container mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
@@ -126,7 +130,6 @@ export default function Landing() {
 
       {/* ─── Hero Section ────────────────────────────── */}
       <section className="relative pt-20 pb-6 md:pt-28 md:pb-16 px-3 sm:px-4 overflow-hidden">
-        <PlexusBackground />
         <GradientMeshBackground variant="blue-green" />
         <div className="container mx-auto max-w-6xl relative z-10">
           <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-center">
@@ -211,8 +214,9 @@ export default function Landing() {
       </section>
 
       {/* ─── Stats bar ───────────────────────────────── */}
-      <section className="py-4 md:py-8 px-0.5 sm:px-4">
-        <div className="container mx-auto max-w-6xl">
+      <section className="relative py-4 md:py-8 px-0.5 sm:px-4 overflow-hidden">
+        <GradientMeshBackground variant="green-blue" />
+        <div className="container mx-auto max-w-6xl relative z-10">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             {stats.map((s, i) => (
               <div key={i} className="card-elevated p-4 text-center">
@@ -286,8 +290,9 @@ export default function Landing() {
       </section>
 
       {/* ─── FAQ ─────────────────────────────────────── */}
-      <section id="faq" className="py-12 md:py-16 px-0.5 sm:px-4">
-        <div className="container mx-auto max-w-3xl">
+      <section id="faq" className="relative py-12 md:py-16 px-0.5 sm:px-4 overflow-hidden">
+        <GradientMeshBackground variant="green-blue" />
+        <div className="container mx-auto max-w-3xl relative z-10">
           <div className="text-center mb-8 md:mb-10">
             <div className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-card border border-border/50 rounded-full px-3 py-1.5 mb-3">
               <HelpCircle className="h-3.5 w-3.5" />
