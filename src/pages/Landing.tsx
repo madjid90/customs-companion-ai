@@ -69,9 +69,10 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen page-gradient relative">
-      {/* Fixed Plexus background for entire page */}
+      {/* Fixed background for entire page */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <PlexusBackground />
+        <GradientMeshBackground variant="cyan-center" />
       </div>
       {/* ─── Header ──────────────────────────────────── */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border/40">
@@ -129,8 +130,7 @@ export default function Landing() {
       )}
 
       {/* ─── Hero Section ────────────────────────────── */}
-      <section className="relative pt-20 pb-6 md:pt-28 md:pb-16 px-3 sm:px-4 overflow-hidden">
-        <GradientMeshBackground variant="blue-green" />
+      <section className="relative pt-20 pb-6 md:pt-28 md:pb-16 px-3 sm:px-4">
         <div className="container mx-auto max-w-6xl relative z-10">
           <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-center">
             {/* Left – Text */}
@@ -214,8 +214,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Stats bar ───────────────────────────────── */}
-      <section className="relative py-4 md:py-8 px-0.5 sm:px-4 overflow-hidden">
-        <GradientMeshBackground variant="green-blue" />
+      <section className="relative py-4 md:py-8 px-0.5 sm:px-4">
         <div className="container mx-auto max-w-6xl relative z-10">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             {stats.map((s, i) => (
@@ -229,8 +228,7 @@ export default function Landing() {
       </section>
 
       {/* ─── How it works ────────────────────────────── */}
-      <section id="how" className="relative py-12 md:py-16 px-0.5 sm:px-4 bg-muted/30 overflow-hidden">
-        <GradientMeshBackground variant="green-blue" />
+      <section id="how" className="relative py-12 md:py-16 px-0.5 sm:px-4 bg-muted/30">
         <div className="container mx-auto max-w-6xl relative z-10">
           <div className="text-center mb-8 md:mb-10">
             <span className="text-xs font-semibold text-secondary uppercase tracking-wider">Comment ça marche</span>
@@ -262,8 +260,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Features Grid ───────────────────────────── */}
-      <section id="features" className="relative py-12 md:py-16 px-0.5 sm:px-4 overflow-hidden">
-        <GradientMeshBackground variant="cyan-center" />
+      <section id="features" className="relative py-12 md:py-16 px-0.5 sm:px-4">
         <div className="container mx-auto max-w-6xl relative z-10">
           <div className="text-center mb-8 md:mb-10">
             <span className="text-xs font-semibold text-secondary uppercase tracking-wider">Fonctionnalités</span>
@@ -290,8 +287,7 @@ export default function Landing() {
       </section>
 
       {/* ─── FAQ ─────────────────────────────────────── */}
-      <section id="faq" className="relative py-12 md:py-16 px-0.5 sm:px-4 overflow-hidden">
-        <GradientMeshBackground variant="green-blue" />
+      <section id="faq" className="relative py-12 md:py-16 px-0.5 sm:px-4">
         <div className="container mx-auto max-w-3xl relative z-10">
           <div className="text-center mb-8 md:mb-10">
             <div className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-card border border-border/50 rounded-full px-3 py-1.5 mb-3">
@@ -322,8 +318,7 @@ export default function Landing() {
       </section>
 
       {/* ─── CTA Section ─────────────────────────────── */}
-      <section className="relative py-12 md:py-16 px-0.5 sm:px-4 bg-muted/30 overflow-hidden">
-        <GradientMeshBackground variant="blue-green" />
+      <section className="relative py-12 md:py-16 px-0.5 sm:px-4 bg-muted/30">
         <div className="container mx-auto max-w-2xl text-center">
           <div className="card-elevated p-8 md:p-10 relative overflow-hidden">
             <div className="absolute inset-0 opacity-[0.03] hero-gradient" />
