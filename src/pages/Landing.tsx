@@ -224,7 +224,7 @@ export default function Landing() {
       <section id="how" className="py-12 md:py-16 px-0.5 sm:px-4 bg-muted/30">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-8 md:mb-10">
-            <span className="text-xs font-semibold text-primary uppercase tracking-wider">Comment ça marche</span>
+            <span className="text-xs font-semibold text-secondary uppercase tracking-wider">Comment ça marche</span>
             <h2 className="text-xl md:text-2xl font-extrabold mt-2 mb-2">
               4 étapes pour commencer
             </h2>
@@ -236,12 +236,12 @@ export default function Landing() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             {steps.map((step, i) => (
               <div key={i} className="relative">
-                <span className="absolute -top-2.5 left-3 z-10 text-[10px] font-bold text-primary-foreground bg-primary rounded-full px-2.5 py-0.5">
+                <span className="absolute -top-2.5 left-3 z-10 text-[10px] font-bold text-white cta-gradient rounded-full px-2.5 py-0.5">
                   {i + 1}
                 </span>
                 <div className="step-card pt-6 h-full !p-4 !pt-6">
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                    <step.icon className="h-4 w-4 text-primary" />
+                  <div className="h-10 w-10 rounded-xl cta-gradient flex items-center justify-center mx-auto mb-3">
+                    <step.icon className="h-4 w-4 text-white" />
                   </div>
                   <h3 className="font-bold text-xs md:text-sm text-card-foreground mb-1">{step.title}</h3>
                   <p className="text-[11px] md:text-xs text-muted-foreground leading-relaxed">{step.desc}</p>
