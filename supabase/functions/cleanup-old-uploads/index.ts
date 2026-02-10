@@ -1,5 +1,5 @@
 // Edge Function to delete old files from uploads/ folder
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
 import { requireAuth } from "../_shared/auth-check.ts";
 
