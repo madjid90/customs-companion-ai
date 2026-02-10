@@ -69,12 +69,12 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
           const dy = particles[i].y - particles[j].y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < MAX_DIST) {
-            const opacity = (1 - dist / MAX_DIST) * 0.08;
+            const opacity = (1 - dist / MAX_DIST) * 0.25;
             ctx.beginPath();
             ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);
             ctx.strokeStyle = `rgba(76, 139, 245, ${opacity})`;
-            ctx.lineWidth = 0.5;
+            ctx.lineWidth = 0.8;
             ctx.stroke();
           }
         }
@@ -84,7 +84,7 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
       for (const p of particles) {
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(76, 139, 245, 0.12)";
+        ctx.fillStyle = "rgba(76, 139, 245, 0.3)";
         ctx.fill();
       }
 
