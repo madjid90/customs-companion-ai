@@ -123,8 +123,8 @@ export default function Landing() {
       )}
 
       {/* ─── Hero Section ────────────────────────────── */}
-      <section className="pt-24 pb-12 md:pt-28 md:pb-16 px-3 sm:px-4">
-        <div className="container mx-auto max-w-6xl">
+      <section className="pt-24 pb-12 md:pt-28 md:pb-16 px-2 sm:px-4">
+        <div className="mx-auto max-w-7xl">
           <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-center">
             {/* Left – Text */}
             <div className="animate-slide-up">
@@ -207,8 +207,8 @@ export default function Landing() {
       </section>
 
       {/* ─── Stats bar ───────────────────────────────── */}
-      <section className="py-8 px-3 sm:px-4">
-        <div className="container mx-auto max-w-6xl">
+      <section className="py-8 px-2 sm:px-4">
+        <div className="mx-auto max-w-7xl">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             {stats.map((s, i) => (
               <div key={i} className="card-elevated p-4 text-center">
@@ -221,8 +221,8 @@ export default function Landing() {
       </section>
 
       {/* ─── How it works ────────────────────────────── */}
-      <section id="how" className="py-12 md:py-16 px-3 sm:px-4">
-        <div className="container mx-auto max-w-6xl">
+      <section id="how" className="py-12 md:py-16 px-2 sm:px-4">
+        <div className="mx-auto max-w-7xl">
           <div className="text-center mb-8 md:mb-10">
             <span className="text-xs font-semibold text-primary uppercase tracking-wider">Comment ça marche</span>
             <h2 className="text-xl md:text-2xl font-extrabold mt-2 mb-2">
@@ -253,8 +253,8 @@ export default function Landing() {
       </section>
 
       {/* ─── Features Grid ───────────────────────────── */}
-      <section id="features" className="py-12 md:py-16 px-3 sm:px-4 bg-muted/30">
-        <div className="container mx-auto max-w-6xl">
+      <section id="features" className="py-12 md:py-16 px-2 sm:px-4 bg-muted/30">
+        <div className="mx-auto max-w-7xl">
           <div className="text-center mb-8 md:mb-10">
             <span className="text-xs font-semibold text-secondary uppercase tracking-wider">Fonctionnalités</span>
             <h2 className="text-xl md:text-2xl font-extrabold mt-2 mb-2">
@@ -280,8 +280,8 @@ export default function Landing() {
       </section>
 
       {/* ─── FAQ ─────────────────────────────────────── */}
-      <section id="faq" className="py-12 md:py-16 px-3 sm:px-4">
-        <div className="container mx-auto max-w-3xl">
+      <section id="faq" className="py-12 md:py-16 px-2 sm:px-4">
+        <div className="mx-auto max-w-5xl">
           <div className="text-center mb-8 md:mb-10">
             <div className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-card border border-border/50 rounded-full px-3 py-1.5 mb-3">
               <HelpCircle className="h-3.5 w-3.5" />
@@ -311,8 +311,8 @@ export default function Landing() {
       </section>
 
       {/* ─── CTA Section ─────────────────────────────── */}
-      <section className="py-12 md:py-16 px-3 sm:px-4 bg-muted/30">
-        <div className="container mx-auto max-w-2xl text-center">
+      <section className="py-12 md:py-16 px-2 sm:px-4 bg-muted/30">
+        <div className="mx-auto max-w-3xl text-center">
           <div className="card-elevated p-8 md:p-10 relative overflow-hidden">
             <div className="absolute inset-0 opacity-[0.03] hero-gradient" />
             <div className="relative z-10">
@@ -339,7 +339,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Footer ──────────────────────────────────── */}
-      <footer className="border-t border-border/40 py-6 px-3 sm:px-4">
+      <footer className="border-t border-border/40 py-6 px-2 sm:px-4">
         <div className="container mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <Logo size="sm" />
           <p className="text-xs text-muted-foreground">
