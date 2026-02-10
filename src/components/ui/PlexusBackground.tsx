@@ -37,8 +37,9 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
       initParticles();
     };
 
-    const PARTICLE_COUNT = 60;
-    const MAX_DIST = 150;
+    const isMobile = width < 768;
+    const PARTICLE_COUNT = isMobile ? 30 : 60;
+    const MAX_DIST = isMobile ? 120 : 150;
 
     const initParticles = () => {
       particlesRef.current = Array.from({ length: PARTICLE_COUNT }, () => ({
@@ -69,7 +70,7 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
           const dy = particles[i].y - particles[j].y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < MAX_DIST) {
-            const opacity = (1 - dist / MAX_DIST) * 0.25;
+            const opacity = (1 - dist / MAX_DIST) * (isMobile ? 0.10 : 0.25);
             ctx.beginPath();
             ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);
@@ -84,7 +85,7 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
       for (const p of particles) {
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(76, 139, 245, 0.3)";
+        ctx.fillStyle = isMobile ? "rgba(76, 139, 245, 0.15)" : "rgba(76, 139, 245, 0.3)";
         ctx.fill();
       }
 
