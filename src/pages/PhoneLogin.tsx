@@ -13,8 +13,8 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const COUNTRY_CODES = [
-  { code: "+212", flag: "🇲🇦", label: "Maroc", placeholder: "6XX XXX XXX" },
-  { code: "+33", flag: "🇫🇷", label: "France", placeholder: "6 XX XX XX XX" },
+  { code: "+212", label: "Maroc", placeholder: "6XX XXX XXX" },
+  { code: "+33", label: "France", placeholder: "6 XX XX XX XX" },
 ];
 
 export default function PhoneLogin() {
@@ -215,7 +215,6 @@ export default function PhoneLogin() {
                       className="flex items-center gap-1.5 h-10 px-3 rounded-xl border border-input bg-muted/50 text-sm hover:bg-accent/50 transition-colors whitespace-nowrap"
                       onClick={() => setCountryOpen(!countryOpen)}
                     >
-                      <span className="text-lg leading-none">{country.flag}</span>
                       <span className="font-medium text-foreground">{country.code}</span>
                       <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                     </button>
@@ -233,7 +232,6 @@ export default function PhoneLogin() {
                               setCountryOpen(false);
                             }}
                           >
-                            <span className="text-lg leading-none">{c.flag}</span>
                             <span>{c.label}</span>
                             <span className="ml-auto text-muted-foreground">{c.code}</span>
                           </button>
