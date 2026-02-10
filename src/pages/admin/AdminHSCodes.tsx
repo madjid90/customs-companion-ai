@@ -37,7 +37,7 @@ interface HSCode {
   chapter_number: number | null;
   section_number: number | null;
   level: string | null;
-  is_active: boolean;
+  is_active: boolean | null;
   national_codes?: string[]; // Codes nationaux à 10 chiffres associés
 }
 
