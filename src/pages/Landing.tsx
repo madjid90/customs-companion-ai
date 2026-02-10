@@ -136,7 +136,7 @@ export default function Landing() {
         <div className="container mx-auto max-w-6xl relative z-10">
           <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-center">
             {/* Left – Text */}
-            <div className="animate-slide-up text-center md:text-left flex flex-col items-center md:items-start">
+            <div className="text-center md:text-left flex flex-col items-center md:items-start">
               <div className="inline-flex items-center gap-2 mb-5 bg-card rounded-full px-3.5 py-1.5 border border-border/40 shadow-sm text-xs">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75" />
@@ -179,7 +179,7 @@ export default function Landing() {
             </div>
 
             {/* Right – Visual card */}
-            <div className="hidden md:block animate-fade-in">
+            <div className="hidden md:block">
               <div className="card-elevated p-6 relative overflow-hidden">
                 <div className="absolute inset-0 opacity-[0.04] hero-gradient" />
                 <div className="relative z-10 space-y-4">
