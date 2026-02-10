@@ -2,13 +2,11 @@ import React, { useState, useEffect, createContext, useContext, useCallback, Rea
 import { supabase } from "@/integrations/supabase/client";
 import { Session } from "@supabase/supabase-js";
 
-type PhoneRole = "manager" | "agent";
-
 interface PhoneUser {
   id: string;
   phone: string;
   display_name: string | null;
-  role: PhoneRole;
+  role: string;
   max_invites: number | null;
 }
 
@@ -17,8 +15,6 @@ interface PhoneAuthContextType {
   session: Session | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  isManager: boolean;
-  isAgent: boolean;
   signOut: () => Promise<void>;
   setSessionFromOtp: (sessionData: {
     access_token: string;
@@ -113,8 +109,6 @@ export function PhoneAuthProvider({ children }: { children: ReactNode }) {
   );
 
   const isAuthenticated = !!session && !!phoneUser;
-  const isManager = phoneUser?.role === "manager";
-  const isAgent = phoneUser?.role === "agent";
 
   return (
     <PhoneAuthContext.Provider
@@ -123,8 +117,6 @@ export function PhoneAuthProvider({ children }: { children: ReactNode }) {
         session,
         isLoading,
         isAuthenticated,
-        isManager,
-        isAgent,
         signOut,
         setSessionFromOtp,
       }}

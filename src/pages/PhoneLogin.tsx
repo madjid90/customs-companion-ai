@@ -32,7 +32,7 @@ export default function PhoneLogin() {
 
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, isManager, setSessionFromOtp } = usePhoneAuth();
+  const { isAuthenticated, setSessionFromOtp } = usePhoneAuth();
   const { toast } = useToast();
 
   const country = COUNTRY_CODES[countryIndex];
@@ -43,7 +43,7 @@ export default function PhoneLogin() {
       const from = location.state?.from?.pathname || "/app/chat";
       navigate(from, { replace: true });
     }
-  }, [isAuthenticated, isManager, navigate, location]);
+  }, [isAuthenticated, navigate, location]);
 
   useEffect(() => {
     if (countdown <= 0) return;
@@ -289,7 +289,7 @@ export default function PhoneLogin() {
             <form onSubmit={handleVerifyOtp} className="space-y-6">
               {isBootstrap && (
                 <div className="space-y-2">
-                  <Label htmlFor="displayName" className="text-sm font-semibold">Votre nom (premier manager)</Label>
+                  <Label htmlFor="displayName" className="text-sm font-semibold">Votre nom (premier utilisateur)</Label>
                   <Input
                     id="displayName"
                     type="text"
