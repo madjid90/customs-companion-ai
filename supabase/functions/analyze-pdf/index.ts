@@ -2710,8 +2710,8 @@ serve(async (req) => {
             is_active: true,
             is_inherited: line.is_inherited,
             source: `PDF: ${title}`,
-            // Source tracking fields
-            source_pdf: title,
+            // Source tracking fields - use file_path for reliable linking
+            source_pdf: pdfPath,
             source_page: line.page_number || null,
             source_extraction_id: extractionId ? parseInt(extractionId.split('-')[0], 16) : null,
             source_evidence: evidence,
@@ -2767,8 +2767,8 @@ serve(async (req) => {
           anchor: note.anchor || null,
           note_text: note.note_text,
           page_number: note.page_number || null,
-          source_pdf: title,
-          source_extraction_id: extractionId ? parseInt(extractionId.split('-')[0], 16) : null,
+        source_pdf: pdfPath,
+        source_extraction_id: extractionId ? parseInt(extractionId.split('-')[0], 16) : null,
         }));
         
         const { error: noteError } = await supabase
@@ -2867,7 +2867,7 @@ serve(async (req) => {
       // Enrichir les tariff_lines avec source info
       const enrichedTariffLines = tariffLines.map(line => ({
         ...line,
-        source_pdf: title,
+        source_pdf: pdfPath,
         source_page: line.page_number,
         source_extraction_id: runId,
         source_evidence: [
@@ -2885,7 +2885,7 @@ serve(async (req) => {
       // Enrichir les notes avec source info
       const enrichedNotes = allNotes.map(note => ({
         ...note,
-        source_pdf: title,
+        source_pdf: pdfPath,
         source_extraction_id: runId
       }));
       
