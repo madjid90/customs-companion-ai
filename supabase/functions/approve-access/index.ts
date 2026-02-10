@@ -112,11 +112,12 @@ serve(async (req) => {
     const twilioPhone = Deno.env.get("TWILIO_PHONE_NUMBER");
 
     if (twilioSid && twilioToken && twilioPhone) {
-      const appUrl = Deno.env.get("APP_URL") || "https://douaneai.app";
+      const appUrl = Deno.env.get("APP_URL") || "https://douane-ai.lovable.app";
+      const loginUrl = `${appUrl}/login`;
       const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`;
       const twilioAuth = btoa(`${twilioSid}:${twilioToken}`);
 
-      const smsBody = `Bienvenue sur DouaneAI ! Votre demande d'accès pour ${request.company_name} a été approuvée. Connectez-vous avec ce numéro : ${appUrl}`;
+      const smsBody = `Bienvenue sur DouaneAI ! Votre demande d'accès pour ${request.company_name} a été approuvée. Connectez-vous ici : ${loginUrl}`;
 
       try {
         const twilioResponse = await fetch(twilioUrl, {

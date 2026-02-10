@@ -137,9 +137,10 @@ serve(async (req) => {
       const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`;
       const twilioAuth = btoa(`${twilioSid}:${twilioToken}`);
 
-      const appUrl = Deno.env.get("APP_URL") || "https://douaneai.app";
+      const appUrl = Deno.env.get("APP_URL") || "https://douane-ai.lovable.app";
+      const loginUrl = `${appUrl}/login`;
       const managerName = manager.display_name || "votre manager";
-      const smsBody = `${managerName} vous invite à rejoindre DouaneAI. Connectez-vous avec ce numéro : ${appUrl}`;
+      const smsBody = `${managerName} vous invite à rejoindre DouaneAI. Connectez-vous ici : ${loginUrl}`;
 
       try {
         const twilioResponse = await fetch(twilioUrl, {
