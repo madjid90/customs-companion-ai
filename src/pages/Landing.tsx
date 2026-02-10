@@ -163,9 +163,9 @@ export default function Landing() {
               </div>
 
               <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-secondary" /> Gratuit</span>
-                <span className="flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-secondary" /> 30 sec</span>
+                <span className="flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-secondary" /> Sur invitation</span>
                 <span className="flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-secondary" /> Sans engagement</span>
+                <span className="flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-secondary" /> 100% sécurisé</span>
               </div>
             </div>
 
