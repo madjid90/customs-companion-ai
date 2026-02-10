@@ -268,7 +268,7 @@ export default function Landing() {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
             {features.map((feature, i) => (
               <div key={i} className="card-elevated p-4 md:p-5">
-                <div className="h-9 w-9 rounded-lg cta-gradient flex items-center justify-center mb-3">
+                <div className="h-10 w-10 rounded-xl cta-gradient flex items-center justify-center mb-3">
                   <feature.icon className="h-4 w-4 text-white" />
                 </div>
                 <h3 className="font-bold text-xs md:text-sm text-card-foreground mb-1">{feature.title}</h3>
