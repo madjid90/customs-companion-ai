@@ -123,7 +123,7 @@ export default function Landing() {
       )}
 
       {/* ─── Hero Section ────────────────────────────── */}
-      <section className="pt-24 pb-12 md:pt-28 md:pb-16 px-3 sm:px-4">
+      <section className="pt-20 pb-6 md:pt-28 md:pb-16 px-3 sm:px-4">
         <div className="container mx-auto max-w-6xl">
           <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-center">
             {/* Left – Text */}
@@ -207,7 +207,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Stats bar ───────────────────────────────── */}
-      <section className="py-8 px-0.5 sm:px-4">
+      <section className="py-4 md:py-8 px-0.5 sm:px-4">
         <div className="container mx-auto max-w-6xl">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             {stats.map((s, i) => (
