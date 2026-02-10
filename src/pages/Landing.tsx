@@ -221,7 +221,7 @@ export default function Landing() {
       </section>
 
       {/* ─── How it works ────────────────────────────── */}
-      <section id="how" className="py-12 md:py-16 px-0.5 sm:px-4">
+      <section id="how" className="py-12 md:py-16 px-0.5 sm:px-4 bg-muted/30">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-8 md:mb-10">
             <span className="text-xs font-semibold text-primary uppercase tracking-wider">Comment ça marche</span>
