@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,8 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Plus, Search, Edit, Trash2, Package, ChevronDown, ChevronUp } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2, Plus, Search, Edit, Trash2, Package, ChevronDown, ChevronUp, Filter } from "lucide-react";
 
 interface HSCode {
   id: string;
@@ -90,6 +91,8 @@ export default function AdminHSCodes() {
   const [hsCodes, setHsCodes] = useState<HSCode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [chapterFilter, setChapterFilter] = useState<string>("all");
+  const [availableChapters, setAvailableChapters] = useState<{ num: number; count: number }[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<HSCodeForm>(initialFormState);
@@ -102,6 +105,30 @@ export default function AdminHSCodes() {
   const pageSize = 50;
   const { toast } = useToast();
 
+  // Load available chapters
+  useEffect(() => {
+    const loadChapters = async () => {
+      const { data } = await supabase
+        .from("hs_codes")
+        .select("chapter_number")
+        .not("chapter_number", "is", null)
+        .order("chapter_number");
+      if (data) {
+        const counts = new Map<number, number>();
+        data.forEach((d) => {
+          const ch = d.chapter_number!;
+          counts.set(ch, (counts.get(ch) || 0) + 1);
+        });
+        setAvailableChapters(
+          Array.from(counts.entries())
+            .sort((a, b) => a[0] - b[0])
+            .map(([num, count]) => ({ num, count }))
+        );
+      }
+    };
+    loadChapters();
+  }, []);
+
   const loadHSCodes = async () => {
     setIsLoading(true);
     try {
@@ -113,6 +140,10 @@ export default function AdminHSCodes() {
 
       if (searchTerm) {
         query = query.or(`code.ilike.%${searchTerm}%,description_fr.ilike.%${searchTerm}%`);
+      }
+
+      if (chapterFilter && chapterFilter !== "all") {
+        query = query.eq("chapter_number", parseInt(chapterFilter));
       }
 
       const { data, error, count } = await query;
@@ -162,10 +193,15 @@ export default function AdminHSCodes() {
 
   useEffect(() => {
     loadHSCodes();
-  }, [page, searchTerm]);
+  }, [page, searchTerm, chapterFilter]);
 
   const handleSearch = (value: string) => {
     setSearchTerm(value);
+    setPage(0);
+  };
+
+  const handleChapterChange = (value: string) => {
+    setChapterFilter(value);
     setPage(0);
   };
 
@@ -432,17 +468,33 @@ export default function AdminHSCodes() {
         </Button>
       </div>
 
-      {/* Search */}
+      {/* Search & Filters */}
       <Card className="animate-slide-up card-elevated border-border/20">
         <CardContent className="pt-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Rechercher par code ou description..."
-              value={searchTerm}
-              onChange={(e) => handleSearch(e.target.value)}
-              className="pl-10"
-            />
+          <div className="flex gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Rechercher par code ou description..."
+                value={searchTerm}
+                onChange={(e) => handleSearch(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Select value={chapterFilter} onValueChange={handleChapterChange}>
+              <SelectTrigger className="w-[200px]">
+                <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
+                <SelectValue placeholder="Tous les chapitres" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous les chapitres</SelectItem>
+                {availableChapters.map((ch) => (
+                  <SelectItem key={ch.num} value={ch.num.toString()}>
+                    Ch. {ch.num.toString().padStart(2, "0")} ({ch.count})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
