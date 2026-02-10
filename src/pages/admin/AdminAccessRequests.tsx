@@ -80,8 +80,8 @@ export default function AdminAccessRequests() {
           description:
             action === "approved"
               ? data.smsSent
-                ? "Le manager a été créé et un SMS d'invitation a été envoyé."
-                : "Le manager a été créé. SMS non envoyé (vérifiez la config Twilio)."
+                ? "L'utilisateur a été créé et un SMS d'invitation a été envoyé."
+                : "L'utilisateur a été créé. SMS non envoyé (vérifiez la config Twilio)."
               : "La demande a été rejetée.",
         });
         fetchRequests();
@@ -123,7 +123,7 @@ export default function AdminAccessRequests() {
           <Inbox className="h-8 w-8 text-primary" />
           Demandes d'accès
         </h1>
-        <p>Gérez les demandes d'accès des managers potentiels.</p>
+        <p>Gérez les demandes d'accès des utilisateurs.</p>
       </div>
 
       {/* Pending Requests */}

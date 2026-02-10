@@ -20,7 +20,6 @@ import RequestAccess from "@/pages/RequestAccess";
 
 // App pages (phone auth)
 import Chat from "@/pages/Chat";
-import ManagerUsers from "@/pages/manager/ManagerUsers";
 
 // Admin pages — lazy loaded
 const AdminLogin = lazy(() => import("@/pages/admin/AdminLogin"));
@@ -67,11 +66,6 @@ const App = () => {
                     >
                       <Route index element={<Navigate to="/app/chat" replace />} />
                       <Route path="chat" element={<Chat />} />
-                      <Route path="manage" element={
-                        <PhoneProtectedRoute requireManager>
-                          <ManagerUsers />
-                        </PhoneProtectedRoute>
-                      } />
                     </Route>
 
                     {/* Admin routes (email auth) */}
