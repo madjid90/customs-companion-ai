@@ -8,12 +8,13 @@ import {
   rateLimitResponse,
 } from "../_shared/cors.ts";
 
-// Compute a deterministic password from server secret + phone
-async function computePassword(secret: string, phone: string): Promise<string> {
+// Compute a deterministic password from server secret + phone + unique salt
+async function computePassword(secret: string, phone: string, salt: string): Promise<string> {
   const encoder = new TextEncoder();
+  const keyMaterial = `${secret}:${salt}`;
   const key = await crypto.subtle.importKey(
     "raw",
-    encoder.encode(secret),
+    encoder.encode(keyMaterial),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
@@ -21,6 +22,13 @@ async function computePassword(secret: string, phone: string): Promise<string> {
   const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(phone));
   const hashArray = Array.from(new Uint8Array(signature));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 40);
+}
+
+// Generate a unique salt for a user
+function generateSalt(): string {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 serve(async (req) => {
@@ -135,6 +143,7 @@ serve(async (req) => {
 
     if (totalUsers === 0) {
       // Bootstrap: create first manager
+      const bootstrapSalt = generateSalt();
       const { data: newUser, error: createError } = await supabase
         .from("phone_users")
         .insert({
@@ -142,6 +151,7 @@ serve(async (req) => {
           display_name: displayName || "Manager",
           role: "manager",
           max_invites: 10,
+          password_salt: bootstrapSalt,
         })
         .select()
         .single();
@@ -171,9 +181,18 @@ serve(async (req) => {
       phoneUser = existingUser;
     }
 
-    // Create or sign in Supabase auth user
+    // Ensure user has a unique salt
+    let userSalt = phoneUser.password_salt;
+    if (!userSalt) {
+      userSalt = generateSalt();
+      await supabase
+        .from("phone_users")
+        .update({ password_salt: userSalt })
+        .eq("id", phoneUser.id);
+    }
+
     const email = `${normalizedPhone.replace("+", "")}@phone.douane.app`;
-    const password = await computePassword(supabaseServiceKey, normalizedPhone);
+    const password = await computePassword(supabaseServiceKey, normalizedPhone, userSalt);
 
     let session;
 

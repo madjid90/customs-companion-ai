@@ -1478,6 +1478,7 @@ export type Database = {
           invited_by: string | null
           is_active: boolean | null
           max_invites: number | null
+          password_salt: string | null
           phone: string
           role: Database["public"]["Enums"]["app_role"]
           updated_at: string | null
@@ -1490,6 +1491,7 @@ export type Database = {
           invited_by?: string | null
           is_active?: boolean | null
           max_invites?: number | null
+          password_salt?: string | null
           phone: string
           role?: Database["public"]["Enums"]["app_role"]
           updated_at?: string | null
@@ -1502,6 +1504,7 @@ export type Database = {
           invited_by?: string | null
           is_active?: boolean | null
           max_invites?: number | null
+          password_salt?: string | null
           phone?: string
           role?: Database["public"]["Enums"]["app_role"]
           updated_at?: string | null
