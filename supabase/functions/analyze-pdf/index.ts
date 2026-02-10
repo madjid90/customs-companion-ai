@@ -2757,8 +2757,17 @@ serve(async (req) => {
       
       // Insérer les notes dans tariff_notes avec source tracking
       if (allNotes.length > 0) {
-        const chapterMatch = title.match(/chapitre\s*(\d+)/i) || title.match(/SH_CODE_(\d+)/i);
-        const chapterNum = chapterMatch ? chapterMatch[1] : null;
+        // Dériver le chapitre depuis les codes SH réellement extraits (pas du nom de fichier)
+        let chapterNum: string | null = null;
+        if (hsCodeEntries.length > 0) {
+          chapterNum = hsCodeEntries[0].code_clean.slice(0, 2);
+        } else if (tariffLines.length > 0) {
+          chapterNum = tariffLines[0].hs_code_6.slice(0, 2);
+        } else {
+          // Fallback: essayer depuis le titre
+          const chapterMatch = title.match(/chapitre\s*(\d+)/i) || title.match(/SH_CODE_(\d+)/i);
+          chapterNum = chapterMatch ? chapterMatch[1] : null;
+        }
         
         const noteRows = allNotes.map(note => ({
           country_code: countryCode,
