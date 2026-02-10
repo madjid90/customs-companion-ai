@@ -212,7 +212,7 @@ export default function PhoneLogin() {
                   <div className="relative">
                     <button
                       type="button"
-                      className="flex items-center gap-1.5 h-12 px-3 rounded-xl border border-input bg-muted/50 text-sm hover:bg-accent/50 transition-colors whitespace-nowrap"
+                      className="flex items-center gap-1.5 h-10 px-3 rounded-xl border border-input bg-muted/50 text-sm hover:bg-accent/50 transition-colors whitespace-nowrap"
                       onClick={() => setCountryOpen(!countryOpen)}
                     >
                       <span className="text-lg leading-none">{country.flag}</span>
@@ -247,7 +247,7 @@ export default function PhoneLogin() {
                     value={phoneLocal}
                     onChange={(e) => setPhoneLocal(e.target.value)}
                     placeholder={country.placeholder}
-                    className="rounded-xl h-12 bg-muted/50 border-input"
+                    className="rounded-xl h-10 bg-muted/50 border-input text-sm placeholder:text-xs"
                     autoFocus
                     required
                   />
@@ -298,7 +298,7 @@ export default function PhoneLogin() {
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                     placeholder="Votre nom complet"
-                    className="rounded-xl h-12 bg-muted/50"
+                    className="rounded-xl h-10 bg-muted/50"
                     maxLength={100}
                   />
                 </div>
@@ -319,7 +319,7 @@ export default function PhoneLogin() {
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
                   placeholder="000000"
-                  className="rounded-xl h-12 bg-muted/50 text-center text-xl tracking-[0.5em] font-mono"
+                  className="rounded-xl h-10 bg-muted/50 text-center text-xl tracking-[0.5em] font-mono placeholder:text-xs"
                   required
                 />
               </div>
