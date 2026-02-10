@@ -146,8 +146,8 @@ export default function Landing() {
 
               <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-[2.75rem] font-extrabold tracking-tight leading-[1.15] mb-4">
                 Votre copilote{" "}
-                <span className="gradient-text">intelligent</span>{" "}
-                propulsé par l'IA
+                <span className="gradient-text">douanier</span>{" "}
+                propulsé par l'<span className="gradient-text">IA</span>
               </h1>
 
               <p className="text-sm md:text-base text-muted-foreground leading-relaxed mb-6 max-w-lg">
