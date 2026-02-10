@@ -29,6 +29,7 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
     let isMobile = false;
     let PARTICLE_COUNT = 60;
     let MAX_DIST = 150;
+    let started = false;
 
     const resize = () => {
       const parent = canvas.parentElement;
@@ -91,10 +92,23 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
       animationRef.current = requestAnimationFrame(draw);
     };
 
-    resize();
-    draw();
+    const start = () => {
+      if (started) return;
+      started = true;
+      resize();
+      draw();
+    };
 
-    const ro = new ResizeObserver(resize);
+    // Defer canvas animation to after first paint
+    if ("requestIdleCallback" in window) {
+      (window as any).requestIdleCallback(start, { timeout: 2000 });
+    } else {
+      setTimeout(start, 100);
+    }
+
+    const ro = new ResizeObserver(() => {
+      if (started) resize();
+    });
     ro.observe(canvas.parentElement!);
 
     return () => {
