@@ -13,8 +13,9 @@ import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
-// All pages — lazy loaded for code splitting
-const Landing = lazy(() => import("@/pages/Landing"));
+// Landing eagerly loaded (entry page — avoids request chain)
+import Landing from "@/pages/Landing";
+// Other pages — lazy loaded for code splitting
 const PhoneLogin = lazy(() => import("@/pages/PhoneLogin"));
 const RequestAccess = lazy(() => import("@/pages/RequestAccess"));
 const Chat = lazy(() => import("@/pages/Chat"));
@@ -47,7 +48,7 @@ const App = () => {
                 <BrowserRouter>
                   <Routes>
                     {/* Public: Landing & Login */}
-                    <Route path="/" element={<Suspense fallback={<PageFallback />}><Landing /></Suspense>} />
+                    <Route path="/" element={<Landing />} />
                     <Route path="/demander-acces" element={<Suspense fallback={<PageFallback />}><RequestAccess /></Suspense>} />
                     <Route path="/login" element={<Suspense fallback={<PageFallback />}><PhoneLogin /></Suspense>} />
 
