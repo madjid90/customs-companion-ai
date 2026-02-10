@@ -222,7 +222,7 @@ export default function RequestAccess() {
 
             <Button
               type="submit"
-              className="w-full cta-gradient rounded-2xl h-14 text-base font-semibold gap-2"
+              className="w-full cta-gradient rounded-xl h-12 text-sm font-semibold gap-2"
               disabled={isSubmitting || !companyName.trim() || !phoneLocal.trim()}
             >
               {isSubmitting ? (

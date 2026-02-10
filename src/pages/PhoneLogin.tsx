@@ -262,7 +262,7 @@ export default function PhoneLogin() {
 
               <Button
                 type="submit"
-                className="w-full h-14 cta-gradient rounded-2xl text-base font-semibold gap-2"
+                className="w-full h-12 cta-gradient rounded-xl text-sm font-semibold gap-2"
                 disabled={isLoading || !phoneLocal.trim()}
               >
                 {isLoading ? (
@@ -332,7 +332,7 @@ export default function PhoneLogin() {
 
               <Button
                 type="submit"
-                className="w-full h-14 cta-gradient rounded-2xl text-base font-semibold"
+                className="w-full h-12 cta-gradient rounded-xl text-sm font-semibold"
                 disabled={isLoading || otp.length !== 6}
               >
                 {isLoading ? (
