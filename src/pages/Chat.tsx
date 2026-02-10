@@ -627,28 +627,32 @@ export default function Chat() {
         )}
       >
         {/* Chat messages area */}
-        <ScrollArea ref={scrollRef} className="flex-1 px-2 md:px-4 py-3 md:py-6">
-          <div className="max-w-3xl mx-auto space-y-3 md:space-y-6">
-            {messages.length === 0 && (
+        {messages.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center px-2 md:px-4 overflow-hidden">
+            <div className="max-w-3xl mx-auto w-full">
               <ChatWelcome onQuestionClick={handleSend} />
-            )}
-
-            {messages.map((message, index) => (
-              <ChatMessage
-                key={message.id}
-                message={message}
-                isLastMessage={index === messages.length - 1 && message.role === "assistant"}
-                isLoading={isLoading}
-                onFeedback={handleFeedback}
-                onAnswer={handleSend}
-                cleanContent={cleanConfidenceFromContent}
-                removeQuestions={removeInteractiveQuestions}
-              />
-            ))}
-
-            {isLoading && !messages.some(m => m.isStreaming && m.content.length > 0) && <ChatTypingIndicator />}
+            </div>
           </div>
-        </ScrollArea>
+        ) : (
+          <ScrollArea ref={scrollRef} className="flex-1 px-2 md:px-4 py-3 md:py-6">
+            <div className="max-w-3xl mx-auto space-y-3 md:space-y-6">
+              {messages.map((message, index) => (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  isLastMessage={index === messages.length - 1 && message.role === "assistant"}
+                  isLoading={isLoading}
+                  onFeedback={handleFeedback}
+                  onAnswer={handleSend}
+                  cleanContent={cleanConfidenceFromContent}
+                  removeQuestions={removeInteractiveQuestions}
+                />
+              ))}
+
+              {isLoading && !messages.some(m => m.isStreaming && m.content.length > 0) && <ChatTypingIndicator />}
+            </div>
+          </ScrollArea>
+        )}
 
         {/* Input area */}
         <ChatInput
