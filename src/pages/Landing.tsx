@@ -134,7 +134,7 @@ export default function Landing() {
         <div className="container mx-auto max-w-6xl relative z-10">
           <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-center">
             {/* Left – Text */}
-            <div className="animate-slide-up">
+            <div className="animate-slide-up text-center md:text-left flex flex-col items-center md:items-start">
               <div className="inline-flex items-center gap-2 mb-5 bg-card rounded-full px-3.5 py-1.5 border border-border/40 shadow-sm text-xs">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75" />
@@ -155,7 +155,7 @@ export default function Landing() {
                 réponses précises et sourcées en quelques secondes.
               </p>
 
-              <div className="flex flex-col sm:flex-row gap-3 mb-6">
+              <div className="flex flex-col sm:flex-row gap-3 mb-6 w-full sm:w-auto">
                 <Link to="/demander-acces">
                   <Button className="cta-gradient rounded-xl h-12 px-7 text-sm font-semibold gap-2 shadow-lg w-full sm:w-auto">
                     Demander un accès
@@ -169,7 +169,7 @@ export default function Landing() {
                 </Link>
               </div>
 
-              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <div className="flex items-center justify-center md:justify-start gap-4 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-secondary" /> Sur invitation</span>
                 <span className="flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-secondary" /> Sans engagement</span>
                 <span className="flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-secondary" /> 100% sécurisé</span>
