@@ -1,8 +1,8 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Logo } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/button";
 import { usePhoneAuth } from "@/hooks/usePhoneAuth";
-import { LogOut, Menu } from "lucide-react";
+import { LogOut, Menu, ArrowLeft } from "lucide-react";
 
 interface AppHeaderProps {
   onHistoryToggle?: () => void;
@@ -11,13 +11,24 @@ interface AppHeaderProps {
 
 export function AppHeader({ onHistoryToggle, isHistoryOpen }: AppHeaderProps) {
   const { phoneUser, signOut } = usePhoneAuth();
+  const navigate = useNavigate();
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 glass" role="banner">
       <nav className="container mx-auto px-4 sm:px-6 h-14 md:h-16 flex items-center justify-between">
-        {/* Mobile: hamburger menu for history */}
-        <div className="md:hidden">
-          {onHistoryToggle ? (
+        {/* Mobile: back button + hamburger menu for history */}
+        <div className="md:hidden flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("/")}
+            className="h-9 w-9 rounded-full hover:bg-primary/5 hover:text-primary"
+            title="Retour"
+            aria-label="Retour à l'accueil"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          {onHistoryToggle && (
             <Button
               variant="ghost"
               size="icon"
@@ -27,8 +38,6 @@ export function AppHeader({ onHistoryToggle, isHistoryOpen }: AppHeaderProps) {
             >
               <Menu className="h-5 w-5" />
             </Button>
-          ) : (
-            <div className="w-9" />
           )}
         </div>
 
