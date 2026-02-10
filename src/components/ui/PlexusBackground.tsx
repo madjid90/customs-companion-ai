@@ -70,12 +70,12 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
           const dy = particles[i].y - particles[j].y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < MAX_DIST) {
-            const opacity = (1 - dist / MAX_DIST) * (isMobile ? 0.10 : 0.25);
+            const opacity = (1 - dist / MAX_DIST) * (isMobile ? 0.15 : 0.35);
             ctx.beginPath();
             ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);
             ctx.strokeStyle = `rgba(76, 139, 245, ${opacity})`;
-            ctx.lineWidth = 0.8;
+            ctx.lineWidth = 1;
             ctx.stroke();
           }
         }
@@ -85,7 +85,7 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
       for (const p of particles) {
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fillStyle = isMobile ? "rgba(76, 139, 245, 0.15)" : "rgba(76, 139, 245, 0.3)";
+        ctx.fillStyle = isMobile ? "rgba(76, 139, 245, 0.20)" : "rgba(76, 139, 245, 0.40)";
         ctx.fill();
       }
 
