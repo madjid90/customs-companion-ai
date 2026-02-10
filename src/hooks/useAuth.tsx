@@ -38,12 +38,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
 
         if (session?.user) {
-          // Fetch role and profile before setting isLoading to false
-          // Use setTimeout to avoid Supabase auth deadlock, but keep isLoading true
-          setTimeout(async () => {
+          // Defer DB calls to avoid Supabase auth deadlock
+          queueMicrotask(async () => {
             await fetchUserData(session.user.id);
             setIsLoading(false);
-          }, 0);
+          });
         } else {
           setIsAdmin(false);
           setProfile(null);
@@ -67,41 +66,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  async function fetchUserData(userId: string, retries = 3) {
-    for (let attempt = 1; attempt <= retries; attempt++) {
-      try {
-        // Check if user has admin role
-        const { data: roleData, error: roleError } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", userId)
-          .maybeSingle();
+  async function fetchUserData(userId: string) {
+    try {
+      // Run both queries in parallel for speed
+      const [roleResult, profileResult] = await Promise.all([
+        supabase.from("user_roles").select("role").eq("user_id", userId).maybeSingle(),
+        supabase.from("profiles").select("*").eq("user_id", userId).maybeSingle(),
+      ]);
 
-        if (roleError) {
-          console.warn(`[Auth] Role check attempt ${attempt}/${retries} failed:`, roleError.message);
-          if (attempt < retries) {
-            await new Promise(r => setTimeout(r, 1000 * attempt));
-            continue;
-          }
-        }
-
-        setIsAdmin(roleData?.role === "admin");
-
-        // Fetch profile
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("user_id", userId)
-          .maybeSingle();
-
-        setProfile(profileData);
-        return; // Success, exit retry loop
-      } catch (error) {
-        console.error(`[Auth] fetchUserData attempt ${attempt}/${retries} error:`, error);
-        if (attempt < retries) {
-          await new Promise(r => setTimeout(r, 1000 * attempt));
-        }
+      if (roleResult.error) {
+        console.warn("[Auth] Role check failed:", roleResult.error.message);
       }
+      setIsAdmin(roleResult.data?.role === "admin");
+      setProfile(profileResult.data);
+    } catch (error) {
+      console.error("[Auth] fetchUserData error:", error);
+      setIsAdmin(false);
+      setProfile(null);
     }
   }
 

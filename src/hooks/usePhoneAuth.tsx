@@ -55,12 +55,11 @@ export function PhoneAuthProvider({ children }: { children: ReactNode }) {
       async (_event, session) => {
         setSession(session);
         if (session?.user) {
-          // Use setTimeout to avoid Supabase deadlock
-          setTimeout(async () => {
+          queueMicrotask(async () => {
             const user = await fetchPhoneUser(session.user.id);
             setPhoneUser(user);
             setIsLoading(false);
-          }, 0);
+          });
         } else {
           setPhoneUser(null);
           setIsLoading(false);
