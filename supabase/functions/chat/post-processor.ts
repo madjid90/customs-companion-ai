@@ -121,6 +121,48 @@ export async function postProcessResponse(input: PostProcessInput): Promise<Post
     return responseChapters.has(chapter);
   });
 
+  // FALLBACK: If AI response has codes but context had no tariffs, fetch from DB
+  if (filteredTariffs.length === 0 && responseChapters.size > 0) {
+    const chapterCodes = Array.from(responseChapters);
+    console.log("[post-processor] No tariffs in context, fetching for chapters:", chapterCodes);
+    
+    // Try fetching by exact codes first
+    const exactCodes = codesForValidation
+      .map(c => String(c).replace(/\D/g, ''))
+      .filter(c => c.length >= 6);
+    
+    if (exactCodes.length > 0) {
+      const { data: dbTariffs } = await supabase
+        .from('country_tariffs')
+        .select('national_code, hs_code_6, description_local, duty_rate, vat_rate, source_pdf, source_page, source_evidence')
+        .eq('country_code', analysis.country)
+        .eq('is_active', true)
+        .or(exactCodes.map(c => `national_code.eq.${c}`).join(','))
+        .limit(20);
+      if (dbTariffs && dbTariffs.length > 0) {
+        filteredTariffs = dbTariffs;
+        console.log(`[post-processor] Fetched ${dbTariffs.length} tariffs by exact codes`);
+      }
+    }
+    
+    // Fallback: fetch by chapter prefix
+    if (filteredTariffs.length === 0) {
+      for (const chapter of chapterCodes.slice(0, 3)) {
+        const { data: chapterTariffs } = await supabase
+          .from('country_tariffs')
+          .select('national_code, hs_code_6, description_local, duty_rate, vat_rate, source_pdf, source_page, source_evidence')
+          .eq('country_code', analysis.country)
+          .eq('is_active', true)
+          .like('national_code', `${chapter}%`)
+          .limit(10);
+        if (chapterTariffs && chapterTariffs.length > 0) {
+          filteredTariffs.push(...chapterTariffs);
+          console.log(`[post-processor] Fetched ${chapterTariffs.length} tariffs for chapter ${chapter}`);
+        }
+      }
+    }
+  }
+
   // FALLBACK: search by keywords if no codes matched
   if (filteredTariffs.length === 0 && codesForValidation.length === 0 && questionKeywords.length > 0) {
     const keywordSearchTerms = questionKeywords.slice(0, 3).filter(k => k.length >= 4);
@@ -145,10 +187,29 @@ export async function postProcessResponse(input: PostProcessInput): Promise<Post
   }
 
   // Filter PDFs by chapter
-  const filteredPdfs = context.pdf_summaries.filter((p: any) => {
+  let filteredPdfs = context.pdf_summaries.filter((p: any) => {
     const chapter = String(p.chapter_number || '').padStart(2, "0");
     return responseChapters.has(chapter);
   });
+
+  // FALLBACK: If no PDFs in context, search pdf_documents for chapter SH_CODE files
+  if (filteredPdfs.length === 0 && responseChapters.size > 0) {
+    const chapterCodes = Array.from(responseChapters);
+    const patterns = chapterCodes.map(ch => `%SH_CODE_${ch}%`);
+    const { data: dbPdfs } = await supabase
+      .from('pdf_documents')
+      .select('id, title, file_name, file_path, category, country_code')
+      .eq('is_active', true)
+      .or(patterns.map(p => `file_name.ilike.${p}`).join(','))
+      .limit(5);
+    if (dbPdfs && dbPdfs.length > 0) {
+      filteredPdfs = dbPdfs.map((p: any) => ({
+        ...p,
+        chapter_number: chapterCodes[0],
+      }));
+      console.log(`[post-processor] Fetched ${dbPdfs.length} PDFs for chapters:`, chapterCodes);
+    }
+  }
 
   // Build DB evidence
   const dbEvidence: DBEvidence = {
