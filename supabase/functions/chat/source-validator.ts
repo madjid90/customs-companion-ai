@@ -336,10 +336,13 @@ export async function validateAllSources(
     }
   }
   
-  // Sort by confidence
+  // Sort: prioritize tariff/pdf sources, then by confidence
   allSources.sort((a, b) => {
-    const order = { high: 0, medium: 1, low: 2 };
-    return order[a.confidence] - order[b.confidence];
+    const typeOrder: Record<string, number> = { tariff: 0, pdf: 1, evidence: 2, legal: 3 };
+    const typeDiff = (typeOrder[a.type] ?? 3) - (typeOrder[b.type] ?? 3);
+    if (typeDiff !== 0) return typeDiff;
+    const confOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    return (confOrder[a.confidence] ?? 2) - (confOrder[b.confidence] ?? 2);
   });
   
   // Resolve any placeholder URLs (source://legal_source/XXX)
@@ -751,10 +754,14 @@ async function validateSourcesForCodes(
     (v, i, arr) => arr.findIndex(x => x.id === v.id) === i
   );
 
-  // Sort by confidence
+  // Sort: prioritize tariff/pdf sources, then by confidence
+  // This ensures tariff PDF links always appear in citations
   uniqueValidated.sort((a, b) => {
-    const order = { high: 0, medium: 1, low: 2 };
-    return order[a.confidence] - order[b.confidence];
+    const typeOrder: Record<string, number> = { tariff: 0, pdf: 1, evidence: 2, legal: 3 };
+    const typeDiff = (typeOrder[a.type] ?? 3) - (typeOrder[b.type] ?? 3);
+    if (typeDiff !== 0) return typeDiff;
+    const confOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    return (confOrder[a.confidence] ?? 2) - (confOrder[b.confidence] ?? 2);
   });
 
   const hasEvidence = uniqueValidated.length > 0;
