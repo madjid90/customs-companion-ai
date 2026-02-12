@@ -206,6 +206,9 @@ export async function postProcessResponse(input: PostProcessInput): Promise<Post
       filteredPdfs = dbPdfs.map((p: any) => ({
         ...p,
         chapter_number: chapterCodes[0],
+        download_url: p.file_path
+          ? `${SUPABASE_URL}/storage/v1/object/public/pdf-documents/${p.file_path}`
+          : null,
       }));
       console.log(`[post-processor] Fetched ${dbPdfs.length} PDFs for chapters:`, chapterCodes);
     }
