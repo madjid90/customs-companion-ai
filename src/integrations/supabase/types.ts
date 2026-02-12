@@ -1463,7 +1463,7 @@ export type Database = {
           {
             foreignKeyName: "pdf_extractions_pdf_id_fkey"
             columns: ["pdf_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "pdf_documents"
             referencedColumns: ["id"]
           },
