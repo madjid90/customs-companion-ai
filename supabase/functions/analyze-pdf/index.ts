@@ -1622,18 +1622,46 @@ async function generateDocumentSummary(
   
   console.log("[Summary] Generating document summary...");
   
-  // For large PDFs, only send first 50 pages for summary
-  let pdfToSend = base64Pdf;
+  const PASS_PAGES = 15;
+  
+  // For large PDFs, use 2-pass strategy: first 15 + last 15 pages
   if (totalPages > MAX_PAGES_FOR_CLAUDE) {
     try {
-      const summaryPages = Math.min(15, totalPages);
-      console.log(`[Summary] Large PDF (${totalPages} pages), extracting first ${summaryPages} for summary`);
-      pdfToSend = await extractPdfPages(base64Pdf, 1, summaryPages);
+      console.log(`[Summary] Large PDF (${totalPages} pages), using 2-pass strategy`);
+      
+      // Pass 1: First 15 pages
+      const firstPdf = await extractPdfPages(base64Pdf, 1, PASS_PAGES);
+      const firstSummary = await generateSinglePassSummary(firstPdf, title, apiKey, "début", PASS_PAGES, totalPages);
+      
+      // Pass 2: Last 15 pages (avoid overlap)
+      const lastStart = Math.max(PASS_PAGES + 1, totalPages - PASS_PAGES + 1);
+      const lastPdf = await extractPdfPages(base64Pdf, lastStart, totalPages);
+      const lastSummary = await generateSinglePassSummary(lastPdf, title, apiKey, "fin", totalPages - lastStart + 1, totalPages);
+      
+      // Merge both summaries
+      const merged = await mergeSummaries(firstSummary, lastSummary, title, apiKey, totalPages);
+      
+      if (merged.length > 50) {
+        console.log(`[Summary] 2-pass merged summary (${merged.length} chars)`);
+        SUMMARY_CACHE.set(pdfId, merged);
+        return merged;
+      }
+      
+      // Fallback: return first pass only
+      if (firstSummary.length > 50) {
+        SUMMARY_CACHE.set(pdfId, firstSummary);
+        return firstSummary;
+      }
+      
+      return "";
     } catch (err: any) {
-      console.warn("[Summary] Failed to extract pages:", err.message);
+      console.warn("[Summary] 2-pass failed:", err.message);
       return "";
     }
   }
+  
+  // Small PDFs: direct summary
+  let pdfToSend = base64Pdf;
   
   const requestBody = {
     model: CLAUDE_MODEL,
@@ -1698,6 +1726,131 @@ Format de réponse (texte brut, pas JSON):
   } catch (err: any) {
     console.warn("[Summary] Error:", err.message);
     return "";
+  }
+}
+
+/**
+ * Generate a summary for a single pass (subset of pages)
+ */
+async function generateSinglePassSummary(
+  pdfBase64: string,
+  title: string,
+  apiKey: string,
+  section: string,
+  pageCount: number,
+  totalPages: number
+): Promise<string> {
+  const requestBody = {
+    model: CLAUDE_MODEL,
+    max_tokens: 600,
+    system: "Tu es un expert en tarifs douaniers. Résume de manière concise en français.",
+    messages: [{
+      role: "user",
+      content: [
+        { 
+          type: "document", 
+          source: { type: "base64", media_type: "application/pdf", data: pdfBase64 },
+        },
+        { 
+          type: "text", 
+          text: `Ceci est la section "${section}" (${pageCount} pages sur ${totalPages}) du document "${title}".
+Résume les informations clés: catégories de produits, codes SH principaux, fourchette de droits, notes importantes.
+Réponds en texte brut, 200 mots maximum.`
+        }
+      ]
+    }],
+  };
+  
+  try {
+    const response = await callAnthropicWithRetry(
+      apiKey,
+      requestBody,
+      45000,
+      { "anthropic-beta": "pdfs-2024-09-25" }
+    );
+    
+    if (!response.ok) {
+      console.warn(`[Summary] Pass "${section}" API error`);
+      return "";
+    }
+    
+    const data = await response.json();
+    return data.content?.[0]?.text || "";
+  } catch (err: any) {
+    console.warn(`[Summary] Pass "${section}" failed:`, err.message);
+    return "";
+  }
+}
+
+/**
+ * Merge two partial summaries into a final cohesive summary
+ */
+async function mergeSummaries(
+  firstSummary: string,
+  lastSummary: string,
+  title: string,
+  apiKey: string,
+  totalPages: number
+): Promise<string> {
+  if (!firstSummary && !lastSummary) return "";
+  if (!firstSummary) return lastSummary;
+  if (!lastSummary) return firstSummary;
+  
+  const LOVABLE_AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
+  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+  
+  if (!lovableKey) {
+    // Fallback: concatenate
+    return `${firstSummary}\n\n---\n\n${lastSummary}`;
+  }
+  
+  try {
+    const response = await fetch(LOVABLE_AI_GATEWAY, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${lovableKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-lite",
+        max_tokens: 800,
+        temperature: 0.1,
+        messages: [
+          {
+            role: "system",
+            content: "Tu es un expert en tarifs douaniers. Fusionne deux résumés partiels en un résumé unique et cohérent."
+          },
+          {
+            role: "user",
+            content: `Document: "${title}" (${totalPages} pages)
+
+RÉSUMÉ DÉBUT DU DOCUMENT:
+${firstSummary}
+
+RÉSUMÉ FIN DU DOCUMENT:
+${lastSummary}
+
+Fusionne ces deux résumés en un résumé structuré unique:
+**Chapitre X - [Titre]**
+[Description générale]
+**Produits couverts:** [liste complète]
+**Notes importantes:** [résumé des notes clés]
+**Droits de douane:** [fourchette en %]`
+          }
+        ],
+      }),
+    });
+    
+    if (!response.ok) {
+      console.warn("[Summary] Merge API error, concatenating");
+      return `${firstSummary}\n\n${lastSummary}`;
+    }
+    
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || `${firstSummary}\n\n${lastSummary}`;
+  } catch (err: any) {
+    console.warn("[Summary] Merge failed:", err.message);
+    return `${firstSummary}\n\n${lastSummary}`;
   }
 }
 
@@ -2460,15 +2613,11 @@ serve(async (req) => {
       }
     }
     
-    // Générer un résumé du document au premier batch - ONLY for smaller PDFs
-    // For large PDFs (>50 pages), skip summary to avoid CPU timeout
+    // Générer un résumé du document au premier batch
+    // Now supports 2-pass for large PDFs (first 15 + last 15 pages)
     let documentSummary = "";
-    const SUMMARY_PAGE_THRESHOLD = 25;
-    if (!extraction_run_id && start_page === 1 && totalPagesDetected <= SUMMARY_PAGE_THRESHOLD) {
+    if (!extraction_run_id && start_page === 1) {
       documentSummary = await generateDocumentSummary(base64Pdf, title, ANTHROPIC_API_KEY, pdfId, totalPagesDetected);
-    } else if (!extraction_run_id && start_page === 1 && totalPagesDetected > SUMMARY_PAGE_THRESHOLD) {
-      documentSummary = `Document volumineux (${totalPagesDetected} pages) - résumé différé pour éviter timeout`;
-      console.log(`[Summary] Skipped for large PDF (${totalPagesDetected} pages > ${SUMMARY_PAGE_THRESHOLD})`);
     }
     
     console.log(`PDF size: ${fileSizeBytes} bytes, detected pages: ${totalPagesDetected || "from existing run"}, summary: ${documentSummary ? "yes" : "no"}`);
