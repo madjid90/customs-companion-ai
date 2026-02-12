@@ -21,7 +21,7 @@ import { callLLMWithMetrics, callAnthropicWithRetry } from "../_shared/retry.ts"
 // REDUCED window size to 40 pages to avoid CPU timeout on Edge Functions
 // =============================================================================
 
-const MAX_PAGES_FOR_CLAUDE = 40; // Reduced from 80 to prevent CPU timeout
+const MAX_PAGES_FOR_CLAUDE = 20; // Reduced from 40 to prevent CPU timeout on large PDFs
 
 // Cache for PDF page counts to avoid re-parsing
 const PDF_PAGE_COUNT_CACHE = new Map<string, number>();
@@ -1626,8 +1626,9 @@ async function generateDocumentSummary(
   let pdfToSend = base64Pdf;
   if (totalPages > MAX_PAGES_FOR_CLAUDE) {
     try {
-      console.log(`[Summary] Large PDF (${totalPages} pages), extracting first 50 for summary`);
-      pdfToSend = await extractPdfPages(base64Pdf, 1, 50);
+      const summaryPages = Math.min(15, totalPages);
+      console.log(`[Summary] Large PDF (${totalPages} pages), extracting first ${summaryPages} for summary`);
+      pdfToSend = await extractPdfPages(base64Pdf, 1, summaryPages);
     } catch (err: any) {
       console.warn("[Summary] Failed to extract pages:", err.message);
       return "";
@@ -2423,13 +2424,13 @@ serve(async (req) => {
       return errorResponse(req, `Erreur téléchargement PDF: ${errorDetail}`, 500);
     }
     
-    // Convertir en base64 (chunked pour gros fichiers)
+    // Convertir en base64 (chunked pour gros fichiers - optimized chunk size)
     const arrayBuffer = await fileData.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
     let base64Pdf = "";
-    const CHUNK_SIZE = 8192;
+    const CHUNK_SIZE = 32768; // Increased from 8192 to reduce loop iterations and CPU usage
     for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
-      const chunk = bytes.slice(i, i + CHUNK_SIZE);
+      const chunk = bytes.subarray(i, Math.min(i + CHUNK_SIZE, bytes.length));
       base64Pdf += String.fromCharCode(...chunk);
     }
     base64Pdf = btoa(base64Pdf);
@@ -2462,7 +2463,7 @@ serve(async (req) => {
     // Générer un résumé du document au premier batch - ONLY for smaller PDFs
     // For large PDFs (>50 pages), skip summary to avoid CPU timeout
     let documentSummary = "";
-    const SUMMARY_PAGE_THRESHOLD = 50;
+    const SUMMARY_PAGE_THRESHOLD = 25;
     if (!extraction_run_id && start_page === 1 && totalPagesDetected <= SUMMARY_PAGE_THRESHOLD) {
       documentSummary = await generateDocumentSummary(base64Pdf, title, ANTHROPIC_API_KEY, pdfId, totalPagesDetected);
     } else if (!extraction_run_id && start_page === 1 && totalPagesDetected > SUMMARY_PAGE_THRESHOLD) {
