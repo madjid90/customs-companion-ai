@@ -866,6 +866,30 @@ export async function searchLegalChunksHybrid(
 
     if (error) {
       console.warn('Hybrid legal chunks search failed:', error.message);
+      // Fallback: try semantic-only search, then FTS
+      try {
+        const { data: semData } = await supabase.rpc('search_legal_chunks_semantic', {
+          query_embedding: `[${queryEmbedding.join(',')}]`,
+          match_threshold: 0.5,
+          match_count: limit,
+        });
+        if (semData && semData.length > 0) {
+          console.log(`Legal chunks semantic fallback found ${semData.length} results`);
+          return semData.map((d: any) => ({ ...d, combined_score: d.similarity }));
+        }
+      } catch (_) { /* ignore */ }
+      // FTS fallback
+      try {
+        const { data: ftsData } = await supabase.rpc('search_legal_chunks_multilingual', {
+          query_text: queryText,
+          query_embedding: `[${queryEmbedding.join(',')}]`,
+          match_count: limit,
+        });
+        if (ftsData && ftsData.length > 0) {
+          console.log(`Legal chunks FTS fallback found ${ftsData.length} results`);
+          return ftsData.map((d: any) => ({ ...d, combined_score: d.relevance_score }));
+        }
+      } catch (_) { /* ignore */ }
       return [];
     }
 
