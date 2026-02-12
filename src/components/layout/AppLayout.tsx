@@ -36,7 +36,7 @@ export function AppLayout() {
         setHistoryControls,
       }}
     >
-      <div className="h-[100dvh] flex flex-col page-gradient">
+      <div className="h-[100dvh] flex flex-col page-gradient overflow-hidden">
         <AppHeader
           onHistoryToggle={isChat ? historyToggle : undefined}
           isHistoryOpen={isChat ? historyOpen : undefined}
