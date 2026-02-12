@@ -1106,20 +1106,34 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
             .eq('is_active', true)
             .limit(30);
           
-          // Copy to mutable array, score by keyword match count, and take top 10
+          // Copy to mutable array, score by weighted keyword match (rare/specific terms score higher)
           let fallbackChunks = [...(rawFallbackChunks || [])];
-          if (fallbackChunks.length > 0 && sortedKeywords.length > 1) {
+          if (fallbackChunks.length > 0) {
+            // Compute IDF-like weight: keywords appearing in fewer chunks are more valuable
+            const keywordDocFreq = new Map<string, number>();
+            for (const kw of sortedKeywords) {
+              const kwLower = kw.toLowerCase();
+              const count = fallbackChunks.filter((c: any) => (c.chunk_text || '').toLowerCase().includes(kwLower)).length;
+              keywordDocFreq.set(kwLower, count);
+            }
+            
             fallbackChunks = fallbackChunks
               .map((chunk: any) => {
                 const text = (chunk.chunk_text || '').toLowerCase();
-                const matchCount = sortedKeywords.filter(kw => text.includes(kw.toLowerCase())).length;
-                return { ...chunk, _matchScore: matchCount };
+                let score = 0;
+                for (const kw of sortedKeywords) {
+                  const kwLower = kw.toLowerCase();
+                  if (text.includes(kwLower)) {
+                    // Rare keywords get higher weight (inverse doc frequency)
+                    const docFreq = keywordDocFreq.get(kwLower) || 1;
+                    score += fallbackChunks.length / docFreq;
+                  }
+                }
+                return { ...chunk, _matchScore: score };
               })
               .sort((a: any, b: any) => b._matchScore - a._matchScore)
               .slice(0, 10);
-            console.log(`ILIKE fallback keyword scores: ${fallbackChunks.map((c: any) => `${c._matchScore}/${sortedKeywords.length}`).join(', ')}`);
-          } else {
-            fallbackChunks = fallbackChunks.slice(0, 10);
+            console.log(`ILIKE fallback keyword scores: ${fallbackChunks.map((c: any) => `${c._matchScore.toFixed(1)}`).join(', ')}`);
           }
           
           if (!fallbackError && fallbackChunks.length > 0) {
