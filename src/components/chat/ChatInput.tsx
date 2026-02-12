@@ -45,7 +45,7 @@ export function ChatInput({
 
   return (
     <>
-      <div className="border-t border-border bg-card/90 backdrop-blur-xl px-2 pt-2 pb-3 pb-[env(safe-area-inset-bottom,0.75rem)] md:px-4 md:pt-4 md:pb-4 flex-shrink-0">
+      <div className="border-t border-border bg-card/90 backdrop-blur-xl px-3 pt-3 pb-3 pb-[env(safe-area-inset-bottom,0.75rem)] md:px-4 md:pt-4 md:pb-4 flex-shrink-0">
         <div className="max-w-3xl mx-auto">
           {/* Uploaded files preview - horizontal scroll on mobile */}
           {uploadedFiles.length > 0 && (
@@ -111,7 +111,7 @@ export function ChatInput({
           )}
           
           {/* Input row */}
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2.5">
             <ImageUploadButton
               onFilesSelected={onFilesSelected}
               uploadedFiles={[]}
@@ -128,7 +128,7 @@ export function ChatInput({
                   ? "Décrivez votre produit..." 
                   : "Posez votre question..."}
                 aria-label="Message à envoyer"
-                className="min-h-[44px] max-h-24 md:max-h-32 pr-12 resize-none rounded-xl border-border focus:border-primary/40 focus:ring-1 focus:ring-primary/15 bg-background text-sm md:text-base"
+                className="min-h-[52px] max-h-28 md:max-h-32 pr-14 resize-none rounded-2xl border-border focus:border-primary/40 focus:ring-1 focus:ring-primary/15 bg-background text-base py-3.5 px-4"
                 rows={1}
               />
               <Button
@@ -136,13 +136,13 @@ export function ChatInput({
                 disabled={(!input.trim() && uploadedFiles.length === 0) || isLoading || isUploading}
                 size="icon"
                 aria-label="Envoyer le message"
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-9 w-9 rounded-lg bg-primary hover:bg-primary/90 transition-colors text-primary-foreground disabled:opacity-50"
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-10 w-10 rounded-xl bg-primary hover:bg-primary/90 transition-colors text-primary-foreground disabled:opacity-50"
                 style={{ minHeight: 'auto' }}
               >
                 {isUploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4.5 w-4.5 animate-spin" />
                 ) : (
-                  <Send className="h-4 w-4" />
+                  <Send className="h-4.5 w-4.5" />
                 )}
               </Button>
             </div>
