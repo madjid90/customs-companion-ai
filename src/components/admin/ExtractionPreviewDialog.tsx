@@ -272,6 +272,17 @@ export default function ExtractionPreviewDialog({
         }
       }
 
+      // Fetch the real file_path from pdf_documents for source_pdf linking
+      let realFilePath: string | null = null;
+      {
+        const { data: pdfDoc } = await supabase
+          .from("pdf_documents")
+          .select("file_path")
+          .eq("id", pdfId)
+          .maybeSingle();
+        realFilePath = pdfDoc?.file_path || null;
+      }
+
       // Insert tariff lines
       if (uniqueTariffLines.length > 0) {
         const tariffRows = uniqueTariffLines.map(line => ({
@@ -284,6 +295,7 @@ export default function ExtractionPreviewDialog({
           unit_code: line.unit || null,
           is_active: true,
           source: `PDF: ${pdfTitle}`,
+          source_pdf: realFilePath,
         }));
 
         const { error: tariffError } = await supabase
@@ -322,7 +334,7 @@ export default function ExtractionPreviewDialog({
           anchor: note.anchor || null,
           note_text: note.note_text,
           page_number: note.page_number || null,
-          source_pdf: pdfTitle,
+          source_pdf: realFilePath || pdfTitle,
         }));
 
         const { error: noteError } = await supabase
