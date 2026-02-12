@@ -357,8 +357,9 @@ export async function searchKnowledgeKeyword(
     // Sanitize query: use only first 3 keywords to avoid PostgREST parsing errors with special chars
     const sanitizedTerms = searchQuery
       .split(/\s+/)
-      .filter(w => w.length >= 3)
-      .slice(0, 3)
+      .map(w => w.replace(/[,()."']/g, '').trim())
+      .filter(w => w.length >= 2)
+      .slice(0, 5)
       .map(w => escapeSearchTerm(w));
     
     if (sanitizedTerms.length === 0) return [];
