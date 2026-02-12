@@ -640,7 +640,7 @@ export default function Chat() {
   }, [uploadedFiles]);
 
   return (
-    <div className="flex h-full bg-background overflow-hidden overscroll-none">
+    <div className="flex h-full bg-background overflow-hidden overscroll-none" style={{ height: '100%' }}>
       {/* History sidebar */}
       <ChatHistory
         currentSessionId={sessionId}

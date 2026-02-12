@@ -78,9 +78,9 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-0 h-full max-h-full px-3 md:px-6 py-2 md:py-6 animate-fade-in overflow-hidden">
+    <div className="flex flex-col items-center justify-end md:justify-center min-h-0 h-full max-h-full px-3 md:px-6 py-2 pb-4 md:py-6 animate-fade-in overflow-hidden">
       {/* Robot icon */}
-      <div className="relative mb-3 md:mb-5 flex-shrink-0">
+      <div className="relative mb-2 md:mb-5 flex-shrink-0">
         <div className="absolute inset-0 w-16 h-16 md:w-20 md:h-20 rounded-full bg-success/6 blur-2xl -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
         <div className="relative animate-float">
           <BotAvatar size="lg" className="border-0 bg-transparent" />
@@ -91,7 +91,7 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
       <h2 className="text-lg md:text-2xl font-extrabold text-foreground mb-1 tracking-tight text-center flex-shrink-0">
         Votre assistant douanier
       </h2>
-      <p className="text-xs md:text-sm text-muted-foreground mb-4 md:mb-6 text-center max-w-md leading-relaxed flex-shrink-0">
+      <p className="text-xs md:text-sm text-muted-foreground mb-3 md:mb-6 text-center max-w-md leading-relaxed flex-shrink-0">
         Classification SH, tarifs, réglementations — obtenez des réponses précises et sourcées.
       </p>
 

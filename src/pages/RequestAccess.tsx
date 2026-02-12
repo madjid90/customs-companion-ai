@@ -118,9 +118,9 @@ export default function RequestAccess() {
   }
 
   return (
-    <div className="min-h-screen page-gradient flex flex-col items-center justify-center px-4">
+    <div className="min-h-[100dvh] page-gradient flex flex-col items-center justify-center px-4 overflow-auto">
       {/* Back button */}
-      <div className="w-full max-w-md mb-6">
+      <div className="w-full max-w-md mb-4 md:mb-6 flex-shrink-0">
         <button
           onClick={() => navigate(-1)}
           className="inline-flex items-center justify-center h-10 w-10 rounded-xl border border-border/50 bg-card text-muted-foreground hover:text-foreground transition-colors"
@@ -129,11 +129,11 @@ export default function RequestAccess() {
         </button>
       </div>
 
-      <Card className="w-full max-w-md card-elevated border border-border/20 rounded-3xl overflow-hidden">
-        <CardContent className="p-8 md:p-10">
+      <Card className="w-full max-w-md card-elevated border border-border/20 rounded-3xl overflow-hidden flex-shrink-0">
+        <CardContent className="p-6 md:p-10">
           {/* Header */}
-          <div className="text-center mb-8">
-            <div className="mx-auto mb-5">
+          <div className="text-center mb-5 md:mb-8">
+            <div className="mx-auto mb-3 md:mb-5">
               <Logo size="lg" />
             </div>
             <h1 className="text-2xl font-extrabold tracking-tight mb-2">Demander mes accès</h1>
