@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext, useCallback, ReactNode } from "react";
+import React, { useState, useEffect, useMemo, createContext, useContext, useCallback, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Session } from "@supabase/supabase-js";
 
@@ -109,17 +109,21 @@ export function PhoneAuthProvider({ children }: { children: ReactNode }) {
 
   const isAuthenticated = !!session && !!phoneUser;
 
+  // Memoize context value to prevent cascading re-renders on public pages
+  const contextValue = useMemo<PhoneAuthContextType>(
+    () => ({
+      phoneUser,
+      session,
+      isLoading,
+      isAuthenticated,
+      signOut,
+      setSessionFromOtp,
+    }),
+    [phoneUser, session, isLoading, isAuthenticated, signOut, setSessionFromOtp]
+  );
+
   return (
-    <PhoneAuthContext.Provider
-      value={{
-        phoneUser,
-        session,
-        isLoading,
-        isAuthenticated,
-        signOut,
-        setSessionFromOtp,
-      }}
-    >
+    <PhoneAuthContext.Provider value={contextValue}>
       {children}
     </PhoneAuthContext.Provider>
   );
