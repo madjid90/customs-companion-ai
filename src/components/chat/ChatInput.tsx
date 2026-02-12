@@ -45,7 +45,7 @@ export function ChatInput({
 
   return (
     <>
-      <div className="border-t border-border bg-card/90 backdrop-blur-xl px-3 pt-3 pb-3 pb-[env(safe-area-inset-bottom,0.75rem)] md:px-4 md:pt-4 md:pb-4 flex-shrink-0">
+      <div className="border-t border-border bg-card/90 backdrop-blur-xl px-3 pt-3 md:px-4 md:pt-4 md:pb-4 flex-shrink-0" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 1rem))' }}>
         <div className="max-w-3xl mx-auto">
           {/* Uploaded files preview - horizontal scroll on mobile */}
           {uploadedFiles.length > 0 && (
