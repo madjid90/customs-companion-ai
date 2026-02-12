@@ -78,7 +78,7 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
   };
 
   return (
-    <div className="flex flex-col items-center justify-start md:justify-center min-h-0 h-full max-h-full px-3 md:px-6 pt-0 md:py-6 animate-fade-in overflow-hidden">
+    <div className="flex flex-col items-center justify-start md:justify-center px-3 md:px-6 pt-0 pb-2 md:py-6 animate-fade-in">
       {/* Robot icon */}
       <div className="relative mb-1 md:mb-5 flex-shrink-0">
         <div className="absolute inset-0 w-14 h-14 md:w-20 md:h-20 rounded-full bg-success/6 blur-2xl -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
