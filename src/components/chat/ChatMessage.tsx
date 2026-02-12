@@ -474,7 +474,10 @@ export function ChatMessage({
       >
         {!isUser && !isError ? (
           <div 
-            className="prose prose-sm dark:prose-invert max-w-none break-words [&>*]:overflow-x-auto"
+            className={cn(
+              "prose prose-sm dark:prose-invert max-w-none break-words [&>*]:overflow-x-auto",
+              message.isStreaming && "[&>*:last-child]:animate-stream-in"
+            )}
             onClick={(e) => {
               // Event delegation for source links - capture clicks on <a> elements
               const target = e.target as HTMLElement;
