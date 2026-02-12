@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Phone, ArrowRight, Loader2, KeyRound, ArrowLeft, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -177,15 +177,15 @@ export default function PhoneLogin() {
     <div className="min-h-screen flex flex-col items-center justify-center page-gradient p-4">
       {/* Back button */}
       <div className="w-full max-w-md mb-6">
-        <Link
-          to="/"
+        <button
+          onClick={() => navigate(-1)}
           className="inline-flex items-center justify-center h-10 w-10 rounded-xl border border-border/50 bg-card text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
-        </Link>
+        </button>
       </div>
 
-      <Card className="w-full max-w-md animate-slide-up card-elevated border border-border/20 rounded-3xl overflow-hidden">
+      <Card className="w-full max-w-md card-elevated border border-border/20 rounded-3xl overflow-hidden">
         <CardContent className="p-8 md:p-10">
           {/* Header */}
           <div className="text-center mb-8">

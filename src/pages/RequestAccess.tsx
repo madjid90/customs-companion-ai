@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Logo } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ const COUNTRY_CODES = [
 ];
 
 export default function RequestAccess() {
+  const navigate = useNavigate();
   const [companyName, setCompanyName] = useState("");
   const [phoneLocal, setPhoneLocal] = useState("");
   const [countryIndex, setCountryIndex] = useState(0);
@@ -120,15 +121,15 @@ export default function RequestAccess() {
     <div className="min-h-screen page-gradient flex flex-col items-center justify-center px-4">
       {/* Back button */}
       <div className="w-full max-w-md mb-6">
-        <Link
-          to="/"
+        <button
+          onClick={() => navigate(-1)}
           className="inline-flex items-center justify-center h-10 w-10 rounded-xl border border-border/50 bg-card text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
-        </Link>
+        </button>
       </div>
 
-      <Card className="w-full max-w-md animate-slide-up card-elevated border border-border/20 rounded-3xl overflow-hidden">
+      <Card className="w-full max-w-md card-elevated border border-border/20 rounded-3xl overflow-hidden">
         <CardContent className="p-8 md:p-10">
           {/* Header */}
           <div className="text-center mb-8">
