@@ -78,6 +78,11 @@ export const CitedCirculars = forwardRef<HTMLDivElement, CitedCircularsProps>(fu
       <div className="space-y-2">
         {uniqueCirculars.slice(0, 5).map((circular, index) => {
           const hasValidUrl = circular.download_url && circular.download_url.startsWith('http');
+          // Also make clickable if it's a tariff source with chapter info (fallback search)
+          const hasFallbackChapter = !hasValidUrl && (
+            circular.reference_type === "Tarif" || circular.reference_type === "Ligne tarifaire"
+          ) && (circular.reference_number || circular.title);
+          const isClickable = hasValidUrl || hasFallbackChapter;
           const displayTitle = circular.title || circular.reference_number || "Document";
           const displayRef = circular.reference_number || (circular.reference_type === "Tarif" ? "" : circular.pdf_title);
           const hasPageNumber = typeof circular.page_number === 'number' && circular.page_number > 0;
@@ -87,15 +92,26 @@ export const CitedCirculars = forwardRef<HTMLDivElement, CitedCircularsProps>(fu
               key={`${circular.id}-${index}`}
               className={cn(
                 "flex items-start gap-3 p-2.5 rounded-lg bg-muted/30 transition-colors group",
-                hasValidUrl && "hover:bg-muted/50 cursor-pointer"
+                isClickable && "hover:bg-muted/50 cursor-pointer"
               )}
-              onClick={() => hasValidUrl && onDocumentClick(circular.download_url!, displayTitle, circular.page_number)}
-              role={hasValidUrl ? "button" : undefined}
-              tabIndex={hasValidUrl ? 0 : undefined}
-              onKeyDown={(e) => {
-                if (hasValidUrl && (e.key === 'Enter' || e.key === ' ')) {
-                  e.preventDefault();
+              onClick={() => {
+                if (hasValidUrl) {
                   onDocumentClick(circular.download_url!, displayTitle, circular.page_number);
+                } else if (hasFallbackChapter) {
+                  // Trigger search by title/chapter name
+                  onDocumentClick(`source://?title=${encodeURIComponent(displayTitle)}`, displayTitle, circular.page_number);
+                }
+              }}
+              role={isClickable ? "button" : undefined}
+              tabIndex={isClickable ? 0 : undefined}
+              onKeyDown={(e) => {
+                if (isClickable && (e.key === 'Enter' || e.key === ' ')) {
+                  e.preventDefault();
+                  if (hasValidUrl) {
+                    onDocumentClick(circular.download_url!, displayTitle, circular.page_number);
+                  } else if (hasFallbackChapter) {
+                    onDocumentClick(`source://?title=${encodeURIComponent(displayTitle)}`, displayTitle, circular.page_number);
+                  }
                 }
               }}
             >
@@ -145,7 +161,7 @@ export const CitedCirculars = forwardRef<HTMLDivElement, CitedCircularsProps>(fu
                   </p>
                 )}
               </div>
-              {hasValidUrl && (
+              {isClickable && (
                 <div
                   className={cn(
                     "flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md",
