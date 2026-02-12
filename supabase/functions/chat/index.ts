@@ -1088,7 +1088,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       
       try {
         // Build OR conditions for keyword search
-        const keywordsToSearch = analysis.keywords.slice(0, 3).filter(k => k.length >= 4);
+        const keywordsToSearch = analysis.keywords.slice(0, 5).filter(k => k.length >= 2);
         
         if (keywordsToSearch.length > 0) {
           const orConditions = keywordsToSearch.map(kw => `chunk_text.ilike.%${escapeSearchTerm(kw)}%`).join(',');
