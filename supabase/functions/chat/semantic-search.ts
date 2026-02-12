@@ -2,6 +2,8 @@
 // SEMANTIC SEARCH & EMBEDDING FUNCTIONS
 // ============================================================================
 
+import { escapeSearchTerm } from "./hs-utils.ts";
+
 /**
  * Configuration des seuils de similarité optimisés par type de recherche
  */
@@ -352,11 +354,25 @@ export async function searchKnowledgeKeyword(
   limit: number = 5
 ): Promise<any[]> {
   try {
+    // Sanitize query: use only first 3 keywords to avoid PostgREST parsing errors with special chars
+    const sanitizedTerms = searchQuery
+      .split(/\s+/)
+      .filter(w => w.length >= 3)
+      .slice(0, 3)
+      .map(w => escapeSearchTerm(w));
+    
+    if (sanitizedTerms.length === 0) return [];
+    
+    // Build OR conditions with individual sanitized keywords
+    const orConditions = sanitizedTerms
+      .flatMap(term => [`title.ilike.%${term}%`, `content.ilike.%${term}%`, `summary.ilike.%${term}%`])
+      .join(',');
+    
     const { data, error } = await supabase
       .from("knowledge_documents")
       .select("id, title, content, summary, category, country_code, source_url, source_name, reference, tags")
       .eq("is_active", true)
-      .or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%,summary.ilike.%${searchQuery}%`)
+      .or(orConditions)
       .limit(limit);
 
     if (error) {
