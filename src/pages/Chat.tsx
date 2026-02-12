@@ -495,10 +495,10 @@ export default function Chat() {
         });
       };
 
-      // Start periodic flushing (every 80ms for smooth updates without excessive re-renders)
+      // Start periodic flushing (every 50ms for smooth word-by-word feel)
       const startFlushing = () => {
         if (streamFlushTimerRef.current) return;
-        streamFlushTimerRef.current = window.setInterval(flushBuffer, 80);
+        streamFlushTimerRef.current = window.setInterval(flushBuffer, 50);
       };
 
       const stopFlushing = () => {
