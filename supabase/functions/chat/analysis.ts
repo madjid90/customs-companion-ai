@@ -133,7 +133,8 @@ export function analyzeQuestion(question: string): QuestionAnalysisV2 {
     'que','quel','quels','quelle','quelles','comment','combien','dans','avec','sans','par','vers','chez',
     'être','avoir','faire','dit','dit','cette','ces','ses','son','qui','dont','aussi','même','tout',
     'peut','fait','été','entre','autre','autres','tous','comme','mais','bien','dois','doit',
-    'douane','maroc','marocain','produit','marchandise'];
+    'douane','maroc','marocain','produit','marchandise',
+    'code','tarif','droit','importation','classement','position','chapitre'];
   const stopWordsAR = ['هل','ما','من','في','على','إلى','هذا','هذه','ذلك','تلك','التي','الذي','أن','عن'];
   const allStopWords = [...stopWordsFR, ...stopWordsAR];
   
