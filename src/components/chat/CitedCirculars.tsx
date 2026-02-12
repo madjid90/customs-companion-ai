@@ -53,10 +53,13 @@ export const CitedCirculars = forwardRef<HTMLDivElement, CitedCircularsProps>(fu
     return null;
   }
 
-  // Deduplicate by reference_number
+  // Deduplicate by composite key: title + reference_number + page
   const uniqueCirculars = circulars.reduce((acc, curr) => {
-    const key = curr.reference_number || curr.id;
-    if (!acc.find(c => (c.reference_number || c.id) === key)) {
+    const key = `${(curr.title || "").toLowerCase().trim()}|${(curr.reference_number || "").trim()}|${curr.page_number ?? ""}`;
+    if (!acc.find(c => {
+      const cKey = `${(c.title || "").toLowerCase().trim()}|${(c.reference_number || "").trim()}|${c.page_number ?? ""}`;
+      return cKey === key;
+    })) {
       acc.push(curr);
     }
     return acc;
