@@ -79,13 +79,18 @@ async function streamChatResponse(params: {
 
   let response: Response;
   const MAX_RETRIES = 2;
+  const FETCH_TIMEOUT_MS = 120_000; // 2 minutes timeout
   let lastError = '';
   
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    
     try {
       response = await fetch(CHAT_STREAM_URL, {
         method: 'POST',
         headers,
+        signal: controller.signal,
         body: JSON.stringify({
           question: params.question,
           sessionId: params.sessionId,
@@ -94,6 +99,7 @@ async function streamChatResponse(params: {
           conversationHistory: params.conversationHistory,
         }),
       });
+      clearTimeout(timeoutId);
       
       if (response!.ok || response!.status < 500 || attempt === MAX_RETRIES) {
         break;
@@ -104,13 +110,19 @@ async function streamChatResponse(params: {
       console.warn(`[Chat] Retry ${attempt + 1}/${MAX_RETRIES} after ${response!.status}`);
       await new Promise(r => setTimeout(r, delay));
     } catch (networkErr: any) {
-      lastError = networkErr?.message || 'Erreur réseau';
+      clearTimeout(timeoutId);
+      const isAbort = networkErr?.name === 'AbortError' || networkErr?.message?.includes('abort');
+      lastError = isAbort 
+        ? 'La réponse a pris trop de temps. Veuillez réessayer.' 
+        : (networkErr?.message || 'Erreur réseau');
       if (attempt === MAX_RETRIES) {
-        params.onError("Connexion impossible. Vérifiez votre connexion internet et réessayez.");
+        params.onError(isAbort
+          ? "La réponse a pris trop de temps. Veuillez réessayer avec une question plus courte."
+          : "Connexion impossible. Vérifiez votre connexion internet et réessayez.");
         return;
       }
       const delay = 1000 * Math.pow(2, attempt) + Math.random() * 500;
-      console.warn(`[Chat] Network error, retry ${attempt + 1}/${MAX_RETRIES}`);
+      console.warn(`[Chat] ${isAbort ? 'Timeout' : 'Network error'}, retry ${attempt + 1}/${MAX_RETRIES}`);
       await new Promise(r => setTimeout(r, delay));
     }
   }
