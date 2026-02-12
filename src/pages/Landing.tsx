@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/Logo";
 import { CookieConsent } from "@/components/ui/CookieConsent";
-import { lazy, Suspense } from "react";
+import { useState } from "react";
 import {
   ArrowRight,
   Shield,
@@ -23,11 +23,8 @@ import {
   BarChart3,
   BookOpen,
 } from "lucide-react";
-import { useState } from "react";
 
-// Lazy-load heavy background components to avoid blocking first paint
-const LazyPlexusBackground = lazy(() => import("@/components/ui/PlexusBackground").then(m => ({ default: m.PlexusBackground })));
-const LazyGradientMeshBackground = lazy(() => import("@/components/ui/GradientMeshBackground").then(m => ({ default: m.GradientMeshBackground })));
+// Backgrounds now rendered at App level — no longer needed here
 import {
   Accordion,
   AccordionContent,
@@ -77,13 +74,7 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen page-gradient relative" role="main">
-      {/* Fixed background — lazy loaded to avoid blocking first paint */}
-      <div className="fixed inset-0 z-0 pointer-events-none" style={{ contain: "layout paint", willChange: "auto" }}>
-        <Suspense fallback={null}>
-          <LazyPlexusBackground />
-          <LazyGradientMeshBackground variant="cyan-center" />
-        </Suspense>
-      </div>
+      {/* Background is now persistent at App level — no local rendering needed */}
       {/* ─── Header ──────────────────────────────────── */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border/40" role="banner">
         <nav className="container mx-auto px-4 sm:px-6 h-14 flex items-center justify-between" aria-label="Navigation principale">
