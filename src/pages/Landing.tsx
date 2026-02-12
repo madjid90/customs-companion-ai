@@ -74,8 +74,8 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen page-gradient relative" role="main">
-      {/* Fixed background for entire page */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
+      {/* Fixed background for entire page — use contain to isolate GPU compositing */}
+      <div className="fixed inset-0 z-0 pointer-events-none" style={{ contain: "layout paint", willChange: "auto" }}>
         <PlexusBackground />
         <GradientMeshBackground variant="cyan-center" />
       </div>

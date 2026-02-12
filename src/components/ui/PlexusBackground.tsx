@@ -34,18 +34,23 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
     let lastFrameTime = 0;
 
     // 30fps desktop, 20fps mobile
-    const getFrameInterval = () => (isMobile ? 50 : 33); // ms
+    const getFrameInterval = () => (isMobile ? 66 : 33); // ms — 15fps mobile, 30fps desktop
 
     const resize = () => {
       const parent = canvas.parentElement;
       if (!parent) return;
       width = parent.clientWidth;
       height = parent.clientHeight;
-      canvas.width = width;
-      canvas.height = height;
+      // On mobile, use half-resolution canvas for much better GPU perf
+      const dpr = isMobile ? 0.5 : Math.min(window.devicePixelRatio || 1, 1.5);
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.scale(dpr, dpr);
       isMobile = width < 768;
-      PARTICLE_COUNT = isMobile ? 20 : 45;
-      MAX_DIST = isMobile ? 120 : 150;
+      PARTICLE_COUNT = isMobile ? 12 : 45;
+      MAX_DIST = isMobile ? 100 : 150;
       initParticles();
     };
 
@@ -155,6 +160,7 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
     <canvas
       ref={canvasRef}
       className={`absolute inset-0 pointer-events-none ${className}`}
+      style={{ contain: "layout paint size" }}
       aria-hidden="true"
     />
   );
