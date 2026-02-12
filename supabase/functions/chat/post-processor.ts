@@ -258,8 +258,9 @@ export async function postProcessResponse(input: PostProcessInput): Promise<Post
     filteredPdfs: filteredPdfs.length,
   });
 
-  // Build cited circulars
+  // Build cited circulars with deduplication
   const citedCirculars: CitedCircular[] = [];
+  const seenKeys = new Set<string>();
   for (const validSource of sourceValidation.sources_validated.slice(0, 8)) {
     let refType = "Preuve";
     if (validSource.type === "pdf") refType = "Tarif";
@@ -267,6 +268,11 @@ export async function postProcessResponse(input: PostProcessInput): Promise<Post
       refType = (validSource.title?.toLowerCase().includes("article") || validSource.reference?.includes("Art."))
         ? "Article" : "Circulaire";
     } else if (validSource.type === "tariff") refType = "Ligne tarifaire";
+
+    // Dedup key: title + reference + page (avoids same doc cited multiple times)
+    const dedupKey = `${(validSource.title || "").toLowerCase().trim()}|${(validSource.reference || validSource.chapter || "").trim()}|${validSource.page_number ?? ""}`;
+    if (seenKeys.has(dedupKey)) continue;
+    seenKeys.add(dedupKey);
 
     citedCirculars.push({
       id: validSource.id,
