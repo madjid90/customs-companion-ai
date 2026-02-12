@@ -78,7 +78,7 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
   };
 
   return (
-    <div className="flex flex-col items-center justify-start md:justify-center min-h-0 h-full max-h-full px-3 md:px-6 pt-1 md:py-6 animate-fade-in overflow-hidden">
+    <div className="flex flex-col items-center justify-start md:justify-center min-h-0 h-full max-h-full px-3 md:px-6 pt-0 md:py-6 animate-fade-in overflow-hidden">
       {/* Robot icon */}
       <div className="relative mb-1 md:mb-5 flex-shrink-0">
         <div className="absolute inset-0 w-14 h-14 md:w-20 md:h-20 rounded-full bg-success/6 blur-2xl -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
@@ -92,7 +92,7 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
       <h2 className="text-lg md:text-2xl font-extrabold text-foreground mb-1 tracking-tight text-center flex-shrink-0">
         Votre assistant douanier
       </h2>
-      <p className="text-xs md:text-sm text-muted-foreground mb-3 md:mb-6 text-center max-w-md leading-relaxed flex-shrink-0">
+      <p className="text-xs md:text-sm text-muted-foreground mb-2 md:mb-6 text-center max-w-md leading-relaxed flex-shrink-0">
         Classification SH, tarifs, réglementations — obtenez des réponses précises et sourcées.
       </p>
 
@@ -102,7 +102,7 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
           <button
             key={`${item.question}-${i}`}
             className={cn(
-              "group flex items-center gap-3 md:gap-4 text-left w-full px-4 py-2.5 md:px-5 md:py-3.5 rounded-xl md:rounded-none bg-card md:bg-transparent border border-border/50 md:border-0 shadow-sm md:shadow-none hover:bg-muted/50 transition-all duration-200",
+              "group flex items-center gap-3 md:gap-4 text-left w-full px-4 py-2 md:px-5 md:py-3.5 rounded-xl md:rounded-none bg-card md:bg-transparent border border-border/50 md:border-0 shadow-sm md:shadow-none hover:bg-muted/50 transition-all duration-200",
               i < suggestedQuestions.length - 1 && "md:border-b md:border-border"
             )}
             onClick={() => onQuestionClick(item.question)}
@@ -121,7 +121,7 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
       {/* Refresh link */}
       <button
         onClick={refreshQuestions}
-        className="mt-3 md:mt-4 text-xs text-muted-foreground/60 hover:text-primary transition-colors flex items-center gap-1.5 flex-shrink-0"
+        className="mt-2 md:mt-4 text-xs text-muted-foreground/60 hover:text-primary transition-colors flex items-center gap-1.5 flex-shrink-0"
       >
         <Sparkles className="h-3 w-3" />
         Autres suggestions
