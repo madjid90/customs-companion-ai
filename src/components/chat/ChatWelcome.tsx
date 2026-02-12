@@ -65,7 +65,8 @@ const getRandomQuestions = (count: number) => {
 
 export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
   const [suggestedQuestions, setSuggestedQuestions] = useState(() => getRandomQuestions(4));
-
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const displayedQuestions = isMobile ? suggestedQuestions.slice(0, 3) : suggestedQuestions;
   useEffect(() => {
     const interval = setInterval(() => {
       setSuggestedQuestions(getRandomQuestions(4));
@@ -98,12 +99,12 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
 
       {/* Suggestion cards */}
       <div className="w-full max-w-xl space-y-2 md:space-y-0 md:bg-card md:rounded-2xl md:border md:border-border md:shadow-md md:overflow-hidden flex-shrink-0">
-        {suggestedQuestions.map((item, i) => (
+        {displayedQuestions.map((item, i) => (
           <button
             key={`${item.question}-${i}`}
             className={cn(
               "group flex items-center gap-3 md:gap-4 text-left w-full px-4 py-2 md:px-5 md:py-3.5 rounded-xl md:rounded-none bg-card md:bg-transparent border border-border/50 md:border-0 shadow-sm md:shadow-none hover:bg-muted/50 transition-all duration-200",
-              i < suggestedQuestions.length - 1 && "md:border-b md:border-border"
+              i < displayedQuestions.length - 1 && "md:border-b md:border-border"
             )}
             onClick={() => onQuestionClick(item.question)}
           >
