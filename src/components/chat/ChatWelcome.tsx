@@ -78,7 +78,7 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
   };
 
   return (
-    <div className="flex flex-col items-center justify-end md:justify-center px-3 md:px-6 pt-2 pb-2 md:py-6 animate-fade-in max-h-full overflow-hidden">
+    <div className="flex flex-col items-center justify-start md:justify-center px-3 md:px-6 pt-4 pb-2 md:py-6 animate-fade-in">
       {/* Robot icon */}
       <div className="relative mb-2 md:mb-5 flex-shrink-0">
         <div className="absolute inset-0 w-14 h-14 md:w-20 md:h-20 rounded-full bg-success/6 blur-2xl -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
@@ -97,7 +97,7 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
       </p>
 
       {/* Suggestion cards */}
-      <div className="w-full max-w-xl space-y-2 md:space-y-0 md:bg-card md:rounded-2xl md:border md:border-border md:shadow-md md:overflow-hidden flex-shrink min-h-0 overflow-y-auto">
+      <div className="w-full max-w-xl space-y-2 md:space-y-0 md:bg-card md:rounded-2xl md:border md:border-border md:shadow-md md:overflow-hidden flex-shrink-0">
         {suggestedQuestions.map((item, i) => (
           <button
             key={`${item.question}-${i}`}
