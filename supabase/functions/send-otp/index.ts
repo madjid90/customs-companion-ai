@@ -15,12 +15,12 @@ serve(async (req) => {
 
   const corsHeaders = getCorsHeaders(req);
 
-  // Rate limiting: max 5 OTP requests per phone per 15 minutes
+  // Rate limiting: max 10 OTP requests per IP per 15 minutes
   const clientId = getClientId(req);
   const rateLimit = await checkRateLimitDistributed(clientId, {
-    maxRequests: 5,
+    maxRequests: 10,
     windowMs: 15 * 60 * 1000, // 15 minutes
-    blockDurationMs: 15 * 60 * 1000,
+    blockDurationMs: 5 * 60 * 1000, // block for 5 minutes only
   });
 
   if (!rateLimit.allowed) {
@@ -55,17 +55,17 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Phone-specific rate limit: max 3 OTP per phone per 15 minutes
-    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    // Phone-specific rate limit: max 5 OTP per phone per 10 minutes
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const { count: recentOtpCount } = await supabase
       .from("otp_codes")
       .select("*", { count: "exact", head: true })
       .eq("phone", normalizedPhone)
-      .gte("created_at", fifteenMinutesAgo);
+      .gte("created_at", tenMinutesAgo);
 
-    if ((recentOtpCount || 0) >= 3) {
+    if ((recentOtpCount || 0) >= 5) {
       return new Response(
-        JSON.stringify({ error: "Trop de demandes. Réessayez dans 15 minutes." }),
+        JSON.stringify({ error: "Trop de demandes. Réessayez dans quelques minutes." }),
         { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
