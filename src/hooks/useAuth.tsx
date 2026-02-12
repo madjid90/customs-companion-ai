@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext, ReactNode } from "react";
+import React, { useState, useEffect, useMemo, createContext, useContext, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from "@supabase/supabase-js";
 
@@ -102,18 +102,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   }
 
+  // Memoize context value to prevent cascading re-renders on public pages
+  const contextValue = useMemo<AuthContextType>(
+    () => ({
+      user,
+      session,
+      isLoading,
+      isAdmin,
+      profile,
+      signIn,
+      signOut,
+    }),
+    [user, session, isLoading, isAdmin, profile]
+  );
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        session,
-        isLoading,
-        isAdmin,
-        profile,
-        signIn,
-        signOut,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

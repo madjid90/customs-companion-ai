@@ -14,7 +14,7 @@ export function AppHeader({ onHistoryToggle, isHistoryOpen }: AppHeaderProps) {
   const navigate = useNavigate();
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 glass" role="banner">
+    <header className="fixed top-0 left-0 right-0 z-50 glass" role="banner" style={{ contain: "layout style" }}>
       <nav className="container mx-auto px-4 sm:px-6 h-14 md:h-16 flex items-center justify-between">
         {/* Mobile: back button + hamburger menu for history */}
         <div className="md:hidden flex items-center gap-1">
