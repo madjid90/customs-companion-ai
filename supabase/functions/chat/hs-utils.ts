@@ -50,8 +50,12 @@ export const getHSLevel = (code: string): string => {
  */
 export const escapeSearchTerm = (term: string): string => {
   return term
+    // Strip characters that break PostgREST .or() parsing: commas, parentheses, dots (used as delimiters)
+    .replace(/[,()."]/g, '')
+    // Escape SQL LIKE special characters
     .replace(/\\/g, '\\\\')
     .replace(/%/g, '\\%')
     .replace(/_/g, '\\_')
-    .replace(/'/g, "''");
+    .replace(/'/g, "''")
+    .trim();
 };
