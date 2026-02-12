@@ -67,6 +67,11 @@ const faqs = [
 export default function Landing() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // Prefetch PhoneLogin chunk on hover for instant navigation
+  const prefetchLogin = () => {
+    import("@/pages/PhoneLogin");
+  };
+
   return (
     <div className="min-h-screen page-gradient relative" role="main">
       {/* Fixed background for entire page */}
@@ -82,7 +87,7 @@ export default function Landing() {
             <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Fonctionnalités</a>
             <a href="#how" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Comment ça marche</a>
             <a href="#faq" className="text-sm text-muted-foreground hover:text-foreground transition-colors">FAQ</a>
-            <Link to="/login" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
+            <Link to="/login" className="text-sm font-medium text-foreground hover:text-primary transition-colors" onMouseEnter={prefetchLogin}>
               Connexion
             </Link>
             <Link to="/demander-acces">
@@ -164,7 +169,7 @@ export default function Landing() {
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </Link>
-                <Link to="/login">
+                <Link to="/login" onMouseEnter={prefetchLogin}>
                   <Button variant="outline" className="rounded-xl h-12 px-7 text-sm font-medium gap-2 w-full sm:w-auto">
                     Se connecter
                   </Button>

@@ -30,6 +30,11 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
     let PARTICLE_COUNT = 60;
     let MAX_DIST = 150;
     let started = false;
+    let isVisible = true;
+    let lastFrameTime = 0;
+
+    // 30fps desktop, 20fps mobile
+    const getFrameInterval = () => (isMobile ? 50 : 33); // ms
 
     const resize = () => {
       const parent = canvas.parentElement;
@@ -39,7 +44,7 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
       canvas.width = width;
       canvas.height = height;
       isMobile = width < 768;
-      PARTICLE_COUNT = isMobile ? 30 : 60;
+      PARTICLE_COUNT = isMobile ? 20 : 45;
       MAX_DIST = isMobile ? 120 : 150;
       initParticles();
     };
@@ -54,7 +59,19 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
       }));
     };
 
-    const draw = () => {
+    const draw = (timestamp: number) => {
+      if (!isVisible) {
+        animationRef.current = requestAnimationFrame(draw);
+        return;
+      }
+
+      const elapsed = timestamp - lastFrameTime;
+      if (elapsed < getFrameInterval()) {
+        animationRef.current = requestAnimationFrame(draw);
+        return;
+      }
+      lastFrameTime = timestamp;
+
       ctx.clearRect(0, 0, width, height);
       const particles = particlesRef.current;
 
@@ -96,8 +113,23 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
       if (started) return;
       started = true;
       resize();
-      draw();
+      animationRef.current = requestAnimationFrame(draw);
     };
+
+    // Pause when tab is hidden
+    const handleVisibility = () => {
+      isVisible = !document.hidden;
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    // Pause when canvas is off-screen
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        isVisible = entry.isIntersecting && !document.hidden;
+      },
+      { threshold: 0.1 }
+    );
+    io.observe(canvas);
 
     // Defer canvas animation to after first paint
     if ("requestIdleCallback" in window) {
@@ -114,6 +146,8 @@ export function PlexusBackground({ className = "" }: PlexusBackgroundProps) {
     return () => {
       cancelAnimationFrame(animationRef.current);
       ro.disconnect();
+      io.disconnect();
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, []);
 
