@@ -659,7 +659,7 @@ export default function Chat() {
       >
         {/* Chat messages area */}
         {messages.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center px-2 md:px-4 overflow-hidden overscroll-none touch-none">
+          <div className="flex-1 flex items-end md:items-center justify-center px-2 md:px-4 overflow-hidden overscroll-none pb-2">
             <div className="max-w-3xl mx-auto w-full">
               <ChatWelcome onQuestionClick={handleSend} />
             </div>
