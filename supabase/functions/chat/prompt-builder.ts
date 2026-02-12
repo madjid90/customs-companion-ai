@@ -578,8 +578,26 @@ ${availableSources.slice(0, 15).join('\n\n')}
     ragParts.push(`### Produits contrôlés\nVoir contrôles dans les tarifs ci-dessus`);
   }
 
-  // Knowledge documents
-  ragParts.push(`### Documents de référence\n${context.knowledge_documents.length > 0 ? context.knowledge_documents.map(d => `- **${d.title}**: ${d.content?.substring(0, 500)}...`).join('\n') : "Aucun document de référence"}`);
+  // Knowledge documents - circulaires and legal docs are CRITICAL sources
+  if (context.knowledge_documents.length > 0) {
+    const legalDocs = context.knowledge_documents.filter((d: any) => d.source === 'legal_chunks' || d.source === 'legal_chunks_fallback' || d.category === 'legal');
+    const otherDocs = context.knowledge_documents.filter((d: any) => d.source !== 'legal_chunks' && d.source !== 'legal_chunks_fallback' && d.category !== 'legal');
+    
+    if (legalDocs.length > 0) {
+      console.log(`[prompt-builder] Including ${legalDocs.length} legal docs as PRIORITY source, titles: ${legalDocs.map((d: any) => d.title).join(' | ')}`);
+      const legalText = legalDocs.map((d: any) => `- **${d.title}**: ${d.content?.substring(0, 1500)}`).join('\n');
+      ragParts.push(`### ⚖️ CIRCULAIRES ET TEXTES JURIDIQUES (SOURCE PRIORITAIRE — UTILISE CES DONNÉES)\n**INSTRUCTION OBLIGATOIRE : Les circulaires ci-dessous contiennent la réponse. TU DOIS les citer et les utiliser. Ne demande JAMAIS de précisions si l'information est disponible ci-dessous.**\n${legalText}`);
+    }
+    if (otherDocs.length > 0) {
+      const otherText = otherDocs.map((d: any) => `- **${d.title}**: ${d.content?.substring(0, 500)}...`).join('\n');
+      ragParts.push(`### Documents de référence\n${otherText}`);
+    }
+    if (legalDocs.length === 0 && otherDocs.length === 0) {
+      ragParts.push(`### Documents de référence\nAucun document de référence`);
+    }
+  } else {
+    ragParts.push(`### Documents de référence\nAucun document de référence`);
+  }
 
   // PDF extractions with passage scoring
   if (context.pdf_summaries.length > 0) {

@@ -1091,9 +1091,11 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         const keywordsToSearch = analysis.keywords.slice(0, 5).filter(k => k.length >= 2);
         
         if (keywordsToSearch.length > 0) {
-          const orConditions = keywordsToSearch.map(kw => `chunk_text.ilike.%${escapeSearchTerm(kw)}%`).join(',');
+        // Prioritize specific/longer keywords over short common ones
+        const sortedKeywords = [...keywordsToSearch].sort((a, b) => b.length - a.length);
+        const orConditions = sortedKeywords.map(kw => `chunk_text.ilike.%${escapeSearchTerm(kw)}%`).join(',');
           
-          const { data: fallbackChunks, error: fallbackError } = await supabase
+          const { data: rawFallbackChunks, error: fallbackError } = await supabase
             .from('legal_chunks')
             .select(`
               id, chunk_index, chunk_text, chunk_type, article_number, section_title, 
@@ -1102,10 +1104,25 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
             `)
             .or(orConditions)
             .eq('is_active', true)
-            .order('id', { ascending: true })
-            .limit(10);
+            .limit(30);
           
-          if (!fallbackError && fallbackChunks && fallbackChunks.length > 0) {
+          // Copy to mutable array, score by keyword match count, and take top 10
+          let fallbackChunks = [...(rawFallbackChunks || [])];
+          if (fallbackChunks.length > 0 && sortedKeywords.length > 1) {
+            fallbackChunks = fallbackChunks
+              .map((chunk: any) => {
+                const text = (chunk.chunk_text || '').toLowerCase();
+                const matchCount = sortedKeywords.filter(kw => text.includes(kw.toLowerCase())).length;
+                return { ...chunk, _matchScore: matchCount };
+              })
+              .sort((a: any, b: any) => b._matchScore - a._matchScore)
+              .slice(0, 10);
+            console.log(`ILIKE fallback keyword scores: ${fallbackChunks.map((c: any) => `${c._matchScore}/${sortedKeywords.length}`).join(', ')}`);
+          } else {
+            fallbackChunks = fallbackChunks.slice(0, 10);
+          }
+          
+          if (!fallbackError && fallbackChunks.length > 0) {
             console.log(`ILIKE fallback found ${fallbackChunks.length} legal chunks`);
             
             // Enrich with download URLs (try to find Code des Douanes PDF)
@@ -1141,6 +1158,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
               source: 'legal_chunks_fallback',
             }));
             context.knowledge_documents = [...context.knowledge_documents, ...legalDocs].slice(0, 15);
+            console.log(`Legal chunks added to knowledge_documents: ${legalDocs.length} items, total: ${context.knowledge_documents.length}, sources: ${context.knowledge_documents.map((d: any) => d.source).join(',')}`);
           }
         }
       } catch (fallbackErr) {
@@ -1193,7 +1211,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           "LLM re-ranking"
         );
 
-        // Build keep-sets per type (only passages with score >= 3)
+        // Build keep-sets per type (only passages with score >= 2)
         const keepByType: Record<string, Set<number>> = {
           knowledge_doc: new Set(),
           tariff_note: new Set(),
@@ -1201,15 +1219,18 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         };
 
         for (const r of reranked) {
-          if (r.score >= 3) {
+          if (r.score >= 2) {
             const source = passageSourceMap[r.index];
             if (source) keepByType[source.type]?.add(source.index);
           }
         }
 
-        // Filter knowledge_documents (only if we're keeping at least some)
+        // Safety: never filter below a minimum number of items per type
+        const MIN_KEEP = 3;
+
+        // Filter knowledge_documents (only if we're keeping enough)
         const kKeep = keepByType.knowledge_doc;
-        if (kKeep.size > 0 && kKeep.size < context.knowledge_documents.length) {
+        if (kKeep.size >= MIN_KEEP && kKeep.size < context.knowledge_documents.length) {
           const before = context.knowledge_documents.length;
           context.knowledge_documents = context.knowledge_documents.filter((_: any, i: number) => kKeep.has(i));
           console.log(`[reranker] knowledge_documents: ${before} → ${context.knowledge_documents.length}`);
@@ -1217,7 +1238,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
 
         // Filter tariff_notes
         const nKeep = keepByType.tariff_note;
-        if (nKeep.size > 0 && nKeep.size < context.tariff_notes.length) {
+        if (nKeep.size >= MIN_KEEP && nKeep.size < context.tariff_notes.length) {
           const before = context.tariff_notes.length;
           context.tariff_notes = context.tariff_notes.filter((_: any, i: number) => nKeep.has(i));
           console.log(`[reranker] tariff_notes: ${before} → ${context.tariff_notes.length}`);
@@ -1225,7 +1246,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
 
         // Filter legal chunks
         const cKeep = keepByType.legal_chunk;
-        if (cKeep.size > 0 && cKeep.size < legalChks.length) {
+        if (cKeep.size >= MIN_KEEP && cKeep.size < legalChks.length) {
           const before = legalChks.length;
           (context as any)._legalChunks = legalChks.filter((_: any, i: number) => cKeep.has(i));
           console.log(`[reranker] legal_chunks: ${before} → ${(context as any)._legalChunks.length}`);
