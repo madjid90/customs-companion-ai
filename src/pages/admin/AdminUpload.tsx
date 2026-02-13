@@ -38,6 +38,28 @@ import ReingestionPanel from "@/components/admin/ReingestionPanel";
 import EmbeddingPanel from "@/components/admin/EmbeddingPanel";
 import MissingChunksPanel from "@/components/admin/MissingChunksPanel";
 
+// Format raw API errors into user-friendly messages
+function formatApiError(status: number, rawText: string): string {
+  if (status === 400 && rawText.includes("invalid")) {
+    return "PDF incompatible avec l'API d'analyse. Le fichier est probablement corrompu ou dans un format non supporté. Essayez de le re-scanner ou le convertir.";
+  }
+  if (status === 413 || rawText.includes("too large") || rawText.includes("trop volumineux")) {
+    return "Le fichier est trop volumineux pour être traité. Réduisez la taille ou divisez le document.";
+  }
+  if (status === 429 || rawText.includes("rate_limit")) {
+    return "Trop de requêtes en cours. Veuillez patienter quelques secondes avant de réessayer.";
+  }
+  if (status === 403) {
+    return "Session expirée. Veuillez vous reconnecter.";
+  }
+  if (status >= 500) {
+    return `Erreur serveur (${status}). Réessayez dans quelques instants.`;
+  }
+  // Truncate raw text for other cases
+  const clean = rawText.replace(/[{}"\\]/g, '').substring(0, 120);
+  return `Erreur ${status}: ${clean}`;
+}
+
 // Document type configuration
 const DOCUMENT_TYPES: { value: DocumentType; label: string; icon: React.ReactNode; description: string; pipeline: "analyze" | "ingest" }[] = [
   { value: "tarif", label: "Tarif SH", icon: <FileCheck className="h-4 w-4" />, description: "Codes SH, taux DD, lignes tarifaires", pipeline: "analyze" },
@@ -159,7 +181,7 @@ export default function AdminUpload() {
         
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
+          throw new Error(formatApiError(response.status, errorText));
         }
         
         const batchResult = await response.json();
@@ -363,7 +385,7 @@ export default function AdminUpload() {
 
     if (!firstBatchResponse.ok) {
       const errorText = await firstBatchResponse.text();
-      throw new Error(`HTTP ${firstBatchResponse.status}: ${errorText.substring(0, 200)}`);
+      throw new Error(formatApiError(firstBatchResponse.status, errorText));
     }
 
     const firstResult = await firstBatchResponse.json();
@@ -449,7 +471,7 @@ export default function AdminUpload() {
 
           if (!batchResponse.ok) {
             const errorText = await batchResponse.text();
-            console.warn(`[LegalIngestion] Batch ${batchNum} HTTP error: ${errorText.substring(0, 100)}`);
+            console.warn(`[LegalIngestion] Batch ${batchNum} HTTP error: ${formatApiError(batchResponse.status, errorText)}`);
             if (attempt === 2) break; // Last attempt, skip this batch
             continue;
           }
