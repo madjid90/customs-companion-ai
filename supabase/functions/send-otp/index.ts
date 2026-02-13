@@ -19,8 +19,8 @@ serve(async (req) => {
   const clientId = getClientId(req);
   const rateLimit = await checkRateLimitDistributed(clientId, {
     maxRequests: 10,
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    blockDurationMs: 5 * 60 * 1000, // block for 5 minutes only
+    windowMs: 15 * 60 * 1000,
+    blockDurationMs: 5 * 60 * 1000,
   });
 
   if (!rateLimit.allowed) {
@@ -28,22 +28,21 @@ serve(async (req) => {
   }
 
   try {
-    const { phone } = await req.json();
+    const { email } = await req.json();
 
-    if (!phone || typeof phone !== "string") {
+    if (!email || typeof email !== "string") {
       return new Response(
-        JSON.stringify({ error: "Numéro de téléphone requis" }),
+        JSON.stringify({ error: "Adresse email requise" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Normalize phone: ensure +prefix
-    const normalizedPhone = phone.startsWith("+") ? phone : `+${phone}`;
+    const normalizedEmail = email.trim().toLowerCase();
 
-    // Validate phone format
-    if (!/^\+[1-9]\d{6,14}$/.test(normalizedPhone)) {
+    // Validate email format
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       return new Response(
-        JSON.stringify({ error: "Format de numéro invalide" }),
+        JSON.stringify({ error: "Format d'email invalide" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -55,12 +54,12 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Phone-specific rate limit: max 5 OTP per phone per 10 minutes
+    // Email-specific rate limit: max 5 OTP per email per 10 minutes
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const { count: recentOtpCount } = await supabase
       .from("otp_codes")
       .select("*", { count: "exact", head: true })
-      .eq("phone", normalizedPhone)
+      .eq("email", normalizedEmail)
       .gte("created_at", tenMinutesAgo);
 
     if ((recentOtpCount || 0) >= 5) {
@@ -70,7 +69,7 @@ serve(async (req) => {
       );
     }
 
-    // Check if this is the very first user (bootstrap manager)
+    // Check if this is the very first user (bootstrap)
     const { count: totalUsers } = await supabase
       .from("phone_users")
       .select("*", { count: "exact", head: true });
@@ -78,14 +77,13 @@ serve(async (req) => {
     let isBootstrap = false;
 
     if (totalUsers === 0) {
-      // First user ever — allow and will be created as manager
       isBootstrap = true;
     } else {
-      // Check if phone is in the invitation whitelist
+      // Check if email is authorized
       const { data: phoneUser, error: lookupError } = await supabase
         .from("phone_users")
         .select("id, is_active")
-        .eq("phone", normalizedPhone)
+        .eq("email", normalizedEmail)
         .maybeSingle();
 
       if (lookupError) {
@@ -98,35 +96,36 @@ serve(async (req) => {
 
       if (!phoneUser) {
         return new Response(
-          JSON.stringify({ error: "Ce numéro n'est pas autorisé. L'accès se fait sur invitation uniquement." }),
+          JSON.stringify({ error: "Cette adresse email n'est pas autorisée. L'accès se fait sur invitation uniquement." }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
       if (!phoneUser.is_active) {
         return new Response(
-          JSON.stringify({ error: "Votre accès a été désactivé. Contactez votre manager." }),
+          JSON.stringify({ error: "Votre accès a été désactivé. Contactez votre administrateur." }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
     }
 
-    // Invalidate any existing unused OTPs for this phone
+    // Invalidate any existing unused OTPs for this email
     await supabase
       .from("otp_codes")
       .update({ is_used: true })
-      .eq("phone", normalizedPhone)
+      .eq("email", normalizedEmail)
       .eq("is_used", false);
 
-    // Generate 6-digit OTP using cryptographically secure random
+    // Generate 6-digit OTP
     const array = new Uint32Array(1);
     crypto.getRandomValues(array);
     const code = String(100000 + (array[0] % 900000));
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
     // Store OTP
     const { error: insertError } = await supabase.from("otp_codes").insert({
-      phone: normalizedPhone,
+      email: normalizedEmail,
+      phone: normalizedEmail, // backward compat - phone column still required in some contexts
       code,
       expires_at: expiresAt,
     });
@@ -139,42 +138,47 @@ serve(async (req) => {
       );
     }
 
-    // Send SMS via Twilio
-    const twilioSid = Deno.env.get("TWILIO_ACCOUNT_SID");
-    const twilioToken = Deno.env.get("TWILIO_AUTH_TOKEN");
-    const twilioPhone = Deno.env.get("TWILIO_PHONE_NUMBER");
+    // Send email via Resend
+    const resendApiKey = Deno.env.get("RESEND_API_KEY");
 
-    if (!twilioSid || !twilioToken || !twilioPhone) {
-      console.error("Twilio credentials not configured");
+    if (!resendApiKey) {
+      console.error("RESEND_API_KEY not configured");
       return new Response(
-        JSON.stringify({ error: "Service SMS non configuré" }),
+        JSON.stringify({ error: "Service email non configuré" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`;
-    const twilioAuth = btoa(`${twilioSid}:${twilioToken}`);
+    const emailBody = {
+      from: "DouaneAI <onboarding@resend.dev>",
+      to: [normalizedEmail],
+      subject: `Votre code de vérification DouaneAI : ${code}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+          <h2 style="color: #1a1a1a; margin-bottom: 8px;">Code de vérification</h2>
+          <p style="color: #666; margin-bottom: 24px;">Utilisez le code ci-dessous pour vous connecter à DouaneAI :</p>
+          <div style="background: #f4f4f5; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
+            <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #1a1a1a;">${code}</span>
+          </div>
+          <p style="color: #999; font-size: 13px;">Ce code est valable 5 minutes. Si vous n'avez pas demandé ce code, ignorez cet email.</p>
+        </div>
+      `,
+    };
 
-    const smsBody = `Votre code de vérification DouaneAI : ${code}. Valable 5 minutes.`;
-
-    const twilioResponse = await fetch(twilioUrl, {
+    const resendResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
-        Authorization: `Basic ${twilioAuth}`,
-        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json",
       },
-      body: new URLSearchParams({
-        To: normalizedPhone,
-        From: twilioPhone,
-        Body: smsBody,
-      }),
+      body: JSON.stringify(emailBody),
     });
 
-    if (!twilioResponse.ok) {
-      const twilioError = await twilioResponse.text();
-      console.error("Twilio error:", twilioError);
+    if (!resendResponse.ok) {
+      const resendError = await resendResponse.text();
+      console.error("Resend error:", resendError);
       return new Response(
-        JSON.stringify({ error: "Erreur lors de l'envoi du SMS. Vérifiez le numéro." }),
+        JSON.stringify({ error: "Erreur lors de l'envoi de l'email. Vérifiez l'adresse." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -182,7 +186,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: "Code envoyé par SMS",
+        message: "Code envoyé par email",
         isBootstrap,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }

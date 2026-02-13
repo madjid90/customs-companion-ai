@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
-import { Phone, ArrowRight, Loader2, KeyRound, ArrowLeft, ChevronDown } from "lucide-react";
+import { Mail, ArrowRight, Loader2, KeyRound, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,32 +12,21 @@ import { useToast } from "@/hooks/use-toast";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-const COUNTRY_CODES = [
-  { code: "+212", label: "Maroc", placeholder: "6XX XXX XXX" },
-  { code: "+33", label: "France", placeholder: "6 XX XX XX XX" },
-  { code: "+86", label: "Chine", placeholder: "1XX XXXX XXXX" },
-];
-
 export default function PhoneLogin() {
-  const [countryIndex, setCountryIndex] = useState(0);
-  const [phoneLocal, setPhoneLocal] = useState("");
+  const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [step, setStep] = useState<"phone" | "otp">("phone");
+  const [step, setStep] = useState<"email" | "otp">("email");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [isBootstrap, setIsBootstrap] = useState(false);
   const [countdown, setCountdown] = useState(0);
-  const [countryOpen, setCountryOpen] = useState(false);
   const otpInputRef = useRef<HTMLInputElement>(null);
 
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated, setSessionFromOtp } = usePhoneAuth();
   const { toast } = useToast();
-
-  const country = COUNTRY_CODES[countryIndex];
-  const fullPhone = `${country.code}${phoneLocal.replace(/\s/g, "")}`;
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -70,7 +59,7 @@ export default function PhoneLogin() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${SUPABASE_KEY}`,
         },
-        body: JSON.stringify({ phone: fullPhone }),
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
 
       const data = await res.json();
@@ -86,7 +75,7 @@ export default function PhoneLogin() {
       setCountdown(60);
       toast({
         title: "Code envoyé !",
-        description: `Un SMS a été envoyé au ${country.code} ${phoneLocal}`,
+        description: `Un email a été envoyé à ${email}`,
       });
     } catch (err) {
       setError("Erreur de connexion au serveur");
@@ -108,7 +97,7 @@ export default function PhoneLogin() {
           Authorization: `Bearer ${SUPABASE_KEY}`,
         },
         body: JSON.stringify({
-          phone: fullPhone,
+          email: email.trim().toLowerCase(),
           code: otp.trim(),
           displayName: isBootstrap ? displayName.trim() : undefined,
         }),
@@ -155,7 +144,7 @@ export default function PhoneLogin() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${SUPABASE_KEY}`,
         },
-        body: JSON.stringify({ phone: fullPhone }),
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
 
       const data = await res.json();
@@ -193,64 +182,32 @@ export default function PhoneLogin() {
               <Logo size="lg" />
             </div>
             <h1 className="text-2xl font-extrabold tracking-tight mb-2">
-              {step === "phone" ? "Me connecter" : "Vérification"}
+              {step === "email" ? "Me connecter" : "Vérification"}
             </h1>
             <p className="text-sm text-muted-foreground">
-              {step === "phone"
+              {step === "email"
                 ? "Accédez à votre espace membre"
-                : `Code envoyé au ${country.code} ${phoneLocal}`}
+                : `Code envoyé à ${email}`}
             </p>
           </div>
 
-          {step === "phone" ? (
+          {step === "email" ? (
             <form onSubmit={handleSendOtp} className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="phone" className="flex items-center gap-2 text-sm font-semibold">
-                  <Phone className="h-4 w-4 text-primary" />
-                  Téléphone
+                <Label htmlFor="email" className="flex items-center gap-2 text-sm font-semibold">
+                  <Mail className="h-4 w-4 text-primary" />
+                  Email
                 </Label>
-                <div className="flex gap-2">
-                  <div className="relative">
-                    <button
-                      type="button"
-                      className="flex items-center gap-1.5 h-10 px-3 rounded-xl border border-input bg-muted/50 text-sm hover:bg-accent/50 transition-colors whitespace-nowrap"
-                      onClick={() => setCountryOpen(!countryOpen)}
-                    >
-                      <span className="font-medium text-foreground">{country.code}</span>
-                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                    </button>
-                    {countryOpen && (
-                      <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-xl shadow-lg overflow-hidden min-w-[180px]">
-                        {COUNTRY_CODES.map((c, i) => (
-                          <button
-                            key={c.code}
-                            type="button"
-                            className={`w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-accent/50 transition-colors ${
-                              i === countryIndex ? "bg-primary/5 text-primary font-medium" : "text-foreground"
-                            }`}
-                            onClick={() => {
-                              setCountryIndex(i);
-                              setCountryOpen(false);
-                            }}
-                          >
-                            <span>{c.label}</span>
-                            <span className="ml-auto text-muted-foreground">{c.code}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    value={phoneLocal}
-                    onChange={(e) => setPhoneLocal(e.target.value)}
-                    placeholder={country.placeholder}
-                    className="rounded-xl h-10 bg-muted/50 border-input text-sm placeholder:text-xs"
-                    autoFocus
-                    required
-                  />
-                </div>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="votre@email.com"
+                  className="rounded-xl h-10 bg-muted/50 border-input text-sm placeholder:text-xs"
+                  autoFocus
+                  required
+                />
               </div>
 
               {error && (
@@ -262,7 +219,7 @@ export default function PhoneLogin() {
               <Button
                 type="submit"
                 className="w-full h-12 cta-gradient rounded-xl text-sm font-semibold gap-2"
-                disabled={isLoading || !phoneLocal.trim()}
+                disabled={isLoading || !email.trim()}
               >
                 {isLoading ? (
                   <>
@@ -351,13 +308,13 @@ export default function PhoneLogin() {
                   size="sm"
                   className="text-muted-foreground"
                   onClick={() => {
-                    setStep("phone");
+                    setStep("email");
                     setOtp("");
                     setError("");
                   }}
                 >
                   <ArrowLeft className="mr-1 h-3.5 w-3.5" />
-                  Changer le numéro
+                  Changer l'email
                 </Button>
 
                 <Button

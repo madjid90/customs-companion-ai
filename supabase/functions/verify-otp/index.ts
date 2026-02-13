@@ -8,8 +8,8 @@ import {
   rateLimitResponse,
 } from "../_shared/cors.ts";
 
-// Compute a deterministic password from server secret + phone + unique salt
-async function computePassword(secret: string, phone: string, salt: string): Promise<string> {
+// Compute a deterministic password from server secret + email + unique salt
+async function computePassword(secret: string, email: string, salt: string): Promise<string> {
   const encoder = new TextEncoder();
   const keyMaterial = `${secret}:${salt}`;
   const key = await crypto.subtle.importKey(
@@ -19,12 +19,11 @@ async function computePassword(secret: string, phone: string, salt: string): Pro
     false,
     ["sign"]
   );
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(phone));
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(email));
   const hashArray = Array.from(new Uint8Array(signature));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 40);
 }
 
-// Generate a unique salt for a user
 function generateSalt(): string {
   const array = new Uint8Array(32);
   crypto.getRandomValues(array);
@@ -42,7 +41,7 @@ serve(async (req) => {
   const clientId = getClientId(req);
   const rateLimit = await checkRateLimitDistributed(clientId, {
     maxRequests: 10,
-    windowMs: 60 * 60 * 1000, // 1 hour
+    windowMs: 60 * 60 * 1000,
     blockDurationMs: 60 * 60 * 1000,
   });
 
@@ -51,20 +50,20 @@ serve(async (req) => {
   }
 
   try {
-    const { phone, code, displayName } = await req.json();
+    const { email, code, displayName } = await req.json();
 
-    if (!phone || !code) {
+    if (!email || !code) {
       return new Response(
-        JSON.stringify({ error: "Numéro et code requis" }),
+        JSON.stringify({ error: "Email et code requis" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const normalizedPhone = phone.startsWith("+") ? phone : `+${phone}`;
+    const normalizedEmail = email.trim().toLowerCase();
 
-    if (!/^\+[1-9]\d{6,14}$/.test(normalizedPhone)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       return new Response(
-        JSON.stringify({ error: "Format de numéro invalide" }),
+        JSON.stringify({ error: "Format d'email invalide" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -83,11 +82,11 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Find valid OTP
+    // Find valid OTP by email
     const { data: otpRecord, error: otpError } = await supabase
       .from("otp_codes")
       .select("*")
-      .eq("phone", normalizedPhone)
+      .eq("email", normalizedEmail)
       .eq("code", code)
       .eq("is_used", false)
       .gt("expires_at", new Date().toISOString())
@@ -104,11 +103,11 @@ serve(async (req) => {
     }
 
     if (!otpRecord) {
-      // Increment attempts on latest OTP for this phone
+      // Increment attempts on latest OTP
       const { data: latestOtp } = await supabase
         .from("otp_codes")
         .select("id, attempts")
-        .eq("phone", normalizedPhone)
+        .eq("email", normalizedEmail)
         .eq("is_used", false)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -147,7 +146,7 @@ serve(async (req) => {
       const { data: newUser, error: createError } = await supabase
         .from("phone_users")
         .insert({
-          phone: normalizedPhone,
+          email: normalizedEmail,
           display_name: displayName || "Manager",
           role: "manager",
           max_invites: 10,
@@ -165,11 +164,11 @@ serve(async (req) => {
       }
       phoneUser = newUser;
     } else {
-      // Get existing phone user
+      // Get existing user by email
       const { data: existingUser, error: lookupError } = await supabase
         .from("phone_users")
         .select("*")
-        .eq("phone", normalizedPhone)
+        .eq("email", normalizedEmail)
         .maybeSingle();
 
       if (lookupError || !existingUser) {
@@ -191,15 +190,16 @@ serve(async (req) => {
         .eq("id", phoneUser.id);
     }
 
-    const email = `${normalizedPhone.replace("+", "")}@phone.douane.app`;
-    const password = await computePassword(supabaseServiceKey, normalizedPhone, userSalt);
+    // Use the real email for auth account
+    const authEmail = normalizedEmail;
+    const password = await computePassword(supabaseServiceKey, normalizedEmail, userSalt);
 
     let session;
 
     if (phoneUser.auth_user_id) {
       // User already has auth account, sign in
       const { data: signInData, error: signInError } =
-        await supabase.auth.signInWithPassword({ email, password });
+        await supabase.auth.signInWithPassword({ email: authEmail, password });
 
       if (signInError) {
         console.error("Sign in error:", signInError);
@@ -215,9 +215,8 @@ serve(async (req) => {
             { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
-        // Try sign in again
         const { data: retryData, error: retryError } =
-          await supabase.auth.signInWithPassword({ email, password });
+          await supabase.auth.signInWithPassword({ email: authEmail, password });
         if (retryError) {
           console.error("Retry sign in error:", retryError);
           return new Response(
@@ -230,14 +229,14 @@ serve(async (req) => {
         session = signInData.session;
       }
     } else {
-      // Create new auth user
+      // Create new auth user with real email
       const { data: createData, error: createError } =
         await supabase.auth.admin.createUser({
-          email,
+          email: authEmail,
           password,
           email_confirm: true,
           user_metadata: {
-            phone: normalizedPhone,
+            email: normalizedEmail,
             display_name: phoneUser.display_name,
             role: phoneUser.role,
           },
@@ -265,7 +264,7 @@ serve(async (req) => {
 
       // Sign in to get session
       const { data: signInData, error: signInError } =
-        await supabase.auth.signInWithPassword({ email, password });
+        await supabase.auth.signInWithPassword({ email: authEmail, password });
 
       if (signInError) {
         console.error("Post-create sign in error:", signInError);
@@ -295,6 +294,7 @@ serve(async (req) => {
         user: {
           id: phoneUser.id,
           phone: phoneUser.phone,
+          email: phoneUser.email,
           display_name: phoneUser.display_name,
           role: phoneUser.role,
         },

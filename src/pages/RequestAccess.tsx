@@ -8,43 +8,30 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   ArrowLeft,
   Building2,
-  Phone,
-  ChevronDown,
+  Mail,
   Loader2,
   CheckCircle2,
-  Send,
   ArrowRight,
 } from "lucide-react";
-
-const COUNTRY_CODES = [
-  { code: "+212", label: "Maroc", placeholder: "6XX XXX XXX" },
-  { code: "+33", label: "France", placeholder: "6 XX XX XX XX" },
-  { code: "+86", label: "Chine", placeholder: "1XX XXXX XXXX" },
-];
 
 export default function RequestAccess() {
   const navigate = useNavigate();
   const [companyName, setCompanyName] = useState("");
-  const [phoneLocal, setPhoneLocal] = useState("");
-  const [countryIndex, setCountryIndex] = useState(0);
-  const [countryOpen, setCountryOpen] = useState(false);
+  const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState("");
   const [honeypot, setHoneypot] = useState("");
 
-  const country = COUNTRY_CODES[countryIndex];
-  const fullPhone = `${country.code}${phoneLocal.replace(/\s/g, "")}`;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    if (!companyName.trim() || !phoneLocal.trim()) return;
+    if (!companyName.trim() || !email.trim()) return;
 
-    const digits = phoneLocal.replace(/\s/g, "");
-    if (digits.length < 8 || digits.length > 12) {
-      setError("Numéro de téléphone invalide");
+    const emailTrimmed = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
+      setError("Adresse email invalide");
       return;
     }
 
@@ -65,7 +52,7 @@ export default function RequestAccess() {
               },
               body: JSON.stringify({
                 company_name: companyName.trim(),
-                phone: fullPhone,
+                email: emailTrimmed,
                 website: honeypot,
               }),
             }
@@ -103,7 +90,7 @@ export default function RequestAccess() {
             <h1 className="text-2xl font-extrabold mb-3">Demande envoyée !</h1>
             <p className="text-muted-foreground mb-8 leading-relaxed">
               Votre demande d'accès a été soumise avec succès. Vous recevrez un
-              SMS de confirmation une fois votre accès validé.
+              email de confirmation une fois votre accès validé.
             </p>
             <Link to="/">
               <Button variant="outline" className="rounded-2xl px-6 h-12">
@@ -161,55 +148,21 @@ export default function RequestAccess() {
               />
             </div>
 
-            {/* Phone */}
+            {/* Email */}
             <div className="space-y-2">
-              <Label htmlFor="phone" className="flex items-center gap-2 text-sm font-semibold">
-                <Phone className="h-4 w-4 text-primary" />
-                Téléphone
+              <Label htmlFor="email" className="flex items-center gap-2 text-sm font-semibold">
+                <Mail className="h-4 w-4 text-primary" />
+                Email
               </Label>
-              <div className="flex gap-2">
-                <div className="relative">
-                    <button
-                      type="button"
-                      className="flex items-center gap-1.5 h-10 px-3 rounded-xl border border-input bg-muted/50 text-sm hover:bg-accent/50 transition-colors whitespace-nowrap"
-                    onClick={() => setCountryOpen(!countryOpen)}
-                  >
-                      <span className="font-medium text-foreground">{country.code}</span>
-                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                  </button>
-                  {countryOpen && (
-                    <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-xl shadow-lg overflow-hidden min-w-[180px]">
-                      {COUNTRY_CODES.map((c, i) => (
-                        <button
-                          key={c.code}
-                          type="button"
-                          className={`w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-accent/50 transition-colors ${
-                            i === countryIndex
-                              ? "bg-primary/5 text-primary font-medium"
-                              : "text-foreground"
-                          }`}
-                          onClick={() => {
-                            setCountryIndex(i);
-                            setCountryOpen(false);
-                          }}
-                        >
-                          <span>{c.label}</span>
-                          <span className="ml-auto text-muted-foreground">{c.code}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <Input
-                  id="phone"
-                  type="tel"
-                  value={phoneLocal}
-                  onChange={(e) => setPhoneLocal(e.target.value)}
-                  placeholder={country.placeholder}
-                  className="rounded-xl h-10 bg-muted/50 text-sm placeholder:text-xs"
-                  required
-                />
-              </div>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="votre@email.com"
+                className="rounded-xl h-10 bg-muted/50 text-sm placeholder:text-xs"
+                required
+              />
             </div>
 
             {/* Honeypot */}
@@ -233,7 +186,7 @@ export default function RequestAccess() {
             <Button
               type="submit"
               className="w-full cta-gradient rounded-xl h-12 text-sm font-semibold gap-2"
-              disabled={isSubmitting || !companyName.trim() || !phoneLocal.trim()}
+              disabled={isSubmitting || !companyName.trim() || !email.trim()}
             >
               {isSubmitting ? (
                 <>
