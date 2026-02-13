@@ -91,7 +91,7 @@ serve(async (req) => {
       .insert({
         email: userEmail,
         display_name: request.company_name,
-        role: "manager",
+        role: "agent",
         max_invites: 2,
       })
       .select()
