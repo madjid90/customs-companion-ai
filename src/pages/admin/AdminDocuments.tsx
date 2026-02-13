@@ -130,6 +130,10 @@ export default function AdminDocuments() {
     return extractions?.find((e) => e.pdf_id === pdfId);
   };
 
+  const isDocAnalyzed = (doc: PdfDocument) => {
+    return doc.is_verified || !!getExtraction(doc.id);
+  };
+
   const filteredDocs = documents?.filter((doc) => {
     const search = searchTerm.toLowerCase();
     const extraction = getExtraction(doc.id);
@@ -313,7 +317,7 @@ export default function AdminDocuments() {
 
   // Batch analyze all pending documents - with retry and server-side check
   const analyzeAllPending = async () => {
-    const pendingDocs = documents?.filter(d => !getExtraction(d.id)) || [];
+    const pendingDocs = documents?.filter(d => !isDocAnalyzed(d)) || [];
     
     if (pendingDocs.length === 0) {
       toast({
@@ -460,10 +464,10 @@ export default function AdminDocuments() {
     queryClient.invalidateQueries({ queryKey: ["pdf-extractions"] });
   };
 
-  const pendingCount = documents?.filter(d => !getExtraction(d.id)).length || 0;
+  const pendingCount = documents?.filter(d => !isDocAnalyzed(d)).length || 0;
 
-  // Utiliser le nombre de documents avec extractions
-  const analyzedCount = documents?.filter(d => getExtraction(d.id)).length || 0;
+  // Utiliser le nombre de documents analysés (verified ou avec extraction)
+  const analyzedCount = documents?.filter(d => isDocAnalyzed(d)).length || 0;
 
   // Query pour les stats réelles des codes SH actifs dans la base
   const { data: hsCodesStats } = useQuery({
@@ -675,7 +679,7 @@ export default function AdminDocuments() {
                           )}
                         </TableCell>
                         <TableCell>
-                          {doc.is_verified ? (
+                          {isDocAnalyzed(doc) ? (
                             <Badge className="bg-success/10 text-success border-success/20">
                               <CheckCircle className="h-3 w-3 mr-1" />
                               Analysé
@@ -692,7 +696,7 @@ export default function AdminDocuments() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
-                            {!extraction && (
+                            {!isDocAnalyzed(doc) && (
                               <Button
                                 variant="ghost"
                                 size="icon"
