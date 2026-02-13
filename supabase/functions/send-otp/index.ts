@@ -80,7 +80,7 @@ serve(async (req) => {
       isBootstrap = true;
     } else {
       // Check if email is authorized
-      const { data: phoneUser, error: lookupError } = await supabase
+      const { data: appUser, error: lookupError } = await supabase
         .from("phone_users")
         .select("id, is_active")
         .eq("email", normalizedEmail)
@@ -94,14 +94,14 @@ serve(async (req) => {
         );
       }
 
-      if (!phoneUser) {
+      if (!appUser) {
         return new Response(
           JSON.stringify({ error: "Cette adresse email n'est pas autorisée. L'accès se fait sur invitation uniquement." }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      if (!phoneUser.is_active) {
+      if (!appUser.is_active) {
         return new Response(
           JSON.stringify({ error: "Votre accès a été désactivé. Contactez votre administrateur." }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }

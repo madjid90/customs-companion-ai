@@ -5,10 +5,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
-import { PhoneAuthProvider } from "@/hooks/usePhoneAuth";
+import { AppAuthProvider } from "@/hooks/useAppAuth";
 import { UploadStateProvider } from "@/hooks/useUploadState";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import { PhoneProtectedRoute } from "@/components/auth/PhoneProtectedRoute";
+import { AppProtectedRoute } from "@/components/auth/AppProtectedRoute";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -16,7 +16,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 // Landing eagerly loaded (entry page — avoids request chain)
 import Landing from "@/pages/Landing";
 // Other pages — lazy loaded for code splitting
-const PhoneLogin = lazy(() => import("@/pages/PhoneLogin"));
+const LoginPage = lazy(() => import("@/pages/LoginPage"));
 const RequestAccess = lazy(() => import("@/pages/RequestAccess"));
 const Chat = lazy(() => import("@/pages/Chat"));
 const AdminLogin = lazy(() => import("@/pages/admin/AdminLogin"));
@@ -44,7 +44,7 @@ const App = () => {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <PhoneAuthProvider>
+          <AppAuthProvider>
             <UploadStateProvider>
               <TooltipProvider>
                 <Toaster />
@@ -61,15 +61,15 @@ const App = () => {
                     {/* Public: Landing & Login */}
                     <Route path="/" element={<Landing />} />
                     <Route path="/demander-acces" element={<Suspense fallback={<PageFallback />}><RequestAccess /></Suspense>} />
-                    <Route path="/login" element={<Suspense fallback={<PageFallback />}><PhoneLogin /></Suspense>} />
+                    <Route path="/login" element={<Suspense fallback={<PageFallback />}><LoginPage /></Suspense>} />
 
                     {/* App routes — phone auth protected */}
                     <Route
                       path="/app"
                       element={
-                        <PhoneProtectedRoute>
+                        <AppProtectedRoute>
                           <AppLayout />
-                        </PhoneProtectedRoute>
+                        </AppProtectedRoute>
                       }
                     >
                       <Route index element={<Navigate to="/app/chat" replace />} />
@@ -117,7 +117,7 @@ const App = () => {
                 </BrowserRouter>
               </TooltipProvider>
             </UploadStateProvider>
-          </PhoneAuthProvider>
+          </AppAuthProvider>
         </AuthProvider>
       </QueryClientProvider>
     </ErrorBoundary>

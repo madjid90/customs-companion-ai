@@ -138,7 +138,7 @@ serve(async (req) => {
       .from("phone_users")
       .select("*", { count: "exact", head: true });
 
-    let phoneUser;
+    let appUser;
 
     if (totalUsers === 0) {
       // Bootstrap: create first manager
@@ -162,7 +162,7 @@ serve(async (req) => {
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      phoneUser = newUser;
+      appUser = newUser;
     } else {
       // Get existing user by email
       const { data: existingUser, error: lookupError } = await supabase
@@ -177,17 +177,17 @@ serve(async (req) => {
           { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      phoneUser = existingUser;
+      appUser = existingUser;
     }
 
     // Ensure user has a unique salt
-    let userSalt = phoneUser.password_salt;
+    let userSalt = appUser.password_salt;
     if (!userSalt) {
       userSalt = generateSalt();
       await supabase
         .from("phone_users")
         .update({ password_salt: userSalt })
-        .eq("id", phoneUser.id);
+        .eq("id", appUser.id);
     }
 
     // Use the real email for auth account
@@ -196,7 +196,7 @@ serve(async (req) => {
 
     let session;
 
-    if (phoneUser.auth_user_id) {
+    if (appUser.auth_user_id) {
       // User already has auth account, sign in
       const { data: signInData, error: signInError } =
         await supabase.auth.signInWithPassword({ email: authEmail, password });
@@ -205,7 +205,7 @@ serve(async (req) => {
         console.error("Sign in error:", signInError);
         // Try to reset password via admin
         const { error: updateError } = await supabase.auth.admin.updateUserById(
-          phoneUser.auth_user_id,
+          appUser.auth_user_id,
           { password }
         );
         if (updateError) {
@@ -237,8 +237,8 @@ serve(async (req) => {
           email_confirm: true,
           user_metadata: {
             email: normalizedEmail,
-            display_name: phoneUser.display_name,
-            role: phoneUser.role,
+            display_name: appUser.display_name,
+            role: appUser.role,
           },
         });
 
@@ -278,15 +278,15 @@ serve(async (req) => {
         // Add user_roles entry only for newly created users
         await supabase.from("user_roles").insert({
           user_id: authUserId,
-          role: phoneUser.role,
+          role: appUser.role,
         });
       }
 
-      // Update phone_user with auth_user_id
+      // Link auth user to app user record
       await supabase
         .from("phone_users")
         .update({ auth_user_id: authUserId })
-        .eq("id", phoneUser.id);
+        .eq("id", appUser.id);
 
       // Sign in to get session
       const { data: signInData, error: signInError } =
@@ -318,11 +318,10 @@ serve(async (req) => {
           expires_in: session.expires_in,
         },
         user: {
-          id: phoneUser.id,
-          phone: phoneUser.phone,
-          email: phoneUser.email,
-          display_name: phoneUser.display_name,
-          role: phoneUser.role,
+          id: appUser.id,
+          email: appUser.email,
+          display_name: appUser.display_name,
+          role: appUser.role,
         },
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
