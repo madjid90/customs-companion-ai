@@ -4,8 +4,10 @@
 // Run with: deno test --allow-net --allow-env supabase/functions/verify-otp/verify-otp_test.ts
 // ============================================================================
 import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import "https://deno.land/std@0.224.0/dotenv/load.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || Deno.env.get("VITE_SUPABASE_URL") || "";
+
 const BASE_URL = `${SUPABASE_URL}/functions/v1/verify-otp`;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("VITE_SUPABASE_PUBLISHABLE_KEY") || "";
 
@@ -15,7 +17,7 @@ const headers = {
   "apikey": ANON_KEY,
 };
 
-Deno.test("verify-otp: rejects missing phone and code", async () => {
+Deno.test("verify-otp: rejects missing email", async () => {
   const res = await fetch(BASE_URL, {
     method: "POST",
     headers,
@@ -24,38 +26,26 @@ Deno.test("verify-otp: rejects missing phone and code", async () => {
 
   assertEquals(res.status, 400);
   const data = await res.json();
-  assertEquals(data.error, "Numéro et code requis");
+  assertEquals(data.error, "Email requis");
 });
 
-Deno.test("verify-otp: rejects missing code", async () => {
+Deno.test("verify-otp: rejects invalid email format", async () => {
   const res = await fetch(BASE_URL, {
     method: "POST",
     headers,
-    body: JSON.stringify({ phone: "+212600000000" }),
+    body: JSON.stringify({ email: "not-an-email" }),
   });
 
   assertEquals(res.status, 400);
   const data = await res.json();
-  assertEquals(data.error, "Numéro et code requis");
+  assertEquals(data.error, "Format d'email invalide");
 });
 
-Deno.test("verify-otp: rejects invalid phone format", async () => {
+Deno.test("verify-otp: rejects missing code when OTP not skipped", async () => {
   const res = await fetch(BASE_URL, {
     method: "POST",
     headers,
-    body: JSON.stringify({ phone: "abc", code: "123456" }),
-  });
-
-  assertEquals(res.status, 400);
-  const data = await res.json();
-  assertEquals(data.error, "Format de numéro invalide");
-});
-
-Deno.test("verify-otp: rejects non-6-digit code", async () => {
-  const res = await fetch(BASE_URL, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ phone: "+212600000000", code: "123" }),
+    body: JSON.stringify({ email: "test@example.com", code: "123" }),
   });
 
   assertEquals(res.status, 400);
@@ -67,7 +57,7 @@ Deno.test("verify-otp: rejects alpha code", async () => {
   const res = await fetch(BASE_URL, {
     method: "POST",
     headers,
-    body: JSON.stringify({ phone: "+212600000000", code: "abcdef" }),
+    body: JSON.stringify({ email: "test@example.com", code: "abcdef" }),
   });
 
   assertEquals(res.status, 400);
@@ -79,12 +69,12 @@ Deno.test("verify-otp: rejects incorrect OTP", async () => {
   const res = await fetch(BASE_URL, {
     method: "POST",
     headers,
-    body: JSON.stringify({ phone: "+212600000000", code: "000000" }),
+    body: JSON.stringify({ email: "test@example.com", code: "000000" }),
   });
 
   const data = await res.json();
   assertExists(data.error);
-  // 401 = incorrect OTP, 404 = user not found, 429 = rate limit
+  // 401 = incorrect OTP, 404 = user not found
 });
 
 Deno.test("verify-otp: handles OPTIONS preflight", async () => {
@@ -94,4 +84,5 @@ Deno.test("verify-otp: handles OPTIONS preflight", async () => {
   });
 
   assertEquals(res.status, 204);
+  await res.text();
 });
