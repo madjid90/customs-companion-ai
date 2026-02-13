@@ -2280,6 +2280,18 @@ export type Database = {
           validation_message: string
         }[]
       }
+      get_circulars_missing_chunks: {
+        Args: never
+        Returns: {
+          file_name: string
+          file_path: string
+          pdf_id: string
+          publication_date: string
+          reference_number: string
+          source_id: number
+          title: string
+        }[]
+      }
       get_dashboard_stats: {
         Args: never
         Returns: {

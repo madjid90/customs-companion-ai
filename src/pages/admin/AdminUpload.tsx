@@ -36,6 +36,7 @@ import {
 import ExtractionPreviewDialog from "@/components/admin/ExtractionPreviewDialog";
 import ReingestionPanel from "@/components/admin/ReingestionPanel";
 import EmbeddingPanel from "@/components/admin/EmbeddingPanel";
+import MissingChunksPanel from "@/components/admin/MissingChunksPanel";
 
 // Document type configuration
 const DOCUMENT_TYPES: { value: DocumentType; label: string; icon: React.ReactNode; description: string; pipeline: "analyze" | "ingest" }[] = [
@@ -1668,6 +1669,9 @@ export default function AdminUpload() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Missing Chunks Panel */}
+      <MissingChunksPanel />
 
       {/* Re-ingestion Panel */}
       <ReingestionPanel />
