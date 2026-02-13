@@ -97,36 +97,38 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
         Classification SH, tarifs, réglementations — obtenez des réponses précises et sourcées.
       </p>
 
-      {/* Suggestion cards */}
-      <div className="w-full max-w-xl space-y-2 md:space-y-0 md:bg-card md:rounded-2xl md:border md:border-border md:shadow-md md:overflow-hidden flex-shrink-0">
-        {displayedQuestions.map((item, i) => (
-          <button
-            key={`${item.question}-${i}`}
-            className={cn(
-              "group flex items-center gap-3 md:gap-4 text-left w-full px-4 py-2 md:px-5 md:py-3.5 rounded-xl md:rounded-none bg-card md:bg-transparent border border-border/50 md:border-0 shadow-sm md:shadow-none hover:bg-muted/50 transition-all duration-200",
-              i < displayedQuestions.length - 1 && "md:border-b md:border-border"
-            )}
-            onClick={() => onQuestionClick(item.question)}
-          >
-            <div className="flex-shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
-              <item.icon className="h-4 w-4 md:h-[18px] md:w-[18px] text-primary" />
-            </div>
-            <span className="flex-1 text-xs md:text-sm leading-snug text-muted-foreground group-hover:text-foreground transition-colors">
-              {item.question}
-            </span>
-            <ArrowRight className="h-3.5 w-3.5 md:h-4 md:w-4 text-muted-foreground/30 group-hover:text-primary group-hover:translate-x-0.5 transition-all flex-shrink-0" />
-          </button>
-        ))}
-      </div>
+      {/* Suggestion cards – hidden on mobile */}
+      <div className="hidden md:block w-full max-w-xl">
+        <div className="md:bg-card md:rounded-2xl md:border md:border-border md:shadow-md md:overflow-hidden">
+          {displayedQuestions.map((item, i) => (
+            <button
+              key={`${item.question}-${i}`}
+              className={cn(
+                "group flex items-center gap-4 text-left w-full px-5 py-3.5 rounded-none bg-transparent border-0 hover:bg-muted/50 transition-all duration-200",
+                i < displayedQuestions.length - 1 && "border-b border-border"
+              )}
+              onClick={() => onQuestionClick(item.question)}
+            >
+              <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
+                <item.icon className="h-[18px] w-[18px] text-primary" />
+              </div>
+              <span className="flex-1 text-sm leading-snug text-muted-foreground group-hover:text-foreground transition-colors">
+                {item.question}
+              </span>
+              <ArrowRight className="h-4 w-4 text-muted-foreground/30 group-hover:text-primary group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+            </button>
+          ))}
+        </div>
 
-      {/* Refresh link */}
-      <button
-        onClick={refreshQuestions}
-        className="mt-2 md:mt-4 text-xs text-muted-foreground/60 hover:text-primary transition-colors flex items-center gap-1.5 flex-shrink-0"
-      >
-        <Sparkles className="h-3 w-3" />
-        Autres suggestions
-      </button>
+        {/* Refresh link */}
+        <button
+          onClick={refreshQuestions}
+          className="mt-4 text-xs text-muted-foreground/60 hover:text-primary transition-colors flex items-center gap-1.5 mx-auto"
+        >
+          <Sparkles className="h-3 w-3" />
+          Autres suggestions
+        </button>
+      </div>
     </div>
   );
 }
