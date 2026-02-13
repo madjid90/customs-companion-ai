@@ -67,9 +67,9 @@ const faqs = [
 export default function Landing() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Prefetch PhoneLogin chunk on hover for instant navigation
+  // Prefetch login chunk on hover for instant navigation
   const prefetchLogin = () => {
-    import("@/pages/PhoneLogin");
+    import("@/pages/LoginPage");
   };
 
   return (

@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Logo } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/button";
-import { usePhoneAuth } from "@/hooks/usePhoneAuth";
+import { useAppAuth } from "@/hooks/useAppAuth";
 import { LogOut, Menu, ArrowLeft } from "lucide-react";
 
 interface AppHeaderProps {
@@ -10,7 +10,7 @@ interface AppHeaderProps {
 }
 
 export function AppHeader({ onHistoryToggle, isHistoryOpen }: AppHeaderProps) {
-  const { phoneUser, signOut } = usePhoneAuth();
+  const { appUser, signOut } = useAppAuth();
   const navigate = useNavigate();
 
   return (
@@ -48,9 +48,9 @@ export function AppHeader({ onHistoryToggle, isHistoryOpen }: AppHeaderProps) {
 
         {/* Right side */}
         <div className="flex items-center gap-2">
-          {phoneUser && (
+          {appUser && (
             <span className="hidden sm:inline text-sm text-muted-foreground">
-              {phoneUser.display_name || phoneUser.phone}
+              {appUser.display_name || appUser.email}
             </span>
           )}
           <Button

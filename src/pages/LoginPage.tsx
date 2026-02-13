@@ -6,13 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Logo } from "@/components/ui/Logo";
 import { Label } from "@/components/ui/label";
-import { usePhoneAuth } from "@/hooks/usePhoneAuth";
+import { useAppAuth } from "@/hooks/useAppAuth";
 import { useToast } from "@/hooks/use-toast";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-export default function PhoneLogin() {
+export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -25,7 +25,7 @@ export default function PhoneLogin() {
 
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, setSessionFromOtp } = usePhoneAuth();
+  const { isAuthenticated, setSessionFromOtp } = useAppAuth();
   const { toast } = useToast();
 
   useEffect(() => {
