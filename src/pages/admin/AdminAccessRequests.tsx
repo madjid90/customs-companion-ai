@@ -79,9 +79,9 @@ export default function AdminAccessRequests() {
           title: action === "approved" ? "Demande approuvée ✓" : "Demande rejetée",
           description:
             action === "approved"
-              ? data.smsSent
-                ? "L'utilisateur a été créé et un SMS d'invitation a été envoyé."
-                : "L'utilisateur a été créé. SMS non envoyé (vérifiez la config Twilio)."
+              ? data.emailSent
+                ? "L'utilisateur a été créé et un email d'invitation a été envoyé."
+                : "L'utilisateur a été créé. Email non envoyé (vérifiez la config Resend)."
               : "La demande a été rejetée.",
         });
         fetchRequests();
