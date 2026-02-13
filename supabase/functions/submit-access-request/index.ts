@@ -1,5 +1,5 @@
 // ============================================================================
-// SUBMIT ACCESS REQUEST - with honeypot + rate limiting
+// SUBMIT ACCESS REQUEST - with honeypot + rate limiting (email-based)
 // ============================================================================
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -34,11 +34,10 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { company_name, phone, website } = body;
+    const { company_name, email, website } = body;
 
-    // Honeypot check: "website" field should be empty (hidden from real users)
+    // Honeypot check
     if (website) {
-      // Bot detected - return success to not reveal the check
       console.log("[submit-access-request] Honeypot triggered, blocking");
       return successResponse(req, { success: true, message: "Demande envoyée" });
     }
@@ -48,13 +47,13 @@ serve(async (req) => {
       return errorResponse(req, "Nom de société requis (minimum 2 caractères)", 400);
     }
 
-    if (!phone || typeof phone !== "string") {
-      return errorResponse(req, "Numéro de téléphone requis", 400);
+    if (!email || typeof email !== "string") {
+      return errorResponse(req, "Adresse email requise", 400);
     }
 
-    const normalizedPhone = phone.startsWith("+") ? phone : `+${phone}`;
-    if (!/^\+[1-9]\d{6,14}$/.test(normalizedPhone)) {
-      return errorResponse(req, "Format de numéro invalide", 400);
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return errorResponse(req, "Format d'email invalide", 400);
     }
 
     // Sanitize company name
@@ -68,12 +67,12 @@ serve(async (req) => {
     const { data: existing } = await supabase
       .from("access_requests")
       .select("id")
-      .eq("phone", normalizedPhone)
+      .eq("email", normalizedEmail)
       .eq("status", "pending")
       .maybeSingle();
 
     if (existing) {
-      return errorResponse(req, "Une demande est déjà en cours pour ce numéro", 409);
+      return errorResponse(req, "Une demande est déjà en cours pour cette adresse email", 409);
     }
 
     // Insert request
@@ -81,7 +80,8 @@ serve(async (req) => {
       .from("access_requests")
       .insert({
         company_name: sanitizedName,
-        phone: normalizedPhone,
+        email: normalizedEmail,
+        phone: normalizedEmail, // backward compat
       });
 
     if (insertError) {
@@ -89,7 +89,7 @@ serve(async (req) => {
       return errorResponse(req, "Erreur lors de l'envoi de la demande", 500);
     }
 
-    console.log(`[submit-access-request] New request from ${normalizedPhone} (${sanitizedName})`);
+    console.log(`[submit-access-request] New request from ${normalizedEmail} (${sanitizedName})`);
 
     return successResponse(req, {
       success: true,

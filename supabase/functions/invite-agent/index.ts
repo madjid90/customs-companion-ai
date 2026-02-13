@@ -10,25 +10,24 @@ serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
 
   try {
-    const { phone, displayName } = await req.json();
+    const { email, displayName } = await req.json();
 
-    if (!phone || typeof phone !== "string") {
+    if (!email || typeof email !== "string") {
       return new Response(
-        JSON.stringify({ error: "Numéro de téléphone requis" }),
+        JSON.stringify({ error: "Adresse email requise" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const normalizedPhone = phone.startsWith("+") ? phone : `+${phone}`;
+    const normalizedEmail = email.trim().toLowerCase();
 
-    if (!/^\+[1-9]\d{6,14}$/.test(normalizedPhone)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       return new Response(
-        JSON.stringify({ error: "Format de numéro invalide" }),
+        JSON.stringify({ error: "Format d'email invalide" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Validate display name
     const name = (displayName || "").trim().slice(0, 100);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -71,12 +70,12 @@ serve(async (req) => {
 
     if (managerError || !manager) {
       return new Response(
-        JSON.stringify({ error: "Seuls les managers peuvent inviter des agents" }),
+        JSON.stringify({ error: "Seuls les managers peuvent inviter des utilisateurs" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Check invite limit (count existing agents invited by this manager)
+    // Check invite limit
     const { count: agentCount } = await supabase
       .from("phone_users")
       .select("*", { count: "exact", head: true })
@@ -87,31 +86,31 @@ serve(async (req) => {
     if ((agentCount || 0) >= maxInvites) {
       return new Response(
         JSON.stringify({
-          error: `Limite d'invitations atteinte (${maxInvites} agents maximum)`,
+          error: `Limite d'invitations atteinte (${maxInvites} utilisateurs maximum)`,
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Check if phone already exists
+    // Check if email already exists
     const { data: existingUser } = await supabase
       .from("phone_users")
       .select("id")
-      .eq("phone", normalizedPhone)
+      .eq("email", normalizedEmail)
       .maybeSingle();
 
     if (existingUser) {
       return new Response(
-        JSON.stringify({ error: "Ce numéro est déjà enregistré" }),
+        JSON.stringify({ error: "Cette adresse email est déjà enregistrée" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Create phone_user entry for the agent
+    // Create phone_user entry
     const { data: newAgent, error: insertError } = await supabase
       .from("phone_users")
       .insert({
-        phone: normalizedPhone,
+        email: normalizedEmail,
         display_name: name || null,
         role: "agent",
         invited_by: manager.id,
@@ -128,41 +127,42 @@ serve(async (req) => {
       );
     }
 
-    // Send invitation SMS via Twilio
-    const twilioSid = Deno.env.get("TWILIO_ACCOUNT_SID");
-    const twilioToken = Deno.env.get("TWILIO_AUTH_TOKEN");
-    const twilioPhone = Deno.env.get("TWILIO_PHONE_NUMBER");
+    // Send invitation email via Resend
+    const resendApiKey = Deno.env.get("RESEND_API_KEY");
 
-    if (twilioSid && twilioToken && twilioPhone) {
-      const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`;
-      const twilioAuth = btoa(`${twilioSid}:${twilioToken}`);
-
+    if (resendApiKey) {
       const appUrl = Deno.env.get("APP_URL") || "https://douane-ai.lovable.app";
       const loginUrl = `${appUrl}/login`;
       const managerName = manager.display_name || "votre manager";
-      const smsBody = `${managerName} vous invite à rejoindre DouaneAI. Connectez-vous ici : ${loginUrl}`;
 
       try {
-        const twilioResponse = await fetch(twilioUrl, {
+        const resendResponse = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
-            Authorization: `Basic ${twilioAuth}`,
-            "Content-Type": "application/x-www-form-urlencoded",
+            Authorization: `Bearer ${resendApiKey}`,
+            "Content-Type": "application/json",
           },
-          body: new URLSearchParams({
-            To: normalizedPhone,
-            From: twilioPhone,
-            Body: smsBody,
+          body: JSON.stringify({
+            from: "DouaneAI <onboarding@resend.dev>",
+            to: [normalizedEmail],
+            subject: "Vous êtes invité(e) sur DouaneAI",
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+                <h2 style="color: #1a1a1a;">Invitation DouaneAI</h2>
+                <p style="color: #666;"><strong>${managerName}</strong> vous invite à rejoindre DouaneAI.</p>
+                <p style="color: #666;">Connectez-vous dès maintenant :</p>
+                <a href="${loginUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 16px;">Se connecter</a>
+              </div>
+            `,
           }),
         });
 
-        if (!twilioResponse.ok) {
-          const errorText = await twilioResponse.text();
-          console.error("Twilio SMS error:", errorText);
-          // Don't fail the invitation, just log the error
+        if (!resendResponse.ok) {
+          const errorText = await resendResponse.text();
+          console.error("Resend error:", errorText);
         }
-      } catch (smsError) {
-        console.error("SMS sending failed:", smsError);
+      } catch (emailError) {
+        console.error("Email sending failed:", emailError);
       }
     }
 
@@ -171,12 +171,12 @@ serve(async (req) => {
         success: true,
         agent: {
           id: newAgent.id,
-          phone: newAgent.phone,
+          email: newAgent.email,
           display_name: newAgent.display_name,
           role: newAgent.role,
           created_at: newAgent.created_at,
         },
-        message: "Agent invité avec succès",
+        message: "Utilisateur invité avec succès",
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

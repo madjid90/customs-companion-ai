@@ -18,8 +18,9 @@ export type Database = {
         Row: {
           company_name: string
           created_at: string
+          email: string | null
           id: string
-          phone: string
+          phone: string | null
           reviewed_at: string | null
           reviewed_by: string | null
           status: string
@@ -28,8 +29,9 @@ export type Database = {
         Insert: {
           company_name: string
           created_at?: string
+          email?: string | null
           id?: string
-          phone: string
+          phone?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
           status?: string
@@ -38,8 +40,9 @@ export type Database = {
         Update: {
           company_name?: string
           created_at?: string
+          email?: string | null
           id?: string
-          phone?: string
+          phone?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
           status?: string

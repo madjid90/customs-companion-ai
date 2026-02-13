@@ -41,7 +41,7 @@ const stats = [
 ];
 
 const steps = [
-  { icon: UserPlus, title: "Inscription", desc: "Téléphone + société. 30 secondes." },
+  { icon: UserPlus, title: "Inscription", desc: "Email + société. 30 secondes." },
   { icon: Users, title: "Validation", desc: "L'admin valide votre demande." },
   { icon: Send, title: "Chat IA", desc: "Posez vos questions douanières." },
   { icon: Headphones, title: "Support", desc: "Assistance et mises à jour." },
@@ -58,7 +58,7 @@ const features = [
 
 const faqs = [
   { q: "Comment fonctionne l'assistant douanier IA ?", a: "Notre assistant utilise l'intelligence artificielle pour analyser votre question, rechercher dans notre base de données de réglementations douanières, et vous fournir une réponse précise avec les sources légales citées." },
-  { q: "Comment accéder à l'assistant ?", a: "L'accès se fait sur invitation. Remplissez le formulaire de demande avec votre numéro de téléphone et le nom de votre société, puis un administrateur validera votre demande." },
+  { q: "Comment accéder à l'assistant ?", a: "L'accès se fait sur invitation. Remplissez le formulaire de demande avec votre adresse email et le nom de votre société, puis un administrateur validera votre demande." },
   { q: "Quels types de questions puis-je poser ?", a: "Vous pouvez poser des questions sur les codes SH, les tarifs douaniers, les règles d'origine, les procédures d'import/export, les circulaires et toute réglementation douanière." },
   { q: "Comment sont vérifiées les réponses ?", a: "Chaque réponse est accompagnée de ses sources légales (circulaires, articles de loi, tarifs officiels). Vous pouvez vérifier chaque information." },
   { q: "Puis-je utiliser l'assistant sur mobile ?", a: "Oui, l'assistant est 100% responsive et fonctionne parfaitement sur téléphone, tablette et ordinateur." },

@@ -1,5 +1,5 @@
 // ============================================================================
-// APPROVE ACCESS REQUEST - Creates manager + sends SMS
+// APPROVE ACCESS REQUEST - Creates user + sends email notification
 // ============================================================================
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -58,7 +58,6 @@ serve(async (req) => {
       return errorResponse(req, "Erreur lors de la mise à jour", 500);
     }
 
-    // If rejected, we're done
     if (action === "rejected") {
       return successResponse(req, {
         success: true,
@@ -67,14 +66,14 @@ serve(async (req) => {
       });
     }
 
-    // APPROVED: Create phone_user as manager
-    const phone = request.phone;
+    // APPROVED: Create user with email
+    const userEmail = request.email || request.phone;
 
-    // Check if phone already exists
+    // Check if email already exists in phone_users
     const { data: existingUser } = await supabase
       .from("phone_users")
       .select("id")
-      .eq("phone", phone)
+      .eq("email", userEmail)
       .maybeSingle();
 
     if (existingUser) {
@@ -86,11 +85,11 @@ serve(async (req) => {
       });
     }
 
-    // Create the manager
-    const { data: newManager, error: insertError } = await supabase
+    // Create the user
+    const { data: newUser, error: insertError } = await supabase
       .from("phone_users")
       .insert({
-        phone,
+        email: userEmail,
         display_name: request.company_name,
         role: "manager",
         max_invites: 2,
@@ -100,64 +99,66 @@ serve(async (req) => {
 
     if (insertError) {
       console.error("[approve-access] Insert error:", insertError);
-      return errorResponse(req, "Erreur lors de la création du manager", 500);
+      return errorResponse(req, "Erreur lors de la création de l'utilisateur", 500);
     }
 
-    console.log(`[approve-access] Manager created: ${newManager.id} (${phone})`);
+    console.log(`[approve-access] User created: ${newUser.id} (${userEmail})`);
 
-    // Send invitation SMS via Twilio
-    let smsSent = false;
-    const twilioSid = Deno.env.get("TWILIO_ACCOUNT_SID");
-    const twilioToken = Deno.env.get("TWILIO_AUTH_TOKEN");
-    const twilioPhone = Deno.env.get("TWILIO_PHONE_NUMBER");
+    // Send notification email via Resend
+    let emailSent = false;
+    const resendApiKey = Deno.env.get("RESEND_API_KEY");
 
-    if (twilioSid && twilioToken && twilioPhone) {
+    if (resendApiKey) {
       const appUrl = Deno.env.get("APP_URL") || "https://douane-ai.lovable.app";
       const loginUrl = `${appUrl}/login`;
-      const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`;
-      const twilioAuth = btoa(`${twilioSid}:${twilioToken}`);
-
-      const smsBody = `Bienvenue sur DouaneAI ! Votre demande d'accès pour ${request.company_name} a été approuvée. Connectez-vous ici : ${loginUrl}`;
 
       try {
-        const twilioResponse = await fetch(twilioUrl, {
+        const resendResponse = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
-            Authorization: `Basic ${twilioAuth}`,
-            "Content-Type": "application/x-www-form-urlencoded",
+            Authorization: `Bearer ${resendApiKey}`,
+            "Content-Type": "application/json",
           },
-          body: new URLSearchParams({
-            To: phone,
-            From: twilioPhone,
-            Body: smsBody,
+          body: JSON.stringify({
+            from: "DouaneAI <onboarding@resend.dev>",
+            to: [userEmail],
+            subject: "Votre accès DouaneAI a été approuvé !",
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+                <h2 style="color: #1a1a1a;">Bienvenue sur DouaneAI !</h2>
+                <p style="color: #666;">Votre demande d'accès pour <strong>${request.company_name}</strong> a été approuvée.</p>
+                <p style="color: #666;">Connectez-vous dès maintenant :</p>
+                <a href="${loginUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 16px;">Se connecter</a>
+              </div>
+            `,
           }),
         });
 
-        if (twilioResponse.ok) {
-          smsSent = true;
-          console.log(`[approve-access] SMS sent to ${phone}`);
+        if (resendResponse.ok) {
+          emailSent = true;
+          console.log(`[approve-access] Email sent to ${userEmail}`);
         } else {
-          const errorText = await twilioResponse.text();
-          console.error("[approve-access] Twilio error:", errorText);
+          const errorText = await resendResponse.text();
+          console.error("[approve-access] Resend error:", errorText);
         }
-      } catch (smsError) {
-        console.error("[approve-access] SMS sending failed:", smsError);
+      } catch (emailError) {
+        console.error("[approve-access] Email sending failed:", emailError);
       }
     }
 
     return successResponse(req, {
       success: true,
       action: "approved",
-      manager: {
-        id: newManager.id,
-        phone: newManager.phone,
-        display_name: newManager.display_name,
-        role: newManager.role,
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        display_name: newUser.display_name,
+        role: newUser.role,
       },
-      smsSent,
-      message: smsSent
-        ? "Manager créé et SMS d'invitation envoyé"
-        : "Manager créé (SMS non envoyé - vérifiez la config Twilio)",
+      emailSent,
+      message: emailSent
+        ? "Utilisateur créé et email d'invitation envoyé"
+        : "Utilisateur créé (email non envoyé - vérifiez la config Resend)",
     });
   } catch (error) {
     console.error("[approve-access] Error:", error);
