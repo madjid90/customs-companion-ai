@@ -24,7 +24,7 @@ import {
   BookOpen,
 } from "lucide-react";
 
-// Backgrounds now rendered at App level — no longer needed here
+// Backgrounds rendered at App level
 import {
   Accordion,
   AccordionContent,
