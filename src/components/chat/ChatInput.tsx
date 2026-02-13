@@ -128,7 +128,7 @@ export function ChatInput({
                   ? "Décrivez votre produit..." 
                   : "Posez une question"}
                 aria-label="Message à envoyer"
-                className="min-h-[40px] md:min-h-[52px] max-h-28 md:max-h-32 pr-2 md:pr-4 resize-none rounded-xl md:rounded-2xl border-0 focus:ring-0 focus:outline-none bg-transparent text-base py-2.5 md:py-3.5 px-2 md:px-4"
+                className="min-h-[40px] md:min-h-[52px] max-h-28 md:max-h-32 pr-2 md:pr-4 resize-none rounded-xl md:rounded-2xl !border-none !ring-0 !outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 bg-transparent text-base py-2.5 md:py-3.5 px-2 md:px-4 shadow-none"
                 rows={1}
               />
             </div>
