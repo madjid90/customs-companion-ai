@@ -45,7 +45,7 @@ export function ChatInput({
 
   return (
     <>
-      <div className="px-3 pt-2 pb-20 mb-0 md:mb-0 md:pb-4 md:border-t md:border-border md:bg-card/90 md:backdrop-blur-xl md:px-4 md:pt-4 flex-shrink-0 bg-transparent">
+      <div className="fixed bottom-0 left-0 right-0 z-40 px-3 pt-2 pb-3 bg-background/95 backdrop-blur-xl md:relative md:bottom-auto md:left-auto md:right-auto md:z-auto md:pb-4 md:border-t md:border-border md:bg-card/90 md:backdrop-blur-xl md:px-4 md:pt-4 flex-shrink-0" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)' }}>
         <div className="max-w-3xl mx-auto">
           {/* Uploaded files preview - horizontal scroll on mobile */}
           {uploadedFiles.length > 0 && (
