@@ -50,13 +50,7 @@ const App = () => {
                 <Toaster />
                 <Sonner />
                 <BrowserRouter>
-                  {/* Persistent background layer — never remounts between routes */}
-                  <div className="fixed inset-0 z-0 pointer-events-none" style={{ contain: "layout paint", willChange: "auto" }}>
-                    <Suspense fallback={null}>
-                      <LazyPlexusBackground />
-                      <LazyGradientMeshBackground variant="cyan-center" />
-                    </Suspense>
-                  </div>
+                  {/* Background animations removed */}
                   <Routes>
                     {/* Public: Landing & Login */}
                     <Route path="/" element={<Landing />} />
