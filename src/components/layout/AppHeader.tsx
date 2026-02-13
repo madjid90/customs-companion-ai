@@ -18,16 +18,6 @@ export function AppHeader({ onHistoryToggle, isHistoryOpen }: AppHeaderProps) {
       <nav className="container mx-auto px-4 sm:px-6 h-14 md:h-16 flex items-center justify-between">
         {/* Mobile: back button + hamburger menu for history */}
         <div className="md:hidden flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/")}
-            className="h-9 w-9 rounded-full hover:bg-primary/5 hover:text-primary"
-            title="Retour"
-            aria-label="Retour à l'accueil"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
           {onHistoryToggle && (
             <Button
               variant="ghost"
