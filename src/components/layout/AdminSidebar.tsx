@@ -23,7 +23,7 @@ type MenuItem =
   | { type: "separator" };
 
 const menuItems: MenuItem[] = [
-  { type: "link", icon: Inbox, label: "Demandes d'accès", href: "/admin/access-requests" },
+  { type: "link", icon: Inbox, label: "Gestion utilisateurs", href: "/admin/access-requests" },
   { type: "separator" },
   { type: "link", icon: Upload, label: "Upload fichiers", href: "/admin/upload" },
   { type: "separator" },
