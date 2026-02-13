@@ -149,7 +149,7 @@ serve(async (req) => {
         .insert({
           email: normalizedEmail,
           display_name: displayName || "Manager",
-          role: "manager",
+          role: "agent",
           max_invites: 10,
           password_salt: bootstrapSalt,
         })
