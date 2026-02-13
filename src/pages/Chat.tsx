@@ -652,7 +652,7 @@ export default function Chat() {
   }, [uploadedFiles]);
 
   return (
-    <div className="flex h-full bg-background overflow-hidden overscroll-none" style={{ height: '100%' }}>
+    <div className="flex h-full flex-col bg-background overflow-hidden overscroll-none">
       {/* History sidebar */}
       <ChatHistory
         currentSessionId={sessionId}
@@ -671,7 +671,7 @@ export default function Chat() {
       >
         {/* Chat messages area */}
         {messages.length === 0 ? (
-          <div className="flex-1 min-h-0 flex items-end md:items-center justify-center px-2 md:px-4 overflow-y-auto overscroll-none">
+          <div className="flex-1 min-h-0 flex items-center justify-center px-2 md:px-4">
             <div className="max-w-3xl mx-auto w-full">
               <ChatWelcome onQuestionClick={handleSend} />
             </div>
