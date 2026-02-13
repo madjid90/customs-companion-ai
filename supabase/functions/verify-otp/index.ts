@@ -75,6 +75,29 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
+    // Block admin accounts from using agent login flow (protects manual password)
+    const { data: phoneUserCheck } = await supabase
+      .from("phone_users")
+      .select("auth_user_id")
+      .eq("email", normalizedEmail)
+      .maybeSingle();
+
+    if (phoneUserCheck?.auth_user_id) {
+      const { data: isAdmin } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", phoneUserCheck.auth_user_id)
+        .eq("role", "admin")
+        .maybeSingle();
+
+      if (isAdmin) {
+        return new Response(
+          JSON.stringify({ error: "Ce compte utilise la connexion administrateur" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // If OTP is not skipped, validate the code
     if (!skipOtp) {
       if (!code || !/^\d{6}$/.test(code)) {
