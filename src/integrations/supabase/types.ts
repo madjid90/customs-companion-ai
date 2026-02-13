@@ -2351,7 +2351,6 @@ export type Database = {
         Returns: boolean
       }
       increment_cache_hit: { Args: { cache_id: string }; Returns: undefined }
-      is_phone_manager: { Args: { _auth_user_id: string }; Returns: boolean }
       purge_expired_cache: {
         Args: never
         Returns: {
