@@ -9,7 +9,7 @@ import {
   CheckCircle2,
   XCircle,
   Building2,
-  Phone,
+  Mail,
   Clock,
   Inbox,
 } from "lucide-react";
@@ -17,7 +17,7 @@ import {
 interface AccessRequest {
   id: string;
   company_name: string;
-  phone: string;
+  email: string | null;
   status: string;
   created_at: string;
   reviewed_at: string | null;
@@ -79,9 +79,7 @@ export default function AdminAccessRequests() {
           title: action === "approved" ? "Demande approuvée ✓" : "Demande rejetée",
           description:
             action === "approved"
-              ? data.emailSent
-                ? "L'utilisateur a été créé et un email d'invitation a été envoyé."
-                : "L'utilisateur a été créé. Email non envoyé (vérifiez la config Resend)."
+              ? "L'utilisateur a été créé avec succès."
               : "La demande a été rejetée.",
         });
         fetchRequests();
@@ -159,10 +157,12 @@ export default function AdminAccessRequests() {
                         {req.company_name}
                       </p>
                       <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Phone className="h-3 w-3" />
-                          {req.phone}
-                        </span>
+                        {req.email && (
+                          <span className="flex items-center gap-1">
+                            <Mail className="h-3 w-3" />
+                            {req.email}
+                          </span>
+                        )}
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
                           {formatDate(req.created_at)}
@@ -229,7 +229,7 @@ export default function AdminAccessRequests() {
                           {req.company_name}
                         </p>
                         <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                          <span>{req.phone}</span>
+                          {req.email && <span>{req.email}</span>}
                           <span>{formatDate(req.created_at)}</span>
                         </div>
                       </div>
