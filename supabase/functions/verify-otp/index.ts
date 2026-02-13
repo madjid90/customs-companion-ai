@@ -229,7 +229,7 @@ serve(async (req) => {
         session = signInData.session;
       }
     } else {
-      // Create new auth user with real email
+      // Try to create new auth user with real email
       const { data: createData, error: createError } =
         await supabase.auth.admin.createUser({
           email: authEmail,
@@ -242,25 +242,51 @@ serve(async (req) => {
           },
         });
 
+      let authUserId: string;
+
       if (createError) {
-        console.error("Create auth user error:", createError);
-        return new Response(
-          JSON.stringify({ error: "Erreur lors de la création du compte" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        // If email already exists in auth, look up and link the existing user
+        if (createError.message?.includes("already been registered")) {
+          console.log("Auth user already exists, linking existing account");
+          const { data: listData, error: listError } = await supabase.auth.admin.listUsers();
+          if (listError) {
+            console.error("List users error:", listError);
+            return new Response(
+              JSON.stringify({ error: "Erreur lors de la création du compte" }),
+              { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+          const existingAuthUser = listData.users.find(u => u.email === normalizedEmail);
+          if (!existingAuthUser) {
+            return new Response(
+              JSON.stringify({ error: "Erreur lors de la création du compte" }),
+              { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+          authUserId = existingAuthUser.id;
+          // Update password for this user
+          await supabase.auth.admin.updateUserById(authUserId, { password });
+        } else {
+          console.error("Create auth user error:", createError);
+          return new Response(
+            JSON.stringify({ error: "Erreur lors de la création du compte" }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } else {
+        authUserId = createData.user.id;
+        // Add user_roles entry only for newly created users
+        await supabase.from("user_roles").insert({
+          user_id: authUserId,
+          role: phoneUser.role,
+        });
       }
 
       // Update phone_user with auth_user_id
       await supabase
         .from("phone_users")
-        .update({ auth_user_id: createData.user.id })
+        .update({ auth_user_id: authUserId })
         .eq("id", phoneUser.id);
-
-      // Add user_roles entry
-      await supabase.from("user_roles").insert({
-        user_id: createData.user.id,
-        role: phoneUser.role,
-      });
 
       // Sign in to get session
       const { data: signInData, error: signInError } =
