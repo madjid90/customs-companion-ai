@@ -2394,16 +2394,35 @@ export type Database = {
       }
       search_hs_codes:
         | {
-            Args: { search_term: string }
+            Args: { search_query: string }
             Returns: {
-              chapter_number: number
+              chapter_number: number | null
+              chapter_title_fr: string | null
               code: string
               code_clean: string
-              description_en: string
+              created_at: string
+              description_ar: string | null
+              description_en: string | null
               description_fr: string
-              level: string
-              section_number: number
+              embedding: string | null
+              embedding_updated_at: string | null
+              explanatory_notes: string | null
+              hs_version: string | null
+              id: string
+              is_active: boolean | null
+              legal_notes: string | null
+              level: string | null
+              parent_code: string | null
+              section_number: number | null
+              section_title_fr: string | null
+              updated_at: string
             }[]
+            SetofOptions: {
+              from: "*"
+              to: "hs_codes"
+              isOneToOne: false
+              isSetofReturn: true
+            }
           }
         | {
             Args: { limit_count?: number; search_term: string }
