@@ -45,7 +45,7 @@ export function ChatInput({
 
   return (
     <>
-      <div className="border-t border-border bg-card/90 backdrop-blur-xl px-3 pt-3 md:px-4 md:pt-4 md:pb-4 flex-shrink-0" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 1rem))' }}>
+      <div className="px-3 pt-2 pb-2 md:border-t md:border-border md:bg-card/90 md:backdrop-blur-xl md:px-4 md:pt-4 md:pb-4 flex-shrink-0 bg-transparent" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom, 0.5rem))' }}>
         <div className="max-w-3xl mx-auto">
           {/* Uploaded files preview - horizontal scroll on mobile */}
           {uploadedFiles.length > 0 && (
@@ -111,7 +111,7 @@ export function ChatInput({
           )}
           
           {/* Input row */}
-          <div className="flex items-end gap-2.5">
+          <div className="flex items-end gap-2 md:gap-2.5 bg-muted/80 md:bg-transparent rounded-2xl md:rounded-none p-2 md:p-0 border border-border/30 md:border-0">
             <ImageUploadButton
               onFilesSelected={onFilesSelected}
               uploadedFiles={[]}
@@ -126,9 +126,9 @@ export function ChatInput({
                 onKeyDown={onKeyDown}
                 placeholder={uploadedFiles.length > 0 
                   ? "Décrivez votre produit..." 
-                  : "Posez votre question..."}
+                  : "Posez une question"}
                 aria-label="Message à envoyer"
-                className="min-h-[52px] max-h-28 md:max-h-32 pr-14 resize-none rounded-2xl border-border focus:border-primary/40 focus:ring-1 focus:ring-primary/15 bg-background text-base py-3.5 px-4"
+                className="min-h-[40px] md:min-h-[52px] max-h-28 md:max-h-32 pr-12 md:pr-14 resize-none rounded-xl md:rounded-2xl border-0 md:border md:border-border focus:border-primary/40 focus:ring-0 md:focus:ring-1 md:focus:ring-primary/15 bg-transparent md:bg-background text-base py-2.5 md:py-3.5 px-2 md:px-4"
                 rows={1}
               />
               <Button
@@ -136,13 +136,13 @@ export function ChatInput({
                 disabled={(!input.trim() && uploadedFiles.length === 0) || isLoading || isUploading}
                 size="icon"
                 aria-label="Envoyer le message"
-                className="absolute right-2 top-1/2 -translate-y-1/2 h-10 w-10 rounded-xl bg-primary hover:bg-primary/90 transition-colors text-primary-foreground disabled:opacity-50"
+                className="absolute right-1 md:right-2 top-1/2 -translate-y-1/2 h-8 w-8 md:h-10 md:w-10 rounded-full md:rounded-xl bg-primary hover:bg-primary/90 transition-colors text-primary-foreground disabled:opacity-50"
                 style={{ minHeight: 'auto' }}
               >
                 {isUploading ? (
-                  <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                  <Loader2 className="h-4 w-4 md:h-4.5 md:w-4.5 animate-spin" />
                 ) : (
-                  <Send className="h-4.5 w-4.5" />
+                  <Send className="h-4 w-4 md:h-4.5 md:w-4.5" />
                 )}
               </Button>
             </div>
