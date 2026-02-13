@@ -291,7 +291,7 @@ export default function Landing() {
 
       {/* ─── FAQ ─────────────────────────────────────── */}
       <section id="faq" className="relative py-12 md:py-16 px-0.5 sm:px-4" aria-labelledby="faq-heading">
-        <div className="container mx-auto max-w-3xl relative z-10">
+        <div className="container mx-auto max-w-6xl relative z-10">
           <div className="text-center mb-8 md:mb-10">
             <div className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-card border border-border/50 rounded-full px-3 py-1.5 mb-3">
               <HelpCircle className="h-3.5 w-3.5" />
@@ -322,7 +322,7 @@ export default function Landing() {
 
       {/* ─── CTA Section ─────────────────────────────── */}
       <section className="relative py-12 md:py-16 px-0.5 sm:px-4 bg-muted/30">
-        <div className="container mx-auto max-w-2xl text-center">
+        <div className="container mx-auto max-w-6xl text-center">
           <div className="card-elevated p-8 md:p-10 relative overflow-hidden">
             <div className="absolute inset-0 opacity-[0.03] hero-gradient" />
             <div className="relative z-10">
