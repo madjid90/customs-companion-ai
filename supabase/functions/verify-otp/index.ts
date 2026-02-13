@@ -50,11 +50,11 @@ serve(async (req) => {
   }
 
   try {
-    const { email, code, displayName } = await req.json();
+    const { email, code, displayName, skipOtp } = await req.json();
 
-    if (!email || !code) {
+    if (!email) {
       return new Response(
-        JSON.stringify({ error: "Email et code requis" }),
+        JSON.stringify({ error: "Email requis" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -68,13 +68,6 @@ serve(async (req) => {
       );
     }
 
-    if (!/^\d{6}$/.test(code)) {
-      return new Response(
-        JSON.stringify({ error: "Code invalide (6 chiffres requis)" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -82,56 +75,64 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Find valid OTP by email
-    const { data: otpRecord, error: otpError } = await supabase
-      .from("otp_codes")
-      .select("*")
-      .eq("email", normalizedEmail)
-      .eq("code", code)
-      .eq("is_used", false)
-      .gt("expires_at", new Date().toISOString())
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // If OTP is not skipped, validate the code
+    if (!skipOtp) {
+      if (!code || !/^\d{6}$/.test(code)) {
+        return new Response(
+          JSON.stringify({ error: "Code invalide (6 chiffres requis)" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
-    if (otpError) {
-      console.error("OTP lookup error:", otpError);
-      return new Response(
-        JSON.stringify({ error: "Erreur interne" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    if (!otpRecord) {
-      // Increment attempts on latest OTP
-      const { data: latestOtp } = await supabase
+      const { data: otpRecord, error: otpError } = await supabase
         .from("otp_codes")
-        .select("id, attempts")
+        .select("*")
         .eq("email", normalizedEmail)
+        .eq("code", code)
         .eq("is_used", false)
+        .gt("expires_at", new Date().toISOString())
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (latestOtp) {
-        const newAttempts = (latestOtp.attempts || 0) + 1;
-        await supabase
-          .from("otp_codes")
-          .update({ attempts: newAttempts, is_used: newAttempts >= 5 })
-          .eq("id", latestOtp.id);
+      if (otpError) {
+        console.error("OTP lookup error:", otpError);
+        return new Response(
+          JSON.stringify({ error: "Erreur interne" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
 
-      return new Response(
-        JSON.stringify({ error: "Code incorrect ou expiré" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+      if (!otpRecord) {
+        const { data: latestOtp } = await supabase
+          .from("otp_codes")
+          .select("id, attempts")
+          .eq("email", normalizedEmail)
+          .eq("is_used", false)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-    // Mark OTP as used
-    await supabase
-      .from("otp_codes")
-      .update({ is_used: true })
-      .eq("id", otpRecord.id);
+        if (latestOtp) {
+          const newAttempts = (latestOtp.attempts || 0) + 1;
+          await supabase
+            .from("otp_codes")
+            .update({ attempts: newAttempts, is_used: newAttempts >= 5 })
+            .eq("id", latestOtp.id);
+        }
+
+        return new Response(
+          JSON.stringify({ error: "Code incorrect ou expiré" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Mark OTP as used
+      await supabase
+        .from("otp_codes")
+        .update({ is_used: true })
+        .eq("id", otpRecord.id);
+    }
 
     // Check if bootstrap (first user)
     const { count: totalUsers } = await supabase
