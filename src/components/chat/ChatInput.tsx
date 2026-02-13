@@ -111,7 +111,7 @@ export function ChatInput({
           )}
           
           {/* Input row */}
-          <div className="flex items-center gap-1.5 md:gap-2.5 md:bg-transparent rounded-2xl md:rounded-none p-1.5 md:p-0 md:border-0" style={{ background: 'linear-gradient(hsl(var(--background)), hsl(var(--background))) padding-box, var(--gradient-cta) border-box', border: '1.5px solid transparent', borderRadius: '1rem' }}>
+          <div className="flex items-center gap-1.5 md:gap-2.5 md:bg-transparent rounded-2xl md:rounded-none px-3 py-1.5 md:p-0 md:border-0" style={{ background: 'linear-gradient(hsl(var(--background)), hsl(var(--background))) padding-box, var(--gradient-cta) border-box', border: '1.5px solid transparent', borderRadius: '1rem' }}>
             <ImageUploadButton
               onFilesSelected={onFilesSelected}
               uploadedFiles={[]}
