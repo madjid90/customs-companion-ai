@@ -1216,6 +1216,7 @@ export type Database = {
           attempts: number | null
           code: string
           created_at: string | null
+          email: string | null
           expires_at: string
           id: string
           is_used: boolean | null
@@ -1225,6 +1226,7 @@ export type Database = {
           attempts?: number | null
           code: string
           created_at?: string | null
+          email?: string | null
           expires_at: string
           id?: string
           is_used?: boolean | null
@@ -1234,6 +1236,7 @@ export type Database = {
           attempts?: number | null
           code?: string
           created_at?: string | null
+          email?: string | null
           expires_at?: string
           id?: string
           is_used?: boolean | null
@@ -1474,12 +1477,13 @@ export type Database = {
           auth_user_id: string | null
           created_at: string | null
           display_name: string | null
+          email: string | null
           id: string
           invited_by: string | null
           is_active: boolean | null
           max_invites: number | null
           password_salt: string | null
-          phone: string
+          phone: string | null
           role: Database["public"]["Enums"]["app_role"]
           updated_at: string | null
         }
@@ -1487,12 +1491,13 @@ export type Database = {
           auth_user_id?: string | null
           created_at?: string | null
           display_name?: string | null
+          email?: string | null
           id?: string
           invited_by?: string | null
           is_active?: boolean | null
           max_invites?: number | null
           password_salt?: string | null
-          phone: string
+          phone?: string | null
           role?: Database["public"]["Enums"]["app_role"]
           updated_at?: string | null
         }
@@ -1500,12 +1505,13 @@ export type Database = {
           auth_user_id?: string | null
           created_at?: string | null
           display_name?: string | null
+          email?: string | null
           id?: string
           invited_by?: string | null
           is_active?: boolean | null
           max_invites?: number | null
           password_salt?: string | null
-          phone?: string
+          phone?: string | null
           role?: Database["public"]["Enums"]["app_role"]
           updated_at?: string | null
         }
