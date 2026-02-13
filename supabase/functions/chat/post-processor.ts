@@ -33,6 +33,7 @@ export interface PostProcessInput {
   queryEmbedding: number[] | null;
   useSemanticSearch: boolean;
   sessionId: string;
+  userId?: string;
   images?: any[];
   startTime: number;
   supabase: any;
@@ -305,6 +306,7 @@ export async function postProcessResponse(input: PostProcessInput): Promise<Post
     .from('conversations')
     .insert({
       session_id: sessionId,
+      user_id: input.userId || null,
       question: question,
       response: responseText,
       detected_intent: analysis.intent,

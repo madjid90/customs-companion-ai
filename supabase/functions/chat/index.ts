@@ -268,8 +268,9 @@ serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
 
   // Authentication check - REQUIRED
-  const { error: authError } = await requireAuth(req, corsHeaders);
+  const { error: authError, auth } = await requireAuth(req, corsHeaders);
   if (authError) return authError;
+  const authenticatedUserId = auth?.userId;
 
   // Rate limiting
   const clientId = getClientId(req);
@@ -1337,7 +1338,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
             const result = await postProcessResponse({
               responseText, question: question || "", enrichedQuestion,
               context, analysis, queryEmbedding, useSemanticSearch,
-              sessionId, images, startTime, supabase, SUPABASE_URL: SUPABASE_URL!,
+              sessionId, userId: authenticatedUserId, images, startTime, supabase, SUPABASE_URL: SUPABASE_URL!,
             });
             
             // Save to cache
@@ -1440,7 +1441,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     const result = await postProcessResponse({
       responseText, question: question || "", enrichedQuestion,
       context, analysis, queryEmbedding, useSemanticSearch,
-      sessionId, images, startTime, supabase, SUPABASE_URL: SUPABASE_URL!,
+      sessionId, userId: authenticatedUserId, images, startTime, supabase, SUPABASE_URL: SUPABASE_URL!,
     });
 
     // Save to cache
