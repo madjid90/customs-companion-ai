@@ -126,6 +126,23 @@ export default function AdminDocuments() {
     },
   });
 
+  // Query legal references to show analysis info for circulaires
+  const { data: legalRefs } = useQuery({
+    queryKey: ["legal-references-map"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("legal_references")
+        .select("pdf_id, reference_number, reference_type, title, reference_date, context");
+
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const getLegalRef = (pdfId: string) => {
+    return legalRefs?.find((r) => r.pdf_id === pdfId);
+  };
+
   const getExtraction = (pdfId: string) => {
     return extractions?.find((e) => e.pdf_id === pdfId);
   };
@@ -860,6 +877,44 @@ export default function AdminDocuments() {
                       Confiance: {Math.round(selectedExtraction.extraction_confidence * 100)}%
                     </div>
                   )}
+                </>
+              ) : selectedDoc && getLegalRef(selectedDoc.id) ? (
+                <>
+                  <div className="border-t pt-4">
+                    <h4 className="font-semibold mb-2 flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-success" />
+                      Document indexé (pipeline réglementaire)
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Référence</p>
+                        <p className="font-medium font-mono">
+                          {getLegalRef(selectedDoc.id)?.reference_number || "-"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Type</p>
+                        <p className="font-medium">
+                          {getLegalRef(selectedDoc.id)?.reference_type || "-"}
+                        </p>
+                      </div>
+                      {getLegalRef(selectedDoc.id)?.title && (
+                        <div className="col-span-2">
+                          <p className="text-muted-foreground">Titre</p>
+                          <p className="font-medium">{getLegalRef(selectedDoc.id)?.title}</p>
+                        </div>
+                      )}
+                      {getLegalRef(selectedDoc.id)?.context && (
+                        <div className="col-span-2">
+                          <p className="text-muted-foreground">Contexte</p>
+                          <p className="text-sm">{getLegalRef(selectedDoc.id)?.context}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Ce document a été ingéré via le pipeline réglementaire (legal_chunks) et est utilisé par l'IA.
+                  </p>
                 </>
               ) : (
                 <div className="border-t pt-4 text-center text-muted-foreground">
