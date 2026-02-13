@@ -127,45 +127,6 @@ serve(async (req) => {
       );
     }
 
-    // Send invitation email via Resend
-    const resendApiKey = Deno.env.get("RESEND_API_KEY");
-
-    if (resendApiKey) {
-      const appUrl = Deno.env.get("APP_URL") || "https://douane-ai.lovable.app";
-      const loginUrl = `${appUrl}/login`;
-      const managerName = manager.display_name || "votre manager";
-
-      try {
-        const resendResponse = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${resendApiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            from: "DouaneAI <onboarding@resend.dev>",
-            to: [normalizedEmail],
-            subject: "Vous êtes invité(e) sur DouaneAI",
-            html: `
-              <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
-                <h2 style="color: #1a1a1a;">Invitation DouaneAI</h2>
-                <p style="color: #666;"><strong>${managerName}</strong> vous invite à rejoindre DouaneAI.</p>
-                <p style="color: #666;">Connectez-vous dès maintenant :</p>
-                <a href="${loginUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 16px;">Se connecter</a>
-              </div>
-            `,
-          }),
-        });
-
-        if (!resendResponse.ok) {
-          const errorText = await resendResponse.text();
-          console.error("Resend error:", errorText);
-        }
-      } catch (emailError) {
-        console.error("Email sending failed:", emailError);
-      }
-    }
-
     return new Response(
       JSON.stringify({
         success: true,

@@ -104,48 +104,6 @@ serve(async (req) => {
 
     console.log(`[approve-access] User created: ${newUser.id} (${userEmail})`);
 
-    // Send notification email via Resend
-    let emailSent = false;
-    const resendApiKey = Deno.env.get("RESEND_API_KEY");
-
-    if (resendApiKey) {
-      const appUrl = Deno.env.get("APP_URL") || "https://douane-ai.lovable.app";
-      const loginUrl = `${appUrl}/login`;
-
-      try {
-        const resendResponse = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${resendApiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            from: "DouaneAI <onboarding@resend.dev>",
-            to: [userEmail],
-            subject: "Votre accès DouaneAI a été approuvé !",
-            html: `
-              <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
-                <h2 style="color: #1a1a1a;">Bienvenue sur DouaneAI !</h2>
-                <p style="color: #666;">Votre demande d'accès pour <strong>${request.company_name}</strong> a été approuvée.</p>
-                <p style="color: #666;">Connectez-vous dès maintenant :</p>
-                <a href="${loginUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 16px;">Se connecter</a>
-              </div>
-            `,
-          }),
-        });
-
-        if (resendResponse.ok) {
-          emailSent = true;
-          console.log(`[approve-access] Email sent to ${userEmail}`);
-        } else {
-          const errorText = await resendResponse.text();
-          console.error("[approve-access] Resend error:", errorText);
-        }
-      } catch (emailError) {
-        console.error("[approve-access] Email sending failed:", emailError);
-      }
-    }
-
     return successResponse(req, {
       success: true,
       action: "approved",
@@ -155,10 +113,7 @@ serve(async (req) => {
         display_name: newUser.display_name,
         role: newUser.role,
       },
-      emailSent,
-      message: emailSent
-        ? "Utilisateur créé et email d'invitation envoyé"
-        : "Utilisateur créé (email non envoyé - vérifiez la config Resend)",
+      message: "Utilisateur créé avec succès",
     });
   } catch (error) {
     console.error("[approve-access] Error:", error);
