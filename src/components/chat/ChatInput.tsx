@@ -45,7 +45,7 @@ export function ChatInput({
 
   return (
     <>
-      <div className="px-3 pt-2 pb-6 mb-2 md:mb-0 md:border-t md:border-border md:bg-card/90 md:backdrop-blur-xl md:px-4 md:pt-4 md:pb-4 flex-shrink-0 bg-transparent">
+      <div className="px-3 pt-2 pb-8 mb-4 md:mb-0 md:pb-4 md:border-t md:border-border md:bg-card/90 md:backdrop-blur-xl md:px-4 md:pt-4 flex-shrink-0 bg-transparent">
         <div className="max-w-3xl mx-auto">
           {/* Uploaded files preview - horizontal scroll on mobile */}
           {uploadedFiles.length > 0 && (
@@ -111,7 +111,7 @@ export function ChatInput({
           )}
           
           {/* Input row */}
-          <div className="flex items-end gap-2 md:gap-2.5 bg-muted/80 md:bg-transparent rounded-2xl md:rounded-none p-2 md:p-0 border border-border/30 md:border-0">
+          <div className="flex items-end gap-2 md:gap-2.5 md:bg-transparent rounded-2xl md:rounded-none p-2 md:p-0 md:border-0" style={{ background: 'linear-gradient(white, white) padding-box, var(--gradient-cta) border-box', border: '1.5px solid transparent', borderRadius: '1rem' }}>
             <ImageUploadButton
               onFilesSelected={onFilesSelected}
               uploadedFiles={[]}
@@ -136,7 +136,7 @@ export function ChatInput({
                 disabled={(!input.trim() && uploadedFiles.length === 0) || isLoading || isUploading}
                 size="icon"
                 aria-label="Envoyer le message"
-                className="absolute right-1 md:right-2 top-1/2 -translate-y-1/2 h-8 w-8 md:h-10 md:w-10 rounded-full md:rounded-xl bg-primary hover:bg-primary/90 transition-colors text-primary-foreground disabled:opacity-50"
+                className="absolute right-1 md:right-2 top-1/2 -translate-y-1/2 h-8 w-8 md:h-10 md:w-10 rounded-full md:rounded-xl cta-gradient border-0 text-white disabled:opacity-50"
                 style={{ minHeight: 'auto' }}
               >
                 {isUploading ? (
