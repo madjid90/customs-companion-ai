@@ -121,6 +121,7 @@ interface IngestResponse {
   chunks_created: number;
   detected_codes_count: number;
   evidence_created: number;
+  tariff_entries_created?: number; // Tariff entries extracted from circular tables
   error?: string;
   // Batch mode additional fields
   total_pages?: number;
@@ -723,13 +724,13 @@ function extractKeywords(text: string): string[] {
   return Array.from(keywords).slice(0, 15);
 }
 
-// Extract HS codes mentioned in chunk
+// Extract HS codes mentioned in chunk (including "Ex" prefix patterns)
 function extractMentionedHSCodes(text: string): string[] {
   const codes: Set<string> = new Set();
+  let match;
   
   // 10-digit codes
   const pattern10 = /\b(\d{10})\b/g;
-  let match;
   while ((match = pattern10.exec(text)) !== null) {
     codes.add(match[1]);
   }
@@ -741,7 +742,21 @@ function extractMentionedHSCodes(text: string): string[] {
     if (normalized.length >= 6) codes.add(normalized);
   }
   
-  return Array.from(codes).slice(0, 20);
+  // "Ex" prefix patterns: "Ex 0102 29 10 00" or "Ex 0808 10 90 20"
+  const patternEx = /\bEx\s+(\d{4}\s+\d{2}\s+\d{2}\s+\d{2})\b/gi;
+  while ((match = patternEx.exec(text)) !== null) {
+    const normalized = match[1].replace(/\s/g, "");
+    if (normalized.length >= 6) codes.add(normalized);
+  }
+  
+  // Space-separated codes: "0102 29 39 00" (common in circular tables)
+  const patternSpaced = /(?:^|\|)\s*(?:Ex\s+)?(\d{4}\s+\d{2}\s+\d{2}\s+\d{2})\s*(?:\||$)/gm;
+  while ((match = patternSpaced.exec(text)) !== null) {
+    const normalized = match[1].replace(/\s/g, "");
+    if (normalized.length >= 6) codes.add(normalized);
+  }
+  
+  return Array.from(codes).slice(0, 50);
 }
 
 function createChunks(pages: ExtractedPage[]): TextChunk[] {
@@ -922,53 +937,228 @@ function detectHSCodes(pages: ExtractedPage[]): DetectedCode[] {
     /\b(\d{10})\b/g,
     // Formatted: 8903.11.00.00 or 89.03.11.00.00
     /\b(\d{2}[.\s]\d{2}[.\s]\d{2}[.\s]?\d{2}[.\s]?\d{2})\b/g,
+    // Space-separated: 0102 29 39 00 (common in circulars)
+    /(?:^|\s)(\d{4}\s+\d{2}\s+\d{2}\s+\d{2})(?:\s|$)/gm,
+    // "Ex" prefix: Ex 0102 29 10 00
+    /\bEx\s+(\d{4}\s+\d{2}\s+\d{2}\s+\d{2})\b/gi,
     // 6 digits with dots: 8903.11 or 89.03.11
     /\b(\d{2}[.\s]\d{2}[.\s]\d{2})\b/g,
     // 4 digits position: 8903
     /\b(\d{4})\b(?=\s*[-–:.]|\s+[A-Za-zÀ-ÿ])/g,
   ];
 
-  for (const page of pages) {
-    const text = page.text;
-
+  const processText = (text: string, pageNumber: number | null) => {
     for (const pattern of patterns) {
       let match;
-      // Reset lastIndex for global regex
       pattern.lastIndex = 0;
       
       while ((match = pattern.exec(text)) !== null) {
         const raw = match[1];
         const normalized = raw.replace(/[\s.]/g, "");
 
-        // Skip if too short or already seen
         if (normalized.length < 4 || seenCodes.has(normalized)) continue;
+        if (/^(19|20)\d{2}$/.test(normalized)) continue;
+        if (parseInt(normalized) < 100) continue;
 
-        // Skip numbers that are clearly not HS codes (years, page numbers, etc.)
-        if (/^(19|20)\d{2}$/.test(normalized)) continue; // Years
-        if (parseInt(normalized) < 100) continue; // Too small
-
-        // Extract context (50 chars before and after)
         const start = Math.max(0, match.index - 50);
         const end = Math.min(text.length, match.index + match[0].length + 50);
         const context = text.slice(start, end).replace(/\s+/g, " ").trim();
 
-        // Use strict normalization - NO PADDING
         const parsed = parseDetectedCode(normalized);
         
         detected.push({
           code: raw,
-          hs_code_6: parsed.hs_code_6,      // null if < 6 digits
-          national_code: parsed.national_code, // null if not exactly 10 digits
+          hs_code_6: parsed.hs_code_6,
+          national_code: parsed.national_code,
           context,
-          page_number: page.page_number,
+          page_number: pageNumber,
         });
 
         seenCodes.add(normalized);
       }
     }
+  };
+
+  for (const page of pages) {
+    processText(page.text, page.page_number);
+    // Also scan table markdown content for HS codes
+    if (page.tables) {
+      for (const table of page.tables) {
+        if (table.markdown) {
+          processText(table.markdown, page.page_number);
+        }
+      }
+    }
   }
 
   return detected;
+}
+
+// ============================================================================
+// TARIFF TABLE EXTRACTION FROM CIRCULARS
+// ============================================================================
+
+interface ExtractedTariffEntry {
+  national_code: string;       // 10-digit code
+  hs_code_6: string;           // First 6 digits
+  description: string;
+  duty_rate: number | null;    // Preferential rate
+  contingent: string | null;   // Quota (e.g. "545 tonnes", "illimité")
+  page_number: number | null;
+  is_ex: boolean;              // Has "Ex" prefix (partial coverage)
+}
+
+/**
+ * Parse markdown tables from extracted pages to find HS code tariff entries
+ * Handles patterns like: | Ex 0102 29 10 00 | Description | 5448 têtes | 2,5 |
+ */
+function extractTariffEntriesFromPages(pages: ExtractedPage[]): ExtractedTariffEntry[] {
+  const entries: ExtractedTariffEntry[] = [];
+  const seenCodes = new Set<string>();
+
+  // Pattern to match HS codes in table rows (with optional "Ex" prefix)
+  // Handles: "Ex 0102 29 10 00", "0102 29 39 00", "0713 50 90 10 (2)"
+  const codePattern = /(?:Ex\s+)?(\d{4}\s+\d{2}\s+\d{2}\s+\d{2})(?:\s*\(\d+\))?/;
+  
+  for (const page of pages) {
+    if (!page.tables) continue;
+    
+    for (const table of page.tables) {
+      if (!table.has_hs_codes && !table.markdown) continue;
+      
+      const lines = table.markdown.split('\n');
+      let lastDescription = '';
+      let lastDutyRate: number | null = null;
+      let lastContingent: string | null = null;
+      
+      for (const line of lines) {
+        // Skip header and separator lines
+        if (line.includes('---') || line.includes('Tarif') || line.includes('Description')) continue;
+        
+        const cells = line.split('|').map(c => c.trim()).filter(c => c);
+        if (cells.length < 2) continue;
+        
+        const firstCell = cells[0];
+        const codeMatch = firstCell.match(codePattern);
+        
+        if (!codeMatch) continue;
+        
+        const rawCode = codeMatch[1].replace(/\s/g, '');
+        const isEx = /^Ex\s/i.test(firstCell.trim());
+        
+        // Validate: must be exactly 8 digits (XXXX XX XX XX = 8 digits national subcode)
+        if (rawCode.length !== 8) continue;
+        
+        // Build 10-digit code: rawCode is already 8 digits from pattern XXXX XX XX XX
+        // Wait - the pattern captures 4+2+2+2 = 10 digits total
+        const digits = digitsOnly(rawCode);
+        if (digits.length < 8) continue;
+        
+        const nationalCode = normalize10Strict(digits.length === 10 ? digits : null);
+        const hs6 = extractHS6(digits);
+        
+        if (!hs6) continue;
+        
+        // Extract description (carry-forward if empty)
+        const desc = cells.length > 1 ? cells[1].replace(/\(\*\)/g, '').trim() : '';
+        if (desc) lastDescription = desc;
+        
+        // Extract contingent and rate from remaining cells
+        if (cells.length > 2) {
+          const contingentCell = cells[2].trim();
+          if (contingentCell && contingentCell !== '') {
+            lastContingent = contingentCell;
+          }
+        }
+        if (cells.length > 3) {
+          const rateCell = cells[3].trim().replace(',', '.');
+          const rateNum = parseFloat(rateCell);
+          if (!isNaN(rateNum)) {
+            lastDutyRate = rateNum;
+          }
+        }
+        
+        // Use national_code if 10 digits, otherwise just track hs6
+        const codeKey = nationalCode || digits;
+        if (seenCodes.has(codeKey)) continue;
+        seenCodes.add(codeKey);
+        
+        entries.push({
+          national_code: nationalCode || digits, // Best we have
+          hs_code_6: hs6,
+          description: lastDescription,
+          duty_rate: lastDutyRate,
+          contingent: lastContingent,
+          page_number: page.page_number,
+          is_ex: isEx,
+        });
+      }
+    }
+  }
+  
+  console.log(`[ingest-legal-doc] Extracted ${entries.length} tariff entries from tables`);
+  return entries;
+}
+
+/**
+ * Insert extracted tariff entries into country_tariffs with source tracking
+ */
+async function insertCircularTariffs(
+  supabase: any,
+  entries: ExtractedTariffEntry[],
+  sourceRef: string,
+  filePath: string | null,
+  countryCode: string
+): Promise<number> {
+  if (entries.length === 0) return 0;
+  
+  // Only insert entries with valid 10-digit national codes
+  const validEntries = entries.filter(e => normalize10Strict(e.national_code) !== null);
+  
+  if (validEntries.length === 0) {
+    console.log(`[ingest-legal-doc] No entries with valid 10-digit national codes for country_tariffs`);
+    return 0;
+  }
+  
+  let inserted = 0;
+  
+  // Insert in batches of 20
+  for (let i = 0; i < validEntries.length; i += 20) {
+    const batch = validEntries.slice(i, i + 20);
+    
+    const rows = batch.map(entry => ({
+      country_code: countryCode,
+      national_code: entry.national_code,
+      hs_code_6: entry.hs_code_6,
+      description_local: entry.description || null,
+      duty_rate: entry.duty_rate,
+      duty_note: entry.contingent ? `Contingent: ${entry.contingent}` : null,
+      source: `circular`,
+      source_pdf: filePath,
+      source_evidence: `Circulaire ${sourceRef}${entry.is_ex ? ' (Ex - couverture partielle)' : ''}`,
+      source_page: entry.page_number,
+      is_active: true,
+      is_inherited: false,
+    }));
+    
+    // Use upsert to avoid duplicates (same national_code + country_code)
+    const { error, data } = await supabase
+      .from("country_tariffs")
+      .upsert(rows, {
+        onConflict: "national_code,country_code",
+        ignoreDuplicates: false, // Update existing entries
+      })
+      .select("id");
+    
+    if (error) {
+      console.error(`[ingest-legal-doc] country_tariffs upsert error:`, error);
+    } else {
+      inserted += data?.length || 0;
+    }
+  }
+  
+  console.log(`[ingest-legal-doc] Inserted/updated ${inserted} tariff entries from circular tables`);
+  return inserted;
 }
 
 // ============================================================================
@@ -1849,6 +2039,29 @@ serve(async (req) => {
       body.country_code || "MA"
     );
 
+    // 7b. Extract and insert tariff entries from circular tables
+    let tariffEntriesCreated = 0;
+    try {
+      const tariffEntries = extractTariffEntriesFromPages(pages);
+      if (tariffEntries.length > 0) {
+        // Determine file path for source tracking
+        const storedFilePath = pdfId ? 
+          `circulaires/${new Date().getFullYear()}/${body.file_name || `${body.source_type}_${body.source_ref}.pdf`}` :
+          null;
+        
+        tariffEntriesCreated = await insertCircularTariffs(
+          supabase,
+          tariffEntries,
+          body.source_ref,
+          storedFilePath,
+          body.country_code || "MA"
+        );
+        console.log(`[ingest-legal-doc] Created ${tariffEntriesCreated} tariff entries from circular tables`);
+      }
+    } catch (tariffErr) {
+      console.warn(`[ingest-legal-doc] Tariff extraction from tables failed (non-critical): ${tariffErr}`);
+    }
+
     // 8. Update total_chunks counter on legal_sources
     try {
       const { count: actualChunkCount } = await supabase
@@ -1936,6 +2149,7 @@ serve(async (req) => {
       chunks_created: chunksCreated,
       detected_codes_count: detectedCodes.length,
       evidence_created: evidenceCreated,
+      tariff_entries_created: tariffEntriesCreated,
       total_pages: totalPages,
       batch_start: isBatchMode ? body.start_page : undefined,
       batch_end: isBatchMode ? body.end_page : undefined,
