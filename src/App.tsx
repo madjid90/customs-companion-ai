@@ -27,9 +27,6 @@ const AdminAccessRequests = lazy(() => import("@/pages/admin/AdminAccessRequests
 const AdminReferences = lazy(() => import("@/pages/admin/AdminReferences"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
-// Lazy-load heavy background components — rendered once at App level so they persist across routes
-const LazyPlexusBackground = lazy(() => import("@/components/ui/PlexusBackground").then(m => ({ default: m.PlexusBackground })));
-const LazyGradientMeshBackground = lazy(() => import("@/components/ui/GradientMeshBackground").then(m => ({ default: m.GradientMeshBackground })));
 
 const PageFallback = () => (
   <div className="min-h-screen flex items-center justify-center page-gradient">
