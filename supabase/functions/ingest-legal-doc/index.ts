@@ -30,7 +30,9 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // Chunking config
 const CHUNK_SIZE_TARGET = 1000;
 const CHUNK_OVERLAP = 150;
-const MIN_CHUNK_SIZE = 400;
+const MIN_CHUNK_SIZE_DEFAULT = 400;
+const MIN_CHUNK_SIZE_BATCH = 50; // Much lower threshold for batch mode (page-by-page)
+let ACTIVE_MIN_CHUNK_SIZE = MIN_CHUNK_SIZE_DEFAULT;
 
 // ============================================================================
 // TYPES
@@ -806,7 +808,7 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
           // Create a chunk for form/image descriptions
           const imgText = `[${img.image_type.toUpperCase()}: ${img.description}]${img.extracted_text ? `\n\nContenu:\n${img.extracted_text}` : ''}`;
           
-          if (imgText.length >= MIN_CHUNK_SIZE) {
+          if (imgText.length >= ACTIVE_MIN_CHUNK_SIZE) {
             chunks.push({
               chunk_index: chunkIndex++,
               text: imgText,
@@ -850,11 +852,11 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
       
       const shouldSplit = currentChunk && (
         (currentChunk.length + trimmedPara.length) > CHUNK_SIZE_TARGET ||
-        (isArticleBoundary && currentChunk.length >= MIN_CHUNK_SIZE)
+        (isArticleBoundary && currentChunk.length >= ACTIVE_MIN_CHUNK_SIZE)
       );
 
       if (shouldSplit) {
-        if (currentChunk.length >= MIN_CHUNK_SIZE) {
+        if (currentChunk.length >= ACTIVE_MIN_CHUNK_SIZE) {
           const chunkText = currentChunk.trim();
           const articleNumber = extractArticleNumber(chunkText);
           const sectionTitle = extractSectionTitle(chunkText) || hierarchy.getCurrentSection();
@@ -891,7 +893,7 @@ function createChunks(pages: ExtractedPage[]): TextChunk[] {
     }
 
     // Save remaining chunk
-    if (currentChunk.length >= MIN_CHUNK_SIZE) {
+    if (currentChunk.length >= ACTIVE_MIN_CHUNK_SIZE) {
       const chunkText = currentChunk.trim();
       const articleNumber = extractArticleNumber(chunkText);
       const sectionTitle = extractSectionTitle(chunkText) || hierarchy.getCurrentSection();
@@ -1924,15 +1926,25 @@ serve(async (req) => {
     }
 
     console.log(`[ingest-legal-doc] Extracted ${pages.length} pages`);
+    
+    // Log text lengths for debugging
+    for (const p of pages) {
+      console.log(`[ingest-legal-doc] Page ${p.page_number}: ${p.text.length} chars, ${p.tables?.length || 0} tables, ${p.images?.length || 0} images`);
+    }
 
     // 2. Combine full text for this batch
     const fullText = pages.map((p) => p.text).join("\n\n---PAGE---\n\n");
+    console.log(`[ingest-legal-doc] Full text length: ${fullText.length} chars`);
 
-    // 3. Create chunks
+    // 3. Set MIN_CHUNK_SIZE based on mode (batch = lower threshold)
+    ACTIVE_MIN_CHUNK_SIZE = isBatchMode ? MIN_CHUNK_SIZE_BATCH : MIN_CHUNK_SIZE_DEFAULT;
+    console.log(`[ingest-legal-doc] Using MIN_CHUNK_SIZE: ${ACTIVE_MIN_CHUNK_SIZE} (${isBatchMode ? 'batch' : 'full'} mode)`);
+
+    // 4. Create chunks
     const chunks = createChunks(pages);
     console.log(`[ingest-legal-doc] Created ${chunks.length} chunks`);
 
-    // 4. Detect HS codes
+    // 5. Detect HS codes
     const detectedCodes = body.detect_hs_codes !== false ? detectHSCodes(pages) : [];
     console.log(`[ingest-legal-doc] Detected ${detectedCodes.length} HS codes`);
 
