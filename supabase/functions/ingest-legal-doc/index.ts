@@ -378,19 +378,28 @@ Réponds en JSON strict uniquement.`,
   const data = await response.json();
   const content = data.content?.[0]?.text || "";
 
+  // Log raw response length and first 500 chars for debugging
+  console.log(`[ingest-legal-doc] Claude raw response: ${content.length} chars`);
+  if (content.length < 2000) {
+    console.log(`[ingest-legal-doc] Claude full response: ${content}`);
+  } else {
+    console.log(`[ingest-legal-doc] Claude response preview: ${content.substring(0, 500)}...`);
+  }
+
   // Parse JSON response
   const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) ||
                     content.match(/\{[\s\S]*"pages"[\s\S]*\}/);
 
   if (!jsonMatch) {
-    // Fallback: treat entire response as single page
+    // Fallback: treat entire response as single page text
+    console.log(`[ingest-legal-doc] No JSON found, using raw text as content (${content.length} chars)`);
     return [{ page_number: startPage, text: content }];
   }
 
   try {
     const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
     // Adjust page numbers to absolute values and preserve all extracted data
-    return (parsed.pages || []).map((p: any, idx: number) => {
+    const pages = (parsed.pages || []).map((p: any, idx: number) => {
       const page: ExtractedPage = {
         page_number: startPage + idx,
         text: p.text || "",
@@ -423,6 +432,31 @@ Réponds en JSON strict uniquement.`,
       
       return page;
     });
+    
+    // CRITICAL FIX: Check if all parsed pages are empty (0 chars text, no tables, no images)
+    // This happens when Claude returns valid JSON but empty content (e.g. scanned PDFs)
+    const totalChars = pages.reduce((sum: number, p: ExtractedPage) => sum + p.text.length, 0);
+    const totalTables = pages.reduce((sum: number, p: ExtractedPage) => sum + (p.tables?.length || 0), 0);
+    const totalImages = pages.reduce((sum: number, p: ExtractedPage) => sum + (p.images?.length || 0), 0);
+    
+    if (totalChars === 0 && totalTables === 0 && totalImages === 0) {
+      // All pages empty from JSON - try extracting text from the raw response instead
+      // Claude might have described the content outside the JSON structure
+      const rawText = content
+        .replace(/```json[\s\S]*?```/g, '')  // Remove JSON blocks
+        .replace(/\{[\s\S]*"pages"[\s\S]*\}/g, '')  // Remove JSON objects
+        .trim();
+      
+      if (rawText.length > 20) {
+        console.warn(`[ingest-legal-doc] All parsed pages empty but found ${rawText.length} chars of raw text outside JSON - using as fallback`);
+        return [{ page_number: startPage, text: rawText }];
+      }
+      
+      // Last resort: the PDF page is genuinely empty or unreadable (scanned image without OCR)
+      console.warn(`[ingest-legal-doc] Page genuinely empty/unreadable - Claude returned no content`);
+    }
+    
+    return pages;
   } catch (e) {
     console.warn("[ingest-legal-doc] JSON parse failed, using raw text");
     return [{ page_number: startPage, text: content }];
