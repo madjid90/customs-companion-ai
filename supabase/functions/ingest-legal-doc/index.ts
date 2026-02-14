@@ -2085,6 +2085,88 @@ serve(async (req) => {
       }
     }
 
+    // 5c. Ensure legal_references exists (even on re-ingestion / batch mode)
+    // This runs on the first batch or single-page mode to create the citation link
+    if (isFirstBatch) {
+      try {
+        const extracted = extractDocumentReference(fullText, body.source_type);
+        const actualRef = extracted.ref || body.source_ref;
+        const actualTitle = body.title || extracted.title;
+        const actualDate = extracted.date || body.source_date;
+        const actualIssuer = extracted.issuer || body.issuer;
+
+        // Find the matching pdf_documents entry
+        const lookupPdfId = pdfId;
+        let refPdfId = lookupPdfId;
+        if (!refPdfId) {
+          // Try to find existing pdf_documents by document_reference or title
+          const { data: existingPdf } = await supabase
+            .from('pdf_documents')
+            .select('id')
+            .or(`document_reference.eq.${actualRef},title.ilike.%${actualRef}%`)
+            .limit(1)
+            .maybeSingle();
+          if (existingPdf) refPdfId = existingPdf.id;
+        }
+
+        if (refPdfId) {
+          // Check if legal_references already exists
+          const { data: existingRef } = await supabase
+            .from('legal_references')
+            .select('id')
+            .eq('pdf_id', refPdfId)
+            .limit(1)
+            .maybeSingle();
+
+          if (!existingRef) {
+            const { error: refError } = await supabase
+              .from('legal_references')
+              .insert({
+                pdf_id: refPdfId,
+                reference_type: body.source_type === 'circular' ? 'Circulaire' :
+                               body.source_type === 'law' ? 'Loi' :
+                               body.source_type === 'decree' ? 'Décret' :
+                               body.source_type === 'note' ? 'Note' : 'Document',
+                reference_number: actualRef,
+                title: actualTitle,
+                reference_date: actualDate,
+                country_code: body.country_code || 'MA',
+                context: fullText.slice(0, 300),
+                is_active: true,
+              });
+
+            if (refError) {
+              console.warn(`[ingest-legal-doc] legal_references insert error: ${refError.message}`);
+            } else {
+              console.log(`[ingest-legal-doc] Created legal_references for pdf_id: ${refPdfId}`);
+            }
+          } else {
+            console.log(`[ingest-legal-doc] legal_references already exists for pdf_id: ${refPdfId}`);
+          }
+
+          // Also ensure metadata is populated on pdf_documents
+          const metaUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() };
+          if (actualIssuer) metaUpdate.issuing_authority = actualIssuer;
+          if (actualDate) metaUpdate.publication_date = actualDate;
+          if (fullText.length > 10) metaUpdate.description = fullText.slice(0, 500);
+
+          await supabase.from('pdf_documents').update(metaUpdate).eq('id', refPdfId);
+
+          // Also enrich legal_sources
+          const srcUpdate: Record<string, unknown> = {};
+          if (actualIssuer) srcUpdate.issuer = actualIssuer;
+          if (actualDate) srcUpdate.source_date = actualDate;
+          if (Object.keys(srcUpdate).length > 0) {
+            await supabase.from('legal_sources').update(srcUpdate).eq('id', sourceId);
+          }
+
+          console.log(`[ingest-legal-doc] Ensured metadata on pdf_documents & legal_sources`);
+        }
+      } catch (refErr) {
+        console.warn(`[ingest-legal-doc] legal_references/metadata ensure failed (non-critical): ${refErr}`);
+      }
+    }
+
     // 6. Insert chunks (append mode - don't delete existing for batch)
     // IMPORTANT: Skip inline embedding generation to save CPU time
     // The trigger `queue_for_embedding` on legal_chunks automatically queues
