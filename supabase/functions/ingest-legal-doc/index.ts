@@ -438,8 +438,11 @@ async function extractTextFromPDF(pdfBase64: string): Promise<ExtractedPage[]> {
 
   // If pdf-lib can't parse this PDF, we can't split it
   if (!pdfLibWorks) {
+    if (totalPages > 100) {
+      throw new Error(`PDF malformé de ${totalPages} pages estimées dépasse la limite Claude de 100 pages. Veuillez découper le fichier en lots plus petits côté client (batch_mode).`);
+    }
     console.log(`[ingest-legal-doc] pdf-lib unavailable for this PDF - sending entire document to Claude (${totalPages} estimated pages)`);
-    console.warn(`[ingest-legal-doc] Large malformed PDF: processing as single chunk with extended timeout`);
+    console.warn(`[ingest-legal-doc] Malformed PDF: processing as single chunk with extended timeout`);
     return await extractTextFromPDFChunk(pdfBase64, 1);
   }
 
@@ -489,6 +492,9 @@ async function extractTextFromPDF(pdfBase64: string): Promise<ExtractedPage[]> {
         pdfLibWorks = false;
         // Only if we haven't already extracted some pages
         if (allPages.length === 0) {
+          if (totalPages > 100) {
+            throw new Error(`PDF malformé de ${totalPages} pages estimées dépasse la limite Claude de 100 pages. Veuillez découper le fichier en lots plus petits côté client (batch_mode).`);
+          }
           return await extractTextFromPDFChunk(pdfBase64, 1);
         }
         // If we have some pages already, stop here and return what we have
@@ -1901,7 +1907,10 @@ serve(async (req) => {
         } catch (splitError) {
           const splitMsg = splitError instanceof Error ? splitError.message : String(splitError);
           if (splitMsg.includes("PDFDict") || splitMsg.includes("Expected instance") || splitMsg.includes("undefined")) {
-            console.warn(`[ingest-legal-doc] pdf-lib split failed in batch mode, sending entire PDF to Claude`);
+            console.warn(`[ingest-legal-doc] pdf-lib split failed in batch mode`);
+            if (totalPages > 100) {
+              throw new Error(`PDF malformé de ${totalPages} pages ne peut pas être découpé par pdf-lib et dépasse la limite Claude de 100 pages.`);
+            }
             pages = await extractTextFromPDFChunk(pdfBase64, startPage);
           } else {
             throw splitError;
