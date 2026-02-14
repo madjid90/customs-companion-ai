@@ -269,14 +269,23 @@ async function getPdfPageCount(pdfBase64: string): Promise<number> {
 }
 
 // Extract text from a small PDF chunk via Claude - WITH RETRY for transient 500 errors
-async function extractTextFromPDFChunk(chunkBase64: string, startPage: number): Promise<ExtractedPage[]> {
+async function extractTextFromPDFChunk(chunkBase64: string, startPage: number, endPage?: number): Promise<ExtractedPage[]> {
   if (!ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY not configured");
   }
 
   // Verify chunk size is reasonable (< 5MB base64 = ~3.75MB file)
   const chunkSizeKB = chunkBase64.length / 1024;
-  console.log(`[ingest-legal-doc] Sending chunk to Claude: ${chunkSizeKB.toFixed(1)}KB base64, starting at page ${startPage}`);
+  console.log(`[ingest-legal-doc] Sending chunk to Claude: ${chunkSizeKB.toFixed(1)}KB base64, starting at page ${startPage}${endPage ? ` (requesting pages ${startPage}-${endPage} only)` : ''}`);
+  
+  if (chunkSizeKB > 15000) {
+    throw new Error(`Chunk too large (${chunkSizeKB.toFixed(0)}KB) - likely split failed`);
+  }
+
+  // If we're sending the full PDF but only want specific pages, add page instruction
+  const pageInstruction = endPage 
+    ? `\n\nIMPORTANT: Ce PDF contient plusieurs pages. Extrais UNIQUEMENT le contenu des pages ${startPage} à ${endPage}. Ignore toutes les autres pages.`
+    : '';
   
   if (chunkSizeKB > 15000) {
     throw new Error(`Chunk too large (${chunkSizeKB.toFixed(0)}KB) - likely split failed`);
@@ -349,7 +358,7 @@ RÈGLES CRITIQUES:
 1. Tout le texte (articles, paragraphes)
 2. Tous les tableaux en format Markdown
 3. Description de toutes les images/formulaires
-
+${pageInstruction}
 Réponds en JSON strict uniquement.`,
           },
         ],
@@ -1936,21 +1945,36 @@ serve(async (req) => {
         
         console.log(`[ingest-legal-doc] Batch mode: extracting pages ${startPage}-${endPage}`);
         
+        // Strategy: Try split first, but if Claude returns blank pages, 
+        // fall back to sending the full PDF with page-specific instructions
+        let splitWorked = false;
         try {
-          // Split PDF to just the pages we need
           const chunkBase64 = await splitPdfPages(pdfBase64, startPage, endPage);
           pages = await extractTextFromPDFChunk(chunkBase64, startPage);
+          
+          // Check if split produced blank pages
+          const totalChars = pages.reduce((sum, p) => sum + p.text.length, 0);
+          const totalTables = pages.reduce((sum, p) => sum + (p.tables?.length || 0), 0);
+          const totalImages = pages.reduce((sum, p) => sum + (p.images?.filter(img => img.image_type !== 'blank_page')?.length || 0), 0);
+          
+          if (totalChars > 0 || totalTables > 0 || totalImages > 0) {
+            splitWorked = true;
+          } else {
+            console.warn(`[ingest-legal-doc] Split produced blank pages - falling back to full PDF mode`);
+          }
         } catch (splitError) {
           const splitMsg = splitError instanceof Error ? splitError.message : String(splitError);
-          if (splitMsg.includes("PDFDict") || splitMsg.includes("Expected instance") || splitMsg.includes("undefined")) {
-            console.warn(`[ingest-legal-doc] pdf-lib split failed in batch mode`);
-            if (totalPages > 100) {
-              throw new Error(`PDF malformé de ${totalPages} pages ne peut pas être découpé par pdf-lib et dépasse la limite Claude de 100 pages.`);
-            }
-            pages = await extractTextFromPDFChunk(pdfBase64, startPage);
-          } else {
-            throw splitError;
+          console.warn(`[ingest-legal-doc] pdf-lib split failed: ${splitMsg}`);
+        }
+        
+        if (!splitWorked) {
+          // FALLBACK: Send the FULL PDF to Claude with page-specific instruction
+          // This avoids pdf-lib stripping content from pages
+          if (totalPages > 100) {
+            throw new Error(`PDF de ${totalPages} pages: le split échoue et le PDF dépasse la limite Claude de 100 pages.`);
           }
+          console.log(`[ingest-legal-doc] Sending full PDF to Claude, requesting only pages ${startPage}-${endPage}`);
+          pages = await extractTextFromPDFChunk(pdfBase64, startPage, endPage);
         }
         
       } else {
