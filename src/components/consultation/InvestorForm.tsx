@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { ConsultationFileUpload, type ConsultationFile } from "./ConsultationFileUpload";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,11 +27,12 @@ export function InvestorForm({ onSubmit, isLoading }: Props) {
     sector: "", zone: "", material_description: "", material_hs_code: "",
     material_value: "", material_currency: "EUR", preferred_regime: "",
   });
+  const [files, setFiles] = useState<ConsultationFile[]>([]);
 
   const update = (key: keyof InvestorFormData, value: string) => setForm(prev => ({ ...prev, [key]: value }));
 
   return (
-    <form onSubmit={e => { e.preventDefault(); onSubmit(form); }} className="space-y-6">
+    <form onSubmit={e => { e.preventDefault(); const _files = files.filter(f => f.base64).map(f => ({ type: f.type, base64: f.base64, file: { name: f.file.name, type: f.file.type } })); onSubmit({ ...form, _files } as any); }} className="space-y-6">
       <fieldset className="space-y-4 p-4 rounded-xl border border-border bg-card">
         <legend className="text-sm font-semibold text-accent-foreground px-2">1 — Votre projet</legend>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -107,6 +109,12 @@ export function InvestorForm({ onSubmit, isLoading }: Props) {
             </Select>
           </div>
         </div>
+      </fieldset>
+
+      {/* Documents */}
+      <fieldset className="space-y-4 p-4 rounded-xl border border-border bg-card">
+        <legend className="text-sm font-semibold text-accent-foreground px-2">3 — Documents (optionnel)</legend>
+        <ConsultationFileUpload files={files} onFilesChange={setFiles} disabled={isLoading} />
       </fieldset>
 
       <Button type="submit" size="lg" className="w-full" disabled={isLoading || !form.sector || !form.material_description}>

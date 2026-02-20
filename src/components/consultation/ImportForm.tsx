@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { ConsultationFileUpload, type ConsultationFile } from "./ConsultationFileUpload";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -79,6 +80,7 @@ export function ImportForm({ onSubmit, isLoading }: Props) {
     quantity: "", weight: "", regime: "mise_consommation", agreement: "none",
     sections: ["classification", "taxes", "conformity", "documents"],
   });
+  const [files, setFiles] = useState<ConsultationFile[]>([]);
 
   const update = (key: keyof ImportFormData, value: any) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -93,7 +95,8 @@ export function ImportForm({ onSubmit, isLoading }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(form);
+    const _files = files.filter(f => f.base64).map(f => ({ type: f.type, base64: f.base64, file: { name: f.file.name, type: f.file.type } }));
+    onSubmit({ ...form, _files } as any);
   };
 
   return (
@@ -208,6 +211,12 @@ export function ImportForm({ onSubmit, isLoading }: Props) {
             ))}
           </div>
         </div>
+      </fieldset>
+
+      {/* Section 4: Documents */}
+      <fieldset className="space-y-4 p-4 rounded-xl border border-border bg-card">
+        <legend className="text-sm font-semibold text-primary px-2">4 — Documents (optionnel)</legend>
+        <ConsultationFileUpload files={files} onFilesChange={setFiles} disabled={isLoading} />
       </fieldset>
 
       <Button type="submit" size="lg" className="w-full" disabled={isLoading || !form.product_description || !form.country_code || !form.value}>
