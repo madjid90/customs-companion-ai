@@ -19,6 +19,7 @@ import Landing from "@/pages/Landing";
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
 const RequestAccess = lazy(() => import("@/pages/RequestAccess"));
 const Chat = lazy(() => import("@/pages/Chat"));
+const Consultation = lazy(() => import("@/pages/Consultation"));
 const AdminLogin = lazy(() => import("@/pages/admin/AdminLogin"));
 const AdminHSCodes = lazy(() => import("@/pages/admin/AdminHSCodes"));
 const AdminUpload = lazy(() => import("@/pages/admin/AdminUpload"));
@@ -65,6 +66,7 @@ const App = () => {
                     >
                       <Route index element={<Navigate to="/app/chat" replace />} />
                       <Route path="chat" element={<Suspense fallback={<PageFallback />}><Chat /></Suspense>} />
+                      <Route path="consultation" element={<Suspense fallback={<PageFallback />}><Consultation /></Suspense>} />
                     </Route>
 
                     {/* Admin routes (email auth) */}

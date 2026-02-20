@@ -50,3 +50,6 @@ verify_jwt = false
 
 [functions.populate-references]
 verify_jwt = false
+
+[functions.consultation-report]
+verify_jwt = false
