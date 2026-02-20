@@ -9,12 +9,39 @@ import { InvestorForm, type InvestorFormData } from "@/components/consultation/I
 import { ConsultationReport } from "@/components/consultation/ConsultationReport";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useSearchParams } from "react-router-dom";
+import { useEffect } from "react";
 
 const Consultation = () => {
+  const [searchParams] = useSearchParams();
   const [mode, setMode] = useState<ConsultationMode>("import");
   const [isLoading, setIsLoading] = useState(false);
   const [reportData, setReportData] = useState<any>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    const ref = searchParams.get("ref");
+    if (ref) {
+      loadConsultation(ref);
+    }
+  }, [searchParams]);
+
+  const loadConsultation = async (ref: string) => {
+    setIsLoading(true);
+    const { data, error } = await supabase
+      .from("consultations")
+      .select("*")
+      .eq("reference", ref)
+      .single();
+
+    if (error) {
+      toast({ title: "Erreur", description: "Consultation introuvable", variant: "destructive" });
+    } else {
+      setReportData(data);
+      setMode(data.consultation_type as ConsultationMode);
+    }
+    setIsLoading(false);
+  };
 
   const submitConsultation = async (type: string, inputs: any) => {
     setIsLoading(true);
@@ -79,7 +106,11 @@ const Consultation = () => {
             <Button variant="outline" onClick={() => setReportData(null)} className="gap-2">
               <ArrowLeft className="h-4 w-4" />Nouvelle consultation
             </Button>
-            <ConsultationReport data={reportData} type={mode} />
+            <ConsultationReport 
+              data={reportData} 
+              type={mode} 
+              onNewConsultation={() => setReportData(null)}
+            />
           </div>
         ) : (
           <>
