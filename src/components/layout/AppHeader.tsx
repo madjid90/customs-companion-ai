@@ -18,6 +18,7 @@ export function AppHeader({ onHistoryToggle, isHistoryOpen }: AppHeaderProps) {
   const navItems = [
     { label: "Chat", href: "/app/chat", icon: MessageSquare },
     { label: "Consultation", href: "/app/consultation", icon: ClipboardList },
+    { label: "Historique", href: "/app/historique", icon: Menu },
   ];
 
   return (

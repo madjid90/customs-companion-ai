@@ -1,84 +1,115 @@
 // ============================================================================
-// CONSULTATION REPORT EDGE FUNCTION
+// EDGE FUNCTION: CONSULTATION REPORT
 // ============================================================================
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
+import { requireAuth } from "../_shared/auth-check.ts";
 import { fetchWithRetry, RETRY_CONFIGS } from "../_shared/retry.ts";
 import { calculateCAF, calculateTaxes, EXCHANGE_RATES, type TaxBreakdown } from "./tax-calculator.ts";
-import { buildImportReportPrompt, buildMREReportPrompt, buildConformityReportPrompt, buildInvestorReportPrompt } from "./prompts.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import {
+  buildImportReportPrompt,
+  buildMREReportPrompt,
+  buildConformityReportPrompt,
+  buildInvestorReportPrompt,
+} from "./prompts.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
+const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 const LOVABLE_AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const LOVABLE_AI_MODEL = "google/gemini-2.5-flash";
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  const startTime = Date.now();
+serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return handleCorsPreFlight(req);
+  const corsHeaders = getCorsHeaders(req);
 
   try {
-    // Auth check
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    const authResult = await requireAuth(req);
+    if (authResult.error) {
       return new Response(JSON.stringify({ error: "Non autorisé" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    const token = authHeader.replace("Bearer ", "");
-    
-    // Use anon client to get user from token
-    const anonClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY") || token);
-    const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
-    
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Non autorisé" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    if (!LOVABLE_API_KEY) {
+      return new Response(JSON.stringify({ error: "Configuration manquante" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    const body = await req.json();
+    const { type, inputs } = body;
+    const startTime = Date.now();
+
+    // =========================================================================
+    // EXTRACT & ANALYZE UPLOADED FILES
+    // =========================================================================
+    const uploadedFiles = inputs._files || [];
+    delete inputs._files;
+
+    let fileContext = "";
+
+    if (uploadedFiles.length > 0 && LOVABLE_API_KEY) {
+      for (const f of uploadedFiles) {
+        if (f.type === "image" && f.base64) {
+          try {
+            console.log("Analyzing image for consultation...");
+            const imageAnalysis = await analyzeFileWithAI(
+              f.base64,
+              "image",
+              f.file?.type || "image/jpeg",
+              "Identifie le produit, extrais la description, le code SH si visible, la valeur, le pays d'origine, l'incoterm."
+            );
+            fileContext += `\n\n## ANALYSE IMAGE\n${imageAnalysis}\n`;
+          } catch (err) {
+            console.error("Image analysis error:", err);
+          }
+        } else if (f.type === "pdf" && f.base64) {
+          try {
+            console.log("Analyzing PDF for consultation...");
+            const pdfAnalysis = await analyzeFileWithAI(
+              f.base64,
+              "pdf",
+              "application/pdf",
+              "Extrais TOUTES les informations utiles pour un rapport douanier: description produit, code SH, valeur, devise, incoterm, pays d'origine, poids, quantité."
+            );
+            fileContext += `\n\n## ANALYSE PDF\n${pdfAnalysis}\n`;
+          } catch (err) {
+            console.error("PDF analysis error:", err);
+          }
+        }
+      }
+      if (fileContext) {
+        console.log(`File analysis context: ${fileContext.length} chars`);
+      }
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    const body = await req.json();
-    const { type, inputs } = body;
-
-    if (!type || !inputs) {
-      return new Response(JSON.stringify({ error: "Type et inputs requis" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Get phone_user_id
-    const { data: phoneUser } = await supabase
-      .from("phone_users")
-      .select("id")
-      .eq("auth_user_id", user.id)
-      .maybeSingle();
-
     // Generate reference
     const { data: refData } = await supabase.rpc("generate_consultation_ref", { type });
     const reference = refData || `CONS-${Date.now()}`;
+
+    // Get phone_user_id
+    const userId = authResult.user?.id;
+    let phoneUserId = null;
+    if (userId) {
+      const { data: phoneUser } = await supabase
+        .from("phone_users")
+        .select("id")
+        .eq("auth_user_id", userId)
+        .maybeSingle();
+      phoneUserId = phoneUser?.id || null;
+    }
 
     // Save initial record
     const { data: consultation, error: insertError } = await supabase
       .from("consultations")
       .insert({
         reference,
-        user_id: phoneUser?.id || null,
+        user_id: phoneUserId,
         consultation_type: type,
         inputs,
         status: "processing",
@@ -94,25 +125,26 @@ serve(async (req) => {
     // DISPATCH BY TYPE
     // =========================================================================
     let report: any;
-    let confidence = "medium";
+    let confidence: string = "medium";
 
     try {
       switch (type) {
         case "import":
-          report = await processImportReport(supabase, inputs);
+          report = await processImportReport(supabase, inputs, fileContext);
           break;
         case "mre":
-          report = await processMREReport(supabase, inputs);
+          report = await processMREReport(supabase, inputs, fileContext);
           break;
         case "conformity":
-          report = await processConformityReport(supabase, inputs);
+          report = await processConformityReport(supabase, inputs, fileContext);
           break;
         case "investor":
-          report = await processInvestorReport(supabase, inputs);
+          report = await processInvestorReport(supabase, inputs, fileContext);
           break;
         default:
           throw new Error(`Type inconnu: ${type}`);
       }
+
       confidence = report?.classification?.confidence || "medium";
     } catch (processError: any) {
       console.error("Process error:", processError);
@@ -124,12 +156,10 @@ serve(async (req) => {
         }).eq("id", consultation.id);
       }
       return new Response(JSON.stringify({ error: processError.message }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Update consultation with result
     const processingTime = Date.now() - startTime;
     if (consultation?.id) {
       await supabase.from("consultations").update({
@@ -155,22 +185,55 @@ serve(async (req) => {
   } catch (error: any) {
     console.error("Unhandled error:", error);
     return new Response(JSON.stringify({ error: "Erreur interne" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
 
 // ============================================================================
+// FILE ANALYSIS HELPER
+// ============================================================================
+async function analyzeFileWithAI(base64: string, fileType: string, mimeType: string, instruction: string): Promise<string> {
+  const content: any[] = [];
+  
+  if (fileType === "image") {
+    content.push({
+      type: "image_url",
+      image_url: { url: `data:${mimeType};base64,${base64}` },
+    });
+  }
+  
+  content.push({ type: "text", text: instruction });
+
+  const response = await fetch(LOVABLE_AI_GATEWAY, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: LOVABLE_AI_MODEL,
+      max_tokens: 2048,
+      messages: [{ role: "user", content }],
+    }),
+  });
+
+  if (!response.ok) throw new Error(`AI analysis error: ${response.status}`);
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || "";
+}
+
+// ============================================================================
 // IMPORT STANDARD PROCESSOR
 // ============================================================================
-async function processImportReport(supabase: any, inputs: any) {
+async function processImportReport(supabase: any, inputs: any, fileContext: string = "") {
   const {
-    product_description, hs_code, country_code, value, currency,
-    incoterm, freight, insurance, regime, agreement, sections = [],
+    product_description, hs_code, country_code,
+    value, currency, incoterm, freight, insurance,
+    regime, agreement, sections = [],
   } = inputs;
 
-  // 1. Fetch tariff data
+  // 1. Fetch tariff data from DB
   let tariffContext = "";
   let dutyRate = 25;
   let vatRate = 20;
@@ -179,7 +242,6 @@ async function processImportReport(supabase: any, inputs: any) {
   if (hs_code) {
     const cleanCode = hs_code.replace(/[.\s-]/g, "");
     const code6 = cleanCode.substring(0, 6);
-
     const { data: tariffs } = await supabase
       .from("country_tariffs")
       .select("*")
@@ -198,7 +260,6 @@ async function processImportReport(supabase: any, inputs: any) {
     }
   }
 
-  // Search by product keywords if no tariff found
   if (!tariffFound && product_description) {
     const keywords = product_description.split(/\s+/).filter((w: string) => w.length > 3).slice(0, 3);
     for (const kw of keywords) {
@@ -266,7 +327,6 @@ async function processImportReport(supabase: any, inputs: any) {
     exchange_rate: exchangeRate,
   });
 
-  // Check agreement reduction
   let agreementReduction = 0;
   if (agreement && agreement !== "none") {
     const { data: agreements } = await supabase
@@ -288,7 +348,10 @@ async function processImportReport(supabase: any, inputs: any) {
   });
 
   // 5. Call LLM
-  const prompt = buildImportReportPrompt(product_description, hs_code, country_code || "MA", tariffContext, controlledContext, legalContext, sections);
+  const prompt = buildImportReportPrompt(
+    product_description, hs_code, country_code || "MA",
+    tariffContext, controlledContext, legalContext + fileContext, sections
+  );
   const aiReport = await callLLM(prompt);
 
   return {
@@ -317,7 +380,7 @@ async function processImportReport(supabase: any, inputs: any) {
 // ============================================================================
 // MRE PROCESSOR
 // ============================================================================
-async function processMREReport(supabase: any, inputs: any) {
+async function processMREReport(supabase: any, inputs: any, fileContext: string = "") {
   const {
     import_type, vehicle_brand, vehicle_year, vehicle_fuel, vehicle_cc,
     vehicle_value, vehicle_currency, vehicle_ownership_months,
@@ -326,10 +389,8 @@ async function processMREReport(supabase: any, inputs: any) {
     has_carte_sejour, has_certificat_residence, has_certificat_changement,
   } = inputs;
 
-  // Fetch MRE rules
   const { data: rules } = await supabase.from("mre_rules").select("*").eq("is_active", true);
 
-  // Fetch legal context
   let legalContext = "";
   const { data: chunks } = await supabase
     .from("legal_chunks")
@@ -340,7 +401,6 @@ async function processMREReport(supabase: any, inputs: any) {
     legalContext = chunks.map((c: any) => c.chunk_text.substring(0, 500)).join("\n\n");
   }
 
-  // Calculate vehicle taxes with MRE abatement
   let vehicleTaxes: TaxBreakdown | null = null;
   let vehicleTaxesWithout: TaxBreakdown | null = null;
 
@@ -357,13 +417,13 @@ async function processMREReport(supabase: any, inputs: any) {
     vehicleTaxesWithout = calculateTaxes({ caf_mad, duty_rate: vehicleDutyRate, vat_rate: 20, mre_abatement: false });
   }
 
-  const vehicleInfo = (import_type === "vehicle" || import_type === "both") ?
-    `${vehicle_brand} ${vehicle_year}, ${vehicle_fuel}, ${vehicle_cc}cc, valeur ${vehicle_value} ${vehicle_currency}, possession: ${vehicle_ownership_months} mois` :
-    "Pas de véhicule";
+  const vehicleInfo = (import_type === "vehicle" || import_type === "both")
+    ? `${vehicle_brand} ${vehicle_year}, ${vehicle_fuel}, ${vehicle_cc}cc, valeur ${vehicle_value} ${vehicle_currency}, possession: ${vehicle_ownership_months}`
+    : "Pas de véhicule";
 
   const mreInfo = `Pays: ${residence_country}, Résidence: ${residence_years} ans, Retour: ${return_type}, Carte séjour: ${has_carte_sejour ? "Oui" : "Non"}, Cert. résidence: ${has_certificat_residence ? "Oui" : "Non"}, Cert. changement: ${has_certificat_changement ? "Oui" : "Non"}`;
 
-  const prompt = buildMREReportPrompt(import_type, vehicleInfo, mreInfo, legalContext);
+  const prompt = buildMREReportPrompt(import_type, vehicleInfo, mreInfo, legalContext + fileContext);
   const aiReport = await callLLM(prompt);
 
   return {
@@ -380,13 +440,17 @@ async function processMREReport(supabase: any, inputs: any) {
 // ============================================================================
 // CONFORMITY PROCESSOR
 // ============================================================================
-async function processConformityReport(supabase: any, inputs: any) {
+async function processConformityReport(supabase: any, inputs: any, fileContext: string = "") {
   const { product_description, hs_code, country_code } = inputs;
 
   let controlledContext = "";
   if (hs_code) {
     const prefix = hs_code.replace(/[.\s-]/g, "").substring(0, 4);
-    const { data } = await supabase.from("controlled_products").select("*").ilike("hs_code", `${prefix}%`).eq("is_active", true);
+    const { data } = await supabase
+      .from("controlled_products")
+      .select("*")
+      .ilike("hs_code", `${prefix}%`)
+      .eq("is_active", true);
     if (data?.length) {
       controlledContext = data.map((c: any) =>
         `HS: ${c.hs_code} | Type: ${c.control_type} | Autorité: ${c.control_authority} | Démarche: ${JSON.stringify(c.procedure_steps)} | Délai: ${c.estimated_delay} | Coût: ${c.estimated_cost}`
@@ -397,13 +461,17 @@ async function processConformityReport(supabase: any, inputs: any) {
   let legalContext = "";
   const searchTerms = ["ONSSA", "ANRT", "homologation", "conformité", "licence import"];
   for (const term of searchTerms) {
-    const { data: chunks } = await supabase.from("legal_chunks").select("chunk_text, source_id").ilike("chunk_text", `%${term}%`).limit(2);
+    const { data: chunks } = await supabase
+      .from("legal_chunks")
+      .select("chunk_text, source_id")
+      .ilike("chunk_text", `%${term}%`)
+      .limit(2);
     if (chunks?.length) {
       legalContext += chunks.map((c: any) => c.chunk_text.substring(0, 300)).join("\n");
     }
   }
 
-  const prompt = buildConformityReportPrompt(product_description, hs_code, country_code || "MA", controlledContext, legalContext);
+  const prompt = buildConformityReportPrompt(product_description, hs_code, country_code || "MA", controlledContext, legalContext + fileContext);
   const aiReport = await callLLM(prompt);
 
   return { ...aiReport, input_summary: { product: product_description, hs_code, country: country_code } };
@@ -412,7 +480,7 @@ async function processConformityReport(supabase: any, inputs: any) {
 // ============================================================================
 // INVESTOR PROCESSOR
 // ============================================================================
-async function processInvestorReport(supabase: any, inputs: any) {
+async function processInvestorReport(supabase: any, inputs: any, fileContext: string = "") {
   const { sector, zone, material_description, material_hs_code, material_value, material_currency, preferred_regime } = inputs;
 
   const mValue = parseFloat(material_value) || 0;
@@ -438,7 +506,7 @@ async function processInvestorReport(supabase: any, inputs: any) {
     legalContext = chunks.map((c: any) => c.chunk_text.substring(0, 400)).join("\n\n");
   }
 
-  const prompt = buildInvestorReportPrompt(sector, zone, material_description, `${material_value} ${material_currency}`, preferred_regime, legalContext);
+  const prompt = buildInvestorReportPrompt(sector, zone, material_description, `${material_value} ${material_currency}`, preferred_regime, legalContext + fileContext);
   const aiReport = await callLLM(prompt);
 
   return {
@@ -478,26 +546,17 @@ async function callLLM(prompt: string): Promise<any> {
   if (!response.ok) {
     const errText = await response.text();
     console.error("LLM error:", response.status, errText);
-
-    if (response.status === 429) {
-      throw new Error("Limite de requêtes atteinte. Réessayez dans quelques instants.");
-    }
-    if (response.status === 402) {
-      throw new Error("Crédits IA insuffisants.");
-    }
     throw new Error(`LLM error: ${response.status}`);
   }
 
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content || "";
-
-  // Parse JSON from response
   const cleaned = content.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
 
   try {
     return JSON.parse(cleaned);
-  } catch {
-    console.error("JSON parse error, content:", cleaned.substring(0, 200));
+  } catch (parseError) {
+    console.error("JSON parse error:", parseError, "Content:", cleaned.substring(0, 200));
     return { raw_response: content, parse_error: true };
   }
 }
