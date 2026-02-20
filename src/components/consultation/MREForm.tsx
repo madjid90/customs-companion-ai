@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { ConsultationFileUpload, type ConsultationFile } from "./ConsultationFileUpload";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -50,13 +51,14 @@ export function MREForm({ onSubmit, isLoading }: Props) {
     residence_country: "", residence_years: "", return_type: "definitif",
     has_carte_sejour: false, has_certificat_residence: false, has_certificat_changement: false,
   });
+  const [files, setFiles] = useState<ConsultationFile[]>([]);
 
   const update = (key: keyof MREFormData, value: any) => setForm(prev => ({ ...prev, [key]: value }));
   const showVehicle = form.import_type === "vehicle" || form.import_type === "both";
   const showEffects = form.import_type === "personal_effects" || form.import_type === "both";
 
   return (
-    <form onSubmit={e => { e.preventDefault(); onSubmit(form); }} className="space-y-6">
+    <form onSubmit={e => { e.preventDefault(); const _files = files.filter(f => f.base64).map(f => ({ type: f.type, base64: f.base64, file: { name: f.file.name, type: f.file.type } })); onSubmit({ ...form, _files } as any); }} className="space-y-6">
       {/* Type selection */}
       <fieldset className="space-y-4 p-4 rounded-xl border border-border bg-card">
         <legend className="text-sm font-semibold text-secondary px-2">1 — Type d'import</legend>
@@ -223,6 +225,12 @@ export function MREForm({ onSubmit, isLoading }: Props) {
             ))}
           </div>
         </div>
+      </fieldset>
+
+      {/* Documents */}
+      <fieldset className="space-y-4 p-4 rounded-xl border border-border bg-card">
+        <legend className="text-sm font-semibold text-secondary px-2">Documents (optionnel)</legend>
+        <ConsultationFileUpload files={files} onFilesChange={setFiles} disabled={isLoading} />
       </fieldset>
 
       <Button type="submit" size="lg" className="w-full" disabled={isLoading || !form.residence_country}>
