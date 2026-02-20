@@ -41,7 +41,7 @@ export function AppLayout() {
           onHistoryToggle={isChat ? historyToggle : undefined}
           isHistoryOpen={isChat ? historyOpen : undefined}
         />
-        <main className="flex-1 min-h-0 pt-14 md:pt-16 overflow-hidden">
+        <main className="flex-1 min-h-0 pt-14 md:pt-16 overflow-auto">
           <Outlet />
         </main>
       </div>
