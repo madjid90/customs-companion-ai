@@ -62,7 +62,7 @@ const Consultation = () => {
   const handleInvestorSubmit = (data: InvestorFormData) => submitConsultation("investor", data);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-full overflow-y-auto bg-background">
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {/* Header */}
         <div>
