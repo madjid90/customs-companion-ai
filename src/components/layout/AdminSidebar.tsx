@@ -32,6 +32,7 @@ const menuItems: MenuItem[] = [
   { type: "link", icon: Library, label: "Références", href: "/admin/references" },
   { type: "separator" },
   { type: "link", icon: MessageSquare, label: "Chat public", href: "/app/chat" },
+  { type: "link", icon: Library, label: "Consultation", href: "/app/consultation" },
 ];
 
 export function AdminSidebar({ onNavigate, onCollapseChange }: { onNavigate?: () => void; onCollapseChange?: (collapsed: boolean) => void }) {

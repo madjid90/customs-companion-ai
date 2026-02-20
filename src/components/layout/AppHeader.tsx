@@ -2,7 +2,8 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Logo } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/button";
 import { useAppAuth } from "@/hooks/useAppAuth";
-import { LogOut, Menu, ArrowLeft } from "lucide-react";
+import { LogOut, Menu, MessageSquare, ClipboardList } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface AppHeaderProps {
   onHistoryToggle?: () => void;
@@ -12,6 +13,12 @@ interface AppHeaderProps {
 export function AppHeader({ onHistoryToggle, isHistoryOpen }: AppHeaderProps) {
   const { appUser, signOut } = useAppAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const navItems = [
+    { label: "Chat", href: "/app/chat", icon: MessageSquare },
+    { label: "Consultation", href: "/app/consultation", icon: ClipboardList },
+  ];
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 glass" role="banner" style={{ contain: "layout style" }}>
@@ -34,6 +41,26 @@ export function AppHeader({ onHistoryToggle, isHistoryOpen }: AppHeaderProps) {
         {/* Desktop logo */}
         <div className="hidden md:flex items-center gap-6">
           <Logo />
+          <nav className="flex items-center gap-1">
+            {navItems.map((item) => {
+              const isActive = location.pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  to={item.href}
+                  className={cn(
+                    "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  )}
+                >
+                  <item.icon className="h-4 w-4" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
         </div>
 
         {/* Right side */}
