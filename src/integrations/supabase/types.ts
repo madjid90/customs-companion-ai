@@ -244,6 +244,62 @@ export type Database = {
           },
         ]
       }
+      consultations: {
+        Row: {
+          ai_response: string | null
+          confidence: string | null
+          consultation_type: string
+          created_at: string
+          error_message: string | null
+          id: string
+          inputs: Json
+          processing_time_ms: number | null
+          reference: string
+          report: Json | null
+          status: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          ai_response?: string | null
+          confidence?: string | null
+          consultation_type?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          inputs?: Json
+          processing_time_ms?: number | null
+          reference: string
+          report?: Json | null
+          status?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          ai_response?: string | null
+          confidence?: string | null
+          consultation_type?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          inputs?: Json
+          processing_time_ms?: number | null
+          reference?: string
+          report?: Json | null
+          status?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consultations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "phone_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       controlled_products: {
         Row: {
           authority_website: string | null
@@ -252,13 +308,20 @@ export type Database = {
           control_type: string
           country_code: string
           created_at: string
+          documents_needed: Json | null
           effective_date: string | null
+          estimated_cost: string | null
+          estimated_delay: string | null
           expiry_date: string | null
           hs_code: string
           id: string
           is_active: boolean | null
+          legal_basis: string | null
           notes: string | null
+          portal_url: string | null
           procedure_description: string | null
+          procedure_steps: Json | null
+          required_before: string | null
           required_documents: Json | null
           standard_reference: string | null
           standard_required: string | null
@@ -271,13 +334,20 @@ export type Database = {
           control_type: string
           country_code: string
           created_at?: string
+          documents_needed?: Json | null
           effective_date?: string | null
+          estimated_cost?: string | null
+          estimated_delay?: string | null
           expiry_date?: string | null
           hs_code: string
           id?: string
           is_active?: boolean | null
+          legal_basis?: string | null
           notes?: string | null
+          portal_url?: string | null
           procedure_description?: string | null
+          procedure_steps?: Json | null
+          required_before?: string | null
           required_documents?: Json | null
           standard_reference?: string | null
           standard_required?: string | null
@@ -290,13 +360,20 @@ export type Database = {
           control_type?: string
           country_code?: string
           created_at?: string
+          documents_needed?: Json | null
           effective_date?: string | null
+          estimated_cost?: string | null
+          estimated_delay?: string | null
           expiry_date?: string | null
           hs_code?: string
           id?: string
           is_active?: boolean | null
+          legal_basis?: string | null
           notes?: string | null
+          portal_url?: string | null
           procedure_description?: string | null
+          procedure_steps?: Json | null
+          required_before?: string | null
           required_documents?: Json | null
           standard_reference?: string | null
           standard_required?: string | null
@@ -891,6 +968,42 @@ export type Database = {
           },
         ]
       }
+      import_documents: {
+        Row: {
+          applies_to: string | null
+          category: string
+          description_fr: string | null
+          document_name: string
+          document_name_fr: string
+          id: string
+          is_active: boolean | null
+          sort_order: number | null
+          when_required: string | null
+        }
+        Insert: {
+          applies_to?: string | null
+          category?: string
+          description_fr?: string | null
+          document_name: string
+          document_name_fr: string
+          id?: string
+          is_active?: boolean | null
+          sort_order?: number | null
+          when_required?: string | null
+        }
+        Update: {
+          applies_to?: string | null
+          category?: string
+          description_fr?: string | null
+          document_name?: string
+          document_name_fr?: string
+          id?: string
+          is_active?: boolean | null
+          sort_order?: number | null
+          when_required?: string | null
+        }
+        Relationships: []
+      }
       knowledge_documents: {
         Row: {
           category: string | null
@@ -1140,6 +1253,39 @@ export type Database = {
           source_url?: string | null
           title?: string | null
           total_chunks?: number | null
+        }
+        Relationships: []
+      }
+      mre_rules: {
+        Row: {
+          condition_key: string
+          condition_value: string
+          created_at: string
+          description_fr: string | null
+          id: string
+          is_active: boolean | null
+          legal_reference: string | null
+          rule_type: string
+        }
+        Insert: {
+          condition_key: string
+          condition_value: string
+          created_at?: string
+          description_fr?: string | null
+          id?: string
+          is_active?: boolean | null
+          legal_reference?: string | null
+          rule_type: string
+        }
+        Update: {
+          condition_key?: string
+          condition_value?: string
+          created_at?: string
+          description_fr?: string | null
+          id?: string
+          is_active?: boolean | null
+          legal_reference?: string | null
+          rule_type?: string
         }
         Relationships: []
       }
@@ -1811,6 +1957,42 @@ export type Database = {
         }
         Relationships: []
       }
+      tic_rates: {
+        Row: {
+          created_at: string
+          description_fr: string | null
+          hs_code_pattern: string
+          id: string
+          is_active: boolean | null
+          tic_amount: number | null
+          tic_rate: number | null
+          tic_type: string
+          tic_unit: string | null
+        }
+        Insert: {
+          created_at?: string
+          description_fr?: string | null
+          hs_code_pattern: string
+          id?: string
+          is_active?: boolean | null
+          tic_amount?: number | null
+          tic_rate?: number | null
+          tic_type?: string
+          tic_unit?: string | null
+        }
+        Update: {
+          created_at?: string
+          description_fr?: string | null
+          hs_code_pattern?: string
+          id?: string
+          is_active?: boolean | null
+          tic_amount?: number | null
+          tic_rate?: number | null
+          tic_type?: string
+          tic_unit?: string | null
+        }
+        Relationships: []
+      }
       trade_agreements: {
         Row: {
           agreement_type: string | null
@@ -2280,6 +2462,7 @@ export type Database = {
           validation_message: string
         }[]
       }
+      generate_consultation_ref: { Args: { type: string }; Returns: string }
       get_circulars_missing_chunks: {
         Args: never
         Returns: {
