@@ -201,6 +201,11 @@ async function analyzeFileWithAI(base64: string, fileType: string, mimeType: str
       type: "image_url",
       image_url: { url: `data:${mimeType};base64,${base64}` },
     });
+  } else if (fileType === "pdf") {
+    content.push({
+      type: "image_url",
+      image_url: { url: `data:application/pdf;base64,${base64}` },
+    });
   }
   
   content.push({ type: "text", text: instruction });
