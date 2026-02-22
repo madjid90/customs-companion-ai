@@ -1969,11 +1969,14 @@ serve(async (req) => {
         
         if (!splitWorked) {
           // FALLBACK: Send the FULL PDF to Claude with page-specific instruction
-          // This avoids pdf-lib stripping content from pages
-          if (totalPages > 100) {
-            throw new Error(`PDF de ${totalPages} pages: le split échoue et le PDF dépasse la limite Claude de 100 pages.`);
+          // Claude's native PDF support can handle large documents - we just ask for specific pages
+          // The 100-page limit was for pdf-lib splitting, not for Claude's API
+          const pdfSizeKB = pdfBase64.length / 1024;
+          if (pdfSizeKB > 15000) {
+            // Only reject if the base64 payload itself is too large (>15MB base64 ≈ 11MB file)
+            throw new Error(`PDF trop volumineux (${(pdfSizeKB / 1024).toFixed(1)}MB base64). Réduisez la taille du fichier.`);
           }
-          console.log(`[ingest-legal-doc] Sending full PDF to Claude, requesting only pages ${startPage}-${endPage}`);
+          console.log(`[ingest-legal-doc] Sending full PDF (${totalPages} pages, ${pdfSizeKB.toFixed(0)}KB) to Claude, requesting only pages ${startPage}-${endPage}`);
           pages = await extractTextFromPDFChunk(pdfBase64, startPage, endPage);
         }
         
