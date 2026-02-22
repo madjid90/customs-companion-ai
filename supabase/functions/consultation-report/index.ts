@@ -345,6 +345,39 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
     }
   }
 
+  // 3b. Fetch TIC rates
+  let ticRate = 0;
+  if (hs_code) {
+    const cleanCode = hs_code.replace(/[.\s-]/g, "");
+    const { data: ticData } = await supabase
+      .from("tic_rates")
+      .select("*")
+      .eq("is_active", true);
+    if (ticData?.length) {
+      for (const tic of ticData) {
+        if (cleanCode.startsWith(tic.hs_code_pattern.replace(/[.\s-]/g, ""))) {
+          if (tic.tic_type === "ad_valorem" && tic.tic_rate) {
+            ticRate = parseFloat(tic.tic_rate);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // 3c. Fetch required import documents
+  let documentsContext = "";
+  const { data: importDocs } = await supabase
+    .from("import_documents")
+    .select("*")
+    .eq("is_active", true)
+    .order("sort_order");
+  if (importDocs?.length) {
+    documentsContext = importDocs.map((d: any) =>
+      `📄 ${d.document_name_fr} | Catégorie: ${d.category} | Requis: ${d.when_required || "Toujours"} | ${d.description_fr || ""}`
+    ).join("\n");
+  }
+
   // 4. Calculate taxes
   const exchangeRate = EXCHANGE_RATES[currency] || 10;
   const cafResult = calculateCAF({
@@ -373,13 +406,15 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
     caf_mad: cafResult.caf_mad,
     duty_rate: dutyRate,
     vat_rate: vatRate,
+    tic_rate: ticRate,
     agreement_reduction: agreementReduction,
   });
 
   // 5. Call LLM
+  const fullContext = [legalContext, fileContext, documentsContext ? `\n## DOCUMENTS D'IMPORTATION REQUIS\n${documentsContext}` : ""].join("\n");
   const prompt = buildImportReportPrompt(
     product_description, hs_code, country_code || "MA",
-    tariffContext, controlledContext + anrtContext, legalContext + fileContext, sections
+    tariffContext, controlledContext + anrtContext, fullContext, sections
   );
   const aiReport = await callLLM(prompt);
 
@@ -420,6 +455,14 @@ async function processMREReport(supabase: any, inputs: any, fileContext: string 
 
   const { data: rules } = await supabase.from("mre_rules").select("*").eq("is_active", true);
 
+  // Format MRE rules for context
+  let rulesContext = "";
+  if (rules?.length) {
+    rulesContext = "\n\n## RÈGLES MRE (BASE DE DONNÉES)\n" + rules.map((r: any) =>
+      `- ${r.rule_type} | ${r.condition_key}: ${r.condition_value} | ${r.description_fr || ""} | Réf: ${r.legal_reference || "N/A"}`
+    ).join("\n");
+  }
+
   let legalContext = "";
   const { data: chunks } = await supabase
     .from("legal_chunks")
@@ -428,6 +471,19 @@ async function processMREReport(supabase: any, inputs: any, fileContext: string 
     .limit(5);
   if (chunks?.length) {
     legalContext = chunks.map((c: any) => c.chunk_text.substring(0, 500)).join("\n\n");
+  }
+
+  // Fetch MRE-related documents
+  let documentsContext = "";
+  const { data: mreDocs } = await supabase
+    .from("import_documents")
+    .select("*")
+    .eq("is_active", true)
+    .or("applies_to.ilike.%mre%,applies_to.ilike.%all%,category.eq.mre");
+  if (mreDocs?.length) {
+    documentsContext = "\n\n## DOCUMENTS REQUIS (DB)\n" + mreDocs.map((d: any) =>
+      `📄 ${d.document_name_fr} | ${d.when_required || "Toujours"} | ${d.description_fr || ""}`
+    ).join("\n");
   }
 
   let vehicleTaxes: TaxBreakdown | null = null;
@@ -452,7 +508,8 @@ async function processMREReport(supabase: any, inputs: any, fileContext: string 
 
   const mreInfo = `Pays: ${residence_country}, Résidence: ${residence_years} ans, Retour: ${return_type}, Carte séjour: ${has_carte_sejour ? "Oui" : "Non"}, Cert. résidence: ${has_certificat_residence ? "Oui" : "Non"}, Cert. changement: ${has_certificat_changement ? "Oui" : "Non"}`;
 
-  const prompt = buildMREReportPrompt(import_type, vehicleInfo, mreInfo, legalContext + fileContext);
+  const fullContext = [legalContext, rulesContext, documentsContext, fileContext].filter(Boolean).join("\n");
+  const prompt = buildMREReportPrompt(import_type, vehicleInfo, mreInfo, fullContext);
   const aiReport = await callLLM(prompt);
 
   return {
@@ -559,7 +616,21 @@ async function processInvestorReport(supabase: any, inputs: any, fileContext: st
     legalContext = chunks.map((c: any) => c.chunk_text.substring(0, 400)).join("\n\n");
   }
 
-  const prompt = buildInvestorReportPrompt(sector, zone, material_description, `${material_value} ${material_currency}`, preferred_regime, legalContext + fileContext);
+  // Fetch investor-related documents
+  let documentsContext = "";
+  const { data: invDocs } = await supabase
+    .from("import_documents")
+    .select("*")
+    .eq("is_active", true)
+    .or("applies_to.ilike.%investisseur%,applies_to.ilike.%all%,category.eq.investment");
+  if (invDocs?.length) {
+    documentsContext = "\n\n## DOCUMENTS REQUIS (DB)\n" + invDocs.map((d: any) =>
+      `📄 ${d.document_name_fr} | ${d.when_required || "Toujours"} | ${d.description_fr || ""}`
+    ).join("\n");
+  }
+
+  const fullContext = [legalContext, documentsContext, fileContext].filter(Boolean).join("\n");
+  const prompt = buildInvestorReportPrompt(sector, zone, material_description, `${material_value} ${material_currency}`, preferred_regime, fullContext);
   const aiReport = await callLLM(prompt);
 
   return {
