@@ -4,6 +4,7 @@
 // Utilise Lovable AI (Gemini) pour extraire des données structurées
 // depuis les legal_chunks existants vers les tables de référence :
 // trade_agreements, origin_rules, controlled_products, knowledge_documents
+// + Liaison des taux préférentiels (country_tariffs.agreement_code)
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -36,6 +37,11 @@ const TABLE_KEYWORDS: Record<string, string[]> = {
     "contrôle sanitaire", "phytosanitaire", "ONSSA", "conformité",
   ],
   knowledge_documents: [], // Uses legal_sources directly
+  preferential_tariffs: [
+    "préférentiel", "preferentiel", "accord", "ALE", "libre-échange",
+    "taux réduit", "taux préférentiel", "droit de douane",
+    "démantèlement", "contingent", "EUR.1", "certificat",
+  ],
 };
 
 // ============================================================================
@@ -555,6 +561,179 @@ Inclus les codes SH mentionnés dans related_hs_codes.`;
 }
 
 // ============================================================================
+// PREFERENTIAL TARIFF LINKING
+// ============================================================================
+// Scans circulars (legal_chunks from circular sources) to identify which
+// trade agreement each preferential tariff entry belongs to, then updates
+// country_tariffs.agreement_code accordingly.
+
+const PREFERENTIAL_LINK_TOOL = {
+  type: "function",
+  function: {
+    name: "link_preferential_tariffs",
+    description: "Identify which trade agreement applies to tariff entries based on circular content",
+    parameters: {
+      type: "object",
+      properties: {
+        links: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              national_code: { type: "string", description: "The national tariff code (10 digits)" },
+              agreement_code: { type: "string", description: "The trade agreement code to link (must match an existing agreement)" },
+              preferential_rate: { type: "number", description: "The preferential duty rate (%) if mentioned" },
+              confidence: { type: "string", enum: ["high", "medium", "low"], description: "Confidence level of the link" },
+            },
+            required: ["national_code", "agreement_code", "confidence"],
+          },
+        },
+      },
+      required: ["links"],
+    },
+  },
+};
+
+async function linkPreferentialTariffs(
+  supabase: any,
+  apiKey: string,
+  chunks: any[],
+): Promise<{ linked: number; skipped: number; errors: string[] }> {
+  const result = { linked: 0, skipped: 0, errors: [] as string[] };
+
+  // Load existing agreements for matching
+  const { data: agreements } = await supabase
+    .from("trade_agreements")
+    .select("code, name_fr, countries_covered")
+    .eq("is_active", true);
+
+  if (!agreements?.length) {
+    result.errors.push("No trade agreements found in database");
+    return result;
+  }
+
+  const agreementList = agreements.map((a: any) =>
+    `- ${a.code}: ${a.name_fr} (pays: ${(a.countries_covered || []).join(", ")})`
+  ).join("\n");
+
+  const validCodes = new Set(agreements.map((a: any) => a.code));
+
+  // Also load circular-sourced country_tariffs that don't have an agreement yet
+  const { data: unllinkedTariffs } = await supabase
+    .from("country_tariffs")
+    .select("national_code, description_local, source, source_pdf, duty_rate")
+    .is("agreement_code", null)
+    .eq("is_active", true)
+    .eq("source", "circular")
+    .limit(500);
+
+  const tariffCount = unllinkedTariffs?.length || 0;
+  console.log(`[populate-references] preferential_tariffs: ${tariffCount} unlinked circular tariffs found`);
+
+  if (tariffCount === 0) {
+    // Also try tariffs with source_evidence mentioning preferential keywords
+    const { data: evidenceTariffs } = await supabase
+      .from("country_tariffs")
+      .select("national_code, description_local, source, source_evidence, duty_rate")
+      .is("agreement_code", null)
+      .eq("is_active", true)
+      .or("source_evidence.ilike.%préférentiel%,source_evidence.ilike.%accord%,source_evidence.ilike.%ALE%")
+      .limit(500);
+
+    if (!evidenceTariffs?.length) {
+      result.errors.push("No unlinked tariffs found (circular or with preferential evidence)");
+      return result;
+    }
+
+    // Process evidence-based tariffs
+    return await processPreferentialBatch(supabase, apiKey, evidenceTariffs, agreementList, validCodes);
+  }
+
+  return await processPreferentialBatch(supabase, apiKey, unllinkedTariffs!, agreementList, validCodes);
+}
+
+async function processPreferentialBatch(
+  supabase: any,
+  apiKey: string,
+  tariffs: any[],
+  agreementList: string,
+  validCodes: Set<string>,
+): Promise<{ linked: number; skipped: number; errors: string[] }> {
+  const result = { linked: 0, skipped: 0, errors: [] as string[] };
+
+  const BATCH_SIZE = 30; // tariffs per AI call
+
+  const systemPrompt = `Tu es un expert en douanes marocaines et accords commerciaux.
+On te donne des lignes tarifaires extraites de circulaires douanières.
+Pour chaque ligne, détermine si elle est liée à un accord commercial préférentiel.
+
+ACCORDS DISPONIBLES:
+${agreementList}
+
+RÈGLES:
+- Ne lie que si tu es raisonnablement sûr (high/medium confidence)
+- Les circulaires mentionnent souvent l'accord dans leur titre ou contexte
+- Le source_pdf ou source_evidence peut contenir des indices (ex: "circulaire_ALE_UE")
+- Si le taux de douane est significativement inférieur au taux normal (2.5%, 0%, etc.), c'est probablement préférentiel
+- Retourne un tableau vide si aucune liaison fiable n'est possible`;
+
+  for (let i = 0; i < tariffs.length; i += BATCH_SIZE) {
+    const batch = tariffs.slice(i, i + BATCH_SIZE);
+    const tariffBlock = batch.map((t: any, idx: number) =>
+      `[${idx + 1}] Code: ${t.national_code} | Desc: ${t.description_local || "—"} | Taux: ${t.duty_rate ?? "?"}% | Source: ${t.source_pdf || t.source || "—"} | Evidence: ${(t.source_evidence || "").substring(0, 200)}`
+    ).join("\n");
+
+    try {
+      const extracted = await callLovableAI(
+        apiKey,
+        systemPrompt,
+        `Analyse ces lignes tarifaires et identifie les accords applicables:\n\n${tariffBlock}`,
+        [PREFERENTIAL_LINK_TOOL],
+        { type: "function", function: { name: "link_preferential_tariffs" } },
+      );
+
+      for (const link of extracted.links || []) {
+        if (!validCodes.has(link.agreement_code)) {
+          result.skipped++;
+          continue;
+        }
+
+        if (link.confidence === "low") {
+          result.skipped++;
+          continue;
+        }
+
+        // Update country_tariffs with agreement_code
+        const updateData: any = { agreement_code: link.agreement_code };
+        if (link.preferential_rate !== undefined && link.preferential_rate !== null) {
+          updateData.duty_rate = link.preferential_rate;
+        }
+
+        const { error, count } = await supabase
+          .from("country_tariffs")
+          .update(updateData)
+          .eq("national_code", link.national_code)
+          .is("agreement_code", null)
+          .eq("is_active", true);
+
+        if (error) {
+          result.errors.push(`${link.national_code}: ${error.message}`);
+        } else {
+          result.linked++;
+        }
+      }
+    } catch (e) {
+      if ((e as Error).message === "RATE_LIMITED") throw e;
+      result.errors.push(`Batch ${i}: ${(e as Error).message}`);
+    }
+
+    await new Promise(r => setTimeout(r, 1000));
+  }
+
+  return result;
+}
+
+// ============================================================================
 // CHUNK QUERYING
 // ============================================================================
 
@@ -614,7 +793,7 @@ serve(async (req) => {
     // defaults
   }
 
-  const validTables = ["trade_agreements", "origin_rules", "controlled_products", "knowledge_documents"];
+  const validTables = ["trade_agreements", "origin_rules", "controlled_products", "knowledge_documents", "preferential_tariffs"];
   if (targetTable && !validTables.includes(targetTable)) {
     return new Response(
       JSON.stringify({ error: `Invalid table. Must be one of: ${validTables.join(", ")}` }),
@@ -633,6 +812,12 @@ serve(async (req) => {
 
       if (table === "knowledge_documents") {
         results[table] = await synthesizeKnowledgeDocs(supabase, LOVABLE_API_KEY);
+      } else if (table === "preferential_tariffs") {
+        // New: link tariffs to agreements
+        const keywords = TABLE_KEYWORDS.preferential_tariffs;
+        const chunks = await getRelevantChunks(supabase, keywords);
+        console.log(`[populate-references] preferential_tariffs: Found ${chunks.length} relevant chunks`);
+        results[table] = await linkPreferentialTariffs(supabase, LOVABLE_API_KEY, chunks);
       } else {
         const keywords = TABLE_KEYWORDS[table];
         const chunks = await getRelevantChunks(supabase, keywords);

@@ -26,6 +26,7 @@ import {
   AlertCircle,
   CheckCircle,
   Trash2,
+  Link2,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -39,7 +40,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 
-type TabKey = "trade_agreements" | "origin_rules" | "controlled_products" | "knowledge_documents";
+type TabKey = "trade_agreements" | "origin_rules" | "controlled_products" | "knowledge_documents" | "preferential_tariffs";
 
 const TAB_CONFIG: Record<TabKey, { label: string; icon: typeof Handshake; description: string }> = {
   trade_agreements: {
@@ -61,6 +62,11 @@ const TAB_CONFIG: Record<TabKey, { label: string; icon: typeof Handshake; descri
     label: "Base de connaissances",
     icon: BookOpen,
     description: "Documents synthétiques pour la recherche sémantique",
+  },
+  preferential_tariffs: {
+    label: "Taux préférentiels",
+    icon: Link2,
+    description: "Liaison des taux préférentiels aux accords commerciaux",
   },
 };
 
@@ -125,11 +131,27 @@ export default function AdminReferences() {
     },
   });
 
+  const { data: prefTariffs, isLoading: loadingPref } = useQuery({
+    queryKey: ["ref-preferential-tariffs"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("country_tariffs")
+        .select("id, national_code, description_local, duty_rate, agreement_code, source, source_pdf")
+        .not("agreement_code", "is", null)
+        .eq("is_active", true)
+        .order("agreement_code")
+        .limit(500);
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const counts: Record<TabKey, number> = {
     trade_agreements: agreements?.length || 0,
     origin_rules: originRules?.length || 0,
     controlled_products: controlledProducts?.length || 0,
     knowledge_documents: knowledgeDocs?.length || 0,
+    preferential_tariffs: prefTariffs?.length || 0,
   };
 
   const isLoading: Record<TabKey, boolean> = {
@@ -137,6 +159,7 @@ export default function AdminReferences() {
     origin_rules: loadingOriginRules,
     controlled_products: loadingControlled,
     knowledge_documents: loadingKnowledge,
+    preferential_tariffs: loadingPref,
   };
 
   const runExtraction = async (table: TabKey | "all") => {
@@ -165,7 +188,11 @@ export default function AdminReferences() {
 
       const data = await response.json();
       const resultSummary = Object.entries(data.results || {})
-        .map(([t, r]: [string, any]) => `${TAB_CONFIG[t as TabKey]?.label || t}: ${r.inserted} ajoutés, ${r.skipped} ignorés`)
+        .map(([t, r]: [string, any]) => {
+          const label = TAB_CONFIG[t as TabKey]?.label || t;
+          if (r.linked !== undefined) return `${label}: ${r.linked} liés, ${r.skipped} ignorés`;
+          return `${label}: ${r.inserted} ajoutés, ${r.skipped} ignorés`;
+        })
         .join("\n");
 
       toast({
@@ -178,6 +205,7 @@ export default function AdminReferences() {
       queryClient.invalidateQueries({ queryKey: ["ref-origin-rules"] });
       queryClient.invalidateQueries({ queryKey: ["ref-controlled-products"] });
       queryClient.invalidateQueries({ queryKey: ["ref-knowledge-documents"] });
+      queryClient.invalidateQueries({ queryKey: ["ref-preferential-tariffs"] });
     } catch (error: any) {
       toast({
         title: "❌ Erreur d'extraction",
@@ -194,15 +222,29 @@ export default function AdminReferences() {
     setIsDeleting(true);
 
     try {
-      const { error } = await supabase
-        .from(deleteTarget.table)
-        .update({ is_active: false })
-        .eq("id", deleteTarget.id);
-
-      if (error) throw error;
+      // Map virtual tab keys to actual DB tables
+      const actualTable = deleteTarget.table === "preferential_tariffs" ? "country_tariffs" : deleteTarget.table;
+      
+      if (deleteTarget.table === "preferential_tariffs") {
+        // For preferential tariffs, unlink by setting agreement_code to null
+        const { error } = await supabase
+          .from("country_tariffs" as any)
+          .update({ agreement_code: null })
+          .eq("id", deleteTarget.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from(actualTable as any)
+          .update({ is_active: false })
+          .eq("id", deleteTarget.id);
+        if (error) throw error;
+      }
 
       toast({ title: "✅ Supprimé", description: `"${deleteTarget.label}" désactivé` });
-      queryClient.invalidateQueries({ queryKey: [`ref-${deleteTarget.table.replace("_", "-")}`] });
+      const queryKey = deleteTarget.table === "preferential_tariffs" 
+        ? "ref-preferential-tariffs" 
+        : `ref-${deleteTarget.table.replace("_", "-")}`;
+      queryClient.invalidateQueries({ queryKey: [queryKey] });
     } catch (error: any) {
       toast({ title: "❌ Erreur", description: error.message, variant: "destructive" });
     } finally {
@@ -251,7 +293,7 @@ export default function AdminReferences() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {(Object.entries(TAB_CONFIG) as [TabKey, typeof TAB_CONFIG[TabKey]][]).map(([key, config]) => {
           const Icon = config.icon;
           return (
@@ -276,7 +318,7 @@ export default function AdminReferences() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabKey)}>
-        <TabsList className="grid grid-cols-4 w-full">
+        <TabsList className="grid grid-cols-5 w-full">
           {(Object.entries(TAB_CONFIG) as [TabKey, typeof TAB_CONFIG[TabKey]][]).map(([key, config]) => (
             <TabsTrigger key={key} value={key} className="text-xs sm:text-sm gap-1">
               <config.icon className="h-4 w-4 hidden sm:block" />
@@ -502,6 +544,61 @@ export default function AdminReferences() {
                               size="icon"
                               className="h-7 w-7 text-destructive/60 hover:text-destructive"
                               onClick={() => setDeleteTarget({ table: "knowledge_documents", id: d.id, label: d.title })}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Preferential Tariffs Tab */}
+        <TabsContent value="preferential_tariffs">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Taux préférentiels liés</CardTitle>
+              <CardDescription>{TAB_CONFIG.preferential_tariffs.description}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingPref ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
+              ) : !prefTariffs?.length ? (
+                <EmptyState table="preferential_tariffs" onExtract={() => runExtraction("preferential_tariffs")} extracting={!!extracting} />
+              ) : (
+                <ScrollArea className="max-h-[500px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Code national</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Taux (%)</TableHead>
+                        <TableHead>Accord</TableHead>
+                        <TableHead>Source</TableHead>
+                        <TableHead className="w-10"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {prefTariffs.map((t) => (
+                        <TableRow key={t.id}>
+                          <TableCell className="font-mono text-xs">{t.national_code}</TableCell>
+                          <TableCell className="text-xs max-w-[200px] truncate">{t.description_local || "—"}</TableCell>
+                          <TableCell className="text-xs">{t.duty_rate != null ? `${t.duty_rate}%` : "—"}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{t.agreement_code || "—"}</Badge>
+                          </TableCell>
+                          <TableCell className="text-xs max-w-[120px] truncate">{t.source_pdf || t.source || "—"}</TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive/60 hover:text-destructive"
+                              onClick={() => setDeleteTarget({ table: "preferential_tariffs" as TabKey, id: t.id, label: `${t.national_code} (${t.agreement_code})` })}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
