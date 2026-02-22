@@ -1968,16 +1968,58 @@ serve(async (req) => {
         }
         
         if (!splitWorked) {
-          // FALLBACK: Send the FULL PDF to Claude with page-specific instruction
-          // Claude's native PDF support can handle large documents - we just ask for specific pages
-          // The 100-page limit was for pdf-lib splitting, not for Claude's API
-          const pdfSizeKB = pdfBase64.length / 1024;
-          if (pdfSizeKB > 15000) {
-            // Only reject if the base64 payload itself is too large (>15MB base64 ≈ 11MB file)
-            throw new Error(`PDF trop volumineux (${(pdfSizeKB / 1024).toFixed(1)}MB base64). Réduisez la taille du fichier.`);
+          // FALLBACK: Claude API enforces a strict 100-page limit per PDF.
+          // When pdf-lib split produces blank pages, we send a WIDER chunk (up to 100 pages)
+          // that includes our target range, then filter to only keep the pages we need.
+          const CLAUDE_MAX_PAGES = 100;
+          
+          if (totalPages <= CLAUDE_MAX_PAGES) {
+            // PDF is under 100 pages - send it whole with page targeting
+            console.log(`[ingest-legal-doc] Sending full PDF (${totalPages} pages) to Claude, requesting pages ${startPage}-${endPage}`);
+            pages = await extractTextFromPDFChunk(pdfBase64, startPage, endPage);
+          } else {
+            // PDF exceeds 100 pages - create a wider 100-page window around our target range
+            // Center the 100-page window on our target range
+            const targetCenter = Math.floor((startPage + endPage) / 2);
+            let windowStart = Math.max(1, targetCenter - Math.floor(CLAUDE_MAX_PAGES / 2));
+            let windowEnd = windowStart + CLAUDE_MAX_PAGES - 1;
+            
+            // Adjust if window goes past the end
+            if (windowEnd > totalPages) {
+              windowEnd = totalPages;
+              windowStart = Math.max(1, windowEnd - CLAUDE_MAX_PAGES + 1);
+            }
+            
+            // Ensure our target pages are within the window
+            windowStart = Math.min(windowStart, startPage);
+            windowEnd = Math.max(windowEnd, endPage);
+            // Re-cap to 100 pages max
+            if (windowEnd - windowStart + 1 > CLAUDE_MAX_PAGES) {
+              windowEnd = windowStart + CLAUDE_MAX_PAGES - 1;
+            }
+            
+            console.log(`[ingest-legal-doc] PDF has ${totalPages} pages (>100). Creating ${CLAUDE_MAX_PAGES}-page window [${windowStart}-${windowEnd}] for target [${startPage}-${endPage}]`);
+            
+            // Use pdf-lib to extract the wider window (different from original narrow split)
+            // This time we're extracting a bigger chunk which may work better with some PDFs
+            try {
+              const wideChunkBase64 = await splitPdfPages(pdfBase64, windowStart, windowEnd);
+              // Remap page numbers: in the wide chunk, our target pages are offset
+              const offsetStart = startPage - windowStart + 1;
+              const offsetEnd = endPage - windowStart + 1;
+              console.log(`[ingest-legal-doc] Wide chunk created. Requesting pages ${offsetStart}-${offsetEnd} within chunk (original ${startPage}-${endPage})`);
+              const rawPages = await extractTextFromPDFChunk(wideChunkBase64, offsetStart, offsetEnd);
+              // Remap page numbers back to original
+              pages = rawPages.map(p => ({
+                ...p,
+                page_number: p.page_number + windowStart - 1
+              }));
+            } catch (wideError) {
+              const wideMsg = wideError instanceof Error ? wideError.message : String(wideError);
+              console.error(`[ingest-legal-doc] Wide chunk also failed: ${wideMsg}`);
+              throw new Error(`Impossible d'extraire les pages ${startPage}-${endPage} d'un PDF de ${totalPages} pages. pdf-lib split échoue et le PDF dépasse la limite Claude de 100 pages. Essayez de découper le PDF manuellement.`);
+            }
           }
-          console.log(`[ingest-legal-doc] Sending full PDF (${totalPages} pages, ${pdfSizeKB.toFixed(0)}KB) to Claude, requesting only pages ${startPage}-${endPage}`);
-          pages = await extractTextFromPDFChunk(pdfBase64, startPage, endPage);
         }
         
       } else {
