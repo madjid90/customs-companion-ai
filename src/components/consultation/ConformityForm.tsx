@@ -6,7 +6,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { ClipboardCheck, Loader2 } from "lucide-react";
+import { ClipboardCheck, Loader2, ChevronDown, ChevronUp, Settings2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export interface ConformityFormData {
   product_description: string;
@@ -45,6 +46,7 @@ export function ConformityForm({ onSubmit, isLoading }: Props) {
     product_description: "", hs_code: "", country_code: "", authorities: ["all"],
   });
   const [files, setFiles] = useState<ConsultationFile[]>([]);
+  const [showOptions, setShowOptions] = useState(false);
 
   const toggleAuth = (id: string) => {
     if (id === "all") {
@@ -59,51 +61,71 @@ export function ConformityForm({ onSubmit, isLoading }: Props) {
     }
   };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const _files = files.filter(f => f.base64).map(f => ({
+      type: f.type, base64: f.base64, file: { name: f.file.name, type: f.file.type },
+    }));
+    onSubmit({ ...form, _files } as any);
+  };
+
   return (
-    <form onSubmit={e => { e.preventDefault(); const _files = files.filter(f => f.base64).map(f => ({ type: f.type, base64: f.base64, file: { name: f.file.name, type: f.file.type } })); onSubmit({ ...form, _files } as any); }} className="space-y-6">
-      <fieldset className="space-y-4 p-4 rounded-xl border border-border bg-card">
-        <legend className="text-sm font-semibold text-warning px-2">1 — Votre produit</legend>
-        <div className="space-y-2">
-          <Label>Description du produit *</Label>
-          <Textarea placeholder="Ex: Routeur Wi-Fi 6, double bande, avec antenne externe" value={form.product_description} onChange={e => setForm(p => ({ ...p, product_description: e.target.value }))} rows={3} className="resize-none" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <form onSubmit={handleSubmit} className="space-y-5">
+      {/* ── ESSENTIEL ── */}
+      <div className="space-y-2">
+        <Label className="text-sm font-medium">Décrivez votre produit</Label>
+        <Textarea placeholder="Ex: Routeur Wi-Fi 6, double bande, avec antenne externe"
+          value={form.product_description} onChange={e => setForm(p => ({ ...p, product_description: e.target.value }))}
+          rows={2} className="resize-none" />
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-sm font-medium">Pays d'origine</Label>
+        <Select value={form.country_code} onValueChange={v => setForm(p => ({ ...p, country_code: v }))}>
+          <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
+          <SelectContent>
+            {COUNTRIES.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* ── UPLOAD toujours visible ── */}
+      <div className="space-y-2">
+        <Label className="text-xs text-muted-foreground">📎 Documents pour plus de précision (fiche technique, certificat...)</Label>
+        <ConsultationFileUpload files={files} onFilesChange={setFiles} disabled={isLoading} />
+      </div>
+
+      {/* ── OPTIONS ── */}
+      <button type="button" onClick={() => setShowOptions(!showOptions)}
+        className={cn("w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm border border-border hover:bg-muted/50 transition-colors", showOptions && "bg-muted/30")}>
+        <span className="flex items-center gap-2 text-muted-foreground">
+          <Settings2 className="w-4 h-4" /> Plus d'options
+        </span>
+        {showOptions ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+      </button>
+
+      {showOptions && (
+        <div className="space-y-4 p-4 rounded-xl border border-border bg-muted/10 animate-in slide-in-from-top-2 duration-200">
           <div className="space-y-2">
-            <Label>Code SH (si connu)</Label>
+            <Label className="text-xs text-muted-foreground">Code SH (si connu)</Label>
             <Input placeholder="Ex: 8517.62.00.00" value={form.hs_code} onChange={e => setForm(p => ({ ...p, hs_code: e.target.value }))} />
           </div>
           <div className="space-y-2">
-            <Label>Pays d'origine</Label>
-            <Select value={form.country_code} onValueChange={v => setForm(p => ({ ...p, country_code: v }))}>
-              <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
-              <SelectContent>
-                {COUNTRIES.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <Label className="text-xs text-muted-foreground">Autorités à vérifier</Label>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {AUTHORITIES.map(a => (
+                <label key={a.id} className="flex items-start gap-2 text-sm cursor-pointer p-2 rounded-lg hover:bg-muted/50">
+                  <Checkbox checked={form.authorities.includes(a.id)} onCheckedChange={() => toggleAuth(a.id)} className="mt-0.5" />
+                  <div>
+                    <span className="font-medium text-xs">{a.label}</span>
+                    <p className="text-[10px] text-muted-foreground">{a.desc}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
           </div>
         </div>
-      </fieldset>
-
-      <fieldset className="space-y-4 p-4 rounded-xl border border-border bg-card">
-        <legend className="text-sm font-semibold text-warning px-2">2 — Autorités à vérifier</legend>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {AUTHORITIES.map(a => (
-            <label key={a.id} className="flex items-start gap-2 text-sm cursor-pointer p-2 rounded-lg hover:bg-muted/50">
-              <Checkbox checked={form.authorities.includes(a.id)} onCheckedChange={() => toggleAuth(a.id)} className="mt-0.5" />
-              <div>
-                <span className="font-medium">{a.label}</span>
-                <p className="text-xs text-muted-foreground">{a.desc}</p>
-              </div>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
-      {/* Documents */}
-      <fieldset className="space-y-4 p-4 rounded-xl border border-border bg-card">
-        <legend className="text-sm font-semibold text-warning px-2">3 — Documents (optionnel)</legend>
-        <ConsultationFileUpload files={files} onFilesChange={setFiles} disabled={isLoading} />
-      </fieldset>
+      )}
 
       <Button type="submit" size="lg" className="w-full" disabled={isLoading || !form.product_description}>
         {isLoading ? <><Loader2 className="h-5 w-5 animate-spin mr-2" />Vérification en cours...</> : <><ClipboardCheck className="h-5 w-5 mr-2" />Vérifier les conformités</>}
