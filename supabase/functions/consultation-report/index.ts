@@ -495,11 +495,42 @@ async function processMREReport(supabase: any, inputs: any, fileContext: string 
     const exchangeRate = EXCHANGE_RATES[vCurrency] || 10;
     const caf_mad = Math.ceil(vValue * exchangeRate);
 
+    // Lookup vehicle duty rate from country_tariffs (chapter 87 = vehicles)
     let vehicleDutyRate = 17.5;
-    if (vehicle_fuel === "electrique") vehicleDutyRate = 2.5;
+    if (vehicle_fuel === "electrique") {
+      vehicleDutyRate = 2.5;
+    } else {
+      // Try to find actual duty rate for vehicles in DB
+      const { data: vehicleTariff } = await supabase
+        .from("country_tariffs")
+        .select("duty_rate")
+        .eq("country_code", "MA")
+        .ilike("hs_code_6", "8703%")
+        .eq("is_active", true)
+        .limit(1);
+      if (vehicleTariff?.[0]) vehicleDutyRate = vehicleTariff[0].duty_rate ?? 17.5;
+    }
 
-    vehicleTaxes = calculateTaxes({ caf_mad, duty_rate: vehicleDutyRate, vat_rate: 20, mre_abatement: true });
-    vehicleTaxesWithout = calculateTaxes({ caf_mad, duty_rate: vehicleDutyRate, vat_rate: 20, mre_abatement: false });
+    // Lookup TIC for vehicles (chapter 87)
+    let vehicleTicRate = 0;
+    const { data: ticData } = await supabase
+      .from("tic_rates")
+      .select("*")
+      .eq("is_active", true);
+    if (ticData?.length) {
+      for (const tic of ticData) {
+        if ("8703".startsWith(tic.hs_code_pattern.replace(/[.\s-]/g, "").substring(0, 4)) ||
+            tic.hs_code_pattern.replace(/[.\s-]/g, "").startsWith("8703")) {
+          if (tic.tic_type === "ad_valorem" && tic.tic_rate) {
+            vehicleTicRate = parseFloat(tic.tic_rate) * 100;
+          }
+          break;
+        }
+      }
+    }
+
+    vehicleTaxes = calculateTaxes({ caf_mad, duty_rate: vehicleDutyRate, vat_rate: 20, tic_rate: vehicleTicRate, mre_abatement: true });
+    vehicleTaxesWithout = calculateTaxes({ caf_mad, duty_rate: vehicleDutyRate, vat_rate: 20, tic_rate: vehicleTicRate, mre_abatement: false });
   }
 
   const vehicleInfo = (import_type === "vehicle" || import_type === "both")
@@ -568,6 +599,37 @@ async function processConformityReport(supabase: any, inputs: any, fileContext: 
     }
   }
 
+  // Fetch import documents for conformity
+  let documentsContext = "";
+  const { data: conformDocs } = await supabase
+    .from("import_documents")
+    .select("*")
+    .eq("is_active", true)
+    .order("sort_order");
+  if (conformDocs?.length) {
+    documentsContext = "\n\n## DOCUMENTS D'IMPORTATION REQUIS (DB)\n" + conformDocs.map((d: any) =>
+      `📄 ${d.document_name_fr} | Catégorie: ${d.category} | Requis: ${d.when_required || "Toujours"} | ${d.description_fr || ""}`
+    ).join("\n");
+  }
+
+  // Fetch TIC rates for conformity context
+  let ticContext = "";
+  if (hs_code) {
+    const cleanCode = hs_code.replace(/[.\s-]/g, "");
+    const { data: ticData } = await supabase
+      .from("tic_rates")
+      .select("*")
+      .eq("is_active", true);
+    if (ticData?.length) {
+      for (const tic of ticData) {
+        if (cleanCode.startsWith(tic.hs_code_pattern.replace(/[.\s-]/g, ""))) {
+          ticContext = `\n\n## TIC APPLICABLE\n- Pattern: ${tic.hs_code_pattern} | Type: ${tic.tic_type} | Taux: ${tic.tic_rate ? (parseFloat(tic.tic_rate) * 100) + '%' : ''} | Montant: ${tic.tic_amount || 'N/A'} ${tic.tic_unit || ''} | ${tic.description_fr || ''}`;
+          break;
+        }
+      }
+    }
+  }
+
   let legalContext = "";
   const searchTerms = ["ONSSA", "ANRT", "homologation", "conformité", "licence import"];
   for (const term of searchTerms) {
@@ -581,7 +643,8 @@ async function processConformityReport(supabase: any, inputs: any, fileContext: 
     }
   }
 
-  const prompt = buildConformityReportPrompt(product_description, hs_code, country_code || "MA", controlledContext + anrtContext, legalContext + fileContext);
+  const fullContext = [legalContext, documentsContext, ticContext, fileContext].filter(Boolean).join("\n");
+  const prompt = buildConformityReportPrompt(product_description, hs_code, country_code || "MA", controlledContext + anrtContext, fullContext);
   const aiReport = await callLLM(prompt);
 
   return { ...aiReport, input_summary: { product: product_description, hs_code, country: country_code } };
@@ -597,16 +660,45 @@ async function processInvestorReport(supabase: any, inputs: any, fileContext: st
   const exchangeRate = EXCHANGE_RATES[material_currency] || 10;
   const caf_mad = Math.ceil(mValue * exchangeRate);
 
+  // Fetch full tariff context (not just duty_rate)
   let dutyRate = 2.5;
+  let vatRate = 20;
+  let tariffContext = "";
   if (material_hs_code) {
-    const code6 = material_hs_code.replace(/[.\s-]/g, "").substring(0, 6);
-    const { data } = await supabase.from("country_tariffs").select("duty_rate").eq("country_code", "MA").ilike("hs_code_6", `${code6}%`).eq("is_active", true).limit(1);
-    if (data?.[0]) dutyRate = data[0].duty_rate;
+    const cleanCode = material_hs_code.replace(/[.\s-]/g, "");
+    const code6 = cleanCode.substring(0, 6);
+    const { data: tariffs } = await supabase
+      .from("country_tariffs")
+      .select("*")
+      .eq("country_code", "MA")
+      .or(`national_code.eq.${cleanCode},hs_code_6.eq.${code6}`)
+      .eq("is_active", true)
+      .limit(5);
+    if (tariffs?.length) {
+      dutyRate = tariffs[0].duty_rate ?? 2.5;
+      vatRate = tariffs[0].vat_rate ?? 20;
+      tariffContext = "\n\n## TARIFS DB\n" + tariffs.map((t: any) =>
+        `Code: ${t.national_code || t.hs_code_6} | Désignation: ${t.description_local} | DI: ${t.duty_rate}% | TVA: ${t.vat_rate}%`
+      ).join("\n");
+    }
   }
 
-  const regime_common = calculateTaxes({ caf_mad, duty_rate: dutyRate, vat_rate: 20 });
+  const regime_common = calculateTaxes({ caf_mad, duty_rate: dutyRate, vat_rate: vatRate });
   const regime_franchise = calculateTaxes({ caf_mad, duty_rate: 0, vat_rate: 0, tpi_rate: 0.25 });
   const regime_zone_franche = calculateTaxes({ caf_mad, duty_rate: 0, vat_rate: 0, tpi_rate: 0 });
+
+  // Fetch trade agreements applicable
+  let agreementsContext = "";
+  const { data: agreements } = await supabase
+    .from("trade_agreements")
+    .select("code, name_fr, agreement_type, preferential_duty_rate, countries_covered, proof_required")
+    .eq("is_active", true)
+    .limit(10);
+  if (agreements?.length) {
+    agreementsContext = "\n\n## ACCORDS COMMERCIAUX DISPONIBLES\n" + agreements.map((a: any) =>
+      `- ${a.name_fr} (${a.code}) | Type: ${a.agreement_type || 'N/A'} | Taux pref: ${a.preferential_duty_rate ?? 'N/A'}% | Preuve: ${a.proof_required || 'N/A'}`
+    ).join("\n");
+  }
 
   let legalContext = "";
   const { data: chunks } = await supabase.from("legal_chunks").select("chunk_text, source_id")
@@ -629,7 +721,7 @@ async function processInvestorReport(supabase: any, inputs: any, fileContext: st
     ).join("\n");
   }
 
-  const fullContext = [legalContext, documentsContext, fileContext].filter(Boolean).join("\n");
+  const fullContext = [legalContext, tariffContext, agreementsContext, documentsContext, fileContext].filter(Boolean).join("\n");
   const prompt = buildInvestorReportPrompt(sector, zone, material_description, `${material_value} ${material_currency}`, preferred_regime, fullContext);
   const aiReport = await callLLM(prompt);
 
