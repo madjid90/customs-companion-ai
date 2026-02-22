@@ -547,6 +547,7 @@ export type Database = {
       }
       country_tariffs: {
         Row: {
+          agreement_code: string | null
           country_code: string
           created_at: string
           description_local: string | null
@@ -580,6 +581,7 @@ export type Database = {
           vat_rate: number | null
         }
         Insert: {
+          agreement_code?: string | null
           country_code: string
           created_at?: string
           description_local?: string | null
@@ -613,6 +615,7 @@ export type Database = {
           vat_rate?: number | null
         }
         Update: {
+          agreement_code?: string | null
           country_code?: string
           created_at?: string
           description_local?: string | null
@@ -646,6 +649,13 @@ export type Database = {
           vat_rate?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "country_tariffs_agreement_code_fkey"
+            columns: ["agreement_code"]
+            isOneToOne: false
+            referencedRelation: "trade_agreements"
+            referencedColumns: ["code"]
+          },
           {
             foreignKeyName: "country_tariffs_country_code_fkey"
             columns: ["country_code"]
@@ -2045,6 +2055,7 @@ export type Database = {
         Row: {
           agreement_type: string | null
           code: string
+          countries_covered: string[] | null
           created_at: string
           entry_into_force: string | null
           id: string
@@ -2054,6 +2065,7 @@ export type Database = {
           name_fr: string
           notes: string | null
           parties: Json
+          preferential_duty_rate: number | null
           proof_required: string | null
           signature_date: string | null
           summary: string | null
@@ -2062,6 +2074,7 @@ export type Database = {
         Insert: {
           agreement_type?: string | null
           code: string
+          countries_covered?: string[] | null
           created_at?: string
           entry_into_force?: string | null
           id?: string
@@ -2071,6 +2084,7 @@ export type Database = {
           name_fr: string
           notes?: string | null
           parties?: Json
+          preferential_duty_rate?: number | null
           proof_required?: string | null
           signature_date?: string | null
           summary?: string | null
@@ -2079,6 +2093,7 @@ export type Database = {
         Update: {
           agreement_type?: string | null
           code?: string
+          countries_covered?: string[] | null
           created_at?: string
           entry_into_force?: string | null
           id?: string
@@ -2088,6 +2103,7 @@ export type Database = {
           name_fr?: string
           notes?: string | null
           parties?: Json
+          preferential_duty_rate?: number | null
           proof_required?: string | null
           signature_date?: string | null
           summary?: string | null
