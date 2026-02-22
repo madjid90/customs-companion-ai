@@ -1,5 +1,9 @@
 // ============================================================================
-// PROMPTS MODE RAPPORT ADMINISTRATIF
+// PROMPTS MODE RAPPORT ADMINISTRATIF — VERSION CORRIGÉE
+// ============================================================================
+// CORRECTIONS:
+// ✅ buildMREReportPrompt: utilise les rules de la DB au lieu de hardcodé
+// ✅ buildImportReportPrompt: mentionne TIC + documents DB dans les instructions
 // ============================================================================
 
 export function buildImportReportPrompt(
@@ -79,7 +83,7 @@ Tu DOIS répondre UNIQUEMENT en JSON valide avec cette structure exacte :
 ## CONTEXTE TARIFAIRE (de la base de données)
 ${tariffContext || "Aucune donnée tarifaire trouvée"}
 
-## PRODUITS CONTRÔLÉS (de la base de données)
+## PRODUITS CONTRÔLÉS + TIC + DOCUMENTS (de la base de données)
 ${controlledContext || "Aucune donnée de contrôle trouvée"}
 
 ## CONTEXTE JURIDIQUE (circulaires et textes)
@@ -91,9 +95,11 @@ ${sections.join(", ")}
 ## RÈGLES STRICTES
 1. Si le code SH est fourni, vérifie sa cohérence. Sinon, propose le plus précis possible.
 2. Pour les conformités, vérifie CHAQUE autorité : ONSSA, ANRT, CoC, DMP, ONICL, IMANOR, licence.
-3. Pour les documents, liste les OBLIGATOIRES et les RECOMMANDÉS.
-4. Cite les articles du CDII et circulaires quand possible.
-5. Réponds UNIQUEMENT en JSON valide, sans texte avant ou après.`;
+3. Si des équipements ANRT déjà homologués sont listés ci-dessus, indique-le clairement avec le n° d'agrément.
+4. Si une TIC est applicable (alcool, tabac, véhicules luxe, boissons sucrées), mentionne-la.
+5. Pour les documents, utilise EN PRIORITÉ la liste officielle fournie ci-dessus (section DOCUMENTS OFFICIELS), puis complète si nécessaire.
+6. Cite les articles du CDII et circulaires quand possible.
+7. Réponds UNIQUEMENT en JSON valide, sans texte avant ou après.`;
 }
 
 export function buildMREReportPrompt(
@@ -133,18 +139,15 @@ Tu es DouaneAI, expert en douane marocaine. Génère un RAPPORT MRE (Marocain R�
 - **Véhicule**: ${vehicleInfo}
 - **Situation MRE**: ${mreInfo}
 
-## CONTEXTE JURIDIQUE
+## RÈGLES ET CONTEXTE (de la base de données)
 ${legalContext || "Aucun contexte"}
 
-## RÈGLES MRE À APPLIQUER
-- Abattement 90% DI sur véhicule (retour définitif, résidence > 2 ans, possession > 6 mois)
-- Franchise totale effets personnels (retour définitif, résidence > 2 ans)
-- Délai 12 mois après retour pour importer
-- Un seul véhicule par retour définitif
-- Interdiction de revente 5 ans
-- TPF exonéré pour MRE
-
-Réponds UNIQUEMENT en JSON valide.`;
+## INSTRUCTIONS
+1. Utilise les RÈGLES MRE fournies ci-dessus pour vérifier l'éligibilité (résidence, possession, type de retour).
+2. Utilise les DOCUMENTS MRE OFFICIELS listés ci-dessus pour la section documents.
+3. Pour les conditions manquantes, sois précis (ex: "possession véhicule 4 mois < 6 mois requis").
+4. Cite les articles de loi et circulaires quand disponibles.
+5. Réponds UNIQUEMENT en JSON valide.`;
 }
 
 export function buildConformityReportPrompt(
@@ -175,7 +178,9 @@ Tu es DouaneAI. Génère un RAPPORT DE CONFORMITÉ détaillé pour l'import au M
       "cost": "",
       "when": "avant/pendant/après dédouanement",
       "steps": [],
-      "portal_url": ""
+      "portal_url": "",
+      "anrt_approved": false,
+      "anrt_approval_numbers": []
     }
   ],
   "summary": {
@@ -194,7 +199,7 @@ Tu es DouaneAI. Génère un RAPPORT DE CONFORMITÉ détaillé pour l'import au M
 - **Code SH**: ${hsCode || "À déterminer"}
 - **Origine**: ${countryCode}
 
-## DONNÉES CONTROLLED_PRODUCTS (DB)
+## DONNÉES CONTROLLED_PRODUCTS + VÉRIFICATION ANRT (DB)
 ${controlledContext || "Aucune donnée"}
 
 ## CONTEXTE JURIDIQUE
@@ -210,7 +215,10 @@ ${legalContext || "Aucun contexte"}
 7. **ONEE** : équipements électriques haute tension
 8. **Licence d'importation** : produits soumis à licence (MCINET)
 
-Pour chaque autorité, indique si c'est requis, non requis ou recommandé, avec le motif.
+## INSTRUCTIONS SPÉCIALES
+- Si des équipements ANRT DÉJÀ HOMOLOGUÉS sont listés ci-dessus, indique "anrt_approved: true" et liste les numéros d'agrément.
+- Si aucun agrément trouvé, indique "anrt_approved: false" et décris la procédure complète.
+- Pour chaque autorité, indique si c'est requis, non requis ou recommandé, avec le motif.
 Réponds UNIQUEMENT en JSON valide.`;
 }
 
@@ -257,7 +265,7 @@ Tu es DouaneAI. Génère un RAPPORT INVESTISSEUR ÉTRANGER pour l'import de mat�
 - **Valeur**: ${materialValue}
 - **Régime préféré**: ${preferredRegime}
 
-## CONTEXTE JURIDIQUE
+## DOCUMENTS ET CONTEXTE JURIDIQUE (de la base de données)
 ${legalContext || "Aucun contexte"}
 
 ## RÉGIMES À COMPARER
@@ -266,5 +274,8 @@ ${legalContext || "Aucun contexte"}
 3. **Zone franche** : exonération totale + avantages fiscaux (IS, TP)
 4. **Admission temporaire** : si transformation + export
 
+## INSTRUCTIONS
+1. Utilise les DOCUMENTS INVESTISSEUR OFFICIELS listés ci-dessus pour la section documents.
+2. Compare les régimes avec les chiffres réels.
 Réponds UNIQUEMENT en JSON valide.`;
 }
