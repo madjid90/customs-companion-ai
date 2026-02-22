@@ -133,6 +133,7 @@ export type Database = {
           approval_date: string | null
           approval_number: string | null
           brand: string | null
+          brand_normalized: string | null
           created_at: string
           designation: string
           equipment_category: string | null
@@ -140,12 +141,14 @@ export type Database = {
           id: string
           is_active: boolean | null
           model: string | null
+          search_text: string | null
           type_ref: string | null
         }
         Insert: {
           approval_date?: string | null
           approval_number?: string | null
           brand?: string | null
+          brand_normalized?: string | null
           created_at?: string
           designation: string
           equipment_category?: string | null
@@ -153,12 +156,14 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           model?: string | null
+          search_text?: string | null
           type_ref?: string | null
         }
         Update: {
           approval_date?: string | null
           approval_number?: string | null
           brand?: string | null
+          brand_normalized?: string | null
           created_at?: string
           designation?: string
           equipment_category?: string | null
@@ -166,6 +171,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           model?: string | null
+          search_text?: string | null
           type_ref?: string | null
         }
         Relationships: []
@@ -2610,20 +2616,33 @@ export type Database = {
           title: string
         }[]
       }
-      search_anrt_equipment: {
-        Args: { p_limit?: number; p_query: string }
-        Returns: {
-          approval_date: string
-          approval_number: string
-          brand: string
-          designation: string
-          equipment_category: string
-          id: string
-          model: string
-          similarity_score: number
-          type_ref: string
-        }[]
-      }
+      search_anrt_equipment:
+        | {
+            Args: { p_brand?: string; p_limit?: number; p_query?: string }
+            Returns: {
+              approval_number: string
+              brand: string
+              designation: string
+              id: number
+              model: string
+              relevance: number
+              type_ref: string
+            }[]
+          }
+        | {
+            Args: { p_limit?: number; p_query: string }
+            Returns: {
+              approval_date: string
+              approval_number: string
+              brand: string
+              designation: string
+              equipment_category: string
+              id: string
+              model: string
+              similarity_score: number
+              type_ref: string
+            }[]
+          }
       search_country_tariffs_semantic: {
         Args: {
           country?: string
