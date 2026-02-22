@@ -951,8 +951,106 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       }
     }
 
+
     // =========================================================================
-    // TARIFF NOTES SEARCH (10. Search chapter notes for detected codes)
+    // ENRICHISSEMENT — 5 TABLES SPÉCIALISÉES (V3)
+    // =========================================================================
+    const codes4 = [...new Set([
+      ...context.hs_codes.map((c: any) => cleanHSCode(c.code || c.code_clean).substring(0, 4)),
+      ...analysis.detectedCodes.map(c => cleanHSCode(c).substring(0, 4))
+    ])].filter(c => /^\d{4}$/.test(c));
+
+    // 9a. TRADE AGREEMENTS — si question sur l'origine ou accords
+    const agreementKW = ['accord', 'préférentiel', 'eur1', 'eur.1', 'atr', 'origine', 'certificat', 'turquie', 'usa', 'europe', 'chine', 'agadir', 'zlecaf', 'aele', 'libre-échange', 'ale'];
+    if (analysis.intents?.includes('origin') || analysis.keywords.some(k => agreementKW.includes(k.toLowerCase()))) {
+      const { data: agreements } = await supabase
+        .from('trade_agreements')
+        .select('*')
+        .eq('is_active', true);
+      if (agreements?.length) {
+        context.trade_agreements = agreements;
+        console.log(`[enrichment] Found ${agreements.length} trade agreements`);
+      }
+    }
+
+    // 9b. TIC RATES — si codes SH détectés
+    if (codes4.length > 0) {
+      const { data: allTic } = await supabase
+        .from('tic_rates')
+        .select('*')
+        .eq('is_active', true);
+      if (allTic?.length) {
+        const matching = allTic.filter((t: any) => 
+          codes4.some(c => c.startsWith(t.hs_code_pattern.replace(/[.\s-]/g, '').substring(0, 4)))
+        );
+        if (matching.length) {
+          context.tic_rates = matching;
+          console.log(`[enrichment] Found ${matching.length} TIC rates`);
+        }
+      }
+    }
+
+    // 9c. MRE RULES — si question MRE
+    const mreKW = ['mre', 'retour', 'résidence', 'étranger', 'abattement', 'effets personnels', 'retour définitif', 'marocain', 'diaspora'];
+    if (analysis.keywords.some(k => mreKW.includes(k.toLowerCase()))) {
+      const { data: rules } = await supabase
+        .from('mre_rules')
+        .select('*')
+        .eq('is_active', true);
+      if (rules?.length) {
+        context.mre_rules = rules;
+        console.log(`[enrichment] Found ${rules.length} MRE rules`);
+      }
+      // Also fetch MRE-specific documents
+      const { data: mreDocs } = await supabase
+        .from('import_documents')
+        .select('*')
+        .in('applies_to', ['mre', 'mre_vehicle'])
+        .eq('is_active', true)
+        .order('sort_order');
+      if (mreDocs?.length) {
+        context.import_documents = mreDocs;
+      }
+    }
+
+    // 9d. IMPORT DOCUMENTS — si question sur les documents/procédures
+    const docKW = ['document', 'papier', 'formalité', 'facture', 'connaissement', 'portnet', 'dédouanement', 'pièce', 'justificatif'];
+    if ((analysis.intents?.includes('procedure') || analysis.keywords.some(k => docKW.includes(k.toLowerCase()))) && !context.import_documents?.length) {
+      const { data: docs } = await supabase
+        .from('import_documents')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order');
+      if (docs?.length) {
+        context.import_documents = docs;
+        console.log(`[enrichment] Found ${docs.length} import documents`);
+      }
+    }
+
+    // 9e. ANRT EQUIPMENT — si question sur homologation/ANRT
+    const anrtKW = ['anrt', 'homologation', 'homologué', 'agrément', 'wifi', 'bluetooth', 'téléphone', 'smartphone', 'routeur', 'modem'];
+    if (analysis.keywords.some(k => anrtKW.includes(k.toLowerCase()))) {
+      // Search by product keywords to find matching equipment
+      const productKeywords = analysis.keywords.filter(k => !anrtKW.includes(k.toLowerCase()) && k.length >= 3);
+      if (productKeywords.length > 0) {
+        const searchConditions = productKeywords.map(k => `search_text.ilike.%${escapeSearchTerm(k)}%`).join(',');
+        const { data: equipment } = await supabase
+          .from('anrt_approved_equipment')
+          .select('designation, brand, model, type_ref, approval_number, approval_date, expiry_date')
+          .eq('is_active', true)
+          .or(searchConditions)
+          .limit(10);
+        if (equipment?.length) {
+          context.anrt_equipment = equipment;
+          console.log(`[enrichment] Found ${equipment.length} ANRT equipment matches`);
+        }
+      } else {
+        // Generic ANRT question - just confirm capability
+        context.anrt_equipment = [{ _info: "Base ANRT disponible avec 41000+ agréments. Précisez marque/modèle pour vérifier." }];
+      }
+    }
+
+
     // =========================================================================
     const chapterNumbers = [...new Set([
       ...context.hs_codes.map((c: any) => {

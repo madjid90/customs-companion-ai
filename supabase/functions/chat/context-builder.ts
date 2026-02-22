@@ -43,6 +43,12 @@ export interface RAGContext {
   legal_references: any[];
   regulatory_procedures: any[];
   tariff_notes: any[]; // Notes de chapitre, définitions, exclusions
+  // Tables enrichissement V3
+  trade_agreements: any[];
+  mre_rules: any[];
+  import_documents: any[];
+  tic_rates: any[];
+  anrt_equipment: any[];
 }
 
 // ============================================================================
@@ -268,6 +274,11 @@ export function createEmptyContext(): RAGContext {
     legal_references: [],
     regulatory_procedures: [],
     tariff_notes: [],
+    trade_agreements: [],
+    mre_rules: [],
+    import_documents: [],
+    tic_rates: [],
+    anrt_equipment: [],
   };
 }
 
