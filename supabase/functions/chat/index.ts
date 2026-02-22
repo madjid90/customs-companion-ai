@@ -672,9 +672,13 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       if (data) context.tariffs = data;
     }
 
-    // 4. Check for controlled products
-    if (context.tariffs_with_inheritance.length === 0) {
-      const codes4 = [...new Set(context.hs_codes.map(c => cleanHSCode(c.code || c.code_clean).substring(0, 4)))];
+    // 4. Check for controlled products - ALWAYS fetch (not just when no tariff found)
+    {
+      const allCodesForControl = [
+        ...context.hs_codes.map(c => cleanHSCode(c.code || c.code_clean)),
+        ...analysis.detectedCodes.map(c => cleanHSCode(c))
+      ];
+      const codes4 = [...new Set(allCodesForControl.map(c => c.substring(0, 4)))];
       if (codes4.length > 0) {
         for (const code4 of codes4.slice(0, 5)) {
           const { data } = await supabase
@@ -685,6 +689,8 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
             .eq('is_active', true);
           if (data?.length) context.controlled_products.push(...data);
         }
+        // Deduplicate
+        context.controlled_products = [...new Map(context.controlled_products.map(c => [c.hs_code + c.control_type, c])).values()];
       }
     }
 
