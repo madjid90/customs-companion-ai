@@ -172,14 +172,18 @@ export default function AdminReferences() {
     });
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 min timeout
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/populate-references`,
         {
           method: "POST",
           headers: await getAuthHeaders(),
           body: JSON.stringify({ table: table === "all" ? null : table }),
+          signal: controller.signal,
         },
       );
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
