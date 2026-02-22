@@ -567,12 +567,24 @@ ${availableSources.slice(0, 15).join('\n\n')}
     ragParts.push(`### Codes SH additionnels\nAucun code SH additionnel`);
   }
 
-  // Controlled products
-  // Controlled products - Convert JSON to structured text
+  // Controlled products - Convert JSON to structured text with enriched fields
   if (context.controlled_products.length > 0) {
-    const cpText = context.controlled_products.map((p: any) =>
-      `- **${p.hs_code}** : ${p.control_type} par ${p.control_authority || 'N/A'}${p.notes ? ` — ${p.notes}` : ''}`
-    ).join('\n');
+    const cpText = context.controlled_products.map((p: any) => {
+      let text = `- **${p.hs_code}** — ${p.control_type} par ${p.control_authority || 'N/A'}`;
+      if (p.notes) text += `\n  ${p.notes}`;
+      if (p.legal_basis) text += `\n  Base légale: ${p.legal_basis}`;
+      if (p.standard_required) text += `\n  Norme requise: ${p.standard_required}`;
+      if (p.procedure_steps) {
+        try {
+          const steps = typeof p.procedure_steps === 'string' ? JSON.parse(p.procedure_steps) : p.procedure_steps;
+          if (Array.isArray(steps) && steps.length) text += `\n  Procédure: ${steps.join(' → ')}`;
+        } catch {}
+      }
+      if (p.estimated_delay) text += `\n  Délai estimé: ${p.estimated_delay}`;
+      if (p.estimated_cost) text += `\n  Coût estimé: ${p.estimated_cost}`;
+      if (p.portal_url) text += `\n  Portail: ${p.portal_url}`;
+      return text;
+    }).join('\n');
     ragParts.push(`### Produits contrôlés\n${cpText}`);
   } else {
     ragParts.push(`### Produits contrôlés\nVoir contrôles dans les tarifs ci-dessus`);
@@ -585,7 +597,21 @@ ${availableSources.slice(0, 15).join('\n\n')}
     
     if (legalDocs.length > 0) {
       console.log(`[prompt-builder] Including ${legalDocs.length} legal docs as PRIORITY source, titles: ${legalDocs.map((d: any) => d.title).join(' | ')}`);
-      const legalText = legalDocs.map((d: any) => `- **${d.title}**: ${d.content?.substring(0, 1500)}`).join('\n');
+      // Hiérarchie juridique : CDII (3000 chars) > Circulaires (2500) > Autres (1500)
+      const cdiiDocs = legalDocs.filter((d: any) => d.title?.match(/CDII|Code des Douanes|article\s+\d/i));
+      const circulaires = legalDocs.filter((d: any) => d.title?.match(/circulaire|circ\./i));
+      const autres = legalDocs.filter((d: any) => !cdiiDocs.includes(d) && !circulaires.includes(d));
+      
+      let legalText = '';
+      if (cdiiDocs.length) {
+        legalText += '#### 📜 CDII (force de loi)\n' + cdiiDocs.map((d: any) => `- **${d.title}**: ${d.content?.substring(0, 3000)}`).join('\n');
+      }
+      if (circulaires.length) {
+        legalText += '\n#### 📋 CIRCULAIRES ADII\n' + circulaires.map((d: any) => `- **${d.title}**: ${d.content?.substring(0, 2500)}`).join('\n');
+      }
+      if (autres.length) {
+        legalText += '\n#### 📄 Autres\n' + autres.map((d: any) => `- **${d.title}**: ${d.content?.substring(0, 1500)}`).join('\n');
+      }
       ragParts.push(`### ⚖️ CIRCULAIRES ET TEXTES JURIDIQUES (SOURCE PRIORITAIRE — UTILISE CES DONNÉES)\n**INSTRUCTION OBLIGATOIRE : Les circulaires ci-dessous contiennent la réponse. TU DOIS les citer et les utiliser. Ne demande JAMAIS de précisions si l'information est disponible ci-dessous.**\n${legalText}`);
     }
     if (otherDocs.length > 0) {
@@ -680,7 +706,59 @@ ${availableSources.slice(0, 15).join('\n\n')}
       : "Aucune note de chapitre trouvée"
   }`);
 
-  // Assemble final prompt
+  // Trade agreements
+  if (context.trade_agreements?.length > 0) {
+    const agText = context.trade_agreements.map((a: any) =>
+      `- **${(a.code || '').toUpperCase()}**: ${a.name_fr} | Type: ${a.agreement_type || 'N/A'} | Preuve: ${a.proof_required || 'N/A'}${a.countries_covered?.length ? ` | Pays: ${a.countries_covered.join(', ')}` : ''}`
+    ).join('\n');
+    ragParts.push(`### Accords commerciaux\n${agText}`);
+  }
+
+  // TIC rates
+  if (context.tic_rates?.length > 0) {
+    const ticText = context.tic_rates.map((t: any) => {
+      const rate = t.tic_type === 'ad_valorem'
+        ? `${(parseFloat(t.tic_rate) * 100).toFixed(0)}% ad valorem`
+        : `${t.tic_amount} ${t.tic_unit || 'MAD'}`;
+      return `- **${t.hs_code_pattern}**: ${t.description_fr || 'N/A'} → TIC: ${rate}`;
+    }).join('\n');
+    ragParts.push(`### TIC applicable\n**IMPORTANT:** Base_TVA = VD + DI + TPF + TIC\n${ticText}`);
+  }
+
+  // MRE rules
+  if (context.mre_rules?.length > 0) {
+    const grouped: Record<string, string[]> = {};
+    for (const r of context.mre_rules) {
+      if (!grouped[r.rule_type]) grouped[r.rule_type] = [];
+      grouped[r.rule_type].push(`${r.condition_key}=${r.condition_value}: ${r.description_fr} (${r.legal_reference || 'N/A'})`);
+    }
+    const rulesText = Object.entries(grouped).map(([t, items]) =>
+      `**${t}**:\n${items.map(i => `- ${i}`).join('\n')}`
+    ).join('\n');
+    ragParts.push(`### Règles MRE\n${rulesText}`);
+  }
+
+  // Import documents
+  if (context.import_documents?.length > 0) {
+    const docsText = context.import_documents.map((d: any) =>
+      `- [${d.category}${d.applies_to ? '|' + d.applies_to : ''}] **${d.document_name_fr}**: ${d.description_fr || ''} ${d.when_required ? '(Requis: ' + d.when_required + ')' : ''}`
+    ).join('\n');
+    ragParts.push(`### Documents d'importation\n${docsText}`);
+  }
+
+  // ANRT equipment
+  if (context.anrt_equipment?.length > 0) {
+    if (context.anrt_equipment[0]._info) {
+      ragParts.push(`### Équipements ANRT\n${context.anrt_equipment[0]._info}`);
+    } else {
+      const eqText = context.anrt_equipment.map((e: any) =>
+        `- ✅ ${e.designation} | ${e.brand || 'N/A'} ${e.model || ''} | Agrément: ${e.approval_number || 'N/A'} | Expire: ${e.expiry_date || 'N/A'}`
+      ).join('\n');
+      ragParts.push(`### Équipements ANRT homologués\n${eqText}`);
+    }
+  }
+
+
   promptParts.push(`
 ## CONTEXTE DISPONIBLE (Base de connaissances)
 

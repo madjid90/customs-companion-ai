@@ -357,7 +357,7 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
       for (const tic of ticData) {
         if (cleanCode.startsWith(tic.hs_code_pattern.replace(/[.\s-]/g, ""))) {
           if (tic.tic_type === "ad_valorem" && tic.tic_rate) {
-            ticRate = parseFloat(tic.tic_rate);
+            ticRate = parseFloat(tic.tic_rate) * 100;
           }
           break;
         }
