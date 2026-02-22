@@ -165,6 +165,7 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
 const MAX_PDF_SIZE_BYTES = 15 * 1024 * 1024;
 
 // Split a PDF into a subset of pages using pdf-lib (memory-optimized)
+// Uses TWO strategies: copyPages first, then embedPages as fallback for corrupted PDFs
 async function splitPdfPages(
   pdfBase64: string,
   startPage: number,
@@ -179,11 +180,10 @@ async function splitPdfPages(
   const pdfBytes = base64ToUint8Array(pdfBase64);
   const srcDoc = await PDFDocument.load(pdfBytes, { 
     ignoreEncryption: true,
-    updateMetadata: false, // Skip metadata parsing to save memory
+    updateMetadata: false,
   });
   const totalPages = srcDoc.getPageCount();
   
-  // Adjust bounds (1-indexed to 0-indexed)
   const actualStart = Math.max(0, startPage - 1);
   const actualEnd = Math.min(totalPages - 1, endPage - 1);
   
@@ -193,27 +193,37 @@ async function splitPdfPages(
   
   console.log(`[ingest-legal-doc] Splitting pages ${actualStart + 1}-${actualEnd + 1} from ${totalPages} total`);
   
-  // Create new PDF with only the requested pages
-  const newDoc = await PDFDocument.create();
   const pageIndices: number[] = [];
   for (let i = actualStart; i <= actualEnd; i++) {
     pageIndices.push(i);
   }
-  
-  const copiedPages = await newDoc.copyPages(srcDoc, pageIndices);
-  copiedPages.forEach(page => newDoc.addPage(page));
-  
-  // Save with compression to reduce memory footprint
-  const newPdfBytes = await newDoc.save({ 
-    useObjectStreams: false, // Simpler output = less memory
-  });
-  
-  console.log(`[ingest-legal-doc] Split PDF has ${pageIndices.length} pages`);
-  
-  // Convert to base64 efficiently
+
+  // Strategy 1: copyPages (standard, fast)
+  try {
+    const newDoc = await PDFDocument.create();
+    const copiedPages = await newDoc.copyPages(srcDoc, pageIndices);
+    copiedPages.forEach(page => newDoc.addPage(page));
+    const newPdfBytes = await newDoc.save({ useObjectStreams: false });
+    const result = uint8ArrayToBase64(newPdfBytes);
+    console.log(`[ingest-legal-doc] Split (copyPages) PDF: ${pageIndices.length} pages, ${(result.length / 1024).toFixed(1)}KB`);
+    return result;
+  } catch (copyErr) {
+    console.warn(`[ingest-legal-doc] copyPages failed, trying embedPages: ${copyErr instanceof Error ? copyErr.message : String(copyErr)}`);
+  }
+
+  // Strategy 2: embedPages - embeds pages as form XObjects, more resilient for corrupted PDFs
+  const newDoc = await PDFDocument.create();
+  const embeddedPages = await newDoc.embedPages(
+    pageIndices.map(i => srcDoc.getPage(i))
+  );
+  for (const embedded of embeddedPages) {
+    const { width, height } = embedded;
+    const page = newDoc.addPage([width, height]);
+    page.drawPage(embedded, { x: 0, y: 0, width, height });
+  }
+  const newPdfBytes = await newDoc.save({ useObjectStreams: false });
   const result = uint8ArrayToBase64(newPdfBytes);
-  console.log(`[ingest-legal-doc] Split PDF base64 size: ${(result.length / 1024).toFixed(1)}KB`);
-  
+  console.log(`[ingest-legal-doc] Split (embedPages) PDF: ${pageIndices.length} pages, ${(result.length / 1024).toFixed(1)}KB`);
   return result;
 }
 
