@@ -305,6 +305,30 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
     }
   }
 
+  // 2b. Si ANRT requis, vérifier si le produit est déjà homologué
+  let anrtContext = "";
+  if (controlledContext.includes("ANRT") && product_description) {
+    try {
+      const { data: anrtResults } = await supabase
+        .rpc("search_anrt_equipment", {
+          p_query: product_description,
+          p_limit: 5,
+        });
+
+      if (anrtResults?.length) {
+        anrtContext = `\n\n🔍 ÉQUIPEMENTS ANRT HOMOLOGUÉS CORRESPONDANTS:\n`;
+        anrtContext += anrtResults.map((r: any) =>
+          `- ✅ ${r.designation} | Marque: ${r.brand} | Type: ${r.type_ref} | Modèle: ${r.model || 'N/A'} | Agrément: ${r.approval_number}`
+        ).join("\n");
+        anrtContext += `\n\nSi le produit importé correspond à l'un de ces équipements, l'homologation ANRT est DÉJÀ OBTENUE. L'importateur doit simplement présenter le numéro d'agrément à la douane. Sinon, une nouvelle demande d'homologation est nécessaire.`;
+      } else {
+        anrtContext = `\n\n🔍 VÉRIFICATION ANRT: Aucun équipement correspondant trouvé dans la liste des 41 000+ équipements agréés. Une demande d'homologation ANRT sera nécessaire AVANT l'importation.`;
+      }
+    } catch (err) {
+      console.error("ANRT search error:", err);
+    }
+  }
+
   // 3. Fetch legal chunks
   let legalContext = "";
   if (product_description) {
@@ -355,7 +379,7 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
   // 5. Call LLM
   const prompt = buildImportReportPrompt(
     product_description, hs_code, country_code || "MA",
-    tariffContext, controlledContext, legalContext + fileContext, sections
+    tariffContext, controlledContext + anrtContext, legalContext + fileContext, sections
   );
   const aiReport = await callLLM(prompt);
 
@@ -463,6 +487,30 @@ async function processConformityReport(supabase: any, inputs: any, fileContext: 
     }
   }
 
+  // ANRT verification for conformity
+  let anrtContext = "";
+  if (controlledContext.includes("ANRT") && product_description) {
+    try {
+      const { data: anrtResults } = await supabase
+        .rpc("search_anrt_equipment", {
+          p_query: product_description,
+          p_limit: 5,
+        });
+
+      if (anrtResults?.length) {
+        anrtContext = `\n\n🔍 ÉQUIPEMENTS ANRT HOMOLOGUÉS CORRESPONDANTS:\n`;
+        anrtContext += anrtResults.map((r: any) =>
+          `- ✅ ${r.designation} | Marque: ${r.brand} | Type: ${r.type_ref} | Modèle: ${r.model || 'N/A'} | Agrément: ${r.approval_number}`
+        ).join("\n");
+        anrtContext += `\n\nSi le produit importé correspond à l'un de ces équipements, l'homologation ANRT est DÉJÀ OBTENUE. L'importateur doit simplement présenter le numéro d'agrément à la douane. Sinon, une nouvelle demande d'homologation est nécessaire.`;
+      } else {
+        anrtContext = `\n\n🔍 VÉRIFICATION ANRT: Aucun équipement correspondant trouvé dans la liste des 41 000+ équipements agréés. Une demande d'homologation ANRT sera nécessaire AVANT l'importation.`;
+      }
+    } catch (err) {
+      console.error("ANRT search error:", err);
+    }
+  }
+
   let legalContext = "";
   const searchTerms = ["ONSSA", "ANRT", "homologation", "conformité", "licence import"];
   for (const term of searchTerms) {
@@ -476,7 +524,7 @@ async function processConformityReport(supabase: any, inputs: any, fileContext: 
     }
   }
 
-  const prompt = buildConformityReportPrompt(product_description, hs_code, country_code || "MA", controlledContext, legalContext + fileContext);
+  const prompt = buildConformityReportPrompt(product_description, hs_code, country_code || "MA", controlledContext + anrtContext, legalContext + fileContext);
   const aiReport = await callLLM(prompt);
 
   return { ...aiReport, input_summary: { product: product_description, hs_code, country: country_code } };

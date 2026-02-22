@@ -128,6 +128,48 @@ export type Database = {
           },
         ]
       }
+      anrt_approved_equipment: {
+        Row: {
+          approval_date: string | null
+          approval_number: string | null
+          brand: string | null
+          created_at: string
+          designation: string
+          equipment_category: string | null
+          expiry_date: string | null
+          id: string
+          is_active: boolean | null
+          model: string | null
+          type_ref: string | null
+        }
+        Insert: {
+          approval_date?: string | null
+          approval_number?: string | null
+          brand?: string | null
+          created_at?: string
+          designation: string
+          equipment_category?: string | null
+          expiry_date?: string | null
+          id?: string
+          is_active?: boolean | null
+          model?: string | null
+          type_ref?: string | null
+        }
+        Update: {
+          approval_date?: string | null
+          approval_number?: string | null
+          brand?: string | null
+          created_at?: string
+          designation?: string
+          equipment_category?: string | null
+          expiry_date?: string | null
+          id?: string
+          is_active?: boolean | null
+          model?: string | null
+          type_ref?: string | null
+        }
+        Relationships: []
+      }
       classification_history: {
         Row: {
           confirmed_code: string | null
@@ -2566,6 +2608,20 @@ export type Database = {
           source_id: string
           source_table: string
           title: string
+        }[]
+      }
+      search_anrt_equipment: {
+        Args: { p_limit?: number; p_query: string }
+        Returns: {
+          approval_date: string
+          approval_number: string
+          brand: string
+          designation: string
+          equipment_category: string
+          id: string
+          model: string
+          similarity_score: number
+          type_ref: string
         }[]
       }
       search_country_tariffs_semantic: {
