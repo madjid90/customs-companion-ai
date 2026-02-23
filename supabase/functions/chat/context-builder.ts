@@ -49,6 +49,7 @@ export interface RAGContext {
   import_documents: any[];
   tic_rates: any[];
   anrt_equipment: any[];
+  anrt_dispensed_equipment: any[];
 }
 
 // ============================================================================
@@ -279,6 +280,7 @@ export function createEmptyContext(): RAGContext {
     import_documents: [],
     tic_rates: [],
     anrt_equipment: [],
+    anrt_dispensed_equipment: [],
   };
 }
 

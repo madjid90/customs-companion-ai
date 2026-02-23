@@ -746,7 +746,7 @@ ${availableSources.slice(0, 15).join('\n\n')}
     ragParts.push(`### Documents d'importation\n${docsText}`);
   }
 
-  // ANRT equipment
+  // ANRT approved equipment
   if (context.anrt_equipment?.length > 0) {
     if (context.anrt_equipment[0]._info) {
       ragParts.push(`### Équipements ANRT\n${context.anrt_equipment[0]._info}`);
@@ -754,8 +754,16 @@ ${availableSources.slice(0, 15).join('\n\n')}
       const eqText = context.anrt_equipment.map((e: any) =>
         `- ✅ ${e.designation} | ${e.brand || 'N/A'} ${e.model || ''} | Agrément: ${e.approval_number || 'N/A'} | Expire: ${e.expiry_date || 'N/A'}`
       ).join('\n');
-      ragParts.push(`### Équipements ANRT homologués\n${eqText}`);
+      ragParts.push(`### Équipements ANRT homologués (agréés)\n${eqText}`);
     }
+  }
+
+  // ANRT dispensed equipment
+  if (context.anrt_dispensed_equipment?.length > 0) {
+    const dispText = context.anrt_dispensed_equipment.map((e: any) =>
+      `- 🔓 ${e.designation} | ${e.brand || 'N/A'} | Type/Modèle: ${e.type_model || 'N/A'} | Dispense: ${e.dispensation_number || 'N/A'}`
+    ).join('\n');
+    ragParts.push(`### Équipements ANRT dispensés d'homologation\nCes équipements sont DISPENSÉS d'homologation ANRT — pas besoin d'agrément pour les importer.\n${dispText}`);
   }
 
 

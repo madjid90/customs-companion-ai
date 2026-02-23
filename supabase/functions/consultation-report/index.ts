@@ -305,24 +305,42 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
     }
   }
 
-  // 2b. Si ANRT requis, vérifier si le produit est déjà homologué
+  // 2b. Si ANRT requis, vérifier si le produit est déjà homologué ou dispensé
   let anrtContext = "";
   if (controlledContext.includes("ANRT") && product_description) {
     try {
+      // Search approved equipment
       const { data: anrtResults } = await supabase
         .rpc("search_anrt_equipment", {
           p_query: product_description,
           p_limit: 5,
         });
 
+      // Search dispensed equipment
+      const { data: dispensedResults } = await supabase
+        .rpc("search_anrt_dispensed_equipment", {
+          search_query: product_description,
+          max_results: 5,
+        });
+
       if (anrtResults?.length) {
-        anrtContext = `\n\n🔍 ÉQUIPEMENTS ANRT HOMOLOGUÉS CORRESPONDANTS:\n`;
+        anrtContext = `\n\n🔍 ÉQUIPEMENTS ANRT HOMOLOGUÉS (AGRÉÉS):\n`;
         anrtContext += anrtResults.map((r: any) =>
           `- ✅ ${r.designation} | Marque: ${r.brand} | Type: ${r.type_ref} | Modèle: ${r.model || 'N/A'} | Agrément: ${r.approval_number}`
         ).join("\n");
-        anrtContext += `\n\nSi le produit importé correspond à l'un de ces équipements, l'homologation ANRT est DÉJÀ OBTENUE. L'importateur doit simplement présenter le numéro d'agrément à la douane. Sinon, une nouvelle demande d'homologation est nécessaire.`;
-      } else {
-        anrtContext = `\n\n🔍 VÉRIFICATION ANRT: Aucun équipement correspondant trouvé dans la liste des 41 000+ équipements agréés. Une demande d'homologation ANRT sera nécessaire AVANT l'importation.`;
+        anrtContext += `\nSi le produit correspond, l'homologation ANRT est DÉJÀ OBTENUE.`;
+      }
+
+      if (dispensedResults?.length) {
+        anrtContext += `\n\n🔓 ÉQUIPEMENTS DISPENSÉS D'HOMOLOGATION ANRT:\n`;
+        anrtContext += dispensedResults.map((r: any) =>
+          `- 🔓 ${r.designation} | Marque: ${r.brand || 'N/A'} | Type/Modèle: ${r.type_model || 'N/A'} | Dispense: ${r.dispensation_number || 'N/A'}`
+        ).join("\n");
+        anrtContext += `\nCes équipements sont DISPENSÉS — aucune homologation ANRT requise pour l'import.`;
+      }
+
+      if (!anrtResults?.length && !dispensedResults?.length) {
+        anrtContext = `\n\n🔍 VÉRIFICATION ANRT: Aucun équipement correspondant trouvé dans les 41 000+ agréments ni les 40 000+ dispenses. Une demande d'homologation ANRT sera nécessaire AVANT l'importation.`;
       }
     } catch (err) {
       console.error("ANRT search error:", err);
@@ -575,7 +593,7 @@ async function processConformityReport(supabase: any, inputs: any, fileContext: 
     }
   }
 
-  // ANRT verification for conformity
+  // ANRT verification for conformity (approved + dispensed)
   let anrtContext = "";
   if (controlledContext.includes("ANRT") && product_description) {
     try {
@@ -585,14 +603,30 @@ async function processConformityReport(supabase: any, inputs: any, fileContext: 
           p_limit: 5,
         });
 
+      const { data: dispensedResults } = await supabase
+        .rpc("search_anrt_dispensed_equipment", {
+          search_query: product_description,
+          max_results: 5,
+        });
+
       if (anrtResults?.length) {
-        anrtContext = `\n\n🔍 ÉQUIPEMENTS ANRT HOMOLOGUÉS CORRESPONDANTS:\n`;
+        anrtContext = `\n\n🔍 ÉQUIPEMENTS ANRT HOMOLOGUÉS (AGRÉÉS):\n`;
         anrtContext += anrtResults.map((r: any) =>
           `- ✅ ${r.designation} | Marque: ${r.brand} | Type: ${r.type_ref} | Modèle: ${r.model || 'N/A'} | Agrément: ${r.approval_number}`
         ).join("\n");
-        anrtContext += `\n\nSi le produit importé correspond à l'un de ces équipements, l'homologation ANRT est DÉJÀ OBTENUE. L'importateur doit simplement présenter le numéro d'agrément à la douane. Sinon, une nouvelle demande d'homologation est nécessaire.`;
-      } else {
-        anrtContext = `\n\n🔍 VÉRIFICATION ANRT: Aucun équipement correspondant trouvé dans la liste des 41 000+ équipements agréés. Une demande d'homologation ANRT sera nécessaire AVANT l'importation.`;
+        anrtContext += `\nSi le produit correspond, l'homologation ANRT est DÉJÀ OBTENUE.`;
+      }
+
+      if (dispensedResults?.length) {
+        anrtContext += `\n\n🔓 ÉQUIPEMENTS DISPENSÉS D'HOMOLOGATION ANRT:\n`;
+        anrtContext += dispensedResults.map((r: any) =>
+          `- 🔓 ${r.designation} | Marque: ${r.brand || 'N/A'} | Type/Modèle: ${r.type_model || 'N/A'} | Dispense: ${r.dispensation_number || 'N/A'}`
+        ).join("\n");
+        anrtContext += `\nCes équipements sont DISPENSÉS — aucune homologation ANRT requise.`;
+      }
+
+      if (!anrtResults?.length && !dispensedResults?.length) {
+        anrtContext = `\n\n🔍 VÉRIFICATION ANRT: Aucun équipement trouvé dans les agréments ni les dispenses. Homologation ANRT nécessaire AVANT importation.`;
       }
     } catch (err) {
       console.error("ANRT search error:", err);
