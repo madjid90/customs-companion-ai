@@ -1033,13 +1033,15 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       }
     }
 
-    // 9e. ANRT EQUIPMENT — si question sur homologation/ANRT
-    const anrtKW = ['anrt', 'homologation', 'homologué', 'agrément', 'wifi', 'bluetooth', 'téléphone', 'smartphone', 'routeur', 'modem'];
+    // 9e. ANRT EQUIPMENT — si question sur homologation/ANRT/dispense
+    const anrtKW = ['anrt', 'homologation', 'homologué', 'agrément', 'wifi', 'bluetooth', 'téléphone', 'smartphone', 'routeur', 'modem', 'dispense', 'dispensé', 'dispensation'];
     if (analysis.keywords.some(k => anrtKW.includes(k.toLowerCase()))) {
       // Search by product keywords to find matching equipment
       const productKeywords = analysis.keywords.filter(k => !anrtKW.includes(k.toLowerCase()) && k.length >= 3);
       if (productKeywords.length > 0) {
         const searchConditions = productKeywords.map(k => `search_text.ilike.%${escapeSearchTerm(k)}%`).join(',');
+        
+        // Search approved equipment
         const { data: equipment } = await supabase
           .from('anrt_approved_equipment')
           .select('designation, brand, model, type_ref, approval_number, approval_date, expiry_date')
@@ -1048,11 +1050,23 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           .limit(10);
         if (equipment?.length) {
           context.anrt_equipment = equipment;
-          console.log(`[enrichment] Found ${equipment.length} ANRT equipment matches`);
+          console.log(`[enrichment] Found ${equipment.length} ANRT approved equipment matches`);
+        }
+        
+        // Search dispensed equipment
+        const { data: dispensed } = await supabase
+          .from('anrt_dispensed_equipment')
+          .select('designation, brand, type_model, dispensation_number')
+          .eq('is_active', true)
+          .or(searchConditions)
+          .limit(10);
+        if (dispensed?.length) {
+          context.anrt_dispensed_equipment = dispensed;
+          console.log(`[enrichment] Found ${dispensed.length} ANRT dispensed equipment matches`);
         }
       } else {
         // Generic ANRT question - just confirm capability
-        context.anrt_equipment = [{ _info: "Base ANRT disponible avec 41000+ agréments. Précisez marque/modèle pour vérifier." }];
+        context.anrt_equipment = [{ _info: "Base ANRT disponible avec 41000+ agréments et 40000+ dispenses. Précisez marque/modèle pour vérifier." }];
       }
     }
 

@@ -176,6 +176,42 @@ export type Database = {
         }
         Relationships: []
       }
+      anrt_dispensed_equipment: {
+        Row: {
+          brand: string | null
+          brand_normalized: string | null
+          created_at: string
+          designation: string
+          dispensation_number: string | null
+          id: string
+          is_active: boolean | null
+          search_text: string | null
+          type_model: string | null
+        }
+        Insert: {
+          brand?: string | null
+          brand_normalized?: string | null
+          created_at?: string
+          designation: string
+          dispensation_number?: string | null
+          id?: string
+          is_active?: boolean | null
+          search_text?: string | null
+          type_model?: string | null
+        }
+        Update: {
+          brand?: string | null
+          brand_normalized?: string | null
+          created_at?: string
+          designation?: string
+          dispensation_number?: string | null
+          id?: string
+          is_active?: boolean | null
+          search_text?: string | null
+          type_model?: string | null
+        }
+        Relationships: []
+      }
       classification_history: {
         Row: {
           confirmed_code: string | null
@@ -2631,6 +2667,26 @@ export type Database = {
           source_table: string
           title: string
         }[]
+      }
+      search_anrt_dispensed_equipment: {
+        Args: { max_results?: number; search_query: string }
+        Returns: {
+          brand: string | null
+          brand_normalized: string | null
+          created_at: string
+          designation: string
+          dispensation_number: string | null
+          id: string
+          is_active: boolean | null
+          search_text: string | null
+          type_model: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "anrt_dispensed_equipment"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       search_anrt_equipment:
         | {

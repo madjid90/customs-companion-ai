@@ -68,6 +68,113 @@ const DOCUMENT_TYPES: { value: DocumentType; label: string; icon: React.ReactNod
   { value: "circulaire", label: "Circulaire", icon: <ScrollText className="h-4 w-4" />, description: "Circulaires, notes, instructions", pipeline: "ingest" },
 ];
 
+function AnrtDispensedImportPanel() {
+  const [isImporting, setIsImporting] = useState(false);
+  const [progress, setProgress] = useState("");
+  const [result, setResult] = useState<any>(null);
+  const { toast } = useToast();
+
+  const handleImport = async () => {
+    setIsImporting(true);
+    setResult(null);
+    setProgress("Chargement du fichier Excel...");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Non authentifié");
+
+      // Dynamically import xlsx to parse Excel
+      const XLSX = await import("xlsx");
+      
+      const response = await fetch("/data/anrt_dispensed_equipment.xlsx");
+      if (!response.ok) throw new Error("Fichier introuvable");
+      const buffer = await response.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const data: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      
+      // Skip header row
+      const rows = data.slice(1).filter(r => r[0]).map(r => ({
+        designation: String(r[0] || "").trim(),
+        brand: r[1] ? String(r[1]).trim() : null,
+        type_model: r[2] ? String(r[2]).trim() : null,
+        dispensation_number: r[3] ? String(r[3]).trim() : null,
+      }));
+
+      setProgress(`${rows.length} lignes trouvées. Import en cours...`);
+
+      // Send in batches of 2000 to the edge function
+      const BATCH = 2000;
+      let totalInserted = 0;
+      let totalErrors = 0;
+      const isFirstBatch = true;
+
+      for (let i = 0; i < rows.length; i += BATCH) {
+        const batch = rows.slice(i, i + BATCH);
+        setProgress(`Import lot ${Math.floor(i / BATCH) + 1}/${Math.ceil(rows.length / BATCH)} (${totalInserted} insérés)...`);
+        
+        const importResp = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/import-anrt-dispensed`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${session.access_token}`,
+              "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            },
+            body: JSON.stringify({ rows: batch, ...(i === 0 ? {} : { skip_delete: true }) }),
+          }
+        );
+
+        if (importResp.ok) {
+          const res = await importResp.json();
+          totalInserted += res.inserted || 0;
+          totalErrors += res.batch_errors || 0;
+        } else {
+          totalErrors++;
+        }
+      }
+
+      const finalResult = { total: rows.length, inserted: totalInserted, batch_errors: totalErrors };
+      setResult(finalResult);
+      setProgress("");
+      toast({ title: "Import terminé", description: `${totalInserted} équipements dispensés importés` });
+    } catch (err: any) {
+      toast({ title: "Erreur", description: err.message, variant: "destructive" });
+      setProgress("");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Database className="h-5 w-5" />
+          Import ANRT - Équipements Dispensés
+        </CardTitle>
+        <CardDescription>
+          Importer la liste des ~40 000 équipements dispensés d'homologation ANRT
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Button onClick={handleImport} disabled={isImporting} className="gap-2">
+          {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+          {isImporting ? "Import en cours..." : "Lancer l'import"}
+        </Button>
+        {progress && <p className="text-sm text-muted-foreground">{progress}</p>}
+        {result && (
+          <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
+            <p><strong>Total lignes:</strong> {result.total}</p>
+            <p><strong>Insérés:</strong> {result.inserted}</p>
+            {result.batch_errors > 0 && <p className="text-destructive"><strong>Erreurs:</strong> {result.batch_errors}</p>}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function AdminUpload() {
   const { files, setFiles, updateFileStatus, queueFile, processNext, isProcessing, setIsProcessing, clearAll, removeFile: removeFileFromState } = useUploadState();
   const [isDragging, setIsDragging] = useState(false);
@@ -1697,6 +1804,9 @@ export default function AdminUpload() {
 
       {/* Re-ingestion Panel */}
       <ReingestionPanel />
+
+      {/* ANRT Dispensed Equipment Import */}
+      <AnrtDispensedImportPanel />
 
       {/* Embedding Generation Panel */}
       <EmbeddingPanel />
