@@ -31,45 +31,28 @@ serve(async (req: Request) => {
 
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-    // Fetch CSV from the app's public URL
     const body = await req.json().catch(() => ({}));
-    const csvUrl = body.csv_url;
-    if (!csvUrl) {
-      return new Response(JSON.stringify({ error: "csv_url required" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
-    console.log("Fetching CSV from:", csvUrl);
-    const csvResp = await fetch(csvUrl);
-    if (!csvResp.ok) throw new Error(`Failed to fetch CSV: ${csvResp.status}`);
-    const csvText = await csvResp.text();
+    let rowsToInsert: Record<string, unknown>[] = [];
 
-    const lines = csvText.split("\n").filter(l => l.trim());
-    const headers = parseCSVLine(lines[0]);
-    console.log(`Headers: ${headers.join(", ")}`);
-    console.log(`Total data lines: ${lines.length - 1}`);
+    if (body.rows && Array.isArray(body.rows)) {
+      // Direct rows from client-side XLSX parsing
+      rowsToInsert = body.rows.filter((r: any) => r.designation);
+      console.log(`Received ${rowsToInsert.length} rows directly`);
+    } else if (body.csv_url) {
+      // Fetch and parse CSV
+      console.log("Fetching CSV from:", body.csv_url);
+      const csvResp = await fetch(body.csv_url);
+      if (!csvResp.ok) throw new Error(`Failed to fetch CSV: ${csvResp.status}`);
+      const csvText = await csvResp.text();
 
-    // Clear existing data first
-    const { error: deleteError } = await supabase
-      .from("anrt_approved_equipment")
-      .delete()
-      .neq("id", "00000000-0000-0000-0000-000000000000");
-    if (deleteError) console.warn("Delete warning:", deleteError.message);
+      const lines = csvText.split("\n").filter(l => l.trim());
+      const headers = parseCSVLine(lines[0]);
+      console.log(`Headers: ${headers.join(", ")}, Total lines: ${lines.length - 1}`);
 
-    const BATCH = 500;
-    let inserted = 0;
-    let errors = 0;
-    let skipped = 0;
-
-    for (let i = 1; i < lines.length; i += BATCH) {
-      const batch: Record<string, unknown>[] = [];
-      const end = Math.min(i + BATCH, lines.length);
-
-      for (let j = i; j < end; j++) {
+      for (let j = 1; j < lines.length; j++) {
         const values = parseCSVLine(lines[j]);
-        if (values.length < 6) { skipped++; continue; }
+        if (values.length < 6) continue;
 
         const row: Record<string, unknown> = {};
         for (let k = 0; k < headers.length; k++) {
@@ -79,37 +62,54 @@ serve(async (req: Request) => {
           if (v === "") v = null;
           row[h] = v;
         }
-        // Ensure required field
-        if (!row.designation) { skipped++; continue; }
-        batch.push(row);
+        if (!row.designation) continue;
+        rowsToInsert.push(row);
       }
+    } else {
+      return new Response(JSON.stringify({ error: "csv_url or rows required" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Clear existing data only on first batch
+    if (!body.skip_delete) {
+      const { error: deleteError } = await supabase
+        .from("anrt_approved_equipment")
+        .delete()
+        .neq("id", "00000000-0000-0000-0000-000000000000");
+      if (deleteError) console.warn("Delete warning:", deleteError.message);
+    }
+
+    const BATCH = 500;
+    let inserted = 0;
+    let errors = 0;
+
+    for (let i = 0; i < rowsToInsert.length; i += BATCH) {
+      const batch = rowsToInsert.slice(i, i + BATCH).map(r => {
+        const brandNorm = (r.brand as string)?.toUpperCase().trim() || null;
+        const searchText = [r.designation, r.brand, r.model, r.type_ref, r.approval_number]
+          .filter(Boolean).join(" ");
+        return { ...r, brand_normalized: brandNorm, search_text: searchText };
+      });
 
       if (batch.length === 0) continue;
 
-      const { error } = await supabase
-        .from("anrt_approved_equipment")
-        .insert(batch);
-
+      const { error } = await supabase.from("anrt_approved_equipment").insert(batch);
       if (error) {
-        console.error(`Batch ${Math.floor((i - 1) / BATCH) + 1} error:`, error.message);
+        console.error(`Batch error at ${i}:`, error.message);
         errors++;
       } else {
         inserted += batch.length;
-        if (inserted % 5000 === 0) console.log(`Progress: ${inserted} inserted`);
+        if (inserted % 5000 === 0) console.log(`Progress: ${inserted}`);
       }
     }
 
-    console.log(`Done: ${inserted} inserted, ${errors} batch errors, ${skipped} skipped`);
+    console.log(`Done: ${inserted} inserted, ${errors} batch errors`);
 
     return new Response(JSON.stringify({
-      success: true,
-      total_lines: lines.length - 1,
-      inserted,
-      batch_errors: errors,
-      skipped,
+      success: true, total: rowsToInsert.length, inserted, batch_errors: errors,
     }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
   } catch (err: any) {
