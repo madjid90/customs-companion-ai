@@ -190,12 +190,12 @@ export default function Landing() {
               </div>
             </div>
 
-            {/* Right – Visual card */}
-            <div className="hidden md:block">
-              <div className="card-elevated p-6 relative overflow-hidden">
+            {/* Right – Visual cards */}
+            <div className="hidden md:flex flex-col gap-4">
+              {/* Chat illustration */}
+              <div className="card-elevated p-5 relative overflow-hidden">
                 <div className="absolute inset-0 opacity-[0.04] hero-gradient" />
-                <div className="relative z-10 space-y-4">
-                  {/* Mock chat */}
+                <div className="relative z-10 space-y-3">
                   <div className="flex items-start gap-3">
                     <div className="h-8 w-8 rounded-lg cta-gradient flex items-center justify-center flex-shrink-0">
                       <MessageSquare className="h-4 w-4 text-white" />
@@ -218,6 +218,40 @@ export default function Landing() {
                           <Shield className="h-2.5 w-2.5" /> Vérifié
                         </span>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Consultation illustration */}
+              <div className="card-elevated p-5 relative overflow-hidden">
+                <div className="absolute inset-0 opacity-[0.04] hero-gradient" />
+                <div className="relative z-10 space-y-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="h-7 w-7 rounded-lg cta-gradient flex items-center justify-center flex-shrink-0">
+                      <FileText className="h-3.5 w-3.5 text-white" />
+                    </div>
+                    <span className="text-xs font-bold text-foreground">Consultation Import</span>
+                    <span className="ml-auto inline-flex items-center gap-1 bg-secondary/10 text-secondary text-[10px] font-medium px-2 py-0.5 rounded-full">
+                      <Zap className="h-2.5 w-2.5" /> Rapport généré
+                    </span>
+                  </div>
+                  <div className="bg-muted/40 rounded-lg p-3 space-y-2">
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-muted-foreground">Code SH</span>
+                      <span className="font-semibold text-primary">8471.30.00.00</span>
+                    </div>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-muted-foreground">Droit d'importation</span>
+                      <span className="font-semibold text-foreground">2,5%</span>
+                    </div>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-muted-foreground">TVA</span>
+                      <span className="font-semibold text-foreground">20%</span>
+                    </div>
+                    <div className="border-t border-border/40 pt-2 flex justify-between text-[11px]">
+                      <span className="font-bold text-foreground">Total estimé</span>
+                      <span className="font-bold text-secondary">22 500 MAD</span>
                     </div>
                   </div>
                 </div>
