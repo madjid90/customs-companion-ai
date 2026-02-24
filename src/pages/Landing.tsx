@@ -133,7 +133,18 @@ export default function Landing() {
       )}
 
       {/* ─── Hero Section ────────────────────────────── */}
-      <section className="relative pt-20 pb-6 md:pt-28 md:pb-16 px-3 sm:px-4">
+      <section className="relative pt-20 pb-6 md:pt-28 md:pb-16 px-3 sm:px-4 overflow-hidden">
+        {/* Background video */}
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover z-0"
+          src="/videos/hero-bg.mp4"
+        />
+        {/* Overlay for readability */}
+        <div className="absolute inset-0 bg-background/75 backdrop-blur-[2px] z-[1]" />
         <div className="container mx-auto max-w-6xl relative z-10">
           <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-center">
             {/* Left – Text */}
