@@ -53,3 +53,6 @@ verify_jwt = false
 
 [functions.consultation-report]
 verify_jwt = false
+
+[functions.classify]
+verify_jwt = false

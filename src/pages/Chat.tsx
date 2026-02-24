@@ -8,9 +8,12 @@ import { ChatMessage, ChatTypingIndicator } from "@/components/chat/ChatMessage"
 import { ChatWelcome } from "@/components/chat/ChatWelcome";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ChatHistory } from "@/components/chat/ChatHistory";
+import { ClassificationView } from "@/components/chat/ClassificationView";
 import { useAppHeaderContext } from "@/components/layout/AppLayout";
 import { cn } from "@/lib/utils";
 import type { UploadedFile } from "@/components/chat/ImageUploadButton";
+
+type ChatMode = "chat" | "classification";
 
 interface AttachedFile {
   name: string;
@@ -315,6 +318,7 @@ export default function Chat() {
   const initialQuery = searchParams.get("q") || "";
   const { setHistoryControls } = useAppHeaderContext();
   
+  const [chatMode, setChatMode] = useState<ChatMode>("chat");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState(initialQuery);
   const [isLoading, setIsLoading] = useState(false);
@@ -669,32 +673,38 @@ export default function Chat() {
           isHistoryOpen ? "md:ml-72" : "ml-0"
         )}
       >
-        {/* Chat messages area */}
-        {messages.length === 0 ? (
-          <div className="flex-1 min-h-0 flex items-center justify-center px-2 md:px-4 overflow-hidden pb-20 md:pb-0">
-            <div className="max-w-3xl mx-auto w-full max-h-full overflow-hidden">
-              <ChatWelcome onQuestionClick={handleSend} />
-            </div>
-          </div>
+        {chatMode === "classification" ? (
+          <ClassificationView />
         ) : (
-          <ScrollArea ref={scrollRef} className="flex-1 px-2 md:px-4 py-3 md:py-6 pb-20 md:pb-6">
-            <div className="max-w-3xl mx-auto space-y-3 md:space-y-6">
-              {messages.map((message, index) => (
-                <ChatMessage
-                  key={message.id}
-                  message={message}
-                  isLastMessage={index === messages.length - 1 && message.role === "assistant"}
-                  isLoading={isLoading}
-                  onFeedback={handleFeedback}
-                  onAnswer={handleSend}
-                  cleanContent={cleanConfidenceFromContent}
-                  removeQuestions={removeInteractiveQuestions}
-                />
-              ))}
+          <>
+            {/* Chat messages area */}
+            {messages.length === 0 ? (
+              <div className="flex-1 min-h-0 flex items-center justify-center px-2 md:px-4 overflow-hidden pb-20 md:pb-0">
+                <div className="max-w-3xl mx-auto w-full max-h-full overflow-hidden">
+                  <ChatWelcome onQuestionClick={handleSend} />
+                </div>
+              </div>
+            ) : (
+              <ScrollArea ref={scrollRef} className="flex-1 px-2 md:px-4 py-3 md:py-6 pb-20 md:pb-6">
+                <div className="max-w-3xl mx-auto space-y-3 md:space-y-6">
+                  {messages.map((message, index) => (
+                    <ChatMessage
+                      key={message.id}
+                      message={message}
+                      isLastMessage={index === messages.length - 1 && message.role === "assistant"}
+                      isLoading={isLoading}
+                      onFeedback={handleFeedback}
+                      onAnswer={handleSend}
+                      cleanContent={cleanConfidenceFromContent}
+                      removeQuestions={removeInteractiveQuestions}
+                    />
+                  ))}
 
-              {isLoading && !messages.some(m => m.isStreaming && m.content.length > 0) && <ChatTypingIndicator />}
-            </div>
-          </ScrollArea>
+                  {isLoading && !messages.some(m => m.isStreaming && m.content.length > 0) && <ChatTypingIndicator />}
+                </div>
+              </ScrollArea>
+            )}
+          </>
         )}
 
         {/* Input area */}
@@ -708,6 +718,8 @@ export default function Chat() {
           uploadedFiles={uploadedFiles}
           onFilesSelected={handleFilesSelected}
           onRemoveFile={handleRemoveFile}
+          chatMode={chatMode}
+          onModeChange={setChatMode}
         />
       </div>
     </div>

@@ -6,6 +6,8 @@ import { ImageUploadButton, type UploadedFile } from "./ImageUploadButton";
 import { FilePreviewDialog } from "./FilePreviewDialog";
 import { cn } from "@/lib/utils";
 
+type ChatMode = "chat" | "classification";
+
 interface ChatInputProps {
   input: string;
   onInputChange: (value: string) => void;
@@ -16,6 +18,8 @@ interface ChatInputProps {
   uploadedFiles: UploadedFile[];
   onFilesSelected: (files: UploadedFile[]) => void;
   onRemoveFile: (index: number) => void;
+  chatMode?: ChatMode;
+  onModeChange?: (mode: ChatMode) => void;
 }
 
 export function ChatInput({
@@ -28,6 +32,8 @@ export function ChatInput({
   uploadedFiles,
   onFilesSelected,
   onRemoveFile,
+  chatMode = "chat",
+  onModeChange,
 }: ChatInputProps) {
   const [previewFile, setPreviewFile] = useState<{
     file: File;
@@ -43,12 +49,14 @@ export function ChatInput({
     });
   };
 
+  const isClassification = chatMode === "classification";
+
   return (
     <>
       <div className="fixed bottom-0 left-0 right-0 z-40 px-3 pt-2 pb-3 bg-background/95 backdrop-blur-xl md:relative md:bottom-auto md:left-auto md:right-auto md:z-auto md:pb-4 md:border-t md:border-border md:bg-card/90 md:backdrop-blur-xl md:px-4 md:pt-4 flex-shrink-0" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)' }}>
         <div className="max-w-3xl mx-auto">
           {/* Uploaded files preview - horizontal scroll on mobile */}
-          {uploadedFiles.length > 0 && (
+          {uploadedFiles.length > 0 && !isClassification && (
             <div className="flex gap-2 mb-2 md:mb-3 p-2 bg-muted/30 rounded-xl border border-border/50 overflow-x-auto scrollbar-hide">
               {uploadedFiles.map((upload, index) => (
                 <div
@@ -109,9 +117,53 @@ export function ChatInput({
               ))}
             </div>
           )}
+
+          {/* Mode toggle */}
+          {onModeChange && (
+            <div className="flex items-center gap-2.5 mb-2 pl-0.5">
+              <span
+                className={cn(
+                  "text-xs font-bold cursor-pointer select-none transition-colors",
+                  isClassification ? "text-primary" : "text-muted-foreground/50"
+                )}
+                onClick={() => onModeChange("classification")}
+              >
+                Classification
+              </span>
+
+              {/* Toggle pill */}
+              <div
+                onClick={() => onModeChange(isClassification ? "chat" : "classification")}
+                className="relative w-10 h-[22px] rounded-full bg-primary/15 cursor-pointer shadow-inner transition-colors"
+              >
+                <div
+                  className={cn(
+                    "absolute top-[2px] w-[18px] h-[18px] rounded-full bg-primary shadow-sm transition-all duration-300 ease-in-out",
+                    isClassification ? "left-[2px]" : "left-[20px]"
+                  )}
+                />
+              </div>
+
+              <span
+                className={cn(
+                  "text-xs font-bold cursor-pointer select-none transition-colors",
+                  !isClassification ? "text-foreground" : "text-muted-foreground/50"
+                )}
+                onClick={() => onModeChange("chat")}
+              >
+                Chat
+              </span>
+            </div>
+          )}
           
           {/* Input row */}
-          <div className="flex items-center gap-1.5 md:gap-2.5 md:bg-transparent rounded-2xl md:rounded-none px-3 py-1.5 md:px-3 md:py-1.5 md:border-0" style={{ background: 'linear-gradient(hsl(var(--background)), hsl(var(--background))) padding-box, var(--gradient-cta) border-box', border: '1.5px solid transparent', borderRadius: '1rem' }}>
+          <div
+            className={cn(
+              "flex items-center gap-1.5 md:gap-2.5 md:bg-transparent rounded-2xl md:rounded-none px-3 py-1.5 md:px-3 md:py-1.5 md:border-0 transition-opacity",
+              isClassification && "opacity-40 pointer-events-none"
+            )}
+            style={{ background: 'linear-gradient(hsl(var(--background)), hsl(var(--background))) padding-box, var(--gradient-cta) border-box', border: '1.5px solid transparent', borderRadius: '1rem' }}
+          >
             <ImageUploadButton
               onFilesSelected={onFilesSelected}
               uploadedFiles={[]}
@@ -124,9 +176,11 @@ export function ChatInput({
                 value={input}
                 onChange={(e) => onInputChange(e.target.value)}
                 onKeyDown={onKeyDown}
-                placeholder={uploadedFiles.length > 0 
-                  ? "Décrivez votre produit..." 
-                  : "Posez une question"}
+                placeholder={isClassification
+                  ? "Utilisez le formulaire ci-dessus..."
+                  : uploadedFiles.length > 0 
+                    ? "Décrivez votre produit..." 
+                    : "Posez une question"}
                 aria-label="Message à envoyer"
                 className="min-h-[40px] md:min-h-[52px] max-h-28 md:max-h-32 pr-2 md:pr-4 resize-none rounded-xl md:rounded-2xl !border-none !ring-0 !outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 bg-transparent text-base py-2.5 md:py-3.5 px-2 md:px-4 shadow-none"
                 rows={1}
