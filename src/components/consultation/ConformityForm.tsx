@@ -73,14 +73,14 @@ export function ConformityForm({ onSubmit, isLoading }: Props) {
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* ── ESSENTIEL ── */}
       <div className="space-y-2">
-        <Label className="text-sm font-medium">Décrivez votre produit</Label>
+        <Label className="text-sm font-semibold">Décrivez votre produit</Label>
         <Textarea placeholder="Ex: Routeur Wi-Fi 6, double bande, avec antenne externe"
           value={form.product_description} onChange={e => setForm(p => ({ ...p, product_description: e.target.value }))}
           rows={2} className="resize-none" />
       </div>
 
       <div className="space-y-2">
-        <Label className="text-sm font-medium">Pays d'origine</Label>
+        <Label className="text-sm font-semibold">Pays d'origine</Label>
         <Select value={form.country_code} onValueChange={v => setForm(p => ({ ...p, country_code: v }))}>
           <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
           <SelectContent>
@@ -127,7 +127,7 @@ export function ConformityForm({ onSubmit, isLoading }: Props) {
         </div>
       )}
 
-      <Button type="submit" size="lg" className="w-full" disabled={isLoading || !form.product_description}>
+      <Button type="submit" className="w-full h-14 cta-gradient rounded-2xl text-base font-semibold" disabled={isLoading || !form.product_description}>
         {isLoading ? <><Loader2 className="h-5 w-5 animate-spin mr-2" />Vérification en cours...</> : <><ClipboardCheck className="h-5 w-5 mr-2" />Vérifier les conformités</>}
       </Button>
     </form>

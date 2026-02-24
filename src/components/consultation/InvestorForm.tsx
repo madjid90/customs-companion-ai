@@ -45,7 +45,7 @@ export function InvestorForm({ onSubmit, isLoading }: Props) {
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* ── ESSENTIEL ── */}
       <div className="space-y-2">
-        <Label className="text-sm font-medium">Secteur d'activité</Label>
+        <Label className="text-sm font-semibold">Secteur d'activité</Label>
         <Select value={form.sector} onValueChange={v => update("sector", v)}>
           <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
           <SelectContent>
@@ -64,7 +64,7 @@ export function InvestorForm({ onSubmit, isLoading }: Props) {
       </div>
 
       <div className="space-y-2">
-        <Label className="text-sm font-medium">Description du matériel à importer</Label>
+        <Label className="text-sm font-semibold">Description du matériel à importer</Label>
         <Textarea placeholder="Ex: Machine CNC 5 axes, ligne d'assemblage automatique..."
           value={form.material_description} onChange={e => update("material_description", e.target.value)}
           rows={2} className="resize-none" />
@@ -136,7 +136,7 @@ export function InvestorForm({ onSubmit, isLoading }: Props) {
         </div>
       )}
 
-      <Button type="submit" size="lg" className="w-full" disabled={isLoading || !form.sector || !form.material_description}>
+      <Button type="submit" className="w-full h-14 cta-gradient rounded-2xl text-base font-semibold" disabled={isLoading || !form.sector || !form.material_description}>
         {isLoading ? <><Loader2 className="h-5 w-5 animate-spin mr-2" />Analyse en cours...</> : <><Factory className="h-5 w-5 mr-2" />Comparer les régimes</>}
       </Button>
     </form>

@@ -133,8 +133,8 @@ export function ClassificationView() {
           </div>
 
           <div className="card-elevated rounded-2xl p-5 space-y-4">
-            <div>
-              <label className="text-xs font-semibold text-foreground mb-1.5 block">Description du produit</label>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground block">Description du produit</label>
               <Textarea
                 rows={3}
                 placeholder="Ex: Écran LCD 55 pouces 4K avec tuner TV intégré..."
@@ -145,12 +145,12 @@ export function ClassificationView() {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground mb-1 block">Code SH (optionnel)</label>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-muted-foreground block">Code SH (optionnel)</label>
                 <Input placeholder="8528" value={hsHint} onChange={(e) => setHsHint(e.target.value)} />
               </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground mb-1 block">Pays d'origine</label>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-muted-foreground block">Pays d'origine</label>
                 <Input placeholder="Chine, France..." value={originCountry} onChange={(e) => setOriginCountry(e.target.value)} />
               </div>
             </div>
@@ -158,7 +158,7 @@ export function ClassificationView() {
             <Button
               onClick={classify}
               disabled={!description.trim()}
-              className="w-full cta-gradient rounded-xl h-11 font-bold"
+              className="w-full cta-gradient rounded-2xl h-14 text-base font-semibold"
             >
               <Search className="h-4 w-4 mr-2" />
               Classifier

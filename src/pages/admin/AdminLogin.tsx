@@ -94,7 +94,6 @@ export default function AdminLogin() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@example.com"
-                className="rounded-xl h-12 bg-muted/50"
                 autoFocus
                 required
               />
@@ -112,7 +111,7 @@ export default function AdminLogin() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Votre mot de passe"
-                  className="rounded-xl h-12 bg-muted/50 pr-12"
+                  className="pr-12"
                   required
                 />
                 <Button
