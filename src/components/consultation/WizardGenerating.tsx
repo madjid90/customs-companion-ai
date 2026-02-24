@@ -57,7 +57,7 @@ export function WizardGenerating({ mode, isDone, onViewReport, onNewConsultation
 
   return (
     <div className="max-w-lg mx-auto card-elevated p-8 md:p-10 text-center mt-12 animate-fade-in relative overflow-hidden">
-      <div className="absolute inset-0 opacity-[0.03] hero-gradient" />
+      <div className="absolute inset-0 opacity-[0.03] hero-gradient pointer-events-none" />
       {!isDone ? (
         <>
           <div className="flex justify-center">
