@@ -223,35 +223,52 @@ export default function Landing() {
                 </div>
               </div>
 
-              {/* Consultation illustration */}
+              {/* Documentation & Réglementation illustration */}
               <div className="card-elevated p-5 relative overflow-hidden">
                 <div className="absolute inset-0 opacity-[0.04] hero-gradient" />
                 <div className="relative z-10 space-y-3">
                   <div className="flex items-center gap-2 mb-1">
                     <div className="h-7 w-7 rounded-lg cta-gradient flex items-center justify-center flex-shrink-0">
-                      <FileText className="h-3.5 w-3.5 text-white" />
+                      <BookOpen className="h-3.5 w-3.5 text-white" />
                     </div>
-                    <span className="text-xs font-bold text-foreground">Consultation Import</span>
-                    <span className="ml-auto inline-flex items-center gap-1 bg-secondary/10 text-secondary text-[10px] font-medium px-2 py-0.5 rounded-full">
-                      <Zap className="h-2.5 w-2.5" /> Rapport généré
-                    </span>
+                    <span className="text-xs font-bold text-foreground">Documentation & Réglementation</span>
                   </div>
-                  <div className="bg-muted/40 rounded-lg p-3 space-y-2">
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-muted-foreground">Code SH</span>
-                      <span className="font-semibold text-primary">8471.30.00.00</span>
+                  <div className="space-y-2">
+                    <div className="bg-muted/40 rounded-lg p-2.5 flex items-center gap-2.5">
+                      <div className="h-6 w-6 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <FileText className="h-3 w-3 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-semibold text-foreground truncate">Circulaire n°6345/211</div>
+                        <div className="text-[10px] text-muted-foreground">Tarif douanier 2024 · 42 pages</div>
+                      </div>
+                      <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0">
+                        <CheckCircle2 className="h-2.5 w-2.5" /> Indexé
+                      </span>
                     </div>
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-muted-foreground">Droit d'importation</span>
-                      <span className="font-semibold text-foreground">2,5%</span>
+                    <div className="bg-muted/40 rounded-lg p-2.5 flex items-center gap-2.5">
+                      <div className="h-6 w-6 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <Lock className="h-3 w-3 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-semibold text-foreground truncate">Code des Douanes et Impôts Indirects</div>
+                        <div className="text-[10px] text-muted-foreground">Édition 2023 · 156 articles</div>
+                      </div>
+                      <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0">
+                        <CheckCircle2 className="h-2.5 w-2.5" /> Indexé
+                      </span>
                     </div>
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-muted-foreground">TVA</span>
-                      <span className="font-semibold text-foreground">20%</span>
-                    </div>
-                    <div className="border-t border-border/40 pt-2 flex justify-between text-[11px]">
-                      <span className="font-bold text-foreground">Total estimé</span>
-                      <span className="font-bold text-secondary">22 500 MAD</span>
+                    <div className="bg-muted/40 rounded-lg p-2.5 flex items-center gap-2.5">
+                      <div className="h-6 w-6 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <Globe className="h-3 w-3 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-semibold text-foreground truncate">Notes explicatives du SH (OMD)</div>
+                        <div className="text-[10px] text-muted-foreground">Chapitres 84-85 · Mise à jour 2024</div>
+                      </div>
+                      <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0">
+                        <CheckCircle2 className="h-2.5 w-2.5" /> Indexé
+                      </span>
                     </div>
                   </div>
                 </div>
