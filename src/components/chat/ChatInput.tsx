@@ -134,13 +134,14 @@ export function ChatInput({
               {/* Toggle pill */}
               <div
                 onClick={() => onModeChange(isClassification ? "chat" : "classification")}
-                className="relative w-10 h-[22px] rounded-full bg-primary/15 cursor-pointer shadow-inner transition-colors"
+                className="relative w-10 h-[22px] rounded-full bg-muted cursor-pointer shadow-inner transition-colors"
               >
                 <div
                   className={cn(
-                    "absolute top-[2px] w-[18px] h-[18px] rounded-full bg-primary shadow-sm transition-all duration-300 ease-in-out",
+                    "absolute top-[2px] w-[18px] h-[18px] rounded-full shadow-sm transition-all duration-300 ease-in-out",
                     isClassification ? "left-[2px]" : "left-[20px]"
                   )}
+                  style={{ background: 'var(--gradient-cta)' }}
                 />
               </div>
 
