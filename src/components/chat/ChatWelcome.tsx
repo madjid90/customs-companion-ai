@@ -97,8 +97,8 @@ export function ChatWelcome({ onQuestionClick }: ChatWelcomeProps) {
         Classification SH, tarifs, réglementations — obtenez des réponses précises et sourcées.
       </p>
 
-      {/* Suggestion cards – hidden on mobile */}
-      <div className="hidden md:block w-full max-w-xl">
+      {/* Suggestion cards */}
+      <div className="w-full max-w-xl">
         <div className="md:bg-card md:rounded-2xl md:border md:border-border md:shadow-md md:overflow-hidden">
           {displayedQuestions.map((item, i) => (
             <button
