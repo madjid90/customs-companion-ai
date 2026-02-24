@@ -201,7 +201,7 @@ export default function Landing() {
                       <MessageSquare className="h-4 w-4 text-white" />
                     </div>
                     <div className="bg-muted/50 rounded-xl rounded-tl-none p-3 text-xs text-foreground leading-relaxed flex-1">
-                      Quel est le taux de droit de douane pour le code SH <span className="font-semibold text-primary">8471.30</span> au Maroc ?
+                      Quel est le droit d'importation pour les antennes télécom <span className="font-semibold text-primary">8517.71</span> au Maroc ?
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
@@ -209,10 +209,10 @@ export default function Landing() {
                       <BarChart3 className="h-4 w-4 text-primary" />
                     </div>
                     <div className="bg-card border border-border/40 rounded-xl rounded-tl-none p-3 text-xs text-foreground leading-relaxed flex-1">
-                      Le taux de droit d'importation pour le code <span className="font-semibold text-primary">8471.30</span> est de <span className="font-bold text-secondary">2,5%</span>.
+                      Le code <span className="font-semibold text-primary">8517.71.00.00</span> — Antennes et réflecteurs d'antennes — est soumis à un DDI de <span className="font-bold text-secondary">2,5%</span> et une TVA de <span className="font-bold text-secondary">20%</span>.
                       <div className="mt-2 flex gap-1.5">
                         <span className="inline-flex items-center gap-1 bg-primary/5 text-primary text-[10px] font-medium px-2 py-0.5 rounded-full">
-                          <BookOpen className="h-2.5 w-2.5" /> Circulaire n°6345
+                          <BookOpen className="h-2.5 w-2.5" /> Circulaire 4591/312
                         </span>
                         <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-[10px] font-medium px-2 py-0.5 rounded-full">
                           <Shield className="h-2.5 w-2.5" /> Vérifié
