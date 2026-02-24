@@ -225,20 +225,18 @@ export default function Landing() {
             </div>
           </div>
         </div>
-      </section>
 
-      {/* ─── Stats bar ───────────────────────────────── */}
-      <section className="relative py-4 md:py-8 px-0.5 sm:px-4">
-        <div className="container mx-auto max-w-6xl relative z-10">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-            {stats.map((s, i) => (
-              <div key={i} className="card-elevated p-4 text-center">
-                <div className="text-xl md:text-2xl font-extrabold gradient-text mb-0.5">{s.value}</div>
-                <div className="text-xs text-muted-foreground font-medium">{s.label}</div>
-              </div>
-            ))}
+          {/* ─── Stats bar (inside hero) ───────────────── */}
+          <div className="container mx-auto max-w-6xl relative z-10 mt-8 md:mt-12 px-0.5 sm:px-0">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+              {stats.map((s, i) => (
+                <div key={i} className="card-elevated p-4 text-center">
+                  <div className="text-xl md:text-2xl font-extrabold gradient-text mb-0.5">{s.value}</div>
+                  <div className="text-xs text-muted-foreground font-medium">{s.label}</div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
       </section>
 
       {/* ─── How it works ────────────────────────────── */}
