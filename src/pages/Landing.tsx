@@ -34,33 +34,34 @@ import {
 
 /* ─── Data ─────────────────────────────────────────────── */
 const stats = [
-  { value: "10k+", label: "Codes SH" },
-  { value: "<3s", label: "Temps de réponse" },
-  { value: "100%", label: "Sources vérifiées" },
+  { value: "10k+", label: "Lignes tarifaires" },
+  { value: "40k+", label: "Équipements ANRT" },
+  { value: "990+", label: "Documents indexés" },
   { value: "24/7", label: "Disponibilité" },
 ];
 
 const steps = [
   { icon: UserPlus, title: "Inscription", desc: "Email + société. 30 secondes." },
   { icon: Users, title: "Validation", desc: "L'admin valide votre demande." },
-  { icon: Send, title: "Chat IA", desc: "Posez vos questions douanières." },
-  { icon: Headphones, title: "Support", desc: "Assistance et mises à jour." },
+  { icon: Send, title: "Chat & Consultation", desc: "Posez vos questions ou lancez une simulation." },
+  { icon: Headphones, title: "Support", desc: "Assistance et mises à jour continues." },
 ];
 
 const features = [
-  { icon: Search, title: "Recherche HS intelligente", desc: "Trouvez le code SH exact grâce à la recherche sémantique IA." },
-  { icon: FileText, title: "Analyse de documents", desc: "Uploadez DUM, factures ou circulaires pour une analyse instantanée." },
-  { icon: Globe, title: "Réglementation à jour", desc: "Base mise à jour avec les dernières circulaires et tarifs." },
-  { icon: Zap, title: "Réponses instantanées", desc: "Réponses en temps réel avec sources citées et vérifiables." },
-  { icon: Shield, title: "Données sécurisées", desc: "Vos données et conversations sont protégées et confidentielles." },
-  { icon: MessageSquare, title: "Chat contextuel", desc: "L'assistant comprend le contexte pour des réponses pertinentes." },
+  { icon: Search, title: "Classification SH intelligente", desc: "Identifiez le code SH exact via un QCM interactif avec scores de probabilité et justifications RGI." },
+  { icon: FileText, title: "Consultation Import", desc: "Simulez vos droits et taxes (DDI, TVA, TIC) avec calcul automatisé et rapport détaillé exportable en PDF." },
+  { icon: Shield, title: "Conformité réglementaire", desc: "Vérifiez les exigences CoC, ANRT, ONSSA et DMP avec 40 000+ équipements homologués indexés." },
+  { icon: Globe, title: "Accords commerciaux", desc: "Consultez les tarifs préférentiels et preuves d'origine (EUR.1, ATR, Form A) par accord." },
+  { icon: Zap, title: "Analyse de documents", desc: "Uploadez DUM, factures ou fiches techniques pour une extraction et analyse IA instantanée." },
+  { icon: MessageSquare, title: "Chat IA sourcé", desc: "Réponses en temps réel avec citations vérifiées (circulaires, articles de loi, tarifs officiels)." },
 ];
 
 const faqs = [
-  { q: "Comment fonctionne l'assistant douanier IA ?", a: "Notre assistant utilise l'intelligence artificielle pour analyser votre question, rechercher dans notre base de données de réglementations douanières, et vous fournir une réponse précise avec les sources légales citées." },
+  { q: "Comment fonctionne l'assistant douanier IA ?", a: "Notre assistant utilise l'intelligence artificielle et une base de 12 000+ segments juridiques pour analyser votre question et vous fournir une réponse précise avec les sources légales citées (circulaires, Code des Douanes, notes SH)." },
   { q: "Comment accéder à l'assistant ?", a: "L'accès se fait sur invitation. Remplissez le formulaire de demande avec votre adresse email et le nom de votre société, puis un administrateur validera votre demande." },
-  { q: "Quels types de questions puis-je poser ?", a: "Vous pouvez poser des questions sur les codes SH, les tarifs douaniers, les règles d'origine, les procédures d'import/export, les circulaires et toute réglementation douanière." },
-  { q: "Comment sont vérifiées les réponses ?", a: "Chaque réponse est accompagnée de ses sources légales (circulaires, articles de loi, tarifs officiels). Vous pouvez vérifier chaque information." },
+  { q: "Quels types de questions puis-je poser ?", a: "Codes SH, tarifs douaniers, règles d'origine, procédures d'import/export, conformité (CoC, ANRT, ONSSA), régimes économiques, contentieux, valeur en douane, zones franches et bien plus." },
+  { q: "Qu'est-ce que le module Consultation ?", a: "Un assistant guidé qui génère des rapports détaillés pour 4 cas : Import (calcul fiscal), MRE (franchise véhicule), Conformité (documents requis) et Investisseur (comparaison de régimes). Chaque rapport est exportable en PDF." },
+  { q: "Comment sont vérifiées les réponses ?", a: "Chaque réponse est accompagnée de ses sources légales vérifiées. Le système filtre les preuves pour ne garder que celles directement liées aux codes SH mentionnés." },
   { q: "Puis-je utiliser l'assistant sur mobile ?", a: "Oui, l'assistant est 100% responsive et fonctionne parfaitement sur téléphone, tablette et ordinateur." },
 ];
 
