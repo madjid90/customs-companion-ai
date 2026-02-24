@@ -56,7 +56,8 @@ export function WizardGenerating({ mode, isDone, onViewReport, onNewConsultation
   }, [isDone, labels.length]);
 
   return (
-    <div className="max-w-lg mx-auto bg-card rounded-2xl border border-border p-8 shadow-sm text-center mt-12 animate-fade-in">
+    <div className="max-w-lg mx-auto card-elevated p-8 md:p-10 text-center mt-12 animate-fade-in relative overflow-hidden">
+      <div className="absolute inset-0 opacity-[0.03] hero-gradient" />
       {!isDone ? (
         <>
           <div className="flex justify-center">
@@ -96,8 +97,8 @@ export function WizardGenerating({ mode, isDone, onViewReport, onNewConsultation
 
       {isDone && (
         <div className="mt-7 flex gap-3 justify-center">
-          <Button onClick={onViewReport}>Voir le rapport</Button>
-          <Button variant="outline" onClick={onNewConsultation}>Nouvelle consultation</Button>
+          <Button onClick={onViewReport} className="cta-gradient rounded-xl px-6">Voir le rapport</Button>
+          <Button variant="outline" onClick={onNewConsultation} className="rounded-xl">Nouvelle consultation</Button>
         </div>
       )}
     </div>
