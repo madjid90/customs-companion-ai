@@ -53,39 +53,9 @@ export function ConsultationReport({ data, type, onNewConsultation, onAskQuestio
       </div>
 
       {/* Sections */}
-      {sections.map((section: any) => {
-        const [isCollapsed, setIsCollapsed] = useState(section.defaultCollapsed || false);
-        const Icon = section.icon;
-        
-        return (
-          <div key={section.id} className={cn("bg-card rounded-xl border transition-all duration-200", 
-            section.status === "warning" ? "border-amber-200" : section.status === "success" ? "border-emerald-200" : "border-border"
-          )}>
-            <button 
-              onClick={() => setIsCollapsed(!isCollapsed)}
-              className="w-full flex items-center justify-between p-4 text-left"
-            >
-              <div className="flex items-center gap-3">
-                <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", 
-                  section.status === "warning" ? "bg-amber-100 text-amber-600" : 
-                  section.status === "success" ? "bg-emerald-100 text-emerald-600" : 
-                  "bg-primary/10 text-primary"
-                )}>
-                  <Icon className="h-4 w-4" />
-                </div>
-                <h3 className="font-semibold text-sm">{section.title}</h3>
-              </div>
-              {isCollapsed ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronUp className="h-4 w-4 text-muted-foreground" />}
-            </button>
-            {!isCollapsed && (
-              <div className="px-4 pb-4 pt-0">
-                <Separator className="mb-4" />
-                {section.content}
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {sections.map((section: any) => (
+        <CollapsibleSection key={section.id} section={section} />
+      ))}
 
       {/* Disclaimer */}
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
@@ -123,6 +93,40 @@ export function ConsultationReport({ data, type, onNewConsultation, onAskQuestio
           reportData={data}
         />
       </div>
+    </div>
+  );
+}
+
+function CollapsibleSection({ section }: { section: any }) {
+  const [isCollapsed, setIsCollapsed] = useState(section.defaultCollapsed || false);
+  const Icon = section.icon;
+
+  return (
+    <div className={cn("bg-card rounded-xl border transition-all duration-200",
+      section.status === "warning" ? "border-amber-200" : section.status === "success" ? "border-emerald-200" : "border-border"
+    )}>
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="w-full flex items-center justify-between p-4 text-left"
+      >
+        <div className="flex items-center gap-3">
+          <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center",
+            section.status === "warning" ? "bg-amber-100 text-amber-600" :
+            section.status === "success" ? "bg-emerald-100 text-emerald-600" :
+            "bg-primary/10 text-primary"
+          )}>
+            <Icon className="h-4 w-4" />
+          </div>
+          <h3 className="font-semibold text-sm">{section.title}</h3>
+        </div>
+        {isCollapsed ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronUp className="h-4 w-4 text-muted-foreground" />}
+      </button>
+      {!isCollapsed && (
+        <div className="px-4 pb-4 pt-0">
+          <Separator className="mb-4" />
+          {section.content}
+        </div>
+      )}
     </div>
   );
 }
