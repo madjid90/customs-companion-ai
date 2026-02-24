@@ -133,7 +133,7 @@ export default function Landing() {
       )}
 
       {/* ─── Hero Section ────────────────────────────── */}
-      <section className="relative pt-20 pb-6 md:pt-28 md:pb-16 px-3 sm:px-4 overflow-hidden min-h-[60vh] md:min-h-[70vh]">
+      <section className="relative pt-20 pb-8 md:pt-28 md:pb-16 px-3 sm:px-4 overflow-hidden min-h-screen flex flex-col justify-center">
         {/* Background video */}
         <video
           autoPlay
