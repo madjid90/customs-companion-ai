@@ -16,37 +16,40 @@ interface Props {
 
 export function WizardStepper({ steps, currentStep, onStepClick }: Props) {
   return (
-    <div className="flex items-center gap-0 px-2">
+    <div className="flex items-center w-full">
       {steps.map((s, i) => {
         const state = i < currentStep ? "done" : i === currentStep ? "active" : "future";
         return (
           <div key={s.id} className={cn("flex items-center", i < steps.length - 1 && "flex-1")}>
-            <div className="relative">
+            {/* Circle + label */}
+            <div className="flex flex-col items-center">
               <button
                 type="button"
                 onClick={() => state === "done" && onStepClick(i)}
                 className={cn(
-                  "flex items-center justify-center rounded-full text-xs font-semibold transition-all duration-300",
-                  state === "active" && "w-8 h-8 bg-foreground text-background shadow-[0_0_0_4px_hsl(var(--foreground)/0.12)]",
-                  state === "done" && "w-6 h-6 bg-primary text-primary-foreground cursor-pointer",
-                  state === "future" && "w-6 h-6 bg-border text-muted-foreground cursor-default"
+                  "flex items-center justify-center rounded-full font-bold transition-all duration-300",
+                  state === "active" && "w-11 h-11 bg-foreground text-background text-sm shadow-[0_0_0_5px_hsl(var(--foreground)/0.08)]",
+                  state === "done" && "w-9 h-9 bg-primary text-primary-foreground text-xs cursor-pointer hover:scale-105",
+                  state === "future" && "w-9 h-9 bg-muted text-muted-foreground text-xs cursor-default"
                 )}
               >
-                {state === "done" ? <Check className="h-3.5 w-3.5" /> : i + 1}
+                {state === "done" ? <Check className="h-4 w-4" /> : i + 1}
               </button>
               <span
                 className={cn(
-                  "absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px]",
-                  state === "active" ? "font-semibold text-foreground" : "font-normal text-muted-foreground"
+                  "mt-2 whitespace-nowrap text-[11px]",
+                  state === "active" ? "font-bold text-foreground" : "font-medium text-muted-foreground"
                 )}
               >
                 {s.label}
               </span>
             </div>
+
+            {/* Connector line */}
             {i < steps.length - 1 && (
               <div
                 className={cn(
-                  "flex-1 h-0.5 mx-1 transition-colors duration-300",
+                  "flex-1 h-[2px] mx-2 rounded-full transition-colors duration-300 self-start mt-[18px]",
                   i < currentStep ? "bg-primary" : "bg-border"
                 )}
               />
