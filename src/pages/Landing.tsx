@@ -229,45 +229,61 @@ export default function Landing() {
                 <div className="relative z-10 space-y-3">
                   <div className="flex items-center gap-2 mb-1">
                     <div className="h-7 w-7 rounded-lg cta-gradient flex items-center justify-center flex-shrink-0">
-                      <BookOpen className="h-3.5 w-3.5 text-white" />
+                      <Shield className="h-3.5 w-3.5 text-white" />
                     </div>
-                    <span className="text-xs font-bold text-foreground">Documentation & Réglementation</span>
+                    <span className="text-xs font-bold text-foreground">Conformité & Réglementation</span>
                   </div>
                   <div className="space-y-2">
+                    {/* CoC */}
                     <div className="bg-muted/40 rounded-lg p-2.5 flex items-center gap-2.5">
                       <div className="h-6 w-6 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <FileText className="h-3 w-3 text-primary" />
+                        <CheckCircle2 className="h-3 w-3 text-primary" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-semibold text-foreground truncate">Circulaire n°6345/211</div>
-                        <div className="text-[10px] text-muted-foreground">Tarif douanier 2024 · 42 pages</div>
+                        <div className="text-[11px] font-semibold text-foreground">Certificat de Conformité (CoC)</div>
+                        <div className="text-[10px] text-muted-foreground">Requis · Contrôle MCINT</div>
                       </div>
-                      <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0">
-                        <CheckCircle2 className="h-2.5 w-2.5" /> Indexé
+                      <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0">
+                        Obligatoire
                       </span>
                     </div>
+                    {/* ANRT */}
                     <div className="bg-muted/40 rounded-lg p-2.5 flex items-center gap-2.5">
                       <div className="h-6 w-6 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
                         <Lock className="h-3 w-3 text-primary" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-semibold text-foreground truncate">Code des Douanes et Impôts Indirects</div>
-                        <div className="text-[10px] text-muted-foreground">Édition 2023 · 156 articles</div>
+                        <div className="text-[11px] font-semibold text-foreground">Agrément ANRT</div>
+                        <div className="text-[10px] text-muted-foreground">Équipement télécom · Homologation</div>
                       </div>
                       <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0">
-                        <CheckCircle2 className="h-2.5 w-2.5" /> Indexé
+                        <CheckCircle2 className="h-2.5 w-2.5" /> Vérifié
                       </span>
                     </div>
+                    {/* ONSSA */}
+                    <div className="bg-muted/40 rounded-lg p-2.5 flex items-center gap-2.5">
+                      <div className="h-6 w-6 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <FileText className="h-3 w-3 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-semibold text-foreground">Contrôle ONSSA</div>
+                        <div className="text-[10px] text-muted-foreground">Produits alimentaires · Sanitaire</div>
+                      </div>
+                      <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0">
+                        Obligatoire
+                      </span>
+                    </div>
+                    {/* DMP */}
                     <div className="bg-muted/40 rounded-lg p-2.5 flex items-center gap-2.5">
                       <div className="h-6 w-6 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
                         <Globe className="h-3 w-3 text-primary" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-semibold text-foreground truncate">Notes explicatives du SH (OMD)</div>
-                        <div className="text-[10px] text-muted-foreground">Chapitres 84-85 · Mise à jour 2024</div>
+                        <div className="text-[11px] font-semibold text-foreground">Autorisation DMP</div>
+                        <div className="text-[10px] text-muted-foreground">Dispositifs médicaux · Pharma</div>
                       </div>
                       <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0">
-                        <CheckCircle2 className="h-2.5 w-2.5" /> Indexé
+                        <CheckCircle2 className="h-2.5 w-2.5" /> Vérifié
                       </span>
                     </div>
                   </div>
