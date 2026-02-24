@@ -142,7 +142,6 @@ export default function RequestAccess() {
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
                 placeholder="Ex: Import Export SARL"
-                className="rounded-xl h-10 bg-muted/50 text-sm placeholder:text-xs"
                 maxLength={200}
                 required
               />
@@ -160,7 +159,6 @@ export default function RequestAccess() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="votre@email.com"
-                className="rounded-xl h-10 bg-muted/50 text-sm placeholder:text-xs"
                 required
               />
             </div>
@@ -185,7 +183,7 @@ export default function RequestAccess() {
 
             <Button
               type="submit"
-              className="w-full cta-gradient rounded-xl h-12 text-sm font-semibold gap-2"
+              className="w-full cta-gradient rounded-2xl h-14 text-base font-semibold gap-2"
               disabled={isSubmitting || !companyName.trim() || !email.trim()}
             >
               {isSubmitting ? (

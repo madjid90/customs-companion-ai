@@ -72,7 +72,7 @@ export function MREForm({ onSubmit, isLoading }: Props) {
 
       {/* Type d'import */}
       <div className="space-y-2">
-        <Label className="text-sm font-medium">Qu'importez-vous ?</Label>
+        <Label className="text-sm font-semibold">Qu'importez-vous ?</Label>
         <div className="grid grid-cols-3 gap-3">
           {([
             { id: "vehicle" as const, icon: Car, label: "Véhicule" },
@@ -91,7 +91,7 @@ export function MREForm({ onSubmit, isLoading }: Props) {
 
       {/* Pays de résidence */}
       <div className="space-y-2">
-        <Label className="text-sm font-medium">Pays de résidence</Label>
+        <Label className="text-sm font-semibold">Pays de résidence</Label>
         <Select value={form.residence_country} onValueChange={v => update("residence_country", v)}>
           <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
           <SelectContent>
@@ -104,11 +104,11 @@ export function MREForm({ onSubmit, isLoading }: Props) {
       {showVehicle && (
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
-            <Label className="text-sm font-medium">Marque / Modèle</Label>
+            <Label className="text-sm font-semibold">Marque / Modèle</Label>
             <Input placeholder="Ex: Renault Clio V" value={form.vehicle_brand} onChange={e => update("vehicle_brand", e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label className="text-sm font-medium">Valeur estimée</Label>
+            <Label className="text-sm font-semibold">Valeur estimée</Label>
             <div className="flex gap-1.5">
               <Input type="number" placeholder="15 000" value={form.vehicle_value}
                 onChange={e => update("vehicle_value", e.target.value)} className="flex-1" />
@@ -126,7 +126,7 @@ export function MREForm({ onSubmit, isLoading }: Props) {
       {/* Effets : juste description si type = personal_effects */}
       {showEffects && (
         <div className="space-y-2">
-          <Label className="text-sm font-medium">Description des effets</Label>
+          <Label className="text-sm font-semibold">Description des effets</Label>
           <Textarea placeholder="Meubles, électroménager, vêtements..." value={form.effects_description}
             onChange={e => update("effects_description", e.target.value)} rows={2} className="resize-none" />
         </div>
@@ -259,7 +259,7 @@ export function MREForm({ onSubmit, isLoading }: Props) {
         </div>
       )}
 
-      <Button type="submit" size="lg" className="w-full" disabled={isLoading || !form.residence_country}>
+      <Button type="submit" className="w-full h-14 cta-gradient rounded-2xl text-base font-semibold" disabled={isLoading || !form.residence_country}>
         {isLoading ? <><Loader2 className="h-5 w-5 animate-spin mr-2" />Génération du rapport MRE...</> : <><FileText className="h-5 w-5 mr-2" />Générer le rapport MRE</>}
       </Button>
     </form>

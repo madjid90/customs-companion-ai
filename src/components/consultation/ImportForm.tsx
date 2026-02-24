@@ -99,7 +99,7 @@ export function ImportForm({ onSubmit, isLoading }: Props) {
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* ── ESSENTIEL ── */}
       <div className="space-y-2">
-        <Label className="text-sm font-medium">Décrivez votre produit</Label>
+        <Label className="text-sm font-semibold">Décrivez votre produit</Label>
         <Textarea
           placeholder="Ex: Écran LCD 55 pouces 4K avec support mural, importé en cartons de 10"
           value={form.product_description}
@@ -110,7 +110,7 @@ export function ImportForm({ onSubmit, isLoading }: Props) {
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
-          <Label className="text-sm font-medium">Pays d'origine</Label>
+          <Label className="text-sm font-semibold">Pays d'origine</Label>
           <Select value={form.country_code} onValueChange={v => update("country_code", v)}>
             <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
             <SelectContent>
@@ -119,7 +119,7 @@ export function ImportForm({ onSubmit, isLoading }: Props) {
           </Select>
         </div>
         <div className="space-y-2">
-          <Label className="text-sm font-medium">Valeur</Label>
+          <Label className="text-sm font-semibold">Valeur</Label>
           <div className="flex gap-1.5">
             <Input type="number" placeholder="50 000" value={form.value}
               onChange={e => update("value", e.target.value)} className="flex-1" />
@@ -211,7 +211,7 @@ export function ImportForm({ onSubmit, isLoading }: Props) {
         </div>
       )}
 
-      <Button type="submit" size="lg" className="w-full" disabled={isLoading || !canSubmit}>
+      <Button type="submit" className="w-full h-14 cta-gradient rounded-2xl text-base font-semibold" disabled={isLoading || !canSubmit}>
         {isLoading ? <><Loader2 className="h-5 w-5 animate-spin mr-2" />Génération du rapport...</> : <><FileText className="h-5 w-5 mr-2" />Générer le rapport</>}
       </Button>
     </form>

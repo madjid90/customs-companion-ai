@@ -115,7 +115,6 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="votre@email.com"
-                className="rounded-xl h-10 bg-muted/50 border-input text-sm placeholder:text-xs"
                 autoFocus
                 required
               />
@@ -129,7 +128,7 @@ export default function LoginPage() {
 
             <Button
               type="submit"
-              className="w-full h-12 cta-gradient rounded-xl text-sm font-semibold gap-2"
+              className="w-full h-14 cta-gradient rounded-2xl text-base font-semibold gap-2"
               disabled={isLoading || !email.trim()}
             >
               {isLoading ? (
