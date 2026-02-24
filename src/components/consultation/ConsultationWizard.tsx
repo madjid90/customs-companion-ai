@@ -197,7 +197,7 @@ export function ConsultationWizard({ initialMode, initialReport, onReset }: Prop
   // ─── GENERATING SCREEN ───
   if (isGenerating) {
     return (
-      <div className="min-h-0 pb-8">
+      <div className="min-h-0 page-gradient pb-8">
         <div className="max-w-4xl mx-auto px-4 py-6">
           <WizardGenerating
             mode={mode!}
@@ -213,9 +213,9 @@ export function ConsultationWizard({ initialMode, initialReport, onReset }: Prop
   // ─── REPORT VIEW ───
   if (reportData && !isGenerating) {
     return (
-      <div className="min-h-0 bg-background pb-8">
+      <div className="min-h-0 page-gradient pb-8">
         <div className="max-w-4xl mx-auto px-4 py-6 space-y-4">
-          <Button variant="outline" onClick={handleReset} className="gap-2">
+          <Button variant="outline" onClick={handleReset} className="gap-2 rounded-xl">
             <ArrowLeft className="h-4 w-4" /> Nouvelle consultation
           </Button>
           <ConsultationReport
@@ -231,13 +231,16 @@ export function ConsultationWizard({ initialMode, initialReport, onReset }: Prop
   // ─── MODE SELECTION ───
   if (!mode) {
     return (
-      <div className="min-h-0 bg-background pb-8">
-        <div className="max-w-xl mx-auto px-4 py-6">
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-foreground">Consultation douanière</h1>
-            <p className="text-sm text-muted-foreground mt-1">Quel type de consultation souhaitez-vous ?</p>
+      <div className="min-h-0 page-gradient pb-8">
+        <div className="max-w-xl mx-auto px-4 py-8 md:py-12">
+          <div className="text-center mb-8 md:mb-10">
+            <span className="text-xs font-semibold text-secondary uppercase tracking-wider">Consultation</span>
+            <h1 className="text-xl md:text-2xl font-extrabold mt-2 mb-2">
+              Consultation <span className="gradient-text">douanière</span>
+            </h1>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto">Quel type de consultation souhaitez-vous ?</p>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 md:gap-4">
             {MODES.map(m => {
               const Icon = m.icon;
               return (
@@ -245,11 +248,13 @@ export function ConsultationWizard({ initialMode, initialReport, onReset }: Prop
                   key={m.id}
                   type="button"
                   onClick={() => handleSelectMode(m.id)}
-                  className="flex flex-col items-center gap-2 p-5 rounded-2xl border-2 border-border bg-card cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md text-center"
+                  className="card-elevated p-5 md:p-6 cursor-pointer text-center flex flex-col items-center gap-3"
                 >
-                  <Icon className="h-7 w-7 text-muted-foreground" />
-                  <span className="text-sm font-semibold text-foreground">{m.title}</span>
-                  <span className="text-xs text-muted-foreground leading-tight">{m.desc}</span>
+                  <div className="h-10 w-10 rounded-xl cta-gradient flex items-center justify-center">
+                    <Icon className="h-4 w-4 text-white" />
+                  </div>
+                  <span className="text-xs md:text-sm font-bold text-card-foreground">{m.title}</span>
+                  <span className="text-[11px] md:text-xs text-muted-foreground leading-relaxed">{m.desc}</span>
                 </button>
               );
             })}
@@ -592,7 +597,7 @@ export function ConsultationWizard({ initialMode, initialReport, onReset }: Prop
             <p className="text-sm text-foreground">{files.length} fichier(s) joint(s)</p>
           </ReviewSection>
         )}
-        <Button className="w-full mt-4 gap-2" size="lg" onClick={handleSubmit}>
+        <Button className="w-full mt-4 gap-2 cta-gradient rounded-xl h-12 text-sm font-semibold" size="lg" onClick={handleSubmit}>
           <Sparkles className="h-4 w-4" /> Générer le rapport
         </Button>
       </StepCard>
@@ -602,15 +607,15 @@ export function ConsultationWizard({ initialMode, initialReport, onReset }: Prop
   };
 
   return (
-    <div className="min-h-0 bg-background pb-8">
-      <div className="max-w-xl mx-auto px-4 py-6">
+    <div className="min-h-0 page-gradient pb-8">
+      <div className="max-w-xl mx-auto px-4 py-6 md:py-8">
         {/* Header with back */}
         <div className="flex items-center gap-3 mb-6">
-          <Button variant="outline" size="icon" onClick={step === 0 ? handleReset : prev} className="shrink-0">
+          <Button variant="outline" size="icon" onClick={step === 0 ? handleReset : prev} className="shrink-0 rounded-xl">
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-lg font-bold text-foreground">{modeInfo?.title}</h1>
+            <h1 className="text-lg font-extrabold text-foreground">{modeInfo?.title}</h1>
             <p className="text-xs text-muted-foreground">Étape {step + 1} sur {steps.length}</p>
           </div>
         </div>
@@ -626,7 +631,7 @@ export function ConsultationWizard({ initialMode, initialReport, onReset }: Prop
         {/* Navigation */}
         {currentStep?.id !== "review" && (
           <div className="flex justify-end mt-6">
-            <Button onClick={next} disabled={!canProceed()} className="gap-2">
+            <Button onClick={next} disabled={!canProceed()} className="cta-gradient rounded-xl gap-2 px-6">
               Continuer <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
@@ -639,10 +644,10 @@ export function ConsultationWizard({ initialMode, initialReport, onReset }: Prop
 // ─── Helper components ───
 function StepCard({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) {
   return (
-    <div className="bg-card rounded-2xl p-6 border border-border shadow-sm space-y-4">
+    <div className="card-elevated p-5 md:p-6 space-y-4">
       <div>
-        <h2 className="text-lg font-bold text-foreground">{title}</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">{desc}</p>
+        <h2 className="text-base md:text-lg font-extrabold text-card-foreground">{title}</h2>
+        <p className="text-xs md:text-sm text-muted-foreground mt-0.5">{desc}</p>
       </div>
       {children}
     </div>
