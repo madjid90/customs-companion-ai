@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Search, Loader2, Check, ChevronDown, BookOpen, Scale, FileText, Database } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Search, Loader2, Check, ChevronDown, ChevronRight, BookOpen, Scale, FileText, Database, ArrowLeft, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -9,12 +9,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { getAuthHeaders } from "@/lib/authHeaders";
 import { useToast } from "@/hooks/use-toast";
 
+// ── Types ──
 interface Source {
   type: "rgi" | "note" | "circulaire" | "db";
   ref: string;
   text: string;
 }
-
 interface Alternative {
   hs_code: string;
   description: string;
@@ -23,7 +23,6 @@ interface Alternative {
   reasoning: string;
   sources: Source[];
 }
-
 interface ClassificationResult {
   query: string;
   confidence: "high" | "medium" | "low";
@@ -39,10 +38,135 @@ const SOURCE_BADGE: Record<string, { className: string; label: string; icon: any
 
 const CLASSIFY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/classify`;
 
+// ── Smart Questions ──
+interface QuestionOption {
+  label: string;
+  emoji?: string;
+  subQuestions?: SmartQuestion[];
+}
+interface SmartQuestion {
+  id: string;
+  question: string;
+  type: "choice" | "text";
+  options?: QuestionOption[];
+  placeholder?: string;
+  required?: boolean;
+}
+
+const QUESTIONS: SmartQuestion[] = [
+  {
+    id: "category",
+    question: "Quelle est la catégorie du produit ?",
+    type: "choice",
+    required: true,
+    options: [
+      {
+        label: "Électronique & Tech", emoji: "💻",
+        subQuestions: [
+          { id: "tech_type", question: "Quel type d'appareil ?", type: "choice", options: [
+            { label: "Téléphone / Tablette", emoji: "📱" },
+            { label: "Ordinateur / Serveur", emoji: "🖥️" },
+            { label: "TV / Écran / Moniteur", emoji: "📺" },
+            { label: "Composants / Pièces", emoji: "🔧" },
+            { label: "Autre électronique", emoji: "⚡" },
+          ]},
+        ],
+      },
+      {
+        label: "Machines & Équipements", emoji: "⚙️",
+        subQuestions: [
+          { id: "machine_type", question: "Quel type de machine ?", type: "choice", options: [
+            { label: "Machine industrielle", emoji: "🏭" },
+            { label: "Machine agricole", emoji: "🚜" },
+            { label: "Outillage", emoji: "🔨" },
+            { label: "Véhicule / Transport", emoji: "🚗" },
+          ]},
+        ],
+      },
+      {
+        label: "Textile & Habillement", emoji: "👕",
+        subQuestions: [
+          { id: "textile_type", question: "Quel type de textile ?", type: "choice", options: [
+            { label: "Vêtements", emoji: "👔" },
+            { label: "Tissus / Matières premières", emoji: "🧶" },
+            { label: "Accessoires (sacs, chaussures)", emoji: "👜" },
+            { label: "Linge de maison", emoji: "🛏️" },
+          ]},
+        ],
+      },
+      {
+        label: "Alimentaire", emoji: "🍎",
+        subQuestions: [
+          { id: "food_type", question: "Quel type de produit alimentaire ?", type: "choice", options: [
+            { label: "Fruits & Légumes", emoji: "🥦" },
+            { label: "Viande & Poisson", emoji: "🥩" },
+            { label: "Céréales & Farines", emoji: "🌾" },
+            { label: "Boissons", emoji: "🥤" },
+            { label: "Produits transformés", emoji: "🥫" },
+          ]},
+        ],
+      },
+      {
+        label: "Chimie & Pharma", emoji: "🧪",
+        subQuestions: [
+          { id: "chem_type", question: "Quel type de produit ?", type: "choice", options: [
+            { label: "Médicament", emoji: "💊" },
+            { label: "Cosmétique / Hygiène", emoji: "🧴" },
+            { label: "Produit chimique brut", emoji: "⚗️" },
+            { label: "Engrais / Pesticide", emoji: "🌿" },
+          ]},
+        ],
+      },
+      {
+        label: "Matériaux de construction", emoji: "🧱",
+        subQuestions: [
+          { id: "build_type", question: "Quel type de matériau ?", type: "choice", options: [
+            { label: "Métaux (acier, aluminium…)", emoji: "🔩" },
+            { label: "Bois", emoji: "🪵" },
+            { label: "Plastiques", emoji: "♻️" },
+            { label: "Céramique / Verre", emoji: "🪟" },
+          ]},
+        ],
+      },
+      { label: "Autre catégorie", emoji: "📦" },
+    ],
+  },
+  {
+    id: "description",
+    question: "Décrivez précisément le produit",
+    type: "text",
+    placeholder: "Marque, modèle, matière, dimensions, usage…",
+    required: true,
+  },
+  {
+    id: "usage",
+    question: "Quelle est l'utilisation prévue ?",
+    type: "choice",
+    options: [
+      { label: "Usage industriel", emoji: "🏭" },
+      { label: "Usage commercial (revente)", emoji: "🏪" },
+      { label: "Usage personnel", emoji: "🏠" },
+      { label: "Usage agricole", emoji: "🌱" },
+    ],
+  },
+  {
+    id: "origin",
+    question: "Quel est le pays d'origine ?",
+    type: "text",
+    placeholder: "Ex: Chine, Turquie, France…",
+  },
+  {
+    id: "hs_hint",
+    question: "Avez-vous une idée du code SH ?",
+    type: "text",
+    placeholder: "Ex: 8528 (optionnel, laissez vide sinon)",
+  },
+];
+
+// ── Component ──
 export function ClassificationView() {
-  const [description, setDescription] = useState("");
-  const [hsHint, setHsHint] = useState("");
-  const [originCountry, setOriginCountry] = useState("");
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ClassificationResult | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -50,8 +174,80 @@ export function ClassificationView() {
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
 
+  // Build the active question list (with dynamic sub-questions)
+  const activeQuestions = useMemo(() => {
+    const list: SmartQuestion[] = [];
+    for (const q of QUESTIONS) {
+      list.push(q);
+      // Inject sub-questions after category if an option with subQuestions was selected
+      if (q.id === "category" && answers.category) {
+        const selectedOpt = q.options?.find(o => o.label === answers.category);
+        if (selectedOpt?.subQuestions) {
+          list.splice(list.length, 0, ...selectedOpt.subQuestions);
+        }
+      }
+    }
+    return list;
+  }, [answers.category]);
+
+  const currentQ = activeQuestions[step];
+  const totalSteps = activeQuestions.length;
+  const progress = ((step) / totalSteps) * 100;
+
+  // Build full description from answers
+  const buildDescription = () => {
+    const parts: string[] = [];
+    if (answers.category) parts.push(`Catégorie: ${answers.category}`);
+    // add any sub-question answers
+    for (const q of activeQuestions) {
+      if (q.id !== "category" && q.id !== "description" && q.id !== "usage" && q.id !== "origin" && q.id !== "hs_hint" && answers[q.id]) {
+        parts.push(`Type: ${answers[q.id]}`);
+      }
+    }
+    if (answers.description) parts.push(answers.description);
+    if (answers.usage) parts.push(`Usage: ${answers.usage}`);
+    return parts.join(". ");
+  };
+
+  const canProceed = () => {
+    if (!currentQ) return false;
+    if (currentQ.required && !answers[currentQ.id]?.trim()) return false;
+    return true;
+  };
+
+  const handleNext = () => {
+    if (step < totalSteps - 1) {
+      setStep(step + 1);
+    } else {
+      classify();
+    }
+  };
+
+  const handleBack = () => {
+    if (step > 0) setStep(step - 1);
+  };
+
+  const handleSkip = () => {
+    if (!currentQ?.required && step < totalSteps - 1) {
+      setStep(step + 1);
+    } else if (!currentQ?.required) {
+      classify();
+    }
+  };
+
+  const selectOption = (label: string) => {
+    setAnswers(prev => ({ ...prev, [currentQ.id]: label }));
+    // Auto-advance on choice selection
+    setTimeout(() => {
+      if (step < totalSteps - 1) {
+        setStep(s => s + 1);
+      }
+    }, 200);
+  };
+
   const classify = async () => {
-    if (!description.trim() || loading) return;
+    const desc = buildDescription();
+    if (!desc.trim() || loading) return;
     setLoading(true);
     setResult(null);
     setExpanded(null);
@@ -63,9 +259,9 @@ export function ClassificationView() {
         method: "POST",
         headers: { ...headers, "Content-Type": "application/json" },
         body: JSON.stringify({
-          description: description.trim(),
-          hs_code_hint: hsHint.trim() || undefined,
-          origin_country: originCountry.trim() || undefined,
+          description: desc.trim(),
+          hs_code_hint: answers.hs_hint?.trim() || undefined,
+          origin_country: answers.origin?.trim() || undefined,
         }),
       });
 
@@ -89,21 +285,19 @@ export function ClassificationView() {
   const handleValidate = async () => {
     if (!selected || !result || saving) return;
     setSaving(true);
-
     try {
+      const desc = buildDescription();
       const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from("classification_history").insert({
-        question: description,
-        product_description: description,
+        question: desc,
+        product_description: desc,
         suggested_code: result.alternatives[0]?.hs_code,
         confirmed_code: selected,
         was_correct: selected === result.alternatives[0]?.hs_code,
         session_id: sessionStorage.getItem("chat_session_id"),
         user_id: user?.id,
       });
-
       if (error) throw error;
-
       toast({ title: "Classification sauvegardée", description: `Code ${selected} confirmé.` });
     } catch (err: any) {
       toast({ title: "Erreur", description: err.message, variant: "destructive" });
@@ -113,63 +307,155 @@ export function ClassificationView() {
   };
 
   const reset = () => {
-    setDescription("");
-    setHsHint("");
-    setOriginCountry("");
+    setStep(0);
+    setAnswers({});
     setResult(null);
     setExpanded(null);
     setSelected(null);
   };
 
-  // ── Form view ──
+  // ════════════════════════════════════════════════
+  // FORM: Smart Question Wizard
+  // ════════════════════════════════════════════════
   if (!result && !loading) {
     return (
       <div className="flex-1 flex items-center justify-center px-4 pb-20 md:pb-0">
         <div className="max-w-md w-full animate-in fade-in duration-300">
-          <div className="text-center mb-6">
-            <div className="text-4xl mb-2">🔍</div>
-            <h2 className="text-lg font-bold text-foreground">Classification tarifaire</h2>
-            <p className="text-sm text-muted-foreground">Décrivez le produit pour obtenir les codes SH possibles</p>
+          {/* Header */}
+          <div className="text-center mb-5">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-primary/10 mb-3">
+              <Sparkles className="h-6 w-6 text-primary" />
+            </div>
+            <h2 className="text-lg font-bold text-foreground">Classification intelligente</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Répondez aux questions pour identifier le code SH
+            </p>
           </div>
 
-          <div className="card-elevated rounded-2xl p-5 space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground block">Description du produit</label>
-              <Textarea
-                rows={3}
-                placeholder="Ex: Écran LCD 55 pouces 4K avec tuner TV intégré..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="resize-none"
+          {/* Progress */}
+          <div className="mb-5">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                Étape {step + 1} / {totalSteps}
+              </span>
+              {!currentQ?.required && (
+                <button onClick={handleSkip} className="text-[10px] font-semibold text-primary hover:underline">
+                  Passer →
+                </button>
+              )}
+            </div>
+            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${Math.max(progress, 5)}%` }}
               />
             </div>
+          </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-muted-foreground block">Code SH (optionnel)</label>
-                <Input placeholder="8528" value={hsHint} onChange={(e) => setHsHint(e.target.value)} />
+          {/* Question Card */}
+          <div className="card-elevated rounded-2xl p-5">
+            {/* Question label */}
+            <p className="text-sm font-semibold text-foreground mb-4">{currentQ?.question}</p>
+
+            {/* Choice type */}
+            {currentQ?.type === "choice" && currentQ.options && (
+              <div className="grid grid-cols-2 gap-2">
+                {currentQ.options.map((opt) => {
+                  const isSelected = answers[currentQ.id] === opt.label;
+                  return (
+                    <button
+                      key={opt.label}
+                      onClick={() => selectOption(opt.label)}
+                      className={cn(
+                        "flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all duration-150",
+                        isSelected
+                          ? "border-primary bg-primary/5 ring-2 ring-primary/10"
+                          : "border-border bg-card hover:border-primary/30 hover:bg-primary/5"
+                      )}
+                    >
+                      {opt.emoji && <span className="text-lg shrink-0">{opt.emoji}</span>}
+                      <span className="text-xs font-medium text-foreground leading-tight">{opt.label}</span>
+                    </button>
+                  );
+                })}
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-muted-foreground block">Pays d'origine</label>
-                <Input placeholder="Chine, France..." value={originCountry} onChange={(e) => setOriginCountry(e.target.value)} />
+            )}
+
+            {/* Text type */}
+            {currentQ?.type === "text" && (
+              <div className="space-y-3">
+                {currentQ.id === "description" ? (
+                  <Textarea
+                    rows={3}
+                    placeholder={currentQ.placeholder}
+                    value={answers[currentQ.id] || ""}
+                    onChange={(e) => setAnswers(prev => ({ ...prev, [currentQ.id]: e.target.value }))}
+                    className="resize-none"
+                  />
+                ) : (
+                  <Input
+                    placeholder={currentQ.placeholder}
+                    value={answers[currentQ.id] || ""}
+                    onChange={(e) => setAnswers(prev => ({ ...prev, [currentQ.id]: e.target.value }))}
+                    onKeyDown={(e) => e.key === "Enter" && canProceed() && handleNext()}
+                  />
+                )}
               </div>
+            )}
+
+            {/* Navigation */}
+            <div className="flex items-center gap-2 mt-5">
+              {step > 0 && (
+                <Button variant="outline" onClick={handleBack} className="rounded-xl h-12 px-4">
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+              )}
+              {currentQ?.type === "text" && (
+                <Button
+                  onClick={handleNext}
+                  disabled={currentQ.required && !answers[currentQ.id]?.trim()}
+                  className={cn(
+                    "flex-1 rounded-2xl h-12 text-sm font-semibold",
+                    step === totalSteps - 1 ? "cta-gradient h-14" : ""
+                  )}
+                >
+                  {step === totalSteps - 1 ? (
+                    <>
+                      <Search className="h-4 w-4 mr-2" />
+                      Classifier
+                    </>
+                  ) : (
+                    <>
+                      Suivant
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
 
-            <Button
-              onClick={classify}
-              disabled={!description.trim()}
-              className="w-full cta-gradient rounded-2xl h-14 text-base font-semibold"
-            >
-              <Search className="h-4 w-4 mr-2" />
-              Classifier
-            </Button>
+            {/* Answers recap */}
+            {Object.keys(answers).length > 0 && (
+              <div className="mt-4 pt-3 border-t border-border/50">
+                <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Vos réponses</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(answers).filter(([, v]) => v.trim()).map(([key, val]) => (
+                    <Badge key={key} variant="outline" className="text-[10px] bg-muted/50 text-foreground border-border">
+                      {val.length > 25 ? val.substring(0, 25) + "…" : val}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
     );
   }
 
-  // ── Loading view ──
+  // ════════════════════════════════════════════════
+  // LOADING
+  // ════════════════════════════════════════════════
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center px-4 pb-20 md:pb-0">
@@ -182,7 +468,9 @@ export function ClassificationView() {
     );
   }
 
-  // ── Results view ──
+  // ════════════════════════════════════════════════
+  // RESULTS (unchanged)
+  // ════════════════════════════════════════════════
   return (
     <div className="flex-1 overflow-auto px-4 py-4 pb-24 md:pb-6">
       <div className="max-w-lg mx-auto animate-in fade-in duration-300">
@@ -220,23 +508,17 @@ export function ClassificationView() {
                   isSel ? "border-primary ring-2 ring-primary/10" : "border-border"
                 )}
               >
-                {/* Row */}
                 <button
                   onClick={() => setExpanded(isExp ? null : alt.hs_code)}
                   className="w-full flex items-center gap-3 p-3.5 text-left"
                 >
-                  {/* Score */}
                   <div className="w-11 text-center shrink-0">
                     <div className={cn("text-xl font-black leading-none", scoreColor)}>{alt.score}</div>
                     <div className="text-[9px] text-muted-foreground">%</div>
                   </div>
-
-                  {/* Bar */}
                   <div className="w-1 h-9 rounded-full bg-muted shrink-0 flex flex-col justify-end overflow-hidden">
                     <div className={cn("w-full rounded-full", barColor)} style={{ height: `${alt.score}%` }} />
                   </div>
-
-                  {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-mono text-sm font-bold text-foreground">{alt.hs_code}</span>
@@ -245,14 +527,10 @@ export function ClassificationView() {
                           Recommandé
                         </Badge>
                       )}
-                      <Badge variant="outline" className="text-[9px] px-1.5 py-0">
-                        DDI:{alt.duty_rate}%
-                      </Badge>
+                      <Badge variant="outline" className="text-[9px] px-1.5 py-0">DDI:{alt.duty_rate}%</Badge>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5 truncate">{alt.description}</p>
                   </div>
-
-                  {/* Actions */}
                   <div className="flex items-center gap-2 shrink-0">
                     {!isSel ? (
                       <Button
@@ -264,18 +542,14 @@ export function ClassificationView() {
                         Retenir
                       </Button>
                     ) : (
-                      <Badge className="text-[10px] px-2.5 py-1 bg-primary/10 text-primary border-primary/20">
-                        ✓ Retenu
-                      </Badge>
+                      <Badge className="text-[10px] px-2.5 py-1 bg-primary/10 text-primary border-primary/20">✓ Retenu</Badge>
                     )}
                     <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", isExp && "rotate-180")} />
                   </div>
                 </button>
 
-                {/* Expanded details */}
                 {isExp && (
                   <div className="border-t border-border px-3.5 pb-3.5 animate-in fade-in slide-in-from-top-1 duration-200">
-                    {/* Reasoning */}
                     <div className="mt-3">
                       <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Argumentaire</div>
                       <p className={cn(
@@ -285,8 +559,6 @@ export function ClassificationView() {
                         {alt.reasoning}
                       </p>
                     </div>
-
-                    {/* Sources */}
                     {alt.sources?.length > 0 && (
                       <div className="mt-3">
                         <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
@@ -319,18 +591,13 @@ export function ClassificationView() {
           })}
         </div>
 
-        {/* Bottom bar: selected code + validate */}
         {selected && (
           <div className="mt-4 p-3 bg-card rounded-xl border border-border flex items-center justify-between">
             <div>
               <div className="text-[10px] text-muted-foreground">Code retenu</div>
               <div className="font-mono text-base font-bold text-foreground">{selected}</div>
             </div>
-            <Button
-              onClick={handleValidate}
-              disabled={saving}
-              className="cta-gradient rounded-lg text-sm font-semibold px-4"
-            >
+            <Button onClick={handleValidate} disabled={saving} className="cta-gradient rounded-lg text-sm font-semibold px-4">
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
               Valider ✓
             </Button>
