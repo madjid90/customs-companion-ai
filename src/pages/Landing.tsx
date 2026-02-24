@@ -134,7 +134,7 @@ export default function Landing() {
       )}
 
       {/* ─── Hero Section ────────────────────────────── */}
-      <section className="relative pt-20 pb-8 md:pt-28 md:pb-16 px-3 sm:px-4 overflow-hidden min-h-screen flex flex-col justify-center">
+      <section className="relative pt-20 pb-8 md:pt-28 md:pb-16 px-4 sm:px-6 overflow-hidden min-h-screen flex flex-col justify-center">
         {/* Background video */}
         <video
           autoPlay
@@ -244,7 +244,7 @@ export default function Landing() {
                         <div className="text-[11px] font-semibold text-foreground">Certificat de Conformité (CoC)</div>
                         <div className="text-[10px] text-muted-foreground">Requis · Contrôle MCINT</div>
                       </div>
-                      <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0">
+                      <span className="inline-flex items-center gap-1 bg-warning/10 text-warning text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0">
                         Obligatoire
                       </span>
                     </div>
@@ -270,7 +270,7 @@ export default function Landing() {
                         <div className="text-[11px] font-semibold text-foreground">Contrôle ONSSA</div>
                         <div className="text-[10px] text-muted-foreground">Produits alimentaires · Sanitaire</div>
                       </div>
-                      <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0">
+                      <span className="inline-flex items-center gap-1 bg-warning/10 text-warning text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0">
                         Obligatoire
                       </span>
                     </div>
@@ -295,7 +295,7 @@ export default function Landing() {
         </div>
 
           {/* ─── Stats bar (inside hero) ───────────────── */}
-          <div className="container mx-auto max-w-6xl relative z-10 mt-8 md:mt-12 px-0.5 sm:px-0">
+          <div className="container mx-auto max-w-6xl relative z-10 mt-8 md:mt-12">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
               {stats.map((s, i) => (
                 <div key={i} className="card-elevated p-4 text-center">
@@ -308,7 +308,7 @@ export default function Landing() {
       </section>
 
       {/* ─── How it works ────────────────────────────── */}
-      <section id="how" className="relative py-12 md:py-16 px-0.5 sm:px-4 bg-muted/30">
+      <section id="how" className="relative py-10 md:py-16 px-4 sm:px-6 bg-muted/30">
         <div className="container mx-auto max-w-6xl relative z-10">
           <div className="text-center mb-8 md:mb-10">
             <span className="text-xs font-semibold text-secondary uppercase tracking-wider">Comment ça marche</span>
@@ -323,15 +323,15 @@ export default function Landing() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             {steps.map((step, i) => (
               <div key={i} className="relative">
-                <span className="absolute -top-2.5 left-3 z-10 text-[10px] font-bold text-white cta-gradient rounded-full px-2.5 py-0.5">
+                <span className="absolute -top-2.5 left-3 z-10 text-[10px] font-bold text-primary-foreground bg-primary rounded-full px-2.5 py-0.5">
                   {i + 1}
                 </span>
                 <div className="step-card pt-6 h-full !p-4 !pt-6">
-                  <div className="h-10 w-10 rounded-xl cta-gradient flex items-center justify-center mx-auto mb-3">
-                    <step.icon className="h-4 w-4 text-white" />
+                  <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                    <step.icon className="h-4 w-4 text-primary" />
                   </div>
                   <h3 className="font-bold text-xs md:text-sm text-card-foreground mb-1">{step.title}</h3>
-                  <p className="text-[11px] md:text-xs text-muted-foreground leading-relaxed">{step.desc}</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{step.desc}</p>
                 </div>
               </div>
             ))}
@@ -340,7 +340,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Features Grid ───────────────────────────── */}
-      <section id="features" className="relative py-12 md:py-16 px-0.5 sm:px-4">
+      <section id="features" className="relative py-10 md:py-16 px-4 sm:px-6">
         <div className="container mx-auto max-w-6xl relative z-10">
           <div className="text-center mb-8 md:mb-10">
             <span className="text-xs font-semibold text-secondary uppercase tracking-wider">Fonctionnalités</span>
@@ -355,11 +355,11 @@ export default function Landing() {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
             {features.map((feature, i) => (
               <div key={i} className="card-elevated p-4 md:p-5">
-                <div className="h-10 w-10 rounded-xl cta-gradient flex items-center justify-center mb-3">
-                  <feature.icon className="h-4 w-4 text-white" />
+                <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
+                  <feature.icon className="h-4 w-4 text-primary" />
                 </div>
                 <h3 className="font-bold text-xs md:text-sm text-card-foreground mb-1">{feature.title}</h3>
-                <p className="text-[11px] md:text-xs text-muted-foreground leading-relaxed">{feature.desc}</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">{feature.desc}</p>
               </div>
             ))}
           </div>
@@ -367,7 +367,7 @@ export default function Landing() {
       </section>
 
       {/* ─── FAQ ─────────────────────────────────────── */}
-      <section id="faq" className="relative py-12 md:py-16 px-0.5 sm:px-4" aria-labelledby="faq-heading">
+      <section id="faq" className="relative py-10 md:py-16 px-4 sm:px-6" aria-labelledby="faq-heading">
         <div className="container mx-auto max-w-6xl relative z-10">
           <div className="text-center mb-8 md:mb-10">
             <div className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-card border border-border/50 rounded-full px-3 py-1.5 mb-3">
@@ -398,7 +398,7 @@ export default function Landing() {
       </section>
 
       {/* ─── CTA Section ─────────────────────────────── */}
-      <section className="relative py-12 md:py-16 px-0.5 sm:px-4 bg-muted/30">
+      <section className="relative py-10 md:py-16 px-4 sm:px-6 bg-muted/30">
         <div className="container mx-auto max-w-6xl text-center">
           <div className="card-elevated p-8 md:p-10 relative overflow-hidden">
             <div className="absolute inset-0 opacity-[0.03] hero-gradient" />
@@ -415,7 +415,7 @@ export default function Landing() {
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
-              <p className="text-[11px] text-muted-foreground mt-3 flex items-center justify-center gap-3">
+              <p className="text-xs text-muted-foreground mt-3 flex items-center justify-center gap-3">
                 <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Sur invitation</span>
                 <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Sans engagement</span>
                 <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> 100% sécurisé</span>
@@ -426,7 +426,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Footer ──────────────────────────────────── */}
-      <footer className="border-t border-border/40 py-6 px-0.5 sm:px-4">
+      <footer className="border-t border-border/40 py-6 px-4 sm:px-6">
         <div className="container mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <Logo size="sm" />
           <p className="text-xs text-muted-foreground">

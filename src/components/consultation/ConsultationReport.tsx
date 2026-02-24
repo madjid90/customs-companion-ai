@@ -28,7 +28,6 @@ export function ConsultationReport({ data, type, onNewConsultation, onAskQuestio
   const { reference, date, confidence, report } = data;
   if (!report) return <p className="text-muted-foreground">Aucun rapport généré.</p>;
 
-  // Build sections based on type
   const sections = type === "import" ? buildImportSections(report, data)
     : type === "mre" ? buildMRESections(report, data)
     : type === "conformity" ? buildConformitySections(report, data)
@@ -58,12 +57,12 @@ export function ConsultationReport({ data, type, onNewConsultation, onAskQuestio
       ))}
 
       {/* Disclaimer */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+      <div className="bg-warning/10 border border-warning/20 rounded-xl p-4">
         <div className="flex gap-3">
-          <Shield className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-          <div className="text-sm text-amber-800">
+          <Shield className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+          <div className="text-sm text-foreground">
             <p className="font-semibold mb-1">Avertissement</p>
-            <p>
+            <p className="text-muted-foreground">
               Ce rapport est fourni à titre informatif et ne constitue pas un renseignement tarifaire
               contraignant (RTC). Pour une certification officielle, adressez-vous à l'ADII
               (www.douane.gov.ma). Données à jour au {date}.
@@ -103,7 +102,7 @@ function CollapsibleSection({ section }: { section: any }) {
 
   return (
     <div className={cn("bg-card rounded-xl border transition-all duration-200",
-      section.status === "warning" ? "border-amber-200" : section.status === "success" ? "border-emerald-200" : "border-border"
+      section.status === "warning" ? "border-warning/30" : section.status === "success" ? "border-success/30" : "border-border"
     )}>
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
@@ -111,8 +110,8 @@ function CollapsibleSection({ section }: { section: any }) {
       >
         <div className="flex items-center gap-3">
           <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center",
-            section.status === "warning" ? "bg-amber-100 text-amber-600" :
-            section.status === "success" ? "bg-emerald-100 text-emerald-600" :
+            section.status === "warning" ? "bg-warning/15 text-warning" :
+            section.status === "success" ? "bg-success/15 text-success" :
             "bg-primary/10 text-primary"
           )}>
             <Icon className="h-4 w-4" />
@@ -200,9 +199,9 @@ export function ConformityCard({ authority, status, details }: {
   details?: { reason: string; legal_basis?: string; delay?: string; cost?: string; when?: string; steps?: string[] };
 }) {
   const statusConfig = {
-    required: { icon: AlertTriangle, label: "REQUIS", color: "border-amber-300 bg-amber-50", iconColor: "text-amber-600", labelColor: "text-amber-700 bg-amber-100" },
-    not_required: { icon: CheckCircle2, label: "NON REQUIS", color: "border-emerald-200 bg-emerald-50/50", iconColor: "text-emerald-600", labelColor: "text-emerald-700 bg-emerald-100" },
-    recommended: { icon: Info, label: "RECOMMANDÉ", color: "border-blue-200 bg-blue-50/50", iconColor: "text-blue-600", labelColor: "text-blue-700 bg-blue-100" },
+    required: { icon: AlertTriangle, label: "REQUIS", color: "border-warning/30 bg-warning/5", iconColor: "text-warning", labelColor: "text-warning bg-warning/15" },
+    not_required: { icon: CheckCircle2, label: "NON REQUIS", color: "border-success/20 bg-success/5", iconColor: "text-success", labelColor: "text-success bg-success/15" },
+    recommended: { icon: Info, label: "RECOMMANDÉ", color: "border-primary/20 bg-primary/5", iconColor: "text-primary", labelColor: "text-primary bg-primary/15" },
   };
   const cfg = statusConfig[status];
   const Icon = cfg.icon;
@@ -276,17 +275,17 @@ function buildMRESections(report: any, data: any) {
   if (report.eligibility) {
     sections.push({
       id: "eligibility", title: "Éligibilité", icon: ClipboardCheck, status: report.eligibility.eligible ? "success" : "error",
-      content: <div className="text-sm space-y-2"><p className={`font-semibold ${report.eligibility.eligible ? "text-emerald-700" : "text-red-700"}`}>{report.eligibility.eligible ? "✅ Éligible aux avantages MRE" : "❌ Non éligible"}</p>{report.eligibility.conditions_met?.map((c: string, i: number) => <p key={i} className="text-emerald-600">✓ {c}</p>)}{report.eligibility.conditions_missing?.map((c: string, i: number) => <p key={i} className="text-red-600">✗ {c}</p>)}{report.eligibility.legal_basis && <p className="text-xs text-muted-foreground mt-2">Base légale : {report.eligibility.legal_basis}</p>}</div>
+      content: <div className="text-sm space-y-2"><p className={`font-semibold ${report.eligibility.eligible ? "text-success" : "text-destructive"}`}>{report.eligibility.eligible ? "✅ Éligible aux avantages MRE" : "❌ Non éligible"}</p>{report.eligibility.conditions_met?.map((c: string, i: number) => <p key={i} className="text-success">✓ {c}</p>)}{report.eligibility.conditions_missing?.map((c: string, i: number) => <p key={i} className="text-destructive">✗ {c}</p>)}{report.eligibility.legal_basis && <p className="text-xs text-muted-foreground mt-2">Base légale : {report.eligibility.legal_basis}</p>}</div>
     });
   }
   if (report.vehicle_taxes) {
     sections.push({
       id: "vehicle_taxes", title: "Calcul des droits (véhicule)", icon: Calculator, status: "info",
-      content: <div className="space-y-3">{report.vehicle_taxes.with_mre?.lines && <TaxBreakdownTable lines={report.vehicle_taxes.with_mre.lines} total={report.vehicle_taxes.with_mre.total} />}{report.vehicle_taxes.savings > 0 && <p className="text-sm text-emerald-700 p-2 bg-emerald-50 rounded-lg">💰 Économie MRE : {fmt(report.vehicle_taxes.savings)} MAD</p>}</div>
+      content: <div className="space-y-3">{report.vehicle_taxes.with_mre?.lines && <TaxBreakdownTable lines={report.vehicle_taxes.with_mre.lines} total={report.vehicle_taxes.with_mre.total} />}{report.vehicle_taxes.savings > 0 && <p className="text-sm text-success p-2 bg-success/10 rounded-lg">💰 Économie MRE : {fmt(report.vehicle_taxes.savings)} MAD</p>}</div>
     });
   }
   if (report.documents?.length > 0) sections.push({ id: "documents", title: "Documents requis", icon: FileCheck, content: <DocumentChecklist documents={report.documents} /> });
-  if (report.procedure?.length > 0) sections.push({ id: "procedure", title: "Procédure", icon: Route, content: <div className="space-y-2">{report.procedure.map((s: string, i: number) => <div key={i} className="flex items-start gap-3 text-sm"><span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-xs font-bold shrink-0">{i + 1}</span><span>{s}</span></div>)}</div> });
+  if (report.procedure?.length > 0) sections.push({ id: "procedure", title: "Procédure", icon: Route, content: <div className="space-y-2">{report.procedure.map((s: string, i: number) => <div key={i} className="flex items-start gap-3 text-sm"><span className="w-6 h-6 rounded-full bg-secondary/15 text-secondary flex items-center justify-center text-xs font-bold shrink-0">{i + 1}</span><span>{s}</span></div>)}</div> });
   if (report.warnings?.length > 0) sections.push({ id: "warnings", title: "Points d'attention", icon: AlertTriangle, status: "warning", content: <div className="space-y-2 text-sm">{report.warnings.map((w: string, i: number) => <p key={i}>⚠️ {w}</p>)}</div> });
   return sections;
 }
@@ -305,14 +304,14 @@ function buildConformitySections(report: any, data: any) {
 function buildInvestorSections(report: any, data: any) {
   const sections: any[] = [];
   const comp = report.regime_comparison;
-  if (report.recommended_regime) sections.push({ id: "regime", title: "Régime recommandé", icon: Factory, status: "success", content: <div className="text-sm space-y-2"><p className="font-semibold text-violet-700">{report.recommended_regime.name}</p><p>{report.recommended_regime.description}</p>{report.recommended_regime.legal_basis && <p className="text-xs text-muted-foreground">Base légale : {report.recommended_regime.legal_basis}</p>}</div> });
+  if (report.recommended_regime) sections.push({ id: "regime", title: "Régime recommandé", icon: Factory, status: "success", content: <div className="text-sm space-y-2"><p className="font-semibold text-primary">{report.recommended_regime.name}</p><p>{report.recommended_regime.description}</p>{report.recommended_regime.legal_basis && <p className="text-xs text-muted-foreground">Base légale : {report.recommended_regime.legal_basis}</p>}</div> });
   if (comp) {
     sections.push({
       id: "comparison", title: "Comparatif des régimes", icon: Calculator, status: "info",
-      content: <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="text-left py-2"></th><th className="text-right px-3 text-muted-foreground font-semibold">Droit commun</th><th className="text-right px-3 text-violet-600 font-semibold">Franchise</th><th className="text-right px-3 text-emerald-600 font-semibold">Zone franche</th></tr></thead><tbody><tr className="bg-primary/5 font-bold"><td className="py-2.5">TOTAL</td><td className="text-right px-3">{fmt(comp.droit_commun?.total || 0)} MAD</td><td className="text-right px-3 text-violet-700">{fmt(comp.franchise?.total || 0)} MAD</td><td className="text-right px-3 text-emerald-700">{fmt(comp.zone_franche?.total || 0)} MAD</td></tr><tr><td className="py-2 text-emerald-700 font-medium">Économie</td><td className="text-right px-3">—</td><td className="text-right px-3 font-semibold text-violet-700">{fmt((comp.droit_commun?.total || 0) - (comp.franchise?.total || 0))} MAD</td><td className="text-right px-3 font-semibold text-emerald-700">{fmt((comp.droit_commun?.total || 0) - (comp.zone_franche?.total || 0))} MAD</td></tr></tbody></table></div>
+      content: <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="text-left py-2"></th><th className="text-right px-3 text-muted-foreground font-semibold">Droit commun</th><th className="text-right px-3 text-primary font-semibold">Franchise</th><th className="text-right px-3 text-secondary font-semibold">Zone franche</th></tr></thead><tbody><tr className="bg-primary/5 font-bold"><td className="py-2.5">TOTAL</td><td className="text-right px-3">{fmt(comp.droit_commun?.total || 0)} MAD</td><td className="text-right px-3 text-primary">{fmt(comp.franchise?.total || 0)} MAD</td><td className="text-right px-3 text-secondary">{fmt(comp.zone_franche?.total || 0)} MAD</td></tr><tr><td className="py-2 text-success font-medium">Économie</td><td className="text-right px-3">—</td><td className="text-right px-3 font-semibold text-primary">{fmt((comp.droit_commun?.total || 0) - (comp.franchise?.total || 0))} MAD</td><td className="text-right px-3 font-semibold text-secondary">{fmt((comp.droit_commun?.total || 0) - (comp.zone_franche?.total || 0))} MAD</td></tr></tbody></table></div>
     });
   }
   if (report.documents?.length > 0) sections.push({ id: "documents", title: "Documents requis", icon: FileCheck, content: <DocumentChecklist documents={report.documents} /> });
-  if (report.procedure?.length > 0) sections.push({ id: "procedure", title: "Procédure", icon: Route, content: <div className="space-y-2">{report.procedure.map((s: string, i: number) => <div key={i} className="flex items-start gap-3 text-sm"><span className="w-6 h-6 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center text-xs font-bold shrink-0">{i + 1}</span><span>{s}</span></div>)}</div> });
+  if (report.procedure?.length > 0) sections.push({ id: "procedure", title: "Procédure", icon: Route, content: <div className="space-y-2">{report.procedure.map((s: string, i: number) => <div key={i} className="flex items-start gap-3 text-sm"><span className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0">{i + 1}</span><span>{s}</span></div>)}</div> });
   return sections;
 }

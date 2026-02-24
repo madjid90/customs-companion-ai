@@ -31,10 +31,10 @@ interface ClassificationResult {
 }
 
 const SOURCE_BADGE: Record<string, { className: string; label: string; icon: any }> = {
-  rgi: { className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300", label: "RGI", icon: Scale },
-  note: { className: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300", label: "Note", icon: BookOpen },
-  circulaire: { className: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300", label: "Circulaire", icon: FileText },
-  db: { className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", label: "Base données", icon: Database },
+  rgi: { className: "bg-primary/15 text-primary", label: "RGI", icon: Scale },
+  note: { className: "bg-warning/15 text-warning", label: "Note", icon: BookOpen },
+  circulaire: { className: "bg-secondary/15 text-secondary", label: "Circulaire", icon: FileText },
+  db: { className: "bg-success/15 text-success", label: "Base données", icon: Database },
 };
 
 const CLASSIFY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/classify`;
@@ -189,7 +189,7 @@ export function ClassificationView() {
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <div>
-            <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">
+            <span className="text-[10px] font-bold text-warning uppercase tracking-wider">
               ⚠ Cas {result!.confidence === "high" ? "clair" : "ambigu"} — {result!.alternatives.length} codes
             </span>
             <h3 className="text-base font-bold text-foreground mt-0.5">Résultat</h3>
@@ -209,8 +209,8 @@ export function ClassificationView() {
           {result!.alternatives.map((alt, i) => {
             const isExp = expanded === alt.hs_code;
             const isSel = selected === alt.hs_code;
-            const scoreColor = alt.score >= 60 ? "text-emerald-600" : alt.score >= 25 ? "text-amber-600" : "text-muted-foreground";
-            const barColor = alt.score >= 60 ? "bg-emerald-500" : alt.score >= 25 ? "bg-amber-500" : "bg-muted-foreground/30";
+            const scoreColor = alt.score >= 60 ? "text-success" : alt.score >= 25 ? "text-warning" : "text-muted-foreground";
+            const barColor = alt.score >= 60 ? "bg-success" : alt.score >= 25 ? "bg-warning" : "bg-muted-foreground/30";
 
             return (
               <div
@@ -241,7 +241,7 @@ export function ClassificationView() {
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-mono text-sm font-bold text-foreground">{alt.hs_code}</span>
                       {i === 0 && (
-                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800">
+                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-success/10 text-success border-success/20">
                           Recommandé
                         </Badge>
                       )}
@@ -280,7 +280,7 @@ export function ClassificationView() {
                       <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Argumentaire</div>
                       <p className={cn(
                         "text-xs leading-relaxed text-foreground/80 p-3 bg-muted/30 rounded-lg border-l-[3px]",
-                        alt.score >= 60 ? "border-l-emerald-500" : alt.score >= 25 ? "border-l-amber-500" : "border-l-muted-foreground/30"
+                        alt.score >= 60 ? "border-l-success" : alt.score >= 25 ? "border-l-warning" : "border-l-muted-foreground/30"
                       )}>
                         {alt.reasoning}
                       </p>

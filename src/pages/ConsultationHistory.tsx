@@ -24,16 +24,16 @@ interface ConsultationRow {
 }
 
 const TYPE_CONFIG: Record<string, { icon: React.ElementType; label: string; color: string }> = {
-  import: { icon: Package, label: "Import", color: "text-blue-600 bg-blue-50" },
-  mre: { icon: Home, label: "MRE", color: "text-emerald-600 bg-emerald-50" },
-  conformity: { icon: ClipboardCheck, label: "Conformité", color: "text-amber-600 bg-amber-50" },
-  investor: { icon: Factory, label: "Investissement", color: "text-violet-600 bg-violet-50" },
+  import: { icon: Package, label: "Import", color: "text-primary bg-primary/10" },
+  mre: { icon: Home, label: "MRE", color: "text-secondary bg-secondary/10" },
+  conformity: { icon: ClipboardCheck, label: "Conformité", color: "text-warning bg-warning/10" },
+  investor: { icon: Factory, label: "Investissement", color: "text-accent-foreground bg-accent" },
 };
 
 const CONFIDENCE_COLORS: Record<string, string> = {
-  high: "bg-emerald-100 text-emerald-700",
-  medium: "bg-amber-100 text-amber-700",
-  low: "bg-red-100 text-red-700",
+  high: "bg-success/15 text-success",
+  medium: "bg-warning/15 text-warning",
+  low: "bg-destructive/15 text-destructive",
 };
 
 export default function ConsultationHistory() {
