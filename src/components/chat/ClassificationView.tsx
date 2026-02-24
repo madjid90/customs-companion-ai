@@ -91,6 +91,7 @@ export function ClassificationView() {
     setSaving(true);
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from("classification_history").insert({
         question: description,
         product_description: description,
@@ -98,6 +99,7 @@ export function ClassificationView() {
         confirmed_code: selected,
         was_correct: selected === result.alternatives[0]?.hs_code,
         session_id: sessionStorage.getItem("chat_session_id"),
+        user_id: user?.id,
       });
 
       if (error) throw error;
