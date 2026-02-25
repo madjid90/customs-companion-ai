@@ -106,6 +106,11 @@ ${sections.join(", ")}
 - Si le contexte mentionne une circulaire modificative, utilise le taux de la circulaire.
 - Si "ATTENTION: Taux par défaut" est indiqué, signale-le clairement dans le rapport.
 
+## RÈGLES CODES SAISONNIERS — OBLIGATOIRE
+- Si des "CODES SAISONNIERS DÉTECTÉS" sont présents dans le contexte tarifaire, tu DOIS inclure dans "classification" un champ additionnel "seasonal_codes" qui est un tableau d'objets avec les champs: "code" (10 chiffres), "period" (ex: "du 1er novembre au 14 mai"), "duty_rate" (nombre).
+- Pour ces produits, précise dans "reasoning" que le code final dépend de la date d'importation.
+- Ajoute un risque dans "risks" signalant l'importance de la période pour le choix du code.
+
 ## CONCISION
 - Sois précis et concis. Pas de bavardage.
 - Va droit au but dans chaque section.
