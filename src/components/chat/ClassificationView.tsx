@@ -5,9 +5,6 @@ import {
   Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -70,7 +67,7 @@ interface SmartQuestion {
   id: string;
   question: string;
   hint?: string;
-  type: "choice" | "text" | "upload";
+  type: "choice" | "upload";
   options?: QuestionOption[];
   placeholder?: string;
   required?: boolean;
@@ -157,11 +154,18 @@ const QUESTIONS: SmartQuestion[] = [
   },
   {
     id: "description",
-    question: "Décrivez précisément le produit",
-    hint: "Marque, modèle, caractéristiques techniques",
-    type: "text",
-    placeholder: "Ex: Samsung QN55Q80B, TV QLED 55\" 4K, avec tuner TNT intégré",
+    question: "Quel est le type de produit ?",
+    hint: "Sélectionnez la description la plus proche",
+    type: "choice",
     required: true,
+    options: [
+      { label: "Appareil / Équipement complet" },
+      { label: "Pièce détachée / Composant" },
+      { label: "Matière première / Produit brut" },
+      { label: "Produit fini de consommation" },
+      { label: "Produit semi-fini / Intermédiaire" },
+      { label: "Accessoire / Périphérique" },
+    ],
   },
   {
     id: "material",
@@ -208,10 +212,16 @@ const QUESTIONS: SmartQuestion[] = [
   },
   {
     id: "weight",
-    question: "Poids et quantité approximatifs ?",
-    type: "text",
-    placeholder: "Ex: 15 kg, 100 unités, 2 palettes…",
+    question: "Quel est le poids approximatif ?",
+    type: "choice",
     skipLabel: "Passer",
+    options: [
+      { label: "Moins de 1 kg", value: "< 1 kg" },
+      { label: "1 à 10 kg", value: "1-10 kg" },
+      { label: "10 à 100 kg", value: "10-100 kg" },
+      { label: "100 kg à 1 tonne", value: "100 kg - 1 t" },
+      { label: "Plus de 1 tonne", value: "> 1 tonne" },
+    ],
   },
   {
     id: "usage",
@@ -228,9 +238,24 @@ const QUESTIONS: SmartQuestion[] = [
   {
     id: "origin",
     question: "Quel est le pays d'origine ?",
-    type: "text",
-    placeholder: "Ex: Chine, Turquie, France…",
+    type: "choice",
     skipLabel: "Passer",
+    options: [
+      { label: "Chine", value: "Chine" },
+      { label: "Turquie", value: "Turquie" },
+      { label: "France", value: "France" },
+      { label: "Espagne", value: "Espagne" },
+      { label: "Allemagne", value: "Allemagne" },
+      { label: "Inde", value: "Inde" },
+      { label: "USA", value: "États-Unis" },
+      { label: "Italie", value: "Italie" },
+      { label: "Pays-Bas", value: "Pays-Bas" },
+      { label: "Japon", value: "Japon" },
+      { label: "Corée du Sud", value: "Corée du Sud" },
+      { label: "Égypte", value: "Égypte" },
+      { label: "Tunisie", value: "Tunisie" },
+      { label: "Autre pays", value: "Autre" },
+    ],
   },
   {
     id: "documents",
@@ -241,10 +266,18 @@ const QUESTIONS: SmartQuestion[] = [
   },
   {
     id: "hs_hint",
-    question: "Avez-vous une idée du code SH ?",
-    type: "text",
-    placeholder: "Ex: 8528 (optionnel)",
+    question: "Avez-vous une idée du chapitre SH ?",
+    type: "choice",
     skipLabel: "Non, laisser l'IA décider",
+    options: [
+      { label: "Chapitre 84 — Machines", value: "84" },
+      { label: "Chapitre 85 — Électrique", value: "85" },
+      { label: "Chapitre 39 — Plastiques", value: "39" },
+      { label: "Chapitre 73 — Fer/Acier", value: "73" },
+      { label: "Chapitre 87 — Véhicules", value: "87" },
+      { label: "Chapitre 61-62 — Textile", value: "61" },
+      { label: "Autre chapitre", value: "" },
+    ],
   },
 ];
 
@@ -506,7 +539,7 @@ export function ClassificationView() {
 
             {/* Type: choice */}
             {currentQ?.type === "choice" && currentQ.options && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className={cn("grid gap-3", currentQ.options.length > 6 ? "grid-cols-2 md:grid-cols-3" : "grid-cols-2")}>
                 {currentQ.options.map((opt) => {
                   const isSelected = answers[currentQ.id] === (opt.value || opt.label);
                   return (
@@ -525,29 +558,6 @@ export function ClassificationView() {
                     </button>
                   );
                 })}
-              </div>
-            )}
-
-            {/* Type: text */}
-            {currentQ?.type === "text" && (
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium">{currentQ.id === "description" ? "Description du produit *" : ""}</Label>
-                {currentQ.id === "description" ? (
-                  <Textarea
-                    rows={3}
-                    placeholder={currentQ.placeholder}
-                    value={answers[currentQ.id] || ""}
-                    onChange={(e) => setAnswers(prev => ({ ...prev, [currentQ.id]: e.target.value }))}
-                    className="resize-none"
-                  />
-                ) : (
-                  <Input
-                    placeholder={currentQ.placeholder}
-                    value={answers[currentQ.id] || ""}
-                    onChange={(e) => setAnswers(prev => ({ ...prev, [currentQ.id]: e.target.value }))}
-                    onKeyDown={(e) => e.key === "Enter" && canProceed() && handleNext()}
-                  />
-                )}
               </div>
             )}
 
@@ -645,7 +655,7 @@ export function ClassificationView() {
               </Button>
             )}
             <div className="flex-1" />
-            {(currentQ?.type === "text" || currentQ?.type === "upload") && (
+            {(currentQ?.type === "upload") && (
               <Button
                 onClick={handleNext}
                 disabled={currentQ.required && !answers[currentQ.id]?.trim() && currentQ.type !== "upload"}
