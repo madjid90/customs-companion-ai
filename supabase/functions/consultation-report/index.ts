@@ -443,6 +443,49 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
     tariffContext += `\n⚠️ ATTENTION: Taux par défaut (25% DDI, 20% TVA) — code SH non trouvé en base. Vérifier sur BADR.`;
   }
 
+  // ── Seasonal tariff detection ──
+  // For agricultural products (chapters 06-08), detect seasonal codes
+  let seasonalContext = "";
+  if (hs_code && tariffFound) {
+    const cleanCode = hs_code.replace(/[.\s-]/g, "");
+    const code6 = cleanCode.substring(0, 6);
+    const chapter = parseInt(code6.substring(0, 2), 10);
+
+    if (chapter >= 6 && chapter <= 8) {
+      // Fetch all sibling codes under the same hs_code_6 to detect seasonal variants
+      const { data: seasonalTariffs } = await supabase
+        .from("country_tariffs")
+        .select("national_code, description_local, duty_rate, vat_rate")
+        .eq("country_code", country_code || "MA")
+        .eq("hs_code_6", code6)
+        .is("agreement_code", null)
+        .eq("is_active", true)
+        .order("national_code");
+
+      if (seasonalTariffs && seasonalTariffs.length > 1) {
+        // Check if descriptions contain date patterns (seasonal indicators)
+        const datePattern = /du\s+\d|janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre/i;
+        const seasonalEntries = seasonalTariffs.filter((t: any) =>
+          t.description_local && datePattern.test(t.description_local)
+        );
+
+        if (seasonalEntries.length >= 2) {
+          seasonalContext = `\n\n📅 CODES SAISONNIERS DÉTECTÉS pour la position ${code6}:\n`;
+          seasonalContext += seasonalEntries.map((t: any) =>
+            `- Code ${t.national_code} : ${t.description_local} → DI: ${t.duty_rate}% | TVA: ${t.vat_rate}%`
+          ).join("\n");
+          seasonalContext += `\n⚠️ IMPORTANT: Le code à 10 chiffres dépend de la PÉRIODE D'IMPORTATION. L'utilisateur doit choisir le code correspondant à la date effective de dédouanement.`;
+          console.log(`Seasonal codes detected for ${code6}: ${seasonalEntries.length} periods`);
+        }
+      }
+    }
+  }
+
+  // Append seasonal context to tariff context
+  if (seasonalContext) {
+    tariffContext += seasonalContext;
+  }
+
   // 2. Fetch controlled products
   let controlledContext = "";
   const codePrefix = hs_code ? hs_code.replace(/[.\s-]/g, "").substring(0, 4) : "";
