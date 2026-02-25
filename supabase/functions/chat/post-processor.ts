@@ -165,7 +165,9 @@ export async function postProcessResponse(input: PostProcessInput): Promise<Post
   }
 
   // FALLBACK: search by keywords if no codes matched
-  if (filteredTariffs.length === 0 && codesForValidation.length === 0 && questionKeywords.length > 0) {
+  // SKIP this fallback for legal/regulatory queries to avoid irrelevant tariff noise
+  const isLegalQuery = /\b(article|art\.?\s*\d|code\s+des\s+douanes|المادة|الفصل|circulaire|réglementation|loi|décret|dahir)\b/i.test(question || enrichedQuestion);
+  if (filteredTariffs.length === 0 && codesForValidation.length === 0 && questionKeywords.length > 0 && !isLegalQuery) {
     const keywordSearchTerms = questionKeywords.slice(0, 3).filter(k => k.length >= 4);
     if (keywordSearchTerms.length > 0) {
       const { data: keywordTariffs } = await supabase
@@ -185,6 +187,11 @@ export async function postProcessResponse(input: PostProcessInput): Promise<Post
         }
       }
     }
+  }
+
+  // For legal queries without HS codes, ensure legal_chunks are properly surfaced as sources
+  if (isLegalQuery && codesForValidation.length === 0) {
+    console.log("[post-processor] Legal query detected, skipping tariff keyword fallback");
   }
 
   // Filter PDFs by chapter
@@ -224,6 +231,12 @@ export async function postProcessResponse(input: PostProcessInput): Promise<Post
     legalRefs: context.legal_references.filter((ref: any) => {
       const refContext = (ref.context || "").toLowerCase();
       const refTitle = (ref.title || "").toLowerCase();
+      // For legal queries, accept all legal references that match question keywords
+      if (isLegalQuery) {
+        return questionKeywords.some(kw =>
+          kw.length >= 3 && (refContext.includes(kw.toLowerCase()) || refTitle.includes(kw.toLowerCase()))
+        );
+      }
       if (codesForValidation.some(code => {
         const clean = String(code).replace(/\D/g, '');
         return refContext.includes(clean) || refContext.includes(clean.substring(0, 4));
