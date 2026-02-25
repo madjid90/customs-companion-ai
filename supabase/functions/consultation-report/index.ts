@@ -277,32 +277,49 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
         .is("agreement_code", null)
         .eq("is_active", true)
         .order("national_code")
-        .limit(10);
+        .limit(50);
 
       if (childTariffs?.length > 0) {
-        // Use the most common rate among children, or the first one
         const rates = childTariffs.map((t: any) => t.duty_rate).filter((r: any) => r !== null && r !== undefined);
         if (rates.length > 0) {
-          // If all children have the same rate, use it confidently
           const allSame = rates.every((r: number) => r === rates[0]);
-          dutyRate = rates[0];
-          vatRate = childTariffs[0].vat_rate ?? 20;
-          tariffFound = true;
-          tariffSource = allSame ? "children_uniform" : "children_range";
-          tariffContext = childTariffs.map((t: any) =>
-            `Code: ${t.national_code} | Désignation: ${t.description_local} | DI: ${t.duty_rate}% | TVA: ${t.vat_rate}% | Source: ${t.source || "tarif"}`
-          ).join("\n");
-          if (!allSame) {
+          if (allSame) {
+            // All children have the same rate — use it confidently
+            dutyRate = rates[0];
+            vatRate = childTariffs[0].vat_rate ?? 20;
+            tariffSource = "children_uniform";
+          } else {
+            // Variable rates — use the MOST FREQUENT rate (mode) among children
+            const freq = new Map<number, number>();
+            for (const r of rates) freq.set(r, (freq.get(r) || 0) + 1);
+            let modeRate = rates[0], modeCount = 0;
+            for (const [rate, count] of freq) {
+              if (count > modeCount) { modeRate = rate; modeCount = count; }
+            }
+            dutyRate = modeRate;
+            // Pick vat_rate from the first child matching the mode rate
+            const modeChild = childTariffs.find((t: any) => t.duty_rate === modeRate);
+            vatRate = modeChild?.vat_rate ?? 20;
+            tariffSource = "children_mode";
             const minRate = Math.min(...rates);
             const maxRate = Math.max(...rates);
-            tariffContext += `\n⚠️ Taux variables: ${minRate}% à ${maxRate}% selon sous-position exacte`;
+            tariffContext = childTariffs.map((t: any) =>
+              `Code: ${t.national_code} | Désignation: ${t.description_local} | DI: ${t.duty_rate}% | TVA: ${t.vat_rate}%`
+            ).join("\n");
+            tariffContext += `\n⚠️ Taux variables: ${minRate}% à ${maxRate}% — taux le plus fréquent retenu: ${modeRate}%`;
+          }
+          tariffFound = true;
+          if (!tariffContext) {
+            tariffContext = childTariffs.map((t: any) =>
+              `Code: ${t.national_code} | Désignation: ${t.description_local} | DI: ${t.duty_rate}% | TVA: ${t.vat_rate}% | Source: ${t.source || "tarif"}`
+            ).join("\n");
           }
           console.log(`Found ${childTariffs.length} children for ${cleanCode}: duty=${dutyRate}% (${tariffSource})`);
         }
       }
     }
 
-    // Step 1b: 6-digit prefix match (droit commun)
+    // Step 1b: 6-digit prefix match (droit commun) — use MODE rate
     if (!tariffFound) {
       const { data: prefixTariffs } = await supabase
         .from("country_tariffs")
@@ -311,16 +328,38 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
         .eq("hs_code_6", code6)
         .is("agreement_code", null)
         .eq("is_active", true)
-        .limit(10);
+        .limit(50);
 
       if (prefixTariffs?.length > 0) {
-        dutyRate = prefixTariffs[0].duty_rate ?? 25;
-        vatRate = prefixTariffs[0].vat_rate ?? 20;
-        tariffFound = true;
-        tariffSource = prefixTariffs[0].source || "tariff";
-        tariffContext = prefixTariffs.map((t: any) =>
-          `Code: ${t.national_code || t.hs_code_6} | Désignation: ${t.description_local} | DI: ${t.duty_rate}% | TVA: ${t.vat_rate}% | Source: ${t.source || "tarif"}`
-        ).join("\n");
+        const rates = prefixTariffs.map((t: any) => t.duty_rate).filter((r: any) => r !== null && r !== undefined);
+        if (rates.length > 0) {
+          const allSame = rates.every((r: number) => r === rates[0]);
+          if (allSame) {
+            dutyRate = rates[0];
+            vatRate = prefixTariffs[0].vat_rate ?? 20;
+          } else {
+            // Use most frequent rate (mode)
+            const freq = new Map<number, number>();
+            for (const r of rates) freq.set(r, (freq.get(r) || 0) + 1);
+            let modeRate = rates[0], modeCount = 0;
+            for (const [rate, count] of freq) {
+              if (count > modeCount) { modeRate = rate; modeCount = count; }
+            }
+            dutyRate = modeRate;
+            const modeChild = prefixTariffs.find((t: any) => t.duty_rate === modeRate);
+            vatRate = modeChild?.vat_rate ?? 20;
+          }
+          tariffFound = true;
+          tariffSource = prefixTariffs[0].source || "tariff";
+          tariffContext = prefixTariffs.map((t: any) =>
+            `Code: ${t.national_code || t.hs_code_6} | Désignation: ${t.description_local} | DI: ${t.duty_rate}% | TVA: ${t.vat_rate}%`
+          ).join("\n");
+          if (!allSame) {
+            const minRate = Math.min(...rates);
+            const maxRate = Math.max(...rates);
+            tariffContext += `\n⚠️ Taux variables: ${minRate}% à ${maxRate}% — taux le plus fréquent retenu: ${dutyRate}%`;
+          }
+        }
       }
     }
 
