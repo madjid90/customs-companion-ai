@@ -264,21 +264,6 @@ const QUESTIONS: SmartQuestion[] = [
     type: "upload",
     skipLabel: "Non, classifier maintenant",
   },
-  {
-    id: "hs_hint",
-    question: "Avez-vous une idée du chapitre SH ?",
-    type: "choice",
-    skipLabel: "Non, laisser l'IA décider",
-    options: [
-      { label: "Chapitre 84 — Machines", value: "84" },
-      { label: "Chapitre 85 — Électrique", value: "85" },
-      { label: "Chapitre 39 — Plastiques", value: "39" },
-      { label: "Chapitre 73 — Fer/Acier", value: "73" },
-      { label: "Chapitre 87 — Véhicules", value: "87" },
-      { label: "Chapitre 61-62 — Textile", value: "61" },
-      { label: "Autre chapitre", value: "" },
-    ],
-  },
 ];
 
 // ── Wizard steps for stepper ──
