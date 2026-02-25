@@ -238,33 +238,83 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
     regime, agreement, sections = [],
   } = inputs;
 
-  // 1. Fetch tariff data from DB
+  // 1. Fetch tariff data from DB — cascade: exact code → 6-digit → circular → keyword
   let tariffContext = "";
   let dutyRate = 25;
   let vatRate = 20;
   let tariffFound = false;
+  let tariffSource = "default";
 
   if (hs_code) {
     const cleanCode = hs_code.replace(/[.\s-]/g, "");
     const code6 = cleanCode.substring(0, 6);
-    const { data: tariffs } = await supabase
+
+    // Step 1a: Exact national_code match (droit commun — no agreement_code)
+    const { data: exactTariffs } = await supabase
       .from("country_tariffs")
       .select("*")
       .eq("country_code", country_code || "MA")
-      .or(`national_code.eq.${cleanCode},hs_code_6.eq.${code6}`)
+      .eq("national_code", cleanCode)
+      .is("agreement_code", null)
       .eq("is_active", true)
       .limit(5);
 
-    if (tariffs?.length > 0) {
-      dutyRate = tariffs[0].duty_rate ?? 25;
-      vatRate = tariffs[0].vat_rate ?? 20;
+    if (exactTariffs?.length > 0) {
+      dutyRate = exactTariffs[0].duty_rate ?? 25;
+      vatRate = exactTariffs[0].vat_rate ?? 20;
       tariffFound = true;
-      tariffContext = tariffs.map((t: any) =>
-        `Code: ${t.national_code || t.hs_code_6} | Désignation: ${t.description_local} | DI: ${t.duty_rate}% | TVA: ${t.vat_rate}%`
+      tariffSource = exactTariffs[0].source || "tariff";
+      tariffContext = exactTariffs.map((t: any) =>
+        `Code: ${t.national_code} | Désignation: ${t.description_local} | DI: ${t.duty_rate}% | TVA: ${t.vat_rate}% | Source: ${t.source || "tarif"}`
       ).join("\n");
+    }
+
+    // Step 1b: 6-digit prefix match (droit commun)
+    if (!tariffFound) {
+      const { data: prefixTariffs } = await supabase
+        .from("country_tariffs")
+        .select("*")
+        .eq("country_code", country_code || "MA")
+        .eq("hs_code_6", code6)
+        .is("agreement_code", null)
+        .eq("is_active", true)
+        .limit(5);
+
+      if (prefixTariffs?.length > 0) {
+        dutyRate = prefixTariffs[0].duty_rate ?? 25;
+        vatRate = prefixTariffs[0].vat_rate ?? 20;
+        tariffFound = true;
+        tariffSource = prefixTariffs[0].source || "tariff";
+        tariffContext = prefixTariffs.map((t: any) =>
+          `Code: ${t.national_code || t.hs_code_6} | Désignation: ${t.description_local} | DI: ${t.duty_rate}% | TVA: ${t.vat_rate}% | Source: ${t.source || "tarif"}`
+        ).join("\n");
+      }
+    }
+
+    // Step 1c: Circular-sourced entries (may have different rates)
+    if (!tariffFound) {
+      const { data: circularTariffs } = await supabase
+        .from("country_tariffs")
+        .select("*")
+        .eq("country_code", country_code || "MA")
+        .or(`national_code.eq.${cleanCode},hs_code_6.eq.${code6}`)
+        .eq("source", "circular")
+        .eq("is_active", true)
+        .limit(5);
+
+      if (circularTariffs?.length > 0) {
+        dutyRate = circularTariffs[0].duty_rate ?? 25;
+        vatRate = circularTariffs[0].vat_rate ?? 20;
+        tariffFound = true;
+        tariffSource = "circular";
+        tariffContext = circularTariffs.map((t: any) =>
+          `Code: ${t.national_code || t.hs_code_6} | Désignation: ${t.description_local} | DI: ${t.duty_rate}% | TVA: ${t.vat_rate}% | Source: circulaire | Accord: ${t.agreement_code || "N/A"}`
+        ).join("\n");
+      }
     }
   }
 
+  // Step 1d: Keyword fallback
   if (!tariffFound && product_description) {
     const keywords = product_description.split(/\s+/).filter((w: string) => w.length > 3).slice(0, 3);
     for (const kw of keywords) {
@@ -273,6 +323,7 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
         .select("*")
         .eq("country_code", country_code || "MA")
         .ilike("description_local", `%${kw}%`)
+        .is("agreement_code", null)
         .eq("is_active", true)
         .limit(5);
       if (data?.length > 0) {
@@ -280,13 +331,16 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
           dutyRate = data[0].duty_rate ?? 25;
           vatRate = data[0].vat_rate ?? 20;
           tariffFound = true;
+          tariffSource = data[0].source || "keyword";
         }
         tariffContext += data.map((t: any) =>
-          `Code: ${t.national_code || t.hs_code_6} | Désignation: ${t.description_local} | DI: ${t.duty_rate}% | TVA: ${t.vat_rate}%`
+          `Code: ${t.national_code || t.hs_code_6} | Désignation: ${t.description_local} | DI: ${t.duty_rate}% | TVA: ${t.vat_rate}% | Source: ${t.source || "tarif"}`
         ).join("\n") + "\n";
       }
     }
   }
+
+  console.log(`Tariff lookup: found=${tariffFound}, dutyRate=${dutyRate}%, vatRate=${vatRate}%, source=${tariffSource}`);
 
   // 2. Fetch controlled products
   let controlledContext = "";
@@ -407,16 +461,58 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
     exchange_rate: exchangeRate,
   });
 
+  // 4b. Lookup preferential rate from country_tariffs with matching agreement_code
+  let preferentialDutyRate: number | null = null;
+  let agreementName = "";
+  let proofRequired = "";
   let agreementReduction = 0;
+
   if (agreement && agreement !== "none") {
+    // First get the agreement info
     const { data: agreements } = await supabase
       .from("trade_agreements")
       .select("*")
       .eq("code", agreement)
       .eq("is_active", true)
       .limit(1);
+
     if (agreements?.length) {
-      agreementReduction = 1.0;
+      agreementName = agreements[0].name_fr || "";
+      proofRequired = agreements[0].proof_required || "";
+
+      // Search for a preferential tariff line for this specific HS code + agreement
+      if (hs_code) {
+        const cleanCode = hs_code.replace(/[.\s-]/g, "");
+        const code6 = cleanCode.substring(0, 6);
+
+        const { data: prefTariffs } = await supabase
+          .from("country_tariffs")
+          .select("duty_rate, national_code, description_local")
+          .eq("country_code", country_code || "MA")
+          .eq("agreement_code", agreement)
+          .or(`national_code.eq.${cleanCode},hs_code_6.eq.${code6}`)
+          .eq("is_active", true)
+          .limit(1);
+
+        if (prefTariffs?.length > 0) {
+          preferentialDutyRate = prefTariffs[0].duty_rate ?? 0;
+          // Calculate reduction as fraction: (base - pref) / base
+          if (dutyRate > 0) {
+            agreementReduction = (dutyRate - preferentialDutyRate) / dutyRate;
+          } else {
+            agreementReduction = 0;
+          }
+          console.log(`Preferential tariff found: ${agreement} → ${preferentialDutyRate}% (base: ${dutyRate}%, reduction: ${(agreementReduction * 100).toFixed(1)}%)`);
+          tariffContext += `\n\nTARIF PRÉFÉRENTIEL (${agreementName}):\nCode: ${prefTariffs[0].national_code} | DI préférentiel: ${preferentialDutyRate}% (au lieu de ${dutyRate}%) | Preuve: ${proofRequired}`;
+        } else {
+          // No specific preferential rate found for this code — check if agreement grants general exoneration
+          if (agreements[0].preferential_duty_rate != null) {
+            preferentialDutyRate = agreements[0].preferential_duty_rate;
+            agreementReduction = dutyRate > 0 ? (dutyRate - preferentialDutyRate) / dutyRate : 0;
+          }
+          console.log(`No preferential tariff line found for ${agreement} + code ${hs_code}. Using agreement-level rate: ${preferentialDutyRate}`);
+        }
+      }
     }
   }
 
@@ -425,7 +521,7 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
     duty_rate: dutyRate,
     vat_rate: vatRate,
     tic_rate: ticRate,
-    agreement_reduction: agreementReduction,
+    agreement_reduction: agreementReduction > 0 ? agreementReduction : 0,
   });
 
   // 5. Call LLM
@@ -444,8 +540,12 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
       exchange_rate: exchangeRate,
       currency,
       tariff_from_db: tariffFound,
+      tariff_source: tariffSource,
       duty_rate: dutyRate,
       vat_rate: vatRate,
+      preferential_duty_rate: preferentialDutyRate,
+      agreement_name: agreementName || undefined,
+      proof_required: proofRequired || undefined,
       ...taxes,
     },
     input_summary: {
