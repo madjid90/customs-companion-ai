@@ -970,7 +970,7 @@ async function processInvestorReport(supabase: any, inputs: any, fileContext: st
 // ============================================================================
 // LLM CALL HELPER
 // ============================================================================
-async function callLLM(prompt: string): Promise<any> {
+async function callLLM(prompt: string, retryCount = 0): Promise<any> {
   const response = await fetchWithRetry(
     LOVABLE_AI_GATEWAY,
     {
@@ -981,7 +981,7 @@ async function callLLM(prompt: string): Promise<any> {
       },
       body: JSON.stringify({
         model: LOVABLE_AI_MODEL,
-        max_tokens: 2048,
+        max_tokens: 4096,
         temperature: 0.3,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -1004,10 +1004,78 @@ async function callLLM(prompt: string): Promise<any> {
   const content = data.choices?.[0]?.message?.content || "";
   const cleaned = content.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
 
+  // Try direct parse first
   try {
     return JSON.parse(cleaned);
-  } catch (parseError) {
-    console.error("JSON parse error:", parseError, "Content:", cleaned.substring(0, 200));
-    return { raw_response: content, parse_error: true };
+  } catch (_directErr) {
+    // Attempt JSON repair for truncated responses
+    console.warn("Direct JSON parse failed, attempting repair...");
+  }
+
+  // Repair: remove trailing commas, fix unclosed strings/braces
+  try {
+    let repaired = cleaned;
+    
+    // Remove control characters that break JSON
+    repaired = repaired.replace(/[\x00-\x1F\x7F]/g, (ch) => 
+      ch === '\n' || ch === '\r' || ch === '\t' ? ch : ''
+    );
+
+    // Detect truncation: unbalanced braces/brackets
+    const openBraces = (repaired.match(/{/g) || []).length;
+    const closeBraces = (repaired.match(/}/g) || []).length;
+    const openBrackets = (repaired.match(/\[/g) || []).length;
+    const closeBrackets = (repaired.match(/\]/g) || []).length;
+
+    if (openBraces !== closeBraces || openBrackets !== closeBrackets) {
+      console.warn(`Truncation detected: braces ${openBraces}/${closeBraces}, brackets ${openBrackets}/${closeBrackets}`);
+      
+      // Find the last complete key-value pair
+      // Cut at last complete "key": "value" or "key": number
+      const lastGoodComma = repaired.lastIndexOf('",');
+      const lastGoodBrace = repaired.lastIndexOf('},');
+      const lastGoodBracket = repaired.lastIndexOf('],');
+      const cutPoint = Math.max(lastGoodComma, lastGoodBrace, lastGoodBracket);
+      
+      if (cutPoint > 0) {
+        repaired = repaired.substring(0, cutPoint + 1);
+      }
+      
+      // Close any remaining open structures
+      // Remove trailing commas
+      repaired = repaired.replace(/,\s*$/, '');
+      
+      // Close unclosed strings (if inside a string value)
+      const quoteCount = (repaired.match(/(?<!\\)"/g) || []).length;
+      if (quoteCount % 2 !== 0) {
+        repaired += '"';
+      }
+      
+      // Close brackets and braces in reverse order
+      const remaining_open_brackets = (repaired.match(/\[/g) || []).length - (repaired.match(/\]/g) || []).length;
+      const remaining_open_braces = (repaired.match(/{/g) || []).length - (repaired.match(/}/g) || []).length;
+      
+      for (let i = 0; i < remaining_open_brackets; i++) repaired += ']';
+      for (let i = 0; i < remaining_open_braces; i++) repaired += '}';
+    }
+    
+    // Remove trailing commas before } or ]
+    repaired = repaired.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
+    
+    const result = JSON.parse(repaired);
+    console.info("JSON repair successful");
+    result._repaired = true;
+    return result;
+  } catch (repairErr) {
+    console.error("JSON repair also failed:", repairErr);
+    
+    // One retry with a shorter prompt instruction
+    if (retryCount < 1) {
+      console.info("Retrying LLM call with concise instruction...");
+      const concisePrompt = prompt + "\n\nIMPORTANT: Ta réponse DOIT être un JSON VALIDE et COMPLET. Sois CONCIS dans tes descriptions (max 1-2 phrases par champ). Ne dépasse PAS 3000 tokens.";
+      return callLLM(concisePrompt, retryCount + 1);
+    }
+    
+    return { raw_response: content.substring(0, 500), parse_error: true };
   }
 }
