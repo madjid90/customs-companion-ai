@@ -267,6 +267,41 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
       ).join("\n");
     }
 
+    // Step 1a-bis: Children prefix match (national_code LIKE cleanCode%)
+    if (!tariffFound && cleanCode.length >= 6) {
+      const { data: childTariffs } = await supabase
+        .from("country_tariffs")
+        .select("*")
+        .eq("country_code", country_code || "MA")
+        .like("national_code", `${cleanCode}%`)
+        .is("agreement_code", null)
+        .eq("is_active", true)
+        .order("national_code")
+        .limit(10);
+
+      if (childTariffs?.length > 0) {
+        // Use the most common rate among children, or the first one
+        const rates = childTariffs.map((t: any) => t.duty_rate).filter((r: any) => r !== null && r !== undefined);
+        if (rates.length > 0) {
+          // If all children have the same rate, use it confidently
+          const allSame = rates.every((r: number) => r === rates[0]);
+          dutyRate = rates[0];
+          vatRate = childTariffs[0].vat_rate ?? 20;
+          tariffFound = true;
+          tariffSource = allSame ? "children_uniform" : "children_range";
+          tariffContext = childTariffs.map((t: any) =>
+            `Code: ${t.national_code} | Désignation: ${t.description_local} | DI: ${t.duty_rate}% | TVA: ${t.vat_rate}% | Source: ${t.source || "tarif"}`
+          ).join("\n");
+          if (!allSame) {
+            const minRate = Math.min(...rates);
+            const maxRate = Math.max(...rates);
+            tariffContext += `\n⚠️ Taux variables: ${minRate}% à ${maxRate}% selon sous-position exacte`;
+          }
+          console.log(`Found ${childTariffs.length} children for ${cleanCode}: duty=${dutyRate}% (${tariffSource})`);
+        }
+      }
+    }
+
     // Step 1b: 6-digit prefix match (droit commun)
     if (!tariffFound) {
       const { data: prefixTariffs } = await supabase
@@ -276,7 +311,7 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
         .eq("hs_code_6", code6)
         .is("agreement_code", null)
         .eq("is_active", true)
-        .limit(5);
+        .limit(10);
 
       if (prefixTariffs?.length > 0) {
         dutyRate = prefixTariffs[0].duty_rate ?? 25;
