@@ -26,11 +26,9 @@ serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
 
   try {
-    const authResult = await requireAuth(req);
-    if (authResult.error) {
-      return new Response(JSON.stringify({ error: "Non autorisé" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const { error: authError, auth: authResult } = await requireAuth(req, corsHeaders);
+    if (authError) {
+      return authError;
     }
 
     if (!LOVABLE_API_KEY) {
@@ -93,7 +91,7 @@ serve(async (req: Request) => {
     const reference = refData || `CONS-${Date.now()}`;
 
     // Get phone_user_id
-    const userId = authResult.user?.id;
+    const userId = authResult?.userId;
     let phoneUserId = null;
     if (userId) {
       const { data: phoneUser } = await supabase
@@ -314,6 +312,29 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
     }
   }
 
+  // Step 1e: CIRCULAR OVERRIDE — if we found a base rate, check if a circular modifies it
+  if (tariffFound && hs_code) {
+    const cleanCode = hs_code.replace(/[.\s-]/g, "");
+    const code6 = cleanCode.substring(0, 6);
+    const { data: circularOverride } = await supabase
+      .from("country_tariffs")
+      .select("*")
+      .eq("country_code", country_code || "MA")
+      .or(`national_code.eq.${cleanCode},hs_code_6.eq.${code6}`)
+      .eq("source", "circular")
+      .eq("is_active", true)
+      .limit(1);
+
+    if (circularOverride?.length > 0) {
+      const prevRate = dutyRate;
+      dutyRate = circularOverride[0].duty_rate ?? dutyRate;
+      vatRate = circularOverride[0].vat_rate ?? vatRate;
+      tariffSource = "circular_override";
+      console.log(`⚠️ Circular override: DDI ${prevRate}% → ${dutyRate}% (circular)`);
+      tariffContext += `\n⚠️ CIRCULAIRE MODIFICATIVE: DI modifié de ${prevRate}% → ${dutyRate}% par circulaire`;
+    }
+  }
+
   // Step 1d: Keyword fallback
   if (!tariffFound && product_description) {
     const keywords = product_description.split(/\s+/).filter((w: string) => w.length > 3).slice(0, 3);
@@ -341,6 +362,12 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
   }
 
   console.log(`Tariff lookup: found=${tariffFound}, dutyRate=${dutyRate}%, vatRate=${vatRate}%, source=${tariffSource}`);
+
+  // Alert if using default rate
+  if (!tariffFound) {
+    console.warn(`⚠️ ALERTE: Taux par défaut utilisé (DDI=${dutyRate}%, TVA=${vatRate}%). Code SH non trouvé en base.`);
+    tariffContext += `\n⚠️ ATTENTION: Taux par défaut (25% DDI, 20% TVA) — code SH non trouvé en base. Vérifier sur BADR.`;
+  }
 
   // 2. Fetch controlled products
   let controlledContext = "";
@@ -880,8 +907,8 @@ async function callLLM(prompt: string): Promise<any> {
       },
       body: JSON.stringify({
         model: LOVABLE_AI_MODEL,
-        max_tokens: 4096,
-        temperature: 0.1,
+        max_tokens: 2048,
+        temperature: 0.3,
         messages: [{ role: "user", content: prompt }],
       }),
     },

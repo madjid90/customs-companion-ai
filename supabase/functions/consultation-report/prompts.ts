@@ -99,6 +99,17 @@ ${sections.join(", ")}
 4. Si une TIC est applicable (alcool, tabac, véhicules luxe, boissons sucrées), mentionne-la.
 5. Pour les documents, utilise EN PRIORITÉ la liste officielle fournie ci-dessus (section DOCUMENTS OFFICIELS), puis complète si nécessaire.
 6. Cite les articles du CDII et circulaires quand possible.
+
+## RÈGLES DDI — OBLIGATOIRE
+- Le taux DDI fourni dans CONTEXTE TARIFAIRE vient de la base de données officielle.
+- Tu DOIS utiliser ce taux exact. NE JAMAIS inventer un taux de tes connaissances.
+- Si le contexte mentionne une circulaire modificative, utilise le taux de la circulaire.
+- Si "ATTENTION: Taux par défaut" est indiqué, signale-le clairement dans le rapport.
+
+## CONCISION
+- Sois précis et concis. Pas de bavardage.
+- Va droit au but dans chaque section.
+
 7. Réponds UNIQUEMENT en JSON valide, sans texte avant ou après.`;
 }
 
@@ -147,6 +158,11 @@ ${legalContext || "Aucun contexte"}
 2. Utilise les DOCUMENTS MRE OFFICIELS listés ci-dessus pour la section documents.
 3. Pour les conditions manquantes, sois précis (ex: "possession véhicule 4 mois < 6 mois requis").
 4. Cite les articles de loi et circulaires quand disponibles.
+
+## CONCISION
+- Sois précis et direct. Pas de bavardage.
+- Chaque section doit être concise.
+
 5. Réponds UNIQUEMENT en JSON valide.`;
 }
 
@@ -219,6 +235,10 @@ ${legalContext || "Aucun contexte"}
 - Si des équipements ANRT DÉJÀ HOMOLOGUÉS sont listés ci-dessus, indique "anrt_approved: true" et liste les numéros d'agrément.
 - Si aucun agrément trouvé, indique "anrt_approved: false" et décris la procédure complète.
 - Pour chaque autorité, indique si c'est requis, non requis ou recommandé, avec le motif.
+
+## CONCISION
+- Sois précis et concis. Pas de sections inutiles.
+
 Réponds UNIQUEMENT en JSON valide.`;
 }
 
@@ -277,5 +297,9 @@ ${legalContext || "Aucun contexte"}
 ## INSTRUCTIONS
 1. Utilise les DOCUMENTS INVESTISSEUR OFFICIELS listés ci-dessus pour la section documents.
 2. Compare les régimes avec les chiffres réels.
+
+## CONCISION
+- Sois précis et direct. Va droit au but.
+
 Réponds UNIQUEMENT en JSON valide.`;
 }
