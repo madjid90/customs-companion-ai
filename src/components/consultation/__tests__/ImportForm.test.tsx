@@ -5,9 +5,9 @@ import { ImportForm } from "../ImportForm";
 describe("ImportForm", () => {
   it("renders the form with key fields", () => {
     render(<ImportForm onSubmit={vi.fn()} isLoading={false} />);
-    expect(screen.getByText("Description du produit *")).toBeInTheDocument();
-    expect(screen.getByText("Valeur *")).toBeInTheDocument();
-    expect(screen.getByText("Pays d'origine *")).toBeInTheDocument();
+    expect(screen.getByText("Décrivez votre produit")).toBeInTheDocument();
+    expect(screen.getByText("Valeur")).toBeInTheDocument();
+    expect(screen.getByText("Pays d'origine")).toBeInTheDocument();
   });
 
   it("shows loading state on submit button", () => {
