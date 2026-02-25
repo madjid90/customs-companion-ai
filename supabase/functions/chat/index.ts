@@ -198,7 +198,8 @@ async function streamLovableAI(
     },
     body: JSON.stringify({
       model: LOVABLE_AI_MODEL,
-      max_tokens: 4096,
+      max_tokens: 2048,
+      temperature: 0.3,
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
@@ -966,16 +967,38 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       ...analysis.detectedCodes.map(c => cleanHSCode(c).substring(0, 4))
     ])].filter(c => /^\d{4}$/.test(c));
 
-    // 9a. TRADE AGREEMENTS — si question sur l'origine ou accords
+    // 9a. TRADE AGREEMENTS — TOUJOURS chercher si un pays d'origine est détecté OU si mots-clés accord
     const agreementKW = ['accord', 'préférentiel', 'eur1', 'eur.1', 'atr', 'origine', 'certificat', 'turquie', 'usa', 'europe', 'chine', 'agadir', 'zlecaf', 'aele', 'libre-échange', 'ale'];
-    if (analysis.intents?.includes('origin') || analysis.keywords.some(k => agreementKW.includes(k.toLowerCase()))) {
+    const hasOriginCountry = analysis.country && analysis.country !== "MA";
+    const hasAgreementKeyword = analysis.intents?.includes('origin') || analysis.keywords.some(k => agreementKW.includes(k.toLowerCase()));
+    if (hasOriginCountry || hasAgreementKeyword) {
       const { data: agreements } = await supabase
         .from('trade_agreements')
         .select('*')
         .eq('is_active', true);
       if (agreements?.length) {
-        context.trade_agreements = agreements;
-        console.log(`[enrichment] Found ${agreements.length} trade agreements`);
+        // Si pays d'origine connu, filtrer les accords pertinents
+        if (hasOriginCountry) {
+          const relevantAgreements = agreements.filter((a: any) => {
+            if (a.countries_covered && Array.isArray(a.countries_covered)) {
+              return a.countries_covered.some((c: string) => 
+                c.toUpperCase() === analysis.country.toUpperCase()
+              );
+            }
+            return false;
+          });
+          if (relevantAgreements.length > 0) {
+            context.trade_agreements = relevantAgreements;
+            console.log(`[enrichment] Found ${relevantAgreements.length} trade agreements for country ${analysis.country}`);
+          } else {
+            // Aucun accord spécifique — passer tous les accords pour info
+            context.trade_agreements = agreements;
+            console.log(`[enrichment] No specific agreement for ${analysis.country}, providing all ${agreements.length}`);
+          }
+        } else {
+          context.trade_agreements = agreements;
+          console.log(`[enrichment] Found ${agreements.length} trade agreements`);
+        }
       }
     }
 
