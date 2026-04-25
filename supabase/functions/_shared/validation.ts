@@ -29,7 +29,7 @@ export interface AnalyzePdfRequest {
 }
 
 export interface GenerateEmbeddingsRequest {
-  table?: "hs_codes" | "knowledge_documents" | "pdf_extractions" | "tariff_notes" | "legal_chunks";
+  table?: "hs_codes" | "knowledge_documents" | "pdf_extractions" | "tariff_notes" | "legal_chunks" | "country_tariffs";
   limit?: number;
   forceUpdate?: boolean;
 }

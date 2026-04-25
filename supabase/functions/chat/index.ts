@@ -325,7 +325,7 @@ serve(async (req) => {
     if (!SUPABASE_SERVICE_ROLE_KEY) missingKeys.push("SUPABASE_SERVICE_ROLE_KEY");
     
     if (missingKeys.length > 0) {
-      logger.error("Missing required API keys", { missingKeys });
+      logger.error(`Missing required API keys: ${missingKeys.join(", ")}`);
       return errorResponse(
         req, 
         `Erreur de configuration serveur. Contactez l'administrateur.`, 
@@ -341,7 +341,7 @@ serve(async (req) => {
       logger.warn("ANTHROPIC_API_KEY not configured - PDF analysis disabled");
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
     // =========================================================================
     // SEMANTIC CACHE CHECK
@@ -389,7 +389,7 @@ serve(async (req) => {
     if (images && images.length > 0) {
       console.log("Analyzing", images.length, "image(s) with Lovable AI Vision...");
       try {
-        imageAnalysis = await analyzeImageWithLovableAI(images as ImageInput[], question || "Identifie ce produit", LOVABLE_API_KEY);
+        imageAnalysis = await analyzeImageWithLovableAI(images as ImageInput[], question || "Identifie ce produit", LOVABLE_API_KEY!);
         console.log("Image analysis result:", JSON.stringify(imageAnalysis));
         
         enrichedQuestion = `${question || "Identifie ce produit et donne-moi le code SH"}
