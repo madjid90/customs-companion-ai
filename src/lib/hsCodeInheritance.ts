@@ -353,37 +353,37 @@ export const searchByDescription = async (
   limit: number = 10
 ): Promise<TariffWithInheritance[]> => {
   try {
-    // Chercher dans hs_codes et country_tariffs
-    const { data: hsCodes } = await supabase
-      .from("hs_codes")
-      .select("code, code_clean")
-      .ilike("description_fr", `%${searchText}%`)
-      .eq("is_active", true)
-      .limit(limit);
+    // Lancer les deux recherches textuelles en parallèle
+    const [hsCodesRes, tariffsRes] = await Promise.all([
+      supabase
+        .from("hs_codes")
+        .select("code, code_clean")
+        .ilike("description_fr", `%${searchText}%`)
+        .eq("is_active", true)
+        .limit(limit),
+      supabase
+        .from("country_tariffs")
+        .select("national_code, hs_code_6")
+        .eq("country_code", countryCode)
+        .ilike("description_local", `%${searchText}%`)
+        .eq("is_active", true)
+        .limit(limit),
+    ]);
 
-    const { data: tariffs } = await supabase
-      .from("country_tariffs")
-      .select("national_code, hs_code_6")
-      .eq("country_code", countryCode)
-      .ilike("description_local", `%${searchText}%`)
-      .eq("is_active", true)
-      .limit(limit);
+    const hsCodes = hsCodesRes.data;
+    const tariffs = tariffsRes.data;
 
     // Combiner les codes uniques
     const codesSet = new Set<string>();
     hsCodes?.forEach((h) => codesSet.add(h.code_clean || cleanHSCode(h.code)));
     tariffs?.forEach((t) => codesSet.add(t.national_code || t.hs_code_6));
 
-    // Rechercher chaque code avec héritage
-    const results: TariffWithInheritance[] = [];
-    for (const code of Array.from(codesSet).slice(0, limit)) {
-      const result = await searchHSCodeWithInheritance(code, countryCode);
-      if (result.found) {
-        results.push(result);
-      }
-    }
-
-    return results;
+    // Rechercher chaque code avec héritage en parallèle (au lieu de séquentiel)
+    const codesList = Array.from(codesSet).slice(0, limit);
+    const allResults = await Promise.all(
+      codesList.map((code) => searchHSCodeWithInheritance(code, countryCode))
+    );
+    return allResults.filter((r) => r.found);
   } catch (error) {
     console.error("Erreur searchByDescription:", error);
     return [];
