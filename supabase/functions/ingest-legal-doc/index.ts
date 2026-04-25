@@ -18,6 +18,13 @@ import {
   type ParsedHSCode
 } from "../_shared/hs-code-utils.ts";
 import { callAnthropicWithRetry } from "../_shared/retry.ts";
+import {
+  detectDocType,
+  extractNencMetadata,
+  recommendedBatchSize,
+  NencContextTracker,
+  type NencDocType,
+} from "../_shared/nenc-extractor.ts";
 
 import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
 import { requireAuth } from "../_shared/auth-check.ts";
@@ -135,7 +142,9 @@ interface IngestResponse {
 // PDF TEXT EXTRACTION (via Claude) - With batch support for large PDFs
 // ============================================================================
 
-const MAX_PAGES_PER_BATCH = 1; // Single page per request for very dense legal docs
+// Default batch size for circulars and dense legal docs
+// NENC/NESH override this via recommendedBatchSize() (typically 5)
+const MAX_PAGES_PER_BATCH = 1;
 const CLAUDE_TIMEOUT_MS = 55000; // 55 second timeout for single pages
 const CLAUDE_TIMEOUT_FULL_PDF_MS = 120000; // 120 seconds for full PDF when split fails
 
