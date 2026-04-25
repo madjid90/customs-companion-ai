@@ -2168,6 +2168,60 @@ export type Database = {
         }
         Relationships: []
       }
+      vat_rules: {
+        Row: {
+          category: string
+          cgi_article: string
+          created_at: string
+          description_ar: string | null
+          description_fr: string
+          effective_date: string | null
+          hs_code_end: string | null
+          hs_code_pattern: string | null
+          hs_code_start: string | null
+          id: string
+          is_active: boolean | null
+          legal_basis: string
+          source_url: string | null
+          updated_at: string
+          vat_rate: number
+        }
+        Insert: {
+          category: string
+          cgi_article: string
+          created_at?: string
+          description_ar?: string | null
+          description_fr: string
+          effective_date?: string | null
+          hs_code_end?: string | null
+          hs_code_pattern?: string | null
+          hs_code_start?: string | null
+          id?: string
+          is_active?: boolean | null
+          legal_basis?: string
+          source_url?: string | null
+          updated_at?: string
+          vat_rate: number
+        }
+        Update: {
+          category?: string
+          cgi_article?: string
+          created_at?: string
+          description_ar?: string | null
+          description_fr?: string
+          effective_date?: string | null
+          hs_code_end?: string | null
+          hs_code_pattern?: string | null
+          hs_code_start?: string | null
+          id?: string
+          is_active?: boolean | null
+          legal_basis?: string
+          source_url?: string | null
+          updated_at?: string
+          vat_rate?: number
+        }
+        Relationships: []
+      }
       veille_config: {
         Row: {
           auto_insert: boolean | null
