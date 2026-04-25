@@ -1704,12 +1704,15 @@ async function insertChunks(
   supabase: any,
   sourceId: number,
   chunks: TextChunk[],
-  generateEmbeddings: boolean
+  generateEmbeddings: boolean,
+  docType: NencDocType = "other"
 ): Promise<number> {
   // Delete existing chunks for this source
   await supabase.from("legal_chunks").delete().eq("source_id", sourceId);
 
   let inserted = 0;
+  // Track chapter/section context across chunks (NENC/NESH inheritance)
+  const ctx = new NencContextTracker();
 
   // Insert in batches of 10
   for (let i = 0; i < chunks.length; i += 10) {
@@ -1724,6 +1727,10 @@ async function insertChunks(
             embedding = JSON.stringify(embeddingArray);
           }
         }
+
+        // Extract structured metadata (chapter, heading, cross-refs, ...)
+        const meta = extractNencMetadata(chunk.text, docType, ctx.current());
+        ctx.update(meta);
 
         return {
           source_id: sourceId,
@@ -1741,6 +1748,8 @@ async function insertChunks(
           hierarchy_path: chunk.hierarchy_path,
           keywords: chunk.keywords.length > 0 ? chunk.keywords : null,
           mentioned_hs_codes: chunk.mentioned_hs_codes.length > 0 ? chunk.mentioned_hs_codes : null,
+          // NENC/NESH structured metadata (JSONB)
+          metadata: meta,
         };
       })
     );
