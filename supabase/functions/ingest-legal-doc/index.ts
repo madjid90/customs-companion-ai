@@ -1965,7 +1965,7 @@ serve(async (req) => {
           // Check if split produced blank pages
           const totalChars = pages.reduce((sum, p) => sum + p.text.length, 0);
           const totalTables = pages.reduce((sum, p) => sum + (p.tables?.length || 0), 0);
-          const totalImages = pages.reduce((sum, p) => sum + (p.images?.filter(img => img.image_type !== 'blank_page')?.length || 0), 0);
+          const totalImages = pages.reduce((sum, p) => sum + (p.images?.filter((img: any) => img.image_type !== 'blank_page')?.length || 0), 0);
           
           if (totalChars > 0 || totalTables > 0 || totalImages > 0) {
             splitWorked = true;

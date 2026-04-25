@@ -2433,7 +2433,6 @@ async function analyzePageWithClaude(
     return { raw_lines: rawLines, notes, has_tariff_table: hasTariffTable };
     
   } catch (err: any) {
-    clearTimeout(timeoutId);
     console.error(`[Page ${pageNumber}] Error:`, err.message);
     
     if (err.name === 'AbortError') {
