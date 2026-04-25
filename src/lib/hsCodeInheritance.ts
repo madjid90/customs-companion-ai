@@ -1,6 +1,6 @@
 // ============================================================================
-// FICHIER: src/lib/hsCodeInheritance.ts
-// COPIER CE CODE DANS LOVABLE
+// src/lib/hsCodeInheritance.ts
+// Logique métier d'héritage hiérarchique des codes SH (chapitre → ligne tarifaire)
 // ============================================================================
 
 import { supabase } from "@/integrations/supabase/client";
