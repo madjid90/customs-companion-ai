@@ -18,6 +18,13 @@ import {
   type ParsedHSCode
 } from "../_shared/hs-code-utils.ts";
 import { callAnthropicWithRetry } from "../_shared/retry.ts";
+import {
+  detectDocType,
+  extractNencMetadata,
+  recommendedBatchSize,
+  NencContextTracker,
+  type NencDocType,
+} from "../_shared/nenc-extractor.ts";
 
 import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
 import { requireAuth } from "../_shared/auth-check.ts";
@@ -135,7 +142,9 @@ interface IngestResponse {
 // PDF TEXT EXTRACTION (via Claude) - With batch support for large PDFs
 // ============================================================================
 
-const MAX_PAGES_PER_BATCH = 1; // Single page per request for very dense legal docs
+// Default batch size for circulars and dense legal docs
+// NENC/NESH override this via recommendedBatchSize() (typically 5)
+const MAX_PAGES_PER_BATCH = 1;
 const CLAUDE_TIMEOUT_MS = 55000; // 55 second timeout for single pages
 const CLAUDE_TIMEOUT_FULL_PDF_MS = 120000; // 120 seconds for full PDF when split fails
 
@@ -1695,12 +1704,15 @@ async function insertChunks(
   supabase: any,
   sourceId: number,
   chunks: TextChunk[],
-  generateEmbeddings: boolean
+  generateEmbeddings: boolean,
+  docType: NencDocType = "other"
 ): Promise<number> {
   // Delete existing chunks for this source
   await supabase.from("legal_chunks").delete().eq("source_id", sourceId);
 
   let inserted = 0;
+  // Track chapter/section context across chunks (NENC/NESH inheritance)
+  const ctx = new NencContextTracker();
 
   // Insert in batches of 10
   for (let i = 0; i < chunks.length; i += 10) {
@@ -1715,6 +1727,10 @@ async function insertChunks(
             embedding = JSON.stringify(embeddingArray);
           }
         }
+
+        // Extract structured metadata (chapter, heading, cross-refs, ...)
+        const meta = extractNencMetadata(chunk.text, docType, ctx.current());
+        ctx.update(meta);
 
         return {
           source_id: sourceId,
@@ -1732,6 +1748,8 @@ async function insertChunks(
           hierarchy_path: chunk.hierarchy_path,
           keywords: chunk.keywords.length > 0 ? chunk.keywords : null,
           mentioned_hs_codes: chunk.mentioned_hs_codes.length > 0 ? chunk.mentioned_hs_codes : null,
+          // NENC/NESH structured metadata (JSONB)
+          metadata: meta,
         };
       })
     );
@@ -1753,7 +1771,8 @@ async function insertChunksAppend(
   supabase: any,
   sourceId: number,
   chunks: TextChunk[],
-  generateEmbeddings: boolean
+  generateEmbeddings: boolean,
+  docType: NencDocType = "other"
 ): Promise<number> {
   // Get current max chunk_index for this source
   const { data: maxData } = await supabase
@@ -1766,6 +1785,20 @@ async function insertChunksAppend(
   const startIndex = (maxData && maxData.length > 0) ? maxData[0].chunk_index + 1 : 0;
   
   let inserted = 0;
+  // For batch mode, try to inherit chapter context from the last persisted chunk
+  const ctx = new NencContextTracker();
+  if (docType === "nenc" || docType === "nesh") {
+    const { data: lastChunk } = await supabase
+      .from("legal_chunks")
+      .select("metadata")
+      .eq("source_id", sourceId)
+      .order("chunk_index", { ascending: false })
+      .limit(1);
+    const prevMeta = lastChunk?.[0]?.metadata;
+    if (prevMeta && typeof prevMeta === "object") {
+      ctx.update(prevMeta as any);
+    }
+  }
 
   // Insert in batches of 10
   for (let i = 0; i < chunks.length; i += 10) {
@@ -1780,6 +1813,9 @@ async function insertChunksAppend(
             embedding = JSON.stringify(embeddingArray);
           }
         }
+
+        const meta = extractNencMetadata(chunk.text, docType, ctx.current());
+        ctx.update(meta);
 
         return {
           source_id: sourceId,
@@ -1797,6 +1833,8 @@ async function insertChunksAppend(
           hierarchy_path: chunk.hierarchy_path,
           keywords: chunk.keywords.length > 0 ? chunk.keywords : null,
           mentioned_hs_codes: chunk.mentioned_hs_codes.length > 0 ? chunk.mentioned_hs_codes : null,
+          // NENC/NESH structured metadata (JSONB)
+          metadata: meta,
         };
       })
     );
@@ -2229,6 +2267,10 @@ serve(async (req) => {
     // This avoids OpenAI API calls inside the edge function, preventing CPU exhaustion.
     const shouldGenerateEmbeddings = false;
     
+    // Detect document type (NENC / NESH / circular / law / ...) for metadata enrichment
+    const docType = detectDocType(body.source_type, fullText);
+    console.log(`[ingest-legal-doc] Detected docType=${docType} (source_type=${body.source_type})`);
+
     let chunksCreated = 0;
     if (isBatchMode && body.source_id) {
       // Append chunks without deleting existing ones
@@ -2236,14 +2278,16 @@ serve(async (req) => {
         supabase,
         sourceId,
         chunks,
-        shouldGenerateEmbeddings
+        shouldGenerateEmbeddings,
+        docType
       );
     } else {
       chunksCreated = await insertChunks(
         supabase,
         sourceId,
         chunks,
-        shouldGenerateEmbeddings
+        shouldGenerateEmbeddings,
+        docType
       );
     }
 
