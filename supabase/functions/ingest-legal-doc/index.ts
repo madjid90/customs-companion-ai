@@ -2267,6 +2267,10 @@ serve(async (req) => {
     // This avoids OpenAI API calls inside the edge function, preventing CPU exhaustion.
     const shouldGenerateEmbeddings = false;
     
+    // Detect document type (NENC / NESH / circular / law / ...) for metadata enrichment
+    const docType = detectDocType(body.source_type, fullText);
+    console.log(`[ingest-legal-doc] Detected docType=${docType} (source_type=${body.source_type})`);
+
     let chunksCreated = 0;
     if (isBatchMode && body.source_id) {
       // Append chunks without deleting existing ones
@@ -2274,14 +2278,16 @@ serve(async (req) => {
         supabase,
         sourceId,
         chunks,
-        shouldGenerateEmbeddings
+        shouldGenerateEmbeddings,
+        docType
       );
     } else {
       chunksCreated = await insertChunks(
         supabase,
         sourceId,
         chunks,
-        shouldGenerateEmbeddings
+        shouldGenerateEmbeddings,
+        docType
       );
     }
 
