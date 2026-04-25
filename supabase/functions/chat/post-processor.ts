@@ -48,7 +48,7 @@ export interface PostProcessResult {
     sources_validated: ValidatedSource[];
     sources_rejected: any[];
     has_evidence: boolean;
-    message: string;
+    message?: string;
   };
   contextUsed: Record<string, any>;
   conversationId?: string;

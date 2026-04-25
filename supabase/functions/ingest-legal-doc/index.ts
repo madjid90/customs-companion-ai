@@ -8,7 +8,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { PDFDocument } from "npm:pdf-lib@1.17.1";
+import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
 import { 
   normalize10Strict, 
   normalize6Strict, 
@@ -1965,7 +1965,7 @@ serve(async (req) => {
           // Check if split produced blank pages
           const totalChars = pages.reduce((sum, p) => sum + p.text.length, 0);
           const totalTables = pages.reduce((sum, p) => sum + (p.tables?.length || 0), 0);
-          const totalImages = pages.reduce((sum, p) => sum + (p.images?.filter(img => img.image_type !== 'blank_page')?.length || 0), 0);
+          const totalImages = pages.reduce((sum, p) => sum + (p.images?.filter((img: any) => img.image_type !== 'blank_page')?.length || 0), 0);
           
           if (totalChars > 0 || totalTables > 0 || totalImages > 0) {
             splitWorked = true;

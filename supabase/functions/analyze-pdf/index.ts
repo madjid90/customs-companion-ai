@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { PDFDocument } from "npm:pdf-lib@1.17.1";
+import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
 import {
   getCorsHeaders,
   handleCorsPreFlight,
@@ -2433,7 +2433,6 @@ async function analyzePageWithClaude(
     return { raw_lines: rawLines, notes, has_tariff_table: hasTariffTable };
     
   } catch (err: any) {
-    clearTimeout(timeoutId);
     console.error(`[Page ${pageNumber}] Error:`, err.message);
     
     if (err.name === 'AbortError') {

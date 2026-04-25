@@ -642,7 +642,7 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
           preferentialDutyRate = prefTariffs[0].duty_rate ?? 0;
           // Calculate reduction as fraction: (base - pref) / base
           if (dutyRate > 0) {
-            agreementReduction = (dutyRate - preferentialDutyRate) / dutyRate;
+            agreementReduction = (dutyRate - (preferentialDutyRate ?? 0)) / dutyRate;
           } else {
             agreementReduction = 0;
           }
@@ -652,7 +652,7 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
           // No specific preferential rate found for this code — check if agreement grants general exoneration
           if (agreements[0].preferential_duty_rate != null) {
             preferentialDutyRate = agreements[0].preferential_duty_rate;
-            agreementReduction = dutyRate > 0 ? (dutyRate - preferentialDutyRate) / dutyRate : 0;
+            agreementReduction = dutyRate > 0 ? (dutyRate - (preferentialDutyRate ?? 0)) / dutyRate : 0;
           }
           console.log(`No preferential tariff line found for ${agreement} + code ${hs_code}. Using agreement-level rate: ${preferentialDutyRate}`);
         }
@@ -680,7 +680,6 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
     ...aiReport,
     taxes: {
       caf_details: cafResult.details,
-      caf_value_mad: cafResult.caf_mad,
       exchange_rate: exchangeRate,
       currency,
       tariff_from_db: tariffFound,
@@ -691,6 +690,7 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
       agreement_name: agreementName || undefined,
       proof_required: proofRequired || undefined,
       ...taxes,
+      caf_value_mad: cafResult.caf_mad,
     },
     input_summary: {
       product: product_description,
@@ -1060,7 +1060,7 @@ async function callLLM(prompt: string, retryCount = 0): Promise<any> {
     let repaired = cleaned;
     
     // Remove control characters that break JSON
-    repaired = repaired.replace(/[\x00-\x1F\x7F]/g, (ch) => 
+    repaired = repaired.replace(/[\x00-\x1F\x7F]/g, (ch: string) => 
       ch === '\n' || ch === '\r' || ch === '\t' ? ch : ''
     );
 
