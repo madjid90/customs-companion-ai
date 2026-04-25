@@ -1771,7 +1771,8 @@ async function insertChunksAppend(
   supabase: any,
   sourceId: number,
   chunks: TextChunk[],
-  generateEmbeddings: boolean
+  generateEmbeddings: boolean,
+  docType: NencDocType = "other"
 ): Promise<number> {
   // Get current max chunk_index for this source
   const { data: maxData } = await supabase
@@ -1784,6 +1785,20 @@ async function insertChunksAppend(
   const startIndex = (maxData && maxData.length > 0) ? maxData[0].chunk_index + 1 : 0;
   
   let inserted = 0;
+  // For batch mode, try to inherit chapter context from the last persisted chunk
+  const ctx = new NencContextTracker();
+  if (docType === "nenc" || docType === "nesh") {
+    const { data: lastChunk } = await supabase
+      .from("legal_chunks")
+      .select("metadata")
+      .eq("source_id", sourceId)
+      .order("chunk_index", { ascending: false })
+      .limit(1);
+    const prevMeta = lastChunk?.[0]?.metadata;
+    if (prevMeta && typeof prevMeta === "object") {
+      ctx.update(prevMeta as any);
+    }
+  }
 
   // Insert in batches of 10
   for (let i = 0; i < chunks.length; i += 10) {
@@ -1798,6 +1813,9 @@ async function insertChunksAppend(
             embedding = JSON.stringify(embeddingArray);
           }
         }
+
+        const meta = extractNencMetadata(chunk.text, docType, ctx.current());
+        ctx.update(meta);
 
         return {
           source_id: sourceId,
@@ -1815,6 +1833,8 @@ async function insertChunksAppend(
           hierarchy_path: chunk.hierarchy_path,
           keywords: chunk.keywords.length > 0 ? chunk.keywords : null,
           mentioned_hs_codes: chunk.mentioned_hs_codes.length > 0 ? chunk.mentioned_hs_codes : null,
+          // NENC/NESH structured metadata (JSONB)
+          metadata: meta,
         };
       })
     );
