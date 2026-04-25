@@ -1187,6 +1187,7 @@ export type Database = {
           is_active: boolean | null
           keywords: Json | null
           mentioned_hs_codes: Json | null
+          metadata: Json | null
           page_number: number | null
           parent_section: string | null
           section_title: string | null
@@ -1207,6 +1208,7 @@ export type Database = {
           is_active?: boolean | null
           keywords?: Json | null
           mentioned_hs_codes?: Json | null
+          metadata?: Json | null
           page_number?: number | null
           parent_section?: string | null
           section_title?: string | null
@@ -1227,6 +1229,7 @@ export type Database = {
           is_active?: boolean | null
           keywords?: Json | null
           mentioned_hs_codes?: Json | null
+          metadata?: Json | null
           page_number?: number | null
           parent_section?: string | null
           section_title?: string | null
@@ -1305,6 +1308,8 @@ export type Database = {
           is_current: boolean | null
           issuer: string | null
           language: string | null
+          pdf_storage_path: string | null
+          pdf_total_pages: number | null
           source_date: string | null
           source_ref: string
           source_type: string
@@ -1323,6 +1328,8 @@ export type Database = {
           is_current?: boolean | null
           issuer?: string | null
           language?: string | null
+          pdf_storage_path?: string | null
+          pdf_total_pages?: number | null
           source_date?: string | null
           source_ref: string
           source_type: string
@@ -1341,6 +1348,8 @@ export type Database = {
           is_current?: boolean | null
           issuer?: string | null
           language?: string | null
+          pdf_storage_path?: string | null
+          pdf_total_pages?: number | null
           source_date?: string | null
           source_ref?: string
           source_type?: string
@@ -2921,6 +2930,7 @@ export type Database = {
           chunk_type: string
           combined_score: number
           id: number
+          metadata: Json
           page_number: number
           section_title: string
           source_id: number
