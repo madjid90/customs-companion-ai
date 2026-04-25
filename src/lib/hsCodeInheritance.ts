@@ -124,27 +124,62 @@ export const searchHSCodeWithInheritance = async (
   };
 
   try {
-    // 1. Chercher le code exact dans hs_codes
-    const { data: hsCode } = await supabase
-      .from("hs_codes")
-      .select("*")
-      .or(`code.eq.${formatHSCode(cleanCode)},code_clean.eq.${cleanCode}`)
-      .eq("is_active", true)
-      .single();
+    const parentCodes = getParentCodes(cleanCode);
+
+    // Lancer toutes les requêtes indépendantes en parallèle
+    const [
+      hsCodeRes,
+      exactTariffRes,
+      childrenRes,
+      parentNotesRes,
+      controlsRes,
+    ] = await Promise.all([
+      supabase
+        .from("hs_codes")
+        .select("*")
+        .or(`code.eq.${formatHSCode(cleanCode)},code_clean.eq.${cleanCode}`)
+        .eq("is_active", true)
+        .maybeSingle(),
+      supabase
+        .from("country_tariffs")
+        .select("*")
+        .eq("country_code", countryCode)
+        .eq("is_active", true)
+        .or(`national_code.eq.${cleanCode},hs_code_6.eq.${cleanCode.slice(0, 6)}`)
+        .maybeSingle(),
+      supabase
+        .from("country_tariffs")
+        .select("*")
+        .eq("country_code", countryCode)
+        .eq("is_active", true)
+        .like("national_code", `${cleanCode}%`)
+        .neq("national_code", cleanCode),
+      parentCodes.length > 0
+        ? supabase
+            .from("hs_codes")
+            .select("code, legal_notes")
+            .in("code_clean", parentCodes)
+            .eq("is_active", true)
+            .not("legal_notes", "is", null)
+        : Promise.resolve({ data: null }),
+      supabase
+        .from("controlled_products")
+        .select("*")
+        .eq("country_code", countryCode)
+        .eq("is_active", true)
+        .or(`hs_code.eq.${cleanCode},hs_code.like.${cleanCode.slice(0, 4)}%`),
+    ]);
+
+    const hsCode = hsCodeRes.data;
+    const exactTariff = exactTariffRes.data;
+    const children = childrenRes.data;
+    const parentNotes = parentNotesRes.data;
+    const controls = controlsRes.data;
 
     if (hsCode) {
       result.description = hsCode.description_fr || "";
       result.legal_notes = hsCode.legal_notes ? [hsCode.legal_notes] : [];
     }
-
-    // 2. Chercher le tarif exact
-    const { data: exactTariff } = await supabase
-      .from("country_tariffs")
-      .select("*")
-      .eq("country_code", countryCode)
-      .eq("is_active", true)
-      .or(`national_code.eq.${cleanCode},hs_code_6.eq.${cleanCode.slice(0, 6)}`)
-      .single();
 
     if (exactTariff) {
       result.found = true;
@@ -154,23 +189,28 @@ export const searchHSCodeWithInheritance = async (
       result.is_restricted = exactTariff.is_restricted || false;
       result.rate_source = "direct";
       result.description = exactTariff.description_local || result.description;
+
+      // Notes parents (toujours utiles même si tarif exact trouvé)
+      if (parentNotes) {
+        const notes = parentNotes
+          .filter((p: any) => p.legal_notes)
+          .map((p: any) => `[${p.code}] ${p.legal_notes}`);
+        result.legal_notes = [...notes, ...result.legal_notes];
+      }
+      if (controls) {
+        result.controls = controls.map((c: any) => ({
+          type: c.control_type,
+          authority: c.control_authority || "N/A",
+          inherited: cleanHSCode(c.hs_code) !== cleanCode,
+        }));
+      }
       return result;
     }
-
-    // 3. Chercher les enfants (codes plus spécifiques)
-    const { data: children } = await supabase
-      .from("country_tariffs")
-      .select("*")
-      .eq("country_code", countryCode)
-      .eq("is_active", true)
-      .like("national_code", `${cleanCode}%`)
-      .neq("national_code", cleanCode);
 
     if (children && children.length > 0) {
       result.found = true;
       result.children_count = children.length;
 
-      // Analyser les taux des enfants
       const rates = children
         .map((c) => c.duty_rate)
         .filter((r): r is number => r !== null && r !== undefined);
@@ -191,44 +231,23 @@ export const searchHSCodeWithInheritance = async (
         }
       }
 
-      // Vérifier les statuts des enfants
       result.has_children_prohibited = children.some((c) => c.is_prohibited);
       result.has_children_restricted = children.some((c) => c.is_restricted);
 
-      // Prendre la description du premier enfant si pas déjà définie
       if (!result.description && children[0]?.description_local) {
         result.description = children[0].description_local;
       }
     }
 
-    // 4. Chercher les notes légales des parents
-    const parentCodes = getParentCodes(cleanCode);
-    if (parentCodes.length > 0) {
-      const { data: parentNotes } = await supabase
-        .from("hs_codes")
-        .select("code, legal_notes")
-        .in("code_clean", parentCodes)
-        .eq("is_active", true)
-        .not("legal_notes", "is", null);
-
-      if (parentNotes) {
-        const notes = parentNotes
-          .filter((p) => p.legal_notes)
-          .map((p) => `[${p.code}] ${p.legal_notes}`);
-        result.legal_notes = [...notes, ...result.legal_notes];
-      }
+    if (parentNotes) {
+      const notes = parentNotes
+        .filter((p: any) => p.legal_notes)
+        .map((p: any) => `[${p.code}] ${p.legal_notes}`);
+      result.legal_notes = [...notes, ...result.legal_notes];
     }
 
-    // 5. Chercher les contrôles hérités
-    const { data: controls } = await supabase
-      .from("controlled_products")
-      .select("*")
-      .eq("country_code", countryCode)
-      .eq("is_active", true)
-      .or(`hs_code.eq.${cleanCode},hs_code.like.${cleanCode.slice(0, 4)}%`);
-
     if (controls) {
-      result.controls = controls.map((c) => ({
+      result.controls = controls.map((c: any) => ({
         type: c.control_type,
         authority: c.control_authority || "N/A",
         inherited: cleanHSCode(c.hs_code) !== cleanCode,
