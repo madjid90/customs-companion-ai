@@ -339,6 +339,15 @@ export default function Chat() {
   });
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+  const {
+    isOpen: isSidebarOpen,
+    setOpen: setSidebarOpen,
+    sizePct: sidebarSizePct,
+    setSizePct: setSidebarSizePct,
+    citations: sidebarCitations,
+    savedResponses: sidebarSaved,
+  } = useChatSidebarStore();
+  const sidebarBadgeCount = sidebarCitations.length + sidebarSaved.length;
 
   // Streaming buffer: accumulate chunks in a ref and flush to state periodically
   const streamBufferRef = useRef<string>("");
