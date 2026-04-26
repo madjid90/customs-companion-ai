@@ -50,6 +50,8 @@ interface Message {
   hasDbEvidence?: boolean;
   validationMessage?: string;
   isStreaming?: boolean;
+  /** Intent détecté côté client (carte inline rendue dans la bulle assistant) */
+  detectedIntent?: DetectedIntent;
   context?: {
     hs_codes_found: number;
     tariffs_found: number;
