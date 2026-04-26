@@ -761,37 +761,14 @@ export default function Chat() {
           isHistoryOpen ? "md:ml-72" : "ml-0"
         )}
       >
-        {/* Desktop: resizable dual-pane */}
-        <div className="hidden md:flex flex-1 min-w-0 min-h-0">
-          {isSidebarOpen && chatMode !== "classification" ? (
-            <PanelGroup
-              orientation="horizontal"
-              className="flex-1 min-w-0 min-h-0"
-              onLayoutChange={(layout) => {
-                const sb = layout?.["chat-sidebar"];
-                if (typeof sb === "number") {
-                  setSidebarSizePct(sb);
-                }
-              }}
-            >
-              <Panel id="chat-main" defaultSize={100 - sidebarSize} minSize={40} className="min-w-0">
-                {chatPaneContent}
-              </Panel>
-              <PanelResizeHandle className="w-1 bg-border/40 hover:bg-primary/40 data-[resize-handle-active]:bg-primary transition-colors cursor-col-resize" />
-              <Panel
-                id="chat-sidebar"
-                defaultSize={sidebarSize}
-                minSize={20}
-                maxSize={50}
-                className="min-w-0"
-              >
-                <ChatSidebar onClose={() => setSidebarOpen(false)} />
-              </Panel>
-            </PanelGroup>
-          ) : (
-            <div className="flex-1 min-w-0 min-h-0">{chatPaneContent}</div>
-          )}
-        </div>
+        {/* Desktop: dual-pane with manual resize handle */}
+        <DesktopDualPane
+          isOpen={isSidebarOpen && chatMode !== "classification"}
+          sizePct={sidebarSize}
+          onSizeChange={setSidebarSizePct}
+          chatPane={chatPaneContent}
+          sidebar={<ChatSidebar onClose={() => setSidebarOpen(false)} />}
+        />
 
         {/* Mobile: full-width chat + sidebar as overlay */}
         <div className="flex md:hidden flex-1 min-w-0 min-h-0 relative">
