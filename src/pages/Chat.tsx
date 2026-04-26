@@ -806,3 +806,70 @@ export default function Chat() {
     </div>
   );
 }
+
+interface DesktopDualPaneProps {
+  isOpen: boolean;
+  sizePct: number;
+  onSizeChange: (pct: number) => void;
+  chatPane: React.ReactNode;
+  sidebar: React.ReactNode;
+}
+
+function DesktopDualPane({ isOpen, sizePct, onSizeChange, chatPane, sidebar }: DesktopDualPaneProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    draggingRef.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, []);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!draggingRef.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const sidebarPx = rect.right - e.clientX;
+      const pct = (sidebarPx / rect.width) * 100;
+      const clamped = Math.max(20, Math.min(50, pct));
+      onSizeChange(clamped);
+    };
+    const onUp = () => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [onSizeChange]);
+
+  const safeSize = Math.max(20, Math.min(50, sizePct));
+
+  return (
+    <div ref={containerRef} className="hidden md:flex flex-1 min-w-0 min-h-0 relative">
+      <div className="flex-1 min-w-0 min-h-0">{chatPane}</div>
+      {isOpen && (
+        <>
+          <div
+            onMouseDown={onMouseDown}
+            className="w-1 cursor-col-resize bg-border/40 hover:bg-primary/40 active:bg-primary transition-colors flex-shrink-0"
+            role="separator"
+            aria-orientation="vertical"
+          />
+          <div
+            className="min-w-0 min-h-0 flex-shrink-0"
+            style={{ width: `${safeSize}%` }}
+          >
+            {sidebar}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
