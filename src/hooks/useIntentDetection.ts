@@ -40,16 +40,22 @@ const DEFINITIONAL_PATTERNS = [
 
 const CLASSIFY_TRIGGERS = [
   /\b(classer|classifier|classification|nomenclature)\b/i,
-  /\bquel(le)?\s+(code|position)\s+(sh|hs|tarifaire|douani[èe]r)/i,
-  /\b(code|position)\s+(sh|hs|tarifaire|douani[èe]r)\b.*\?\s*$/i,
-  /\b(trouver|chercher|déterminer|identifier)\s+le\s+(code|sh|hs)/i,
+  // "quel code SH", "quelle position tarifaire", "quel est le code SH", "le code SH de X"
+  /\b(code|position)\s+(sh|hs|tarifaire|douani[èe]re?)\b/i,
+  /\b(sh|hs)[\s-]?code\b/i,
+  /\b(trouver|chercher|déterminer|identifier|donne(r|z|-?moi)?|connaître|savoir)\b.*\b(code|sh|hs|position)\b/i,
 ];
 
 const IMPORT_TRIGGERS = [
-  /\b(calcul(er|e)?|combien)\b.*\b(droit|taxe|tva|ddi|cif|fob|coût|cout|frais)/i,
-  /\b(import(er|ation)?|importe)\b.*\b(depuis|de\s+(la\s+)?(chine|france|espagne|italie|turquie|inde|usa|allemagne))/i,
+  // calcul/combien + droit/taxe/...
+  /\b(calcul(er|e|ez)?|combien)\b.*\b(droit|taxe|tva|ddi|cif|fob|coût|cout|frais|prix)/i,
+  // importer + depuis + pays (liste élargie)
+  /\b(import(er|ation|é|ée)?|importe|achat)\b.*\b(depuis|de\s+(la\s+|l['']\s*)?(chine|france|espagne|italie|turquie|inde|usa|allemagne|maroc|portugal|royaume[- ]uni|angleterre|belgique|tunisie|égypte|emirats?|dubai|asie|europe))\b/i,
+  // droit/taxe d'import
   /\b(droit|taxe|ddi|tva)\b.*\b(d['']?\s*import|importation)\b/i,
-  /\bcombien\s+(je\s+)?(vais\s+)?payer\b/i,
+  /\bcombien\s+(je\s+|ça\s+|cela\s+)?(vais\s+|va\s+)?(coûte(r|ra)?|payer|cost)/i,
+  // "frais de douane", "dédouanement"
+  /\b(frais\s+de\s+douane|dédouan(ement|er))\b/i,
 ];
 
 const MRE_TRIGGERS = [
