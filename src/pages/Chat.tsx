@@ -768,17 +768,18 @@ export default function Chat() {
               orientation="horizontal"
               className="flex-1 min-w-0 min-h-0"
               onLayoutChange={(layout) => {
-                const sb = (layout as number[])?.[1];
+                const sb = layout?.["chat-sidebar"];
                 if (typeof sb === "number") {
                   setSidebarSizePct(sb);
                 }
               }}
             >
-              <Panel defaultSize={100 - sidebarSize} minSize={40} className="min-w-0">
+              <Panel id="chat-main" defaultSize={100 - sidebarSize} minSize={40} className="min-w-0">
                 {chatPaneContent}
               </Panel>
               <PanelResizeHandle className="w-1 bg-border/40 hover:bg-primary/40 data-[resize-handle-active]:bg-primary transition-colors cursor-col-resize" />
               <Panel
+                id="chat-sidebar"
                 defaultSize={sidebarSize}
                 minSize={20}
                 maxSize={50}
