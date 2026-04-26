@@ -704,18 +704,24 @@ export default function Chat() {
           ) : (
             <ScrollArea ref={scrollRef} className="flex-1 px-2 md:px-4 py-3 md:py-6 pb-20 md:pb-6">
               <div className="max-w-3xl mx-auto space-y-3 md:space-y-6">
-                {messages.map((message, index) => (
-                  <ChatMessage
-                    key={message.id}
-                    message={message}
-                    isLastMessage={index === messages.length - 1 && message.role === "assistant"}
-                    isLoading={isLoading}
-                    onFeedback={handleFeedback}
-                    onAnswer={handleSend}
-                    cleanContent={cleanConfidenceFromContent}
-                    removeQuestions={removeInteractiveQuestions}
-                  />
-                ))}
+                {messages.map((message, index) => {
+                  const previousUserQuestion =
+                    message.role === "assistant" && index > 0 && messages[index - 1].role === "user"
+                      ? messages[index - 1].content
+                      : undefined;
+                  return (
+                    <ChatMessage
+                      key={message.id}
+                      message={{ ...message, previousUserQuestion }}
+                      isLastMessage={index === messages.length - 1 && message.role === "assistant"}
+                      isLoading={isLoading}
+                      onFeedback={handleFeedback}
+                      onAnswer={handleSend}
+                      cleanContent={cleanConfidenceFromContent}
+                      removeQuestions={removeInteractiveQuestions}
+                    />
+                  );
+                })}
 
                 {isLoading && !messages.some(m => m.isStreaming && m.content.length > 0) && <ChatTypingIndicator />}
               </div>
