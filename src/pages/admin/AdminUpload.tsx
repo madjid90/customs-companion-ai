@@ -387,6 +387,8 @@ export default function AdminUpload() {
       accord: "agreement",
       reglementation: "law",
       circulaire: "circular",
+      nenc: "nenc",
+      nesh: "nesh",
     };
 
     // === RESUME LOGIC: Check for existing chunks ===
