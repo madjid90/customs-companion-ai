@@ -280,9 +280,53 @@ export function ChatMessage({
   const [previewDoc, setPreviewDoc] = useState<{ url: string; title: string; pageNumber?: number } | null>(null);
   const [isSearchingDoc, setIsSearchingDoc] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<AttachedFile | null>(null);
-  
+  const { addCitations, addSavedResponse, savedResponses, setActiveTab } = useChatSidebarStore();
+  const { toast } = useToast();
+
   const isUser = message.role === "user";
   const isError = message.content.startsWith("⚠️");
+
+  const isSaved = savedResponses.some((r) => r.id === message.id);
+
+  // Push validated citations to sidebar store when assistant message stabilizes
+  useEffect(() => {
+    if (isUser || isError || message.isStreaming) return;
+    if (!message.citedCirculars || message.citedCirculars.length === 0) return;
+    const filtered = filterCitedSources(message.citedCirculars, message.content);
+    if (filtered.length === 0) return;
+    addCitations(
+      filtered.map((c, idx) => ({
+        id: `${message.id}-${c.id || idx}`,
+        messageId: message.id,
+        reference_type: c.reference_type,
+        reference_number: c.reference_number,
+        title: c.title,
+        pdf_title: c.pdf_title,
+        page_number: c.page_number,
+        download_url: c.download_url,
+        reference_date: c.reference_date,
+        validated: c.validated,
+        addedAt: Date.now(),
+      }))
+    );
+  }, [isUser, isError, message.isStreaming, message.id, message.citedCirculars, message.content, addCitations]);
+
+  const handleSaveResponse = useCallback(() => {
+    if (isSaved) {
+      toast({ title: "Déjà sauvegardée", description: "Cette réponse est déjà dans le volet." });
+      return;
+    }
+    addSavedResponse({
+      id: message.id,
+      conversationId: message.conversationId,
+      question: "",
+      response: message.content,
+      savedAt: Date.now(),
+    });
+    setActiveTab("saved");
+    toast({ title: "Réponse sauvegardée", description: "Disponible dans le volet contextuel." });
+  }, [isSaved, addSavedResponse, message.id, message.conversationId, message.content, setActiveTab, toast]);
+
 
   // Search for PDF document by chapter number
   const searchAndOpenDocument = useCallback(async (sourceTitle: string, chapterFromUrl?: string) => {
