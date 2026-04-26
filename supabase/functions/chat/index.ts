@@ -36,6 +36,7 @@ import {
   searchHSCodesHybrid,
   searchTariffNotesHybridRRF,
   searchLegalChunksHybrid,
+  searchNencChunks,
 } from "./semantic-search.ts";
 import {
   analyzeQuestion,
