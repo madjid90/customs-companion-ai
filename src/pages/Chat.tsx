@@ -777,6 +777,18 @@ export default function Chat() {
           onModeChange={setChatMode}
         />
       </div>
+
+      {/* L2/L3 — Overlay inline pour Classification ou Consultation */}
+      <InlineModuleOverlay
+        active={activeModule}
+        onClose={() => setActiveModule(null)}
+      />
+
+      {/* L1 — Panneau résultat (s'ouvre uniquement quand un résultat existe) */}
+      <ResultSidePanel
+        result={sidePanelResult}
+        onClose={() => setSidePanelResult(null)}
+      />
     </div>
   );
 }
