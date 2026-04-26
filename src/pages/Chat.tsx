@@ -768,9 +768,9 @@ export default function Chat() {
               orientation="horizontal"
               className="flex-1 min-w-0 min-h-0"
               onLayoutChange={(layout) => {
-                const sb = layout?.[1];
-                if (sb && typeof sb.size === "number") {
-                  setSidebarSizePct(sb.size);
+                const sb = (layout as number[])?.[1];
+                if (typeof sb === "number") {
+                  setSidebarSizePct(sb);
                 }
               }}
             >
