@@ -39,6 +39,11 @@ import {
   searchNencChunks,
 } from "./semantic-search.ts";
 import {
+  buildHierarchyAnchor,
+  rerankHsCandidates,
+  rerankChunksByHierarchy,
+} from "./hierarchical-ranker.ts";
+import {
   analyzeQuestion,
   extractHistoryContext,
   analyzePdfWithClaude,
