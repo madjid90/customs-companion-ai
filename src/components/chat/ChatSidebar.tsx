@@ -22,10 +22,53 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
     setActiveTab,
     citations,
     savedResponses,
+    isLoadingSaved,
     removeCitation,
     clearCitations,
     removeSavedResponse,
   } = useChatSidebarStore();
+  const { toast } = useToast();
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (savedResponses.length === 0) {
+      toast({ title: "Rien à exporter", description: "Sauvegardez d'abord des réponses." });
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const headers = await getAuthHeaders(true);
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/export-saved-pdf`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const html = await res.text();
+      const blob = new Blob([html], { type: "text/html" });
+      const blobUrl = URL.createObjectURL(blob);
+      const win = window.open(blobUrl, "_blank", "noopener,noreferrer");
+      if (!win) {
+        toast({
+          title: "Ouverture bloquée",
+          description: "Autorisez les pop-ups pour visualiser l'export.",
+          variant: "destructive",
+        });
+      }
+      // Revoke after a short delay so the new tab has time to load
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000);
+    } catch (e: any) {
+      console.error("[ChatSidebar] export error", e);
+      toast({
+        title: "Échec de l'export",
+        description: e?.message || "Veuillez réessayer.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col bg-card border-l border-border/40">
