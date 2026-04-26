@@ -149,13 +149,51 @@ export function analyzeQuestion(question: string): QuestionAnalysisV2 {
   else if (/côte d'ivoire|cote d'ivoire|ivoirien|ساحل العاج/i.test(question)) country = 'CI';
   else if (/cameroun|الكاميرون/i.test(question)) country = 'CM';
   
-  return { 
-    detectedCodes, 
-    intent: primaryIntent, 
-    keywords, 
+  // === NENC/NESH detection (Notes Explicatives) ===
+  // Trigger when user explicitly asks for explanatory notes, OR when classifying by description.
+  const wantsExplanatoryNote =
+    /nenc|nesh|note\s+explicative|notes?\s+explicatives|تفسير(?:ية)?|ملاحظات\s+تفسيرية/i.test(question) ||
+    intents.includes('classify');
+
+  // Extract chapter (2-digit, 01-97) and heading (4-digit) from detected codes
+  let nencChapter: string | null = null;
+  let nencHeading: string | null = null;
+  let nencHsCode: string | null = null;
+  if (detectedCodes.length > 0) {
+    const longest = [...detectedCodes].sort((a, b) => b.length - a.length)[0];
+    if (longest.length >= 2) {
+      const chNum = parseInt(longest.substring(0, 2), 10);
+      if (chNum >= 1 && chNum <= 97) {
+        nencChapter = longest.substring(0, 2);
+      }
+    }
+    if (longest.length >= 4) {
+      nencHeading = `${longest.substring(0, 2)}.${longest.substring(2, 4)}`;
+    }
+    if (longest.length >= 6) {
+      nencHsCode = longest.substring(0, 6);
+    }
+  }
+  // Also try to catch a bare "chapitre XX" / "الفصل XX" mention
+  if (!nencChapter) {
+    const chapMatch = question.match(/(?:chapitre|chap\.?|الفصل)\s*0?(\d{1,2})\b/i);
+    if (chapMatch) {
+      const n = parseInt(chapMatch[1], 10);
+      if (n >= 1 && n <= 97) nencChapter = String(n).padStart(2, '0');
+    }
+  }
+
+  return {
+    detectedCodes,
+    intent: primaryIntent,
+    keywords,
     country,
     intents,
     primaryIntent,
+    wantsExplanatoryNote,
+    nencChapter,
+    nencHeading,
+    nencHsCode,
   };
 }
 
