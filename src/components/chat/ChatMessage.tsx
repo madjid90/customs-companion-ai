@@ -1,5 +1,7 @@
-import { useState, useCallback } from "react";
-import { User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle, ExternalLink, Eye, Image, Scale } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
+import { User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle, ExternalLink, Eye, Image, Scale, Bookmark, BookmarkCheck } from "lucide-react";
+import { useChatSidebarStore } from "@/stores/chatSidebarStore";
+import { useToast } from "@/hooks/use-toast";
 import { BotAvatar } from "./BotAvatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
