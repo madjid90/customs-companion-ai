@@ -1324,8 +1324,81 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     }
 
     // =========================================================================
-    // LLM RE-RANKING - Post-retrieval relevance filtering
+    // NENC / NESH METADATA-FILTERED RETRIEVAL
+    // Activated when the question is classification-like or explicitly asks
+    // for an explanatory note, AND we have at least a chapter / heading.
     // =========================================================================
+    if (
+      queryEmbedding &&
+      (analysis.wantsExplanatoryNote || analysis.intents?.includes('classify')) &&
+      (analysis.nencChapter || analysis.nencHeading || analysis.nencHsCode)
+    ) {
+      try {
+        const nencChunks = await searchNencChunks(
+          supabase,
+          queryEmbedding,
+          {
+            chapter: analysis.nencChapter,
+            heading: analysis.nencHeading,
+            hsCode: analysis.nencHsCode,
+            docTypes: ['nenc', 'nesh'],
+          },
+          6,
+          SUPABASE_URL,
+        );
+
+        if (nencChunks.length > 0) {
+          // Merge into _legalChunks for citation/validation pipeline
+          const existingChunks = ((context as any)._legalChunks || []) as any[];
+          const seenIds = new Set(existingChunks.map((c: any) => c.id));
+          const merged = [
+            ...nencChunks.filter((c: any) => !seenIds.has(c.id)),
+            ...existingChunks,
+          ];
+          (context as any)._legalChunks = merged;
+
+          // Inject as PRIORITY knowledge_documents so the prompt picks them up
+          const nencDocs = nencChunks.map((chunk: any) => {
+            const meta = chunk.metadata || {};
+            const docTypeLabel = (meta.doc_type || '').toString().toUpperCase();
+            const hierarchyParts: string[] = [];
+            if (meta.section_roman) hierarchyParts.push(`Section ${meta.section_roman}`);
+            if (meta.chapter) hierarchyParts.push(`Chapitre ${meta.chapter}`);
+            if (meta.heading) hierarchyParts.push(`Position ${meta.heading}`);
+            if (meta.subheading) hierarchyParts.push(`Sous-position ${meta.subheading}`);
+            const hierarchy = hierarchyParts.join(' › ') || chunk.section_title || '';
+
+            return {
+              title: `${docTypeLabel || 'NENC'} — ${hierarchy || 'Note explicative'}`,
+              content: chunk.chunk_text,
+              category: 'legal',
+              chunk_type: chunk.chunk_type,
+              source: 'legal_chunks',
+              source_id: chunk.source_id,
+              page_number: chunk.page_number,
+              download_url: chunk.download_url,
+              metadata: meta,
+              is_nenc: true,
+            };
+          });
+
+          // Prepend so they appear first in the prompt
+          context.knowledge_documents = [
+            ...nencDocs,
+            ...context.knowledge_documents.filter((d: any) =>
+              !nencDocs.some((n: any) => n.source_id === d.source_id && n.page_number === d.page_number)
+            ),
+          ].slice(0, 18);
+
+          console.log(`[NENC] Injected ${nencDocs.length} NENC/NESH chunks into context (chapter=${analysis.nencChapter}, heading=${analysis.nencHeading})`);
+        } else {
+          console.log(`[NENC] No NENC/NESH chunks found for chapter=${analysis.nencChapter}, heading=${analysis.nencHeading}, hs=${analysis.nencHsCode}`);
+        }
+      } catch (nencErr) {
+        console.warn('[NENC] Search failed:', nencErr);
+      }
+    }
+
     const totalRetrievedPassages = context.knowledge_documents.length + 
       context.tariff_notes.length + 
       ((context as any)._legalChunks?.length || 0);
