@@ -1,7 +1,5 @@
-import { useState, useCallback, useEffect } from "react";
-import { User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle, ExternalLink, Eye, Image, Scale, Bookmark, BookmarkCheck } from "lucide-react";
-import { useChatSidebarStore } from "@/stores/chatSidebarStore";
-import { useToast } from "@/hooks/use-toast";
+import { useState, useCallback } from "react";
+import { User, ThumbsUp, ThumbsDown, Database, FileText, AlertTriangle, ExternalLink, Eye, Image, Scale } from "lucide-react";
 import { BotAvatar } from "./BotAvatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -45,8 +43,6 @@ interface Message {
   hasDbEvidence?: boolean;
   validationMessage?: string;
   isStreaming?: boolean;
-  /** Previous user question text (for save-response context). Optional. */
-  previousUserQuestion?: string;
 }
 
 interface ChatMessageProps {
@@ -282,89 +278,9 @@ export function ChatMessage({
   const [previewDoc, setPreviewDoc] = useState<{ url: string; title: string; pageNumber?: number } | null>(null);
   const [isSearchingDoc, setIsSearchingDoc] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<AttachedFile | null>(null);
-  const { addCitations, saveResponse, removeSavedResponse, savedResponses, setActiveTab } =
-    useChatSidebarStore();
-  const { toast } = useToast();
-
+  
   const isUser = message.role === "user";
   const isError = message.content.startsWith("⚠️");
-
-  // A response is "saved" if either its messageId or conversationId matches a stored row
-  const savedRow = savedResponses.find(
-    (r) =>
-      r.messageId === message.id ||
-      (message.conversationId && r.conversationId === message.conversationId)
-  );
-  const isSaved = !!savedRow;
-
-  // Push validated citations to sidebar store when assistant message stabilizes
-  useEffect(() => {
-    if (isUser || isError || message.isStreaming) return;
-    if (!message.citedCirculars || message.citedCirculars.length === 0) return;
-    const filtered = filterCitedSources(message.citedCirculars, message.content);
-    if (filtered.length === 0) return;
-    addCitations(
-      filtered.map((c, idx) => ({
-        id: `${message.id}-${c.id || idx}`,
-        messageId: message.id,
-        reference_type: c.reference_type,
-        reference_number: c.reference_number,
-        title: c.title,
-        pdf_title: c.pdf_title,
-        page_number: c.page_number,
-        download_url: c.download_url,
-        reference_date: c.reference_date,
-        validated: c.validated,
-        addedAt: Date.now(),
-      }))
-    );
-  }, [isUser, isError, message.isStreaming, message.id, message.citedCirculars, message.content, addCitations]);
-
-  const handleSaveResponse = useCallback(async () => {
-    if (isSaved && savedRow) {
-      await removeSavedResponse(savedRow.id);
-      toast({ title: "Sauvegarde retirée" });
-      return;
-    }
-    const filteredCits = message.citedCirculars
-      ? filterCitedSources(message.citedCirculars, message.content).map((c, idx) => ({
-          id: `${message.id}-${c.id || idx}`,
-          messageId: message.id,
-          reference_type: c.reference_type,
-          reference_number: c.reference_number,
-          title: c.title,
-          pdf_title: c.pdf_title,
-          page_number: c.page_number,
-          download_url: c.download_url,
-          reference_date: c.reference_date,
-          validated: c.validated,
-          addedAt: Date.now(),
-        }))
-      : undefined;
-    await saveResponse({
-      id: message.id,
-      messageId: message.id,
-      conversationId: message.conversationId,
-      question: message.previousUserQuestion || "",
-      response: message.content,
-      citedCirculars: filteredCits,
-    });
-    setActiveTab("saved");
-    toast({ title: "Réponse sauvegardée", description: "Disponible dans le volet contextuel." });
-  }, [
-    isSaved,
-    savedRow,
-    removeSavedResponse,
-    saveResponse,
-    message.id,
-    message.conversationId,
-    message.content,
-    message.citedCirculars,
-    message.previousUserQuestion,
-    setActiveTab,
-    toast,
-  ]);
-
 
   // Search for PDF document by chapter number
   const searchAndOpenDocument = useCallback(async (sourceTitle: string, chapterFromUrl?: string) => {
@@ -763,20 +679,6 @@ export function ChatMessage({
                 </span>
               )}
               <div className="flex gap-0.5 ml-auto">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    "h-8 w-8 rounded-full transition-all",
-                    isSaved
-                      ? "text-primary bg-primary/15 hover:bg-primary/20"
-                      : "hover:bg-muted/50"
-                  )}
-                  onClick={handleSaveResponse}
-                  title={isSaved ? "Déjà sauvegardée" : "Sauvegarder dans le volet"}
-                >
-                  {isSaved ? <BookmarkCheck className="h-3.5 w-3.5" /> : <Bookmark className="h-3.5 w-3.5" />}
-                </Button>
                 <Button
                   variant="ghost"
                   size="icon"

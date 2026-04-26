@@ -1970,53 +1970,6 @@ export type Database = {
         }
         Relationships: []
       }
-      saved_responses: {
-        Row: {
-          cited_circulars: Json | null
-          conversation_id: string | null
-          created_at: string
-          id: string
-          notes: string | null
-          question: string | null
-          response: string
-          session_id: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          cited_circulars?: Json | null
-          conversation_id?: string | null
-          created_at?: string
-          id?: string
-          notes?: string | null
-          question?: string | null
-          response: string
-          session_id?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          cited_circulars?: Json | null
-          conversation_id?: string | null
-          created_at?: string
-          id?: string
-          notes?: string | null
-          question?: string | null
-          response?: string
-          session_id?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "saved_responses_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       statistics: {
         Row: {
           avg_rating: number | null
