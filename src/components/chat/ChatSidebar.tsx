@@ -1,12 +1,16 @@
+import { useState } from "react";
 import { useChatSidebarStore } from "@/stores/chatSidebarStore";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { BookmarkX, ExternalLink, FileText, Quote, Trash2, X } from "lucide-react";
+import { BookmarkX, Download, ExternalLink, FileText, Loader2, Quote, Trash2, X } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { getAuthHeaders } from "@/lib/authHeaders";
+import { useToast } from "@/hooks/use-toast";
 
 interface ChatSidebarProps {
   onClose: () => void;
