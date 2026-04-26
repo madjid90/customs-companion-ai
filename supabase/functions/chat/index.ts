@@ -1189,7 +1189,32 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         const newHSCodes = semanticHS
           .filter((hs: any) => !existingCodes.has(hs.code))
           .map((hs: any) => ({ ...hs, semantic_match: true }));
-        context.hs_codes = [...context.hs_codes, ...newHSCodes].slice(0, 30);
+        let merged = [...context.hs_codes, ...newHSCodes];
+
+        // === Re-ranking hiérarchique ===
+        // Si la question est une classification (par description ou code SH),
+        // on ré-ordonne en combinant score sémantique + cohérence
+        // chapitre/position/sous-position avec les codes déjà ancrés.
+        if (
+          analysis.intents?.includes('classify') ||
+          analysis.detectedCodes.length > 0
+        ) {
+          const anchor = buildHierarchyAnchor(
+            analysis.detectedCodes,
+            context.hs_codes, // codes "ancres" déjà déterministes (héritage / lookup direct)
+            {
+              nencChapter: analysis.nencChapter,
+              nencHeading: analysis.nencHeading,
+              nencHsCode: analysis.nencHsCode,
+            },
+          );
+          merged = rerankHsCandidates(merged, anchor, {
+            limit: 30,
+            debug: true,
+          });
+        }
+
+        context.hs_codes = merged.slice(0, 30);
       }
 
       if (semanticKnowledge.length > 0) {
