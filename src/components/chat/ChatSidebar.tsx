@@ -152,25 +152,49 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
 
         {/* Saved tab */}
         <TabsContent value="saved" className="flex-1 min-h-0 mt-2 mx-0">
-          <ScrollArea className="h-full px-3 pb-3">
-            {savedResponses.length === 0 ? (
-              <EmptyState
-                icon={<FileText className="h-8 w-8" />}
-                title="Aucune réponse sauvegardée"
-                description="Cliquez sur l'icône de signet sous une réponse pour la sauvegarder ici."
-              />
-            ) : (
-              <div className="space-y-2">
-                {savedResponses.map((r) => (
-                  <SavedResponseCard
-                    key={r.id}
-                    response={r}
-                    onRemove={() => removeSavedResponse(r.id)}
-                  />
-                ))}
+          <div className="flex flex-col h-full">
+            {savedResponses.length > 0 && (
+              <div className="flex justify-end px-3 pb-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExport}
+                  disabled={isExporting}
+                  className="h-7 text-xs"
+                >
+                  {isExporting ? (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  ) : (
+                    <Download className="h-3 w-3 mr-1" />
+                  )}
+                  Exporter PDF
+                </Button>
               </div>
             )}
-          </ScrollArea>
+            <ScrollArea className="flex-1 px-3 pb-3">
+              {isLoadingSaved && savedResponses.length === 0 ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : savedResponses.length === 0 ? (
+                <EmptyState
+                  icon={<FileText className="h-8 w-8" />}
+                  title="Aucune réponse sauvegardée"
+                  description="Cliquez sur l'icône de signet sous une réponse pour la sauvegarder ici."
+                />
+              ) : (
+                <div className="space-y-2">
+                  {savedResponses.map((r) => (
+                    <SavedResponseCard
+                      key={r.id}
+                      response={r}
+                      onRemove={() => removeSavedResponse(r.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
