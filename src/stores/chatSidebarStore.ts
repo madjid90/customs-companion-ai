@@ -119,18 +119,17 @@ export const useChatSidebarStore = create<ChatSidebarState>()(
           const userId = userData?.user?.id;
           if (!userId) throw new Error("not_authenticated");
 
+          const insertPayload = {
+            user_id: userId,
+            conversation_id: input.conversationId || null,
+            session_id: input.sessionId || null,
+            question: input.question || null,
+            response: input.response,
+            cited_circulars: (input.citedCirculars ?? null) as unknown as null,
+          };
           const { data, error } = await supabase
             .from("saved_responses")
-            .insert({
-              user_id: userId,
-              conversation_id: input.conversationId || null,
-              session_id: input.sessionId || null,
-              question: input.question || null,
-              response: input.response,
-              cited_circulars: input.citedCirculars
-                ? (input.citedCirculars as unknown as Record<string, unknown>[])
-                : null,
-            })
+            .insert(insertPayload)
             .select("id, created_at")
             .single();
           if (error) throw error;
