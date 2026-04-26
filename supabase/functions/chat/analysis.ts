@@ -68,6 +68,11 @@ const CLAUDE_PDF_API_URL = "https://api.anthropic.com/v1/messages";
 export interface QuestionAnalysisV2 extends QuestionAnalysis {
   intents: string[]; // Multi-intent support
   primaryIntent: string;
+  // NENC/NESH context (Notes Explicatives)
+  wantsExplanatoryNote?: boolean;
+  nencChapter?: string | null;   // "84"
+  nencHeading?: string | null;   // "84.71"
+  nencHsCode?: string | null;    // "847130"
 }
 
 /**
