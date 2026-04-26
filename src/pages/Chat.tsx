@@ -669,6 +669,80 @@ export default function Chat() {
     };
   }, [uploadedFiles]);
 
+  const chatPaneContent = (
+    <div className="flex flex-col h-full min-w-0 min-h-0 relative">
+      {chatMode === "classification" ? (
+        <ClassificationView />
+      ) : (
+        <>
+          {/* Floating button to open sidebar (desktop only, when closed) */}
+          {!isSidebarOpen && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarOpen(true)}
+              className="hidden md:flex absolute right-4 top-3 z-30 h-10 w-10 rounded-full bg-card/80 backdrop-blur-sm border border-border/50 shadow-card hover:bg-primary/5 hover:text-primary"
+              title="Ouvrir le volet contextuel"
+            >
+              <PanelRightOpen className="h-5 w-5" />
+              {sidebarBadgeCount > 0 && (
+                <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold flex items-center justify-center">
+                  {sidebarBadgeCount > 99 ? "99+" : sidebarBadgeCount}
+                </span>
+              )}
+            </Button>
+          )}
+
+          {/* Chat messages area */}
+          {messages.length === 0 ? (
+            <div className="flex-1 min-h-0 flex items-center justify-center px-2 md:px-4 overflow-hidden pb-20 md:pb-0">
+              <div className="max-w-3xl mx-auto w-full max-h-full overflow-hidden">
+                <ChatWelcome onQuestionClick={handleSend} />
+              </div>
+            </div>
+          ) : (
+            <ScrollArea ref={scrollRef} className="flex-1 px-2 md:px-4 py-3 md:py-6 pb-20 md:pb-6">
+              <div className="max-w-3xl mx-auto space-y-3 md:space-y-6">
+                {messages.map((message, index) => (
+                  <ChatMessage
+                    key={message.id}
+                    message={message}
+                    isLastMessage={index === messages.length - 1 && message.role === "assistant"}
+                    isLoading={isLoading}
+                    onFeedback={handleFeedback}
+                    onAnswer={handleSend}
+                    cleanContent={cleanConfidenceFromContent}
+                    removeQuestions={removeInteractiveQuestions}
+                  />
+                ))}
+
+                {isLoading && !messages.some(m => m.isStreaming && m.content.length > 0) && <ChatTypingIndicator />}
+              </div>
+            </ScrollArea>
+          )}
+        </>
+      )}
+
+      {/* Input area */}
+      <ChatInput
+        input={input}
+        onInputChange={setInput}
+        onSend={() => handleSend()}
+        onKeyDown={handleKeyDown}
+        isLoading={isLoading}
+        isUploading={isUploading}
+        uploadedFiles={uploadedFiles}
+        onFilesSelected={handleFilesSelected}
+        onRemoveFile={handleRemoveFile}
+        chatMode={chatMode}
+        onModeChange={setChatMode}
+      />
+    </div>
+  );
+
+  // Mobile sidebar size matches full width via overlay; on desktop we use resizable panels.
+  const sidebarSize = Math.min(50, Math.max(20, sidebarSizePct));
+
   return (
     <div className="flex h-full flex-col bg-background overflow-hidden overscroll-none">
       {/* History sidebar */}
@@ -680,61 +754,76 @@ export default function Chat() {
         onToggle={() => setIsHistoryOpen(!isHistoryOpen)}
       />
 
-      {/* Main chat area */}
-      <div 
+      {/* Main area: dual-pane on desktop, single column + sheet-like overlay on mobile */}
+      <div
         className={cn(
-          "flex flex-col flex-1 transition-all duration-300 min-w-0 min-h-0",
+          "flex flex-1 min-w-0 min-h-0 transition-[margin] duration-300",
           isHistoryOpen ? "md:ml-72" : "ml-0"
         )}
       >
-        {chatMode === "classification" ? (
-          <ClassificationView />
-        ) : (
-          <>
-            {/* Chat messages area */}
-            {messages.length === 0 ? (
-              <div className="flex-1 min-h-0 flex items-center justify-center px-2 md:px-4 overflow-hidden pb-20 md:pb-0">
-                <div className="max-w-3xl mx-auto w-full max-h-full overflow-hidden">
-                  <ChatWelcome onQuestionClick={handleSend} />
-                </div>
+        {/* Desktop: resizable dual-pane */}
+        <div className="hidden md:flex flex-1 min-w-0 min-h-0">
+          {isSidebarOpen && chatMode !== "classification" ? (
+            <PanelGroup
+              orientation="horizontal"
+              className="flex-1 min-w-0 min-h-0"
+              onLayoutChange={(layout) => {
+                const sb = layout?.[1];
+                if (sb && typeof sb.size === "number") {
+                  setSidebarSizePct(sb.size);
+                }
+              }}
+            >
+              <Panel defaultSize={100 - sidebarSize} minSize={40} className="min-w-0">
+                {chatPaneContent}
+              </Panel>
+              <PanelResizeHandle className="w-1 bg-border/40 hover:bg-primary/40 data-[resize-handle-active]:bg-primary transition-colors cursor-col-resize" />
+              <Panel
+                defaultSize={sidebarSize}
+                minSize={20}
+                maxSize={50}
+                className="min-w-0"
+              >
+                <ChatSidebar onClose={() => setSidebarOpen(false)} />
+              </Panel>
+            </PanelGroup>
+          ) : (
+            <div className="flex-1 min-w-0 min-h-0">{chatPaneContent}</div>
+          )}
+        </div>
+
+        {/* Mobile: full-width chat + sidebar as overlay */}
+        <div className="flex md:hidden flex-1 min-w-0 min-h-0 relative">
+          <div className="flex-1 min-w-0 min-h-0">{chatPaneContent}</div>
+          {isSidebarOpen && chatMode !== "classification" && (
+            <>
+              <div
+                className="fixed inset-0 bg-black/40 z-30"
+                onClick={() => setSidebarOpen(false)}
+              />
+              <div className="fixed right-0 top-14 bottom-0 w-[88vw] max-w-[360px] z-40 shadow-2xl">
+                <ChatSidebar onClose={() => setSidebarOpen(false)} />
               </div>
-            ) : (
-              <ScrollArea ref={scrollRef} className="flex-1 px-2 md:px-4 py-3 md:py-6 pb-20 md:pb-6">
-                <div className="max-w-3xl mx-auto space-y-3 md:space-y-6">
-                  {messages.map((message, index) => (
-                    <ChatMessage
-                      key={message.id}
-                      message={message}
-                      isLastMessage={index === messages.length - 1 && message.role === "assistant"}
-                      isLoading={isLoading}
-                      onFeedback={handleFeedback}
-                      onAnswer={handleSend}
-                      cleanContent={cleanConfidenceFromContent}
-                      removeQuestions={removeInteractiveQuestions}
-                    />
-                  ))}
-
-                  {isLoading && !messages.some(m => m.isStreaming && m.content.length > 0) && <ChatTypingIndicator />}
-                </div>
-              </ScrollArea>
-            )}
-          </>
-        )}
-
-        {/* Input area */}
-        <ChatInput
-          input={input}
-          onInputChange={setInput}
-          onSend={() => handleSend()}
-          onKeyDown={handleKeyDown}
-          isLoading={isLoading}
-          isUploading={isUploading}
-          uploadedFiles={uploadedFiles}
-          onFilesSelected={handleFilesSelected}
-          onRemoveFile={handleRemoveFile}
-          chatMode={chatMode}
-          onModeChange={setChatMode}
-        />
+            </>
+          )}
+          {/* Mobile floating trigger */}
+          {!isSidebarOpen && chatMode !== "classification" && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarOpen(true)}
+              className="fixed right-3 bottom-24 z-30 h-11 w-11 rounded-full bg-card/95 backdrop-blur border border-border/60 shadow-card text-primary"
+              title="Volet contextuel"
+            >
+              <Quote className="h-5 w-5" />
+              {sidebarBadgeCount > 0 && (
+                <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold flex items-center justify-center">
+                  {sidebarBadgeCount > 99 ? "99+" : sidebarBadgeCount}
+                </span>
+              )}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
