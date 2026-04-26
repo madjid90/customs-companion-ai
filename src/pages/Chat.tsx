@@ -51,6 +51,7 @@ interface Message {
   hasDbEvidence?: boolean;
   validationMessage?: string;
   isStreaming?: boolean;
+  previousUserQuestion?: string;
   context?: {
     hs_codes_found: number;
     tariffs_found: number;
