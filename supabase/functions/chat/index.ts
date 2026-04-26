@@ -1399,6 +1399,9 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       }
     }
 
+    // =========================================================================
+    // LLM RE-RANKING - Post-retrieval relevance filtering
+    // =========================================================================
     const totalRetrievedPassages = context.knowledge_documents.length + 
       context.tariff_notes.length + 
       ((context as any)._legalChunks?.length || 0);
