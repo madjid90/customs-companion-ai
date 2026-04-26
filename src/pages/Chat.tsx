@@ -341,6 +341,14 @@ export default function Chat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
+  // L1/L2/L3 — État pour les modules inline (Classification / Consultation)
+  const [activeModule, setActiveModule] = useState<
+    | { kind: "classify"; productHint: string }
+    | { kind: "consultation"; mode: "import" | "mre" | "conformity" | "investor" }
+    | null
+  >(null);
+  const [sidePanelResult, setSidePanelResult] = useState<SidePanelResult | null>(null);
+
   // Streaming buffer: accumulate chunks in a ref and flush to state periodically
   const streamBufferRef = useRef<string>("");
   const streamFlushTimerRef = useRef<number | null>(null);
