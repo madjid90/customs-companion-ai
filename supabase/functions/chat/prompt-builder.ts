@@ -395,7 +395,7 @@ ${availableSources.slice(0, 15).join('\n\n')}
       const otherText = otherDocs.map((d: any) => `- **${d.title}**: ${d.content?.substring(0, 500)}...`).join('\n');
       ragParts.push(`### Documents de référence\n${otherText}`);
     }
-    if (legalDocs.length === 0 && otherDocs.length === 0) {
+    if (legalDocs.length === 0 && otherDocs.length === 0 && nencDocs.length === 0) {
       ragParts.push(`### Documents de référence\nAucun document de référence`);
     }
   } else {
