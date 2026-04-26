@@ -721,16 +721,38 @@ export default function Chat() {
               <ScrollArea ref={scrollRef} className="flex-1 px-2 md:px-4 py-3 md:py-6 pb-20 md:pb-6">
                 <div className="max-w-3xl mx-auto space-y-3 md:space-y-6">
                   {messages.map((message, index) => (
-                    <ChatMessage
-                      key={message.id}
-                      message={message}
-                      isLastMessage={index === messages.length - 1 && message.role === "assistant"}
-                      isLoading={isLoading}
-                      onFeedback={handleFeedback}
-                      onAnswer={handleSend}
-                      cleanContent={cleanConfidenceFromContent}
-                      removeQuestions={removeInteractiveQuestions}
-                    />
+                    <div key={message.id} className="space-y-3">
+                      <ChatMessage
+                        message={message}
+                        isLastMessage={index === messages.length - 1 && message.role === "assistant"}
+                        isLoading={isLoading}
+                        onFeedback={handleFeedback}
+                        onAnswer={handleSend}
+                        cleanContent={cleanConfidenceFromContent}
+                        removeQuestions={removeInteractiveQuestions}
+                      />
+                      {message.detectedIntent && message.detectedIntent.kind !== "chat" && (
+                        <div className="ml-11 max-w-[calc(100%-3rem)]">
+                          <IntentInlineCard
+                            intent={message.detectedIntent}
+                            onLaunch={() => {
+                              const di = message.detectedIntent!;
+                              if (di.kind === "classify") {
+                                setActiveModule({ kind: "classify", productHint: di.productHint });
+                              } else if (di.kind === "consultation") {
+                                setActiveModule({ kind: "consultation", mode: di.mode });
+                              }
+                            }}
+                            onDismiss={() => {
+                              // Remplace la carte par une vraie réponse texte du LLM
+                              const userText = messages[index - 1]?.content || "";
+                              setMessages(prev => prev.filter(m => m.id !== message.id));
+                              if (userText) handleSend(userText, { forceText: true });
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
                   ))}
 
                   {isLoading && !messages.some(m => m.isStreaming && m.content.length > 0) && <ChatTypingIndicator />}
