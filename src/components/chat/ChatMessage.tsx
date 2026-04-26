@@ -45,6 +45,8 @@ interface Message {
   hasDbEvidence?: boolean;
   validationMessage?: string;
   isStreaming?: boolean;
+  /** Previous user question text (for save-response context). Optional. */
+  previousUserQuestion?: string;
 }
 
 interface ChatMessageProps {
