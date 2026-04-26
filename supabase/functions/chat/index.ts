@@ -1378,17 +1378,33 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         );
 
         if (nencChunks.length > 0) {
+          // Re-rank NENC chunks: combine semantic score + hierarchical
+          // consistency with the user-anchored chapter/heading/hs_code.
+          const anchor = buildHierarchyAnchor(
+            analysis.detectedCodes,
+            context.hs_codes,
+            {
+              nencChapter: analysis.nencChapter,
+              nencHeading: analysis.nencHeading,
+              nencHsCode: analysis.nencHsCode,
+            },
+          );
+          const rerankedNenc = rerankChunksByHierarchy(nencChunks, anchor, {
+            limit: 6,
+            debug: true,
+          });
+
           // Merge into _legalChunks for citation/validation pipeline
           const existingChunks = ((context as any)._legalChunks || []) as any[];
           const seenIds = new Set(existingChunks.map((c: any) => c.id));
           const merged = [
-            ...nencChunks.filter((c: any) => !seenIds.has(c.id)),
+            ...rerankedNenc.filter((c: any) => !seenIds.has(c.id)),
             ...existingChunks,
           ];
           (context as any)._legalChunks = merged;
 
           // Inject as PRIORITY knowledge_documents so the prompt picks them up
-          const nencDocs = nencChunks.map((chunk: any) => {
+          const nencDocs = rerankedNenc.map((chunk: any) => {
             const meta = chunk.metadata || {};
             const docTypeLabel = (meta.doc_type || '').toString().toUpperCase();
             const hierarchyParts: string[] = [];
