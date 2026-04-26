@@ -69,7 +69,7 @@ export function ResultSidePanel({ result, onClose }: Props) {
           {result.kind === "classification" ? (
             <ClassificationResultBody result={result} />
           ) : (
-            <ConsultationReport report={result.report} mode={result.mode} />
+            <ConsultationReport data={result.report} type={result.mode} />
           )}
         </div>
       </ScrollArea>
