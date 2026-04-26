@@ -347,8 +347,14 @@ export default function Chat() {
     setSizePct: setSidebarSizePct,
     citations: sidebarCitations,
     savedResponses: sidebarSaved,
+    loadSavedResponses,
   } = useChatSidebarStore();
   const sidebarBadgeCount = sidebarCitations.length + sidebarSaved.length;
+
+  // Hydrate saved responses from Supabase on mount
+  useEffect(() => {
+    loadSavedResponses();
+  }, [loadSavedResponses]);
 
   // Streaming buffer: accumulate chunks in a ref and flush to state periodically
   const streamBufferRef = useRef<string>("");
