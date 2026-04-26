@@ -730,6 +730,20 @@ export function ChatMessage({
                   size="icon"
                   className={cn(
                     "h-8 w-8 rounded-full transition-all",
+                    isSaved
+                      ? "text-primary bg-primary/15 hover:bg-primary/20"
+                      : "hover:bg-muted/50"
+                  )}
+                  onClick={handleSaveResponse}
+                  title={isSaved ? "Déjà sauvegardée" : "Sauvegarder dans le volet"}
+                >
+                  {isSaved ? <BookmarkCheck className="h-3.5 w-3.5" /> : <Bookmark className="h-3.5 w-3.5" />}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "h-8 w-8 rounded-full transition-all",
                     message.feedback === "up" 
                       ? "text-success bg-success/15 hover:bg-success/20" 
                       : "hover:bg-muted/50"
