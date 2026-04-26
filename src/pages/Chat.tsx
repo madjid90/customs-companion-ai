@@ -483,6 +483,25 @@ export default function Chat() {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setUploadedFiles([]);
+
+    // === INTENT DETECTION (L1) ===
+    // Avant d'appeler le LLM, on regarde si la requête correspond à un
+    // intent fort (Classification ou Consultation). Si oui, on insère une
+    // bulle assistante avec une carte CTA au lieu de générer une réponse.
+    if (!opts?.forceText && uploadedFiles.length === 0) {
+      const intent = detectIntent({ text: messageText });
+      if (intent.kind !== "chat") {
+        const intentMessage: Message = {
+          id: assistantMessageId,
+          role: "assistant",
+          content: "",
+          detectedIntent: intent,
+        };
+        setMessages((prev) => [...prev, intentMessage]);
+        return; // pas d'appel LLM, l'utilisateur choisit
+      }
+    }
+
     setIsLoading(true);
 
     try {
