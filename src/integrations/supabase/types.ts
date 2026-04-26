@@ -2964,6 +2964,27 @@ export type Database = {
           source_title: string
         }[]
       }
+      search_legal_chunks_by_hs_metadata: {
+        Args: {
+          filter_chapter?: string
+          filter_doc_types?: string[]
+          filter_heading?: string
+          filter_hs_code?: string
+          match_count?: number
+          query_embedding: string
+        }
+        Returns: {
+          article_number: string
+          chunk_text: string
+          chunk_type: string
+          combined_score: number
+          id: number
+          metadata: Json
+          page_number: number
+          section_title: string
+          source_id: number
+        }[]
+      }
       search_legal_chunks_hybrid: {
         Args: {
           match_count?: number

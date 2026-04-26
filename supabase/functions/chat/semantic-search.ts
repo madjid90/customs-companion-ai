@@ -948,6 +948,105 @@ export async function searchLegalChunksHybrid(
 }
 
 // ============================================================================
+// NENC / NESH SEARCH BY HIERARCHICAL METADATA
+// ============================================================================
+
+/**
+ * Recherche les chunks NENC/NESH (Notes Explicatives) filtrés par métadonnées
+ * hiérarchiques (chapter, heading, hs_code) avec un score sémantique.
+ *
+ * Active uniquement quand la question est de type classification ou mentionne
+ * explicitement "note explicative" / NENC / NESH.
+ */
+export async function searchNencChunks(
+  supabase: any,
+  queryEmbedding: number[],
+  filters: {
+    chapter?: string | null;
+    heading?: string | null;
+    hsCode?: string | null;
+    docTypes?: string[];
+  },
+  limit: number = 6,
+  supabaseUrl?: string
+): Promise<any[]> {
+  try {
+    const { chapter, heading, hsCode, docTypes } = filters;
+
+    // Need at least one filter (otherwise too noisy)
+    if (!chapter && !heading && !hsCode) {
+      return [];
+    }
+
+    const { data, error } = await supabase.rpc('search_legal_chunks_by_hs_metadata', {
+      query_embedding: `[${queryEmbedding.join(',')}]`,
+      filter_chapter: chapter || null,
+      filter_heading: heading || null,
+      filter_hs_code: hsCode || null,
+      filter_doc_types: docTypes && docTypes.length > 0 ? docTypes : ['nenc', 'nesh'],
+      match_count: limit,
+    });
+
+    if (error) {
+      console.warn('[NENC search] RPC failed:', error.message);
+      return [];
+    }
+
+    if (!data || data.length === 0) return [];
+
+    console.log(`[NENC search] Found ${data.length} chunks (chapter=${chapter}, heading=${heading}, hs=${hsCode})`);
+
+    // Enrich with source metadata + page-deep-link download URL
+    const sourceIds = [...new Set(data.map((d: any) => d.source_id).filter(Boolean))];
+    if (sourceIds.length === 0) return data;
+
+    const { data: sources } = await supabase
+      .from('legal_sources')
+      .select('id, source_ref, title, source_url')
+      .in('id', sourceIds);
+
+    const sourceMap = new Map((sources || []).map((s: any) => [s.id, s]));
+    const sourceRefs = (sources || []).map((s: any) => s.source_ref).filter(Boolean);
+
+    let pdfMap = new Map();
+    if (sourceRefs.length > 0) {
+      const { data: pdfs } = await supabase
+        .from('pdf_documents')
+        .select('id, document_reference, file_path, title')
+        .in('document_reference', sourceRefs);
+      pdfMap = new Map((pdfs || []).map((p: any) => [p.document_reference, p]));
+    }
+
+    const baseUrl = supabaseUrl || Deno.env.get('SUPABASE_URL') || '';
+
+    return data.map((chunk: any) => {
+      const source = sourceMap.get(chunk.source_id) as any;
+      const pdf = source ? (pdfMap.get(source.source_ref) as any) : null;
+      const fileUrl = pdf?.file_path
+        ? `${baseUrl}/storage/v1/object/public/pdf-documents/${pdf.file_path}`
+        : source?.source_url || null;
+      // Append #page=N for direct page navigation
+      const downloadUrl = fileUrl && chunk.page_number
+        ? `${fileUrl}#page=${chunk.page_number}`
+        : fileUrl;
+
+      return {
+        ...chunk,
+        source_ref: source?.source_ref || null,
+        source_title: source?.title || pdf?.title || null,
+        source_url: source?.source_url || null,
+        source_pdf_path: pdf?.file_path || null,
+        download_url: downloadUrl,
+        is_nenc: true,
+      };
+    });
+  } catch (err) {
+    console.error('[NENC search] Failed:', err);
+    return [];
+  }
+}
+
+// ============================================================================
 // MULTILINGUAL SEARCH (ARABIC/FRENCH)
 // ============================================================================
 

@@ -352,9 +352,26 @@ ${availableSources.slice(0, 15).join('\n\n')}
 
   // Knowledge documents - circulaires and legal docs are CRITICAL sources
   if (context.knowledge_documents.length > 0) {
-    const legalDocs = context.knowledge_documents.filter((d: any) => d.source === 'legal_chunks' || d.source === 'legal_chunks_fallback' || d.category === 'legal');
-    const otherDocs = context.knowledge_documents.filter((d: any) => d.source !== 'legal_chunks' && d.source !== 'legal_chunks_fallback' && d.category !== 'legal');
-    
+    const nencDocs = context.knowledge_documents.filter((d: any) => d.is_nenc === true);
+    const legalDocs = context.knowledge_documents.filter((d: any) => !d.is_nenc && (d.source === 'legal_chunks' || d.source === 'legal_chunks_fallback' || d.category === 'legal'));
+    const otherDocs = context.knowledge_documents.filter((d: any) => !d.is_nenc && d.source !== 'legal_chunks' && d.source !== 'legal_chunks_fallback' && d.category !== 'legal');
+
+    // === NENC / NESH (Notes Explicatives) — TOP PRIORITY for classification ===
+    if (nencDocs.length > 0) {
+      console.log(`[prompt-builder] Including ${nencDocs.length} NENC/NESH chunks as TOP-PRIORITY classification source`);
+      const nencText = nencDocs.map((d: any) => {
+        const meta = d.metadata || {};
+        const refLabel = `[LEGAL:${d.source_id}:${d.page_number || 1}]`;
+        const hierBits: string[] = [];
+        if (meta.chapter) hierBits.push(`Ch.${meta.chapter}`);
+        if (meta.heading) hierBits.push(`Pos.${meta.heading}`);
+        if (meta.subheading) hierBits.push(`SP.${meta.subheading}`);
+        const hier = hierBits.length ? ` (${hierBits.join(' › ')})` : '';
+        return `- **${d.title}**${hier} — p.${d.page_number || '?'} ${refLabel}\n  ${(d.content || '').substring(0, 2200)}`;
+      }).join('\n\n');
+      ragParts.push(`### 📘 NOTES EXPLICATIVES (NENC / NESH) — RÉFÉRENCE OFFICIELLE OMD/UE\n**INSTRUCTION OBLIGATOIRE :** Pour toute classification SH, ces notes sont la source d'interprétation autoritative. Cite chaque passage utilisé avec le marqueur \`[LEGAL:source_id:page]\` exactement comme indiqué ci-dessous (le système les transformera en liens cliquables vers la page exacte du PDF).\n${nencText}`);
+    }
+
     if (legalDocs.length > 0) {
       console.log(`[prompt-builder] Including ${legalDocs.length} legal docs as PRIORITY source, titles: ${legalDocs.map((d: any) => d.title).join(' | ')}`);
       // Hiérarchie juridique : CDII (3000 chars) > Circulaires (2500) > Autres (1500)
@@ -378,7 +395,7 @@ ${availableSources.slice(0, 15).join('\n\n')}
       const otherText = otherDocs.map((d: any) => `- **${d.title}**: ${d.content?.substring(0, 500)}...`).join('\n');
       ragParts.push(`### Documents de référence\n${otherText}`);
     }
-    if (legalDocs.length === 0 && otherDocs.length === 0) {
+    if (legalDocs.length === 0 && otherDocs.length === 0 && nencDocs.length === 0) {
       ragParts.push(`### Documents de référence\nAucun document de référence`);
     }
   } else {
