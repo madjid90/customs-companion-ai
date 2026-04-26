@@ -66,6 +66,8 @@ const DOCUMENT_TYPES: { value: DocumentType; label: string; icon: React.ReactNod
   { value: "accord", label: "Accord commercial", icon: <Scale className="h-4 w-4" />, description: "Accords, conventions, traités", pipeline: "ingest", acceptedFiles: ".pdf" },
   { value: "reglementation", label: "Réglementation", icon: <BookOpen className="h-4 w-4" />, description: "Code des douanes, lois, décrets", pipeline: "ingest", acceptedFiles: ".pdf" },
   { value: "circulaire", label: "Circulaire", icon: <ScrollText className="h-4 w-4" />, description: "Circulaires, notes, instructions", pipeline: "ingest", acceptedFiles: ".pdf" },
+  { value: "nenc", label: "NENC", icon: <BookOpen className="h-4 w-4" />, description: "Notes Explicatives Nomenclature Combinée (Section/Chapitre/Position)", pipeline: "ingest", acceptedFiles: ".pdf" },
+  { value: "nesh", label: "NESH", icon: <BookOpen className="h-4 w-4" />, description: "Notes Explicatives du Système Harmonisé (OMD)", pipeline: "ingest", acceptedFiles: ".pdf" },
   { value: "anrt_agree", label: "ANRT - Équip. Agréés", icon: <Database className="h-4 w-4" />, description: "Liste des équipements agréés ANRT (~41k lignes)", pipeline: "anrt", acceptedFiles: ".xlsx,.xls,.csv" },
   { value: "anrt_dispense", label: "ANRT - Équip. Dispensés", icon: <Database className="h-4 w-4" />, description: "Liste des équipements dispensés ANRT (~40k lignes)", pipeline: "anrt", acceptedFiles: ".xlsx,.xls,.csv" },
 ];
@@ -385,6 +387,8 @@ export default function AdminUpload() {
       accord: "agreement",
       reglementation: "law",
       circulaire: "circular",
+      nenc: "nenc",
+      nesh: "nesh",
     };
 
     // === RESUME LOGIC: Check for existing chunks ===
