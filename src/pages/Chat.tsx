@@ -414,7 +414,7 @@ export default function Chat() {
     return () => clearTimeout(timeoutId);
   }, [messages, isLoading]);
 
-  const handleSend = async (text?: string) => {
+  const handleSend = async (text?: string, opts?: { forceText?: boolean }) => {
     const messageText = text || input.trim();
     if ((!messageText && uploadedFiles.length === 0) || isLoading) return;
 
