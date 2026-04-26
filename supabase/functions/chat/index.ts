@@ -39,6 +39,11 @@ import {
   searchNencChunks,
 } from "./semantic-search.ts";
 import {
+  buildHierarchyAnchor,
+  rerankHsCandidates,
+  rerankChunksByHierarchy,
+} from "./hierarchical-ranker.ts";
+import {
   analyzeQuestion,
   extractHistoryContext,
   analyzePdfWithClaude,
@@ -1184,7 +1189,32 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         const newHSCodes = semanticHS
           .filter((hs: any) => !existingCodes.has(hs.code))
           .map((hs: any) => ({ ...hs, semantic_match: true }));
-        context.hs_codes = [...context.hs_codes, ...newHSCodes].slice(0, 30);
+        let merged = [...context.hs_codes, ...newHSCodes];
+
+        // === Re-ranking hiérarchique ===
+        // Si la question est une classification (par description ou code SH),
+        // on ré-ordonne en combinant score sémantique + cohérence
+        // chapitre/position/sous-position avec les codes déjà ancrés.
+        if (
+          analysis.intents?.includes('classify') ||
+          analysis.detectedCodes.length > 0
+        ) {
+          const anchor = buildHierarchyAnchor(
+            analysis.detectedCodes,
+            context.hs_codes, // codes "ancres" déjà déterministes (héritage / lookup direct)
+            {
+              nencChapter: analysis.nencChapter,
+              nencHeading: analysis.nencHeading,
+              nencHsCode: analysis.nencHsCode,
+            },
+          );
+          merged = rerankHsCandidates(merged, anchor, {
+            limit: 30,
+            debug: true,
+          });
+        }
+
+        context.hs_codes = merged.slice(0, 30);
       }
 
       if (semanticKnowledge.length > 0) {
@@ -1348,17 +1378,33 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
         );
 
         if (nencChunks.length > 0) {
+          // Re-rank NENC chunks: combine semantic score + hierarchical
+          // consistency with the user-anchored chapter/heading/hs_code.
+          const anchor = buildHierarchyAnchor(
+            analysis.detectedCodes,
+            context.hs_codes,
+            {
+              nencChapter: analysis.nencChapter,
+              nencHeading: analysis.nencHeading,
+              nencHsCode: analysis.nencHsCode,
+            },
+          );
+          const rerankedNenc = rerankChunksByHierarchy(nencChunks, anchor, {
+            limit: 6,
+            debug: true,
+          });
+
           // Merge into _legalChunks for citation/validation pipeline
           const existingChunks = ((context as any)._legalChunks || []) as any[];
           const seenIds = new Set(existingChunks.map((c: any) => c.id));
           const merged = [
-            ...nencChunks.filter((c: any) => !seenIds.has(c.id)),
+            ...rerankedNenc.filter((c: any) => !seenIds.has(c.id)),
             ...existingChunks,
           ];
           (context as any)._legalChunks = merged;
 
           // Inject as PRIORITY knowledge_documents so the prompt picks them up
-          const nencDocs = nencChunks.map((chunk: any) => {
+          const nencDocs = rerankedNenc.map((chunk: any) => {
             const meta = chunk.metadata || {};
             const docTypeLabel = (meta.doc_type || '').toString().toUpperCase();
             const hierarchyParts: string[] = [];
