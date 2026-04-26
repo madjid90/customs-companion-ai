@@ -1,12 +1,16 @@
+import { useState } from "react";
 import { useChatSidebarStore } from "@/stores/chatSidebarStore";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { BookmarkX, ExternalLink, FileText, Quote, Trash2, X } from "lucide-react";
+import { BookmarkX, Download, ExternalLink, FileText, Loader2, Quote, Trash2, X } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { getAuthHeaders } from "@/lib/authHeaders";
+import { useToast } from "@/hooks/use-toast";
 
 interface ChatSidebarProps {
   onClose: () => void;
@@ -18,10 +22,53 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
     setActiveTab,
     citations,
     savedResponses,
+    isLoadingSaved,
     removeCitation,
     clearCitations,
     removeSavedResponse,
   } = useChatSidebarStore();
+  const { toast } = useToast();
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (savedResponses.length === 0) {
+      toast({ title: "Rien à exporter", description: "Sauvegardez d'abord des réponses." });
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const headers = await getAuthHeaders(true);
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/export-saved-pdf`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const html = await res.text();
+      const blob = new Blob([html], { type: "text/html" });
+      const blobUrl = URL.createObjectURL(blob);
+      const win = window.open(blobUrl, "_blank", "noopener,noreferrer");
+      if (!win) {
+        toast({
+          title: "Ouverture bloquée",
+          description: "Autorisez les pop-ups pour visualiser l'export.",
+          variant: "destructive",
+        });
+      }
+      // Revoke after a short delay so the new tab has time to load
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000);
+    } catch (e: any) {
+      console.error("[ChatSidebar] export error", e);
+      toast({
+        title: "Échec de l'export",
+        description: e?.message || "Veuillez réessayer.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col bg-card border-l border-border/40">
@@ -105,25 +152,49 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
 
         {/* Saved tab */}
         <TabsContent value="saved" className="flex-1 min-h-0 mt-2 mx-0">
-          <ScrollArea className="h-full px-3 pb-3">
-            {savedResponses.length === 0 ? (
-              <EmptyState
-                icon={<FileText className="h-8 w-8" />}
-                title="Aucune réponse sauvegardée"
-                description="Cliquez sur l'icône de signet sous une réponse pour la sauvegarder ici."
-              />
-            ) : (
-              <div className="space-y-2">
-                {savedResponses.map((r) => (
-                  <SavedResponseCard
-                    key={r.id}
-                    response={r}
-                    onRemove={() => removeSavedResponse(r.id)}
-                  />
-                ))}
+          <div className="flex flex-col h-full">
+            {savedResponses.length > 0 && (
+              <div className="flex justify-end px-3 pb-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExport}
+                  disabled={isExporting}
+                  className="h-7 text-xs"
+                >
+                  {isExporting ? (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  ) : (
+                    <Download className="h-3 w-3 mr-1" />
+                  )}
+                  Exporter PDF
+                </Button>
               </div>
             )}
-          </ScrollArea>
+            <ScrollArea className="flex-1 px-3 pb-3">
+              {isLoadingSaved && savedResponses.length === 0 ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : savedResponses.length === 0 ? (
+                <EmptyState
+                  icon={<FileText className="h-8 w-8" />}
+                  title="Aucune réponse sauvegardée"
+                  description="Cliquez sur l'icône de signet sous une réponse pour la sauvegarder ici."
+                />
+              ) : (
+                <div className="space-y-2">
+                  {savedResponses.map((r) => (
+                    <SavedResponseCard
+                      key={r.id}
+                      response={r}
+                      onRemove={() => removeSavedResponse(r.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

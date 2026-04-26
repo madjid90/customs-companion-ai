@@ -14,7 +14,7 @@ import { useAppHeaderContext } from "@/components/layout/AppLayout";
 import { useChatSidebarStore } from "@/stores/chatSidebarStore";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
+// Custom flex-based dual-pane (replaces react-resizable-panels for predictable sizing)
 import { PanelRightOpen, Quote } from "lucide-react";
 import type { UploadedFile } from "@/components/chat/ImageUploadButton";
 
@@ -51,6 +51,7 @@ interface Message {
   hasDbEvidence?: boolean;
   validationMessage?: string;
   isStreaming?: boolean;
+  previousUserQuestion?: string;
   context?: {
     hs_codes_found: number;
     tariffs_found: number;
@@ -346,8 +347,14 @@ export default function Chat() {
     setSizePct: setSidebarSizePct,
     citations: sidebarCitations,
     savedResponses: sidebarSaved,
+    loadSavedResponses,
   } = useChatSidebarStore();
   const sidebarBadgeCount = sidebarCitations.length + sidebarSaved.length;
+
+  // Hydrate saved responses from Supabase on mount
+  useEffect(() => {
+    loadSavedResponses();
+  }, [loadSavedResponses]);
 
   // Streaming buffer: accumulate chunks in a ref and flush to state periodically
   const streamBufferRef = useRef<string>("");
@@ -703,18 +710,24 @@ export default function Chat() {
           ) : (
             <ScrollArea ref={scrollRef} className="flex-1 px-2 md:px-4 py-3 md:py-6 pb-20 md:pb-6">
               <div className="max-w-3xl mx-auto space-y-3 md:space-y-6">
-                {messages.map((message, index) => (
-                  <ChatMessage
-                    key={message.id}
-                    message={message}
-                    isLastMessage={index === messages.length - 1 && message.role === "assistant"}
-                    isLoading={isLoading}
-                    onFeedback={handleFeedback}
-                    onAnswer={handleSend}
-                    cleanContent={cleanConfidenceFromContent}
-                    removeQuestions={removeInteractiveQuestions}
-                  />
-                ))}
+                {messages.map((message, index) => {
+                  const previousUserQuestion =
+                    message.role === "assistant" && index > 0 && messages[index - 1].role === "user"
+                      ? messages[index - 1].content
+                      : undefined;
+                  return (
+                    <ChatMessage
+                      key={message.id}
+                      message={{ ...message, previousUserQuestion }}
+                      isLastMessage={index === messages.length - 1 && message.role === "assistant"}
+                      isLoading={isLoading}
+                      onFeedback={handleFeedback}
+                      onAnswer={handleSend}
+                      cleanContent={cleanConfidenceFromContent}
+                      removeQuestions={removeInteractiveQuestions}
+                    />
+                  );
+                })}
 
                 {isLoading && !messages.some(m => m.isStreaming && m.content.length > 0) && <ChatTypingIndicator />}
               </div>
@@ -761,37 +774,14 @@ export default function Chat() {
           isHistoryOpen ? "md:ml-72" : "ml-0"
         )}
       >
-        {/* Desktop: resizable dual-pane */}
-        <div className="hidden md:flex flex-1 min-w-0 min-h-0">
-          {isSidebarOpen && chatMode !== "classification" ? (
-            <PanelGroup
-              orientation="horizontal"
-              className="flex-1 min-w-0 min-h-0"
-              onLayoutChange={(layout) => {
-                const sb = layout?.["chat-sidebar"];
-                if (typeof sb === "number") {
-                  setSidebarSizePct(sb);
-                }
-              }}
-            >
-              <Panel id="chat-main" defaultSize={100 - sidebarSize} minSize={40} className="min-w-0">
-                {chatPaneContent}
-              </Panel>
-              <PanelResizeHandle className="w-1 bg-border/40 hover:bg-primary/40 data-[resize-handle-active]:bg-primary transition-colors cursor-col-resize" />
-              <Panel
-                id="chat-sidebar"
-                defaultSize={sidebarSize}
-                minSize={20}
-                maxSize={50}
-                className="min-w-0"
-              >
-                <ChatSidebar onClose={() => setSidebarOpen(false)} />
-              </Panel>
-            </PanelGroup>
-          ) : (
-            <div className="flex-1 min-w-0 min-h-0">{chatPaneContent}</div>
-          )}
-        </div>
+        {/* Desktop: dual-pane with manual resize handle */}
+        <DesktopDualPane
+          isOpen={isSidebarOpen && chatMode !== "classification"}
+          sizePct={sidebarSize}
+          onSizeChange={setSidebarSizePct}
+          chatPane={chatPaneContent}
+          sidebar={<ChatSidebar onClose={() => setSidebarOpen(false)} />}
+        />
 
         {/* Mobile: full-width chat + sidebar as overlay */}
         <div className="flex md:hidden flex-1 min-w-0 min-h-0 relative">
@@ -826,6 +816,73 @@ export default function Chat() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+interface DesktopDualPaneProps {
+  isOpen: boolean;
+  sizePct: number;
+  onSizeChange: (pct: number) => void;
+  chatPane: React.ReactNode;
+  sidebar: React.ReactNode;
+}
+
+function DesktopDualPane({ isOpen, sizePct, onSizeChange, chatPane, sidebar }: DesktopDualPaneProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    draggingRef.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, []);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!draggingRef.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const sidebarPx = rect.right - e.clientX;
+      const pct = (sidebarPx / rect.width) * 100;
+      const clamped = Math.max(20, Math.min(50, pct));
+      onSizeChange(clamped);
+    };
+    const onUp = () => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [onSizeChange]);
+
+  const safeSize = Math.max(20, Math.min(50, sizePct));
+
+  return (
+    <div ref={containerRef} className="hidden md:flex flex-1 min-w-0 min-h-0 relative">
+      <div className="flex-1 min-w-0 min-h-0">{chatPane}</div>
+      {isOpen && (
+        <>
+          <div
+            onMouseDown={onMouseDown}
+            className="w-1 cursor-col-resize bg-border/40 hover:bg-primary/40 active:bg-primary transition-colors flex-shrink-0"
+            role="separator"
+            aria-orientation="vertical"
+          />
+          <div
+            className="min-w-0 min-h-0 flex-shrink-0"
+            style={{ width: `${safeSize}%` }}
+          >
+            {sidebar}
+          </div>
+        </>
+      )}
     </div>
   );
 }

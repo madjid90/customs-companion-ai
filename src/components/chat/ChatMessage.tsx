@@ -45,6 +45,8 @@ interface Message {
   hasDbEvidence?: boolean;
   validationMessage?: string;
   isStreaming?: boolean;
+  /** Previous user question text (for save-response context). Optional. */
+  previousUserQuestion?: string;
 }
 
 interface ChatMessageProps {
@@ -280,13 +282,20 @@ export function ChatMessage({
   const [previewDoc, setPreviewDoc] = useState<{ url: string; title: string; pageNumber?: number } | null>(null);
   const [isSearchingDoc, setIsSearchingDoc] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<AttachedFile | null>(null);
-  const { addCitations, addSavedResponse, savedResponses, setActiveTab } = useChatSidebarStore();
+  const { addCitations, saveResponse, removeSavedResponse, savedResponses, setActiveTab } =
+    useChatSidebarStore();
   const { toast } = useToast();
 
   const isUser = message.role === "user";
   const isError = message.content.startsWith("⚠️");
 
-  const isSaved = savedResponses.some((r) => r.id === message.id);
+  // A response is "saved" if either its messageId or conversationId matches a stored row
+  const savedRow = savedResponses.find(
+    (r) =>
+      r.messageId === message.id ||
+      (message.conversationId && r.conversationId === message.conversationId)
+  );
+  const isSaved = !!savedRow;
 
   // Push validated citations to sidebar store when assistant message stabilizes
   useEffect(() => {
@@ -311,21 +320,50 @@ export function ChatMessage({
     );
   }, [isUser, isError, message.isStreaming, message.id, message.citedCirculars, message.content, addCitations]);
 
-  const handleSaveResponse = useCallback(() => {
-    if (isSaved) {
-      toast({ title: "Déjà sauvegardée", description: "Cette réponse est déjà dans le volet." });
+  const handleSaveResponse = useCallback(async () => {
+    if (isSaved && savedRow) {
+      await removeSavedResponse(savedRow.id);
+      toast({ title: "Sauvegarde retirée" });
       return;
     }
-    addSavedResponse({
+    const filteredCits = message.citedCirculars
+      ? filterCitedSources(message.citedCirculars, message.content).map((c, idx) => ({
+          id: `${message.id}-${c.id || idx}`,
+          messageId: message.id,
+          reference_type: c.reference_type,
+          reference_number: c.reference_number,
+          title: c.title,
+          pdf_title: c.pdf_title,
+          page_number: c.page_number,
+          download_url: c.download_url,
+          reference_date: c.reference_date,
+          validated: c.validated,
+          addedAt: Date.now(),
+        }))
+      : undefined;
+    await saveResponse({
       id: message.id,
+      messageId: message.id,
       conversationId: message.conversationId,
-      question: "",
+      question: message.previousUserQuestion || "",
       response: message.content,
-      savedAt: Date.now(),
+      citedCirculars: filteredCits,
     });
     setActiveTab("saved");
     toast({ title: "Réponse sauvegardée", description: "Disponible dans le volet contextuel." });
-  }, [isSaved, addSavedResponse, message.id, message.conversationId, message.content, setActiveTab, toast]);
+  }, [
+    isSaved,
+    savedRow,
+    removeSavedResponse,
+    saveResponse,
+    message.id,
+    message.conversationId,
+    message.content,
+    message.citedCirculars,
+    message.previousUserQuestion,
+    setActiveTab,
+    toast,
+  ]);
 
 
   // Search for PDF document by chapter number
