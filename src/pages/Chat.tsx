@@ -9,6 +9,10 @@ import { ChatWelcome } from "@/components/chat/ChatWelcome";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ChatHistory } from "@/components/chat/ChatHistory";
 import { ClassificationView } from "@/components/chat/ClassificationView";
+import { IntentInlineCard } from "@/components/chat/IntentInlineCard";
+import { InlineModuleOverlay } from "@/components/chat/InlineModuleOverlay";
+import { ResultSidePanel, type SidePanelResult } from "@/components/chat/ResultSidePanel";
+import { detectIntent, type DetectedIntent } from "@/hooks/useIntentDetection";
 import { useAppHeaderContext } from "@/components/layout/AppLayout";
 import { cn } from "@/lib/utils";
 import type { UploadedFile } from "@/components/chat/ImageUploadButton";
@@ -46,6 +50,8 @@ interface Message {
   hasDbEvidence?: boolean;
   validationMessage?: string;
   isStreaming?: boolean;
+  /** Intent détecté côté client (carte inline rendue dans la bulle assistant) */
+  detectedIntent?: DetectedIntent;
   context?: {
     hs_codes_found: number;
     tariffs_found: number;
@@ -335,6 +341,14 @@ export default function Chat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
+  // L1/L2/L3 — État pour les modules inline (Classification / Consultation)
+  const [activeModule, setActiveModule] = useState<
+    | { kind: "classify"; productHint: string }
+    | { kind: "consultation"; mode: "import" | "mre" | "conformity" | "investor" }
+    | null
+  >(null);
+  const [sidePanelResult, setSidePanelResult] = useState<SidePanelResult | null>(null);
+
   // Streaming buffer: accumulate chunks in a ref and flush to state periodically
   const streamBufferRef = useRef<string>("");
   const streamFlushTimerRef = useRef<number | null>(null);
@@ -400,7 +414,7 @@ export default function Chat() {
     return () => clearTimeout(timeoutId);
   }, [messages, isLoading]);
 
-  const handleSend = async (text?: string) => {
+  const handleSend = async (text?: string, opts?: { forceText?: boolean }) => {
     const messageText = text || input.trim();
     if ((!messageText && uploadedFiles.length === 0) || isLoading) return;
 
@@ -469,6 +483,25 @@ export default function Chat() {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setUploadedFiles([]);
+
+    // === INTENT DETECTION (L1) ===
+    // Avant d'appeler le LLM, on regarde si la requête correspond à un
+    // intent fort (Classification ou Consultation). Si oui, on insère une
+    // bulle assistante avec une carte CTA au lieu de générer une réponse.
+    if (!opts?.forceText && uploadedFiles.length === 0) {
+      const intent = detectIntent({ text: messageText });
+      if (intent.kind !== "chat") {
+        const intentMessage: Message = {
+          id: assistantMessageId,
+          role: "assistant",
+          content: "",
+          detectedIntent: intent,
+        };
+        setMessages((prev) => [...prev, intentMessage]);
+        return; // pas d'appel LLM, l'utilisateur choisit
+      }
+    }
+
     setIsLoading(true);
 
     try {
@@ -688,16 +721,38 @@ export default function Chat() {
               <ScrollArea ref={scrollRef} className="flex-1 px-2 md:px-4 py-3 md:py-6 pb-20 md:pb-6">
                 <div className="max-w-3xl mx-auto space-y-3 md:space-y-6">
                   {messages.map((message, index) => (
-                    <ChatMessage
-                      key={message.id}
-                      message={message}
-                      isLastMessage={index === messages.length - 1 && message.role === "assistant"}
-                      isLoading={isLoading}
-                      onFeedback={handleFeedback}
-                      onAnswer={handleSend}
-                      cleanContent={cleanConfidenceFromContent}
-                      removeQuestions={removeInteractiveQuestions}
-                    />
+                    <div key={message.id} className="space-y-3">
+                      <ChatMessage
+                        message={message}
+                        isLastMessage={index === messages.length - 1 && message.role === "assistant"}
+                        isLoading={isLoading}
+                        onFeedback={handleFeedback}
+                        onAnswer={handleSend}
+                        cleanContent={cleanConfidenceFromContent}
+                        removeQuestions={removeInteractiveQuestions}
+                      />
+                      {message.detectedIntent && message.detectedIntent.kind !== "chat" && (
+                        <div className="ml-11 max-w-[calc(100%-3rem)]">
+                          <IntentInlineCard
+                            intent={message.detectedIntent}
+                            onLaunch={() => {
+                              const di = message.detectedIntent!;
+                              if (di.kind === "classify") {
+                                setActiveModule({ kind: "classify", productHint: di.productHint });
+                              } else if (di.kind === "consultation") {
+                                setActiveModule({ kind: "consultation", mode: di.mode });
+                              }
+                            }}
+                            onDismiss={() => {
+                              // Remplace la carte par une vraie réponse texte du LLM
+                              const userText = messages[index - 1]?.content || "";
+                              setMessages(prev => prev.filter(m => m.id !== message.id));
+                              if (userText) handleSend(userText, { forceText: true });
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
                   ))}
 
                   {isLoading && !messages.some(m => m.isStreaming && m.content.length > 0) && <ChatTypingIndicator />}
@@ -722,6 +777,18 @@ export default function Chat() {
           onModeChange={setChatMode}
         />
       </div>
+
+      {/* L2/L3 — Overlay inline pour Classification ou Consultation */}
+      <InlineModuleOverlay
+        active={activeModule}
+        onClose={() => setActiveModule(null)}
+      />
+
+      {/* L1 — Panneau résultat (s'ouvre uniquement quand un résultat existe) */}
+      <ResultSidePanel
+        result={sidePanelResult}
+        onClose={() => setSidePanelResult(null)}
+      />
     </div>
   );
 }
