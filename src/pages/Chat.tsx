@@ -9,8 +9,13 @@ import { ChatWelcome } from "@/components/chat/ChatWelcome";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ChatHistory } from "@/components/chat/ChatHistory";
 import { ClassificationView } from "@/components/chat/ClassificationView";
+import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { useAppHeaderContext } from "@/components/layout/AppLayout";
+import { useChatSidebarStore } from "@/stores/chatSidebarStore";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
+import { PanelRightOpen, Quote } from "lucide-react";
 import type { UploadedFile } from "@/components/chat/ImageUploadButton";
 
 type ChatMode = "chat" | "classification";
