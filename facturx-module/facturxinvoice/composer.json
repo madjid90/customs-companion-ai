@@ -1,0 +1,29 @@
+{
+    "name": "facturx/facturxinvoice",
+    "description": "Module PrestaShop de facturation électronique Factur-X (PDF/A-3 + XML CII, profil EN 16931)",
+    "type": "prestashop-module",
+    "license": "AFL-3.0",
+    "config": {
+        "platform": {
+            "php": "7.4.0"
+        },
+        "optimize-autoloader": true,
+        "prepend-autoloader": false
+    },
+    "require": {
+        "php": ">=7.4",
+        "atgp/factur-x": "^3.4",
+        "horstoeko/zugferd": "^1.0.123"
+    },
+    "autoload": {
+        "psr-4": {
+            "FacturXInvoice\\": "src/"
+        }
+    },
+    "scripts": {
+        "test-sample": "php tests/generate-sample.php"
+    },
+    "require-dev": {
+        "tecnickcom/tcpdf": "^6.6"
+    }
+}

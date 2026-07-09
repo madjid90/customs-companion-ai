@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<module>
+    <name>facturxinvoice</name>
+    <displayName><![CDATA[Factur-X - Facturation électronique]]></displayName>
+    <version><![CDATA[0.1.0]]></version>
+    <description><![CDATA[Génère des factures électroniques Factur-X (PDF/A-3 + XML CII, norme EN 16931) à partir des factures natives PrestaShop.]]></description>
+    <author><![CDATA[FacturXInvoice]]></author>
+    <tab><![CDATA[billing_invoicing]]></tab>
+    <is_configurable>1</is_configurable>
+    <need_instance>0</need_instance>
+</module>
