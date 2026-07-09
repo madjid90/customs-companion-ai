@@ -1,0 +1,88 @@
+# Environnement de développement bi-version pour le module Factur-X.
+# PS 8.2 (PHP 8.1) sur http://localhost:8080 — PS 1.7.8 (PHP 7.4) sur http://localhost:8017
+# Les deux boutiques s'installent automatiquement avec les données de démo (langue FR, pays FR).
+# Le module (créé en Phase 1) est monté en volume dans les deux conteneurs.
+
+services:
+  mysql-ps8:
+    image: mysql:8.0
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: prestashop
+      MYSQL_DATABASE: prestashop
+    volumes:
+      - mysql-ps8-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pprestashop"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  ps8:
+    image: prestashop/prestashop:8.2.7-8.1-apache
+    depends_on:
+      mysql-ps8:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    environment:
+      DB_SERVER: mysql-ps8
+      DB_NAME: prestashop
+      DB_USER: root
+      DB_PASSWD: prestashop
+      PS_INSTALL_AUTO: 1
+      PS_DEV_MODE: 1
+      PS_DOMAIN: localhost:8080
+      PS_LANGUAGE: fr
+      PS_COUNTRY: fr
+      PS_FOLDER_ADMIN: admin-dev
+      PS_FOLDER_INSTALL: installed
+      ADMIN_MAIL: demo@prestashop.com
+      ADMIN_PASSWD: prestashop_demo
+    volumes:
+      - ps8-data:/var/www/html
+      - ../facturxinvoice:/var/www/html/modules/facturxinvoice
+
+  mysql-ps17:
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD: prestashop
+      MYSQL_DATABASE: prestashop
+    volumes:
+      - mysql-ps17-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pprestashop"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  ps17:
+    image: prestashop/prestashop:1.7.8.9-7.4-apache
+    depends_on:
+      mysql-ps17:
+        condition: service_healthy
+    ports:
+      - "8017:80"
+    environment:
+      DB_SERVER: mysql-ps17
+      DB_NAME: prestashop
+      DB_USER: root
+      DB_PASSWD: prestashop
+      PS_INSTALL_AUTO: 1
+      PS_DEV_MODE: 1
+      PS_DOMAIN: localhost:8017
+      PS_LANGUAGE: fr
+      PS_COUNTRY: fr
+      PS_FOLDER_ADMIN: admin-dev
+      PS_FOLDER_INSTALL: installed
+      ADMIN_MAIL: demo@prestashop.com
+      ADMIN_PASSWD: prestashop_demo
+    volumes:
+      - ps17-data:/var/www/html
+      - ../facturxinvoice:/var/www/html/modules/facturxinvoice
+
+volumes:
+  mysql-ps8-data:
+  ps8-data:
+  mysql-ps17-data:
+  ps17-data:
