@@ -81,6 +81,21 @@ ON public.country_tariffs(country_code, national_code);
 -- =============================================
 -- 5) Index sur tariff_notes (GIN full-text)
 -- =============================================
+-- The original project had this table created manually, outside migration
+-- history. Define it here so a fresh environment can be rebuilt reproducibly.
+CREATE TABLE IF NOT EXISTS public.tariff_notes (
+  id BIGSERIAL PRIMARY KEY,
+  note_type TEXT NOT NULL,
+  note_text TEXT NOT NULL,
+  chapter_number TEXT NULL,
+  anchor TEXT NULL,
+  page_number INTEGER NULL,
+  country_code TEXT NOT NULL DEFAULT 'MA',
+  source_extraction_id BIGINT NULL,
+  source_pdf TEXT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS tariff_notes_country_chapter_idx
 ON public.tariff_notes(country_code, chapter_number);
 

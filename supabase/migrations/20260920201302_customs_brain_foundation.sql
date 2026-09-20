@@ -118,7 +118,7 @@ create table public.source_documents (
   effective_from date,
   effective_to date,
   source_url text,
-  storage_bucket text not null default 'pdf-documents',
+  storage_bucket text not null default 'legal-source-pdfs',
   storage_path text not null,
   mime_type text not null,
   byte_size bigint check (byte_size is null or byte_size >= 0),

@@ -3,6 +3,12 @@
 -- Contient: search_hs_codes_hybrid, search_tariff_notes_hybrid, search_legal_chunks_hybrid
 -- ============================================
 
+-- Early migrations installed pgvector in public while all hybrid functions
+-- intentionally qualify extensions.vector. Normalize the extension location on
+-- fresh projects before defining those functions.
+CREATE SCHEMA IF NOT EXISTS extensions;
+ALTER EXTENSION vector SET SCHEMA extensions;
+
 -- ============================================
 -- 1. FUNCTION: search_hs_codes_hybrid
 -- ============================================

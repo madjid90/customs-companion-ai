@@ -36,6 +36,10 @@ CREATE INDEX IF NOT EXISTS idx_veille_documents_embedding ON public.veille_docum
 USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 -- 4. Fonction RPC: Recherche sémantique dans hs_codes
+-- The preceding migration defines this signature with a different TABLE return
+-- type. PostgreSQL cannot replace OUT parameters in place, so recreate it.
+DROP FUNCTION IF EXISTS public.search_hs_codes_semantic(public.vector, double precision, integer);
+
 CREATE OR REPLACE FUNCTION public.search_hs_codes_semantic(
   query_embedding vector(1536),
   match_threshold float DEFAULT 0.7,
