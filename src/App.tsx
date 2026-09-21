@@ -37,6 +37,7 @@ const AdminBulkImport = lazy(() => import("@/pages/admin/AdminBulkImport"));
 const AdminLegalReview = lazy(() => import("@/pages/admin/AdminLegalReview"));
 const AdminLegalVersions = lazy(() => import("@/pages/admin/AdminLegalVersions"));
 const AdminHSReview = lazy(() => import("@/pages/admin/AdminHSReview"));
+const AdminRegulatoryContext = lazy(() => import("@/pages/admin/AdminRegulatoryContext"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
 
@@ -127,6 +128,9 @@ const App = () => {
                       } />
                       <Route path="revue-sh" element={
                         <Suspense fallback={<PageFallback />}><AdminHSReview /></Suspense>
+                      } />
+                      <Route path="contexte-reglementaire" element={
+                        <Suspense fallback={<PageFallback />}><AdminRegulatoryContext /></Suspense>
                       } />
                       <Route path="access-requests" element={
                         <Suspense fallback={<PageFallback />}><AdminAccessRequests /></Suspense>
