@@ -31,6 +31,7 @@ const menuItems: MenuItem[] = [
   { type: "link", icon: Upload, label: "Upload fichiers", href: "/admin/upload" },
   { type: "link", icon: Database, label: "Corpus & qualité", href: "/admin/corpus" },
   { type: "link", icon: FolderOpen, label: "Import corpus", href: "/admin/corpus/import" },
+  { type: "link", icon: FileText, label: "Qualité des pages", href: "/admin/corpus/qualite-pages" },
   { type: "link", icon: Scale, label: "Revue juridique", href: "/admin/juridique" },
   { type: "link", icon: Scale, label: "Versions juridiques", href: "/admin/versions-juridiques" },
   { type: "link", icon: Package, label: "Revue SH", href: "/admin/revue-sh" },

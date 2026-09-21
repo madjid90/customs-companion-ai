@@ -3514,6 +3514,12 @@ export type Database = {
           referencedColumns: ["id"]
         }]
       }
+      source_page_revisions: {
+        Row: { id: string; source_page_id: string; ingestion_issue_id: string | null; previous_text: string; previous_sha256: string; corrected_text: string; corrected_sha256: string; correction_reason: string; reviewed_by: string; reviewed_at: string }
+        Insert: { id?: string; source_page_id: string; ingestion_issue_id?: string | null; previous_text: string; previous_sha256: string; corrected_text: string; corrected_sha256: string; correction_reason: string; reviewed_by: string; reviewed_at?: string }
+        Update: { id?: string; source_page_id?: string; ingestion_issue_id?: string | null; previous_text?: string; previous_sha256?: string; corrected_text?: string; corrected_sha256?: string; correction_reason?: string; reviewed_by?: string; reviewed_at?: string }
+        Relationships: []
+      }
       statistics: {
         Row: {
           avg_rating: number | null
@@ -4130,6 +4136,7 @@ export type Database = {
       }
     }
     Functions: {
+      correct_source_page: { Args: { target_issue_id: string; corrected_text_input: string; correction_reason_input: string }; Returns: string }
       promote_reviewed_hs_candidate: { Args: { candidate_id: string; target_nomenclature_id: string }; Returns: string }
       ensure_my_organization: {
         Args: Record<PropertyKey, never>
