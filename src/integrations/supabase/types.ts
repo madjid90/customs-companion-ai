@@ -4130,6 +4130,7 @@ export type Database = {
       }
     }
     Functions: {
+      promote_reviewed_hs_candidate: { Args: { candidate_id: string; target_nomenclature_id: string }; Returns: string }
       ensure_my_organization: {
         Args: Record<PropertyKey, never>
         Returns: {
