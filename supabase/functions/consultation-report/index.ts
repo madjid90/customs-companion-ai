@@ -17,9 +17,9 @@ import {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-const LOVABLE_AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const LOVABLE_AI_MODEL = "google/gemini-2.5-flash";
+const OPENAI_CHAT_API_KEY = Deno.env.get("OPENAI_API_KEY");
+const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+const OPENAI_CHAT_MODEL = Deno.env.get("OPENAI_CHAT_MODEL") || "gpt-4.1-mini";
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return handleCorsPreFlight(req);
@@ -31,7 +31,7 @@ serve(async (req: Request) => {
       return authError;
     }
 
-    if (!LOVABLE_API_KEY) {
+    if (!OPENAI_CHAT_API_KEY) {
       return new Response(JSON.stringify({ error: "Configuration manquante" }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -49,7 +49,7 @@ serve(async (req: Request) => {
 
     let fileContext = "";
 
-    if (uploadedFiles.length > 0 && LOVABLE_API_KEY) {
+    if (uploadedFiles.length > 0 && OPENAI_CHAT_API_KEY) {
       for (const f of uploadedFiles) {
         if (f.type === "image" && f.base64) {
           try {
@@ -208,14 +208,14 @@ async function analyzeFileWithAI(base64: string, fileType: string, mimeType: str
   
   content.push({ type: "text", text: instruction });
 
-  const response = await fetch(LOVABLE_AI_GATEWAY, {
+  const response = await fetch(OPENAI_CHAT_ENDPOINT, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+      "Authorization": `Bearer ${OPENAI_CHAT_API_KEY}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: LOVABLE_AI_MODEL,
+      model: OPENAI_CHAT_MODEL,
       max_tokens: 2048,
       messages: [{ role: "user", content }],
     }),
@@ -1015,22 +1015,22 @@ async function processInvestorReport(supabase: any, inputs: any, fileContext: st
 // ============================================================================
 async function callLLM(prompt: string, retryCount = 0): Promise<any> {
   const response = await fetchWithRetry(
-    LOVABLE_AI_GATEWAY,
+    OPENAI_CHAT_ENDPOINT,
     {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+        "Authorization": `Bearer ${OPENAI_CHAT_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: LOVABLE_AI_MODEL,
+        model: OPENAI_CHAT_MODEL,
         max_tokens: 4096,
         temperature: 0.3,
         messages: [{ role: "user", content: prompt }],
       }),
     },
     {
-      ...RETRY_CONFIGS.lovableAI,
+      ...RETRY_CONFIGS.openAIChat,
       onRetry: (attempt: number, error: Error, delay: number) => {
         console.warn(`LLM retry ${attempt}: ${error.message} (wait ${delay}ms)`);
       },

@@ -21,12 +21,18 @@ const RequestAccess = lazy(() => import("@/pages/RequestAccess"));
 const Chat = lazy(() => import("@/pages/Chat"));
 const Consultation = lazy(() => import("@/pages/Consultation"));
 const ConsultationHistory = lazy(() => import("@/pages/ConsultationHistory"));
+const Cases = lazy(() => import("@/pages/Cases"));
+const CaseDetail = lazy(() => import("@/pages/CaseDetail"));
+const LegalExplorer = lazy(() => import("@/pages/LegalExplorer"));
+const HSExplorer = lazy(() => import("@/pages/HSExplorer"));
+const Products = lazy(() => import("@/pages/Products"));
 const AdminLogin = lazy(() => import("@/pages/admin/AdminLogin"));
 const AdminHSCodes = lazy(() => import("@/pages/admin/AdminHSCodes"));
 const AdminUpload = lazy(() => import("@/pages/admin/AdminUpload"));
 const AdminDocuments = lazy(() => import("@/pages/admin/AdminDocuments"));
 const AdminAccessRequests = lazy(() => import("@/pages/admin/AdminAccessRequests"));
 const AdminReferences = lazy(() => import("@/pages/admin/AdminReferences"));
+const AdminCorpus = lazy(() => import("@/pages/admin/AdminCorpus"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
 
@@ -69,6 +75,11 @@ const App = () => {
                       <Route path="chat" element={<Suspense fallback={<PageFallback />}><Chat /></Suspense>} />
                       <Route path="consultation" element={<Suspense fallback={<PageFallback />}><Consultation /></Suspense>} />
                       <Route path="historique" element={<Suspense fallback={<PageFallback />}><ConsultationHistory /></Suspense>} />
+                      <Route path="dossiers" element={<Suspense fallback={<PageFallback />}><Cases /></Suspense>} />
+                      <Route path="dossiers/:id" element={<Suspense fallback={<PageFallback />}><CaseDetail /></Suspense>} />
+                      <Route path="juridique" element={<Suspense fallback={<PageFallback />}><LegalExplorer /></Suspense>} />
+                      <Route path="classement-sh" element={<Suspense fallback={<PageFallback />}><HSExplorer /></Suspense>} />
+                      <Route path="produits" element={<Suspense fallback={<PageFallback />}><Products /></Suspense>} />
                     </Route>
 
                     {/* Admin routes (email auth) */}
@@ -97,6 +108,9 @@ const App = () => {
                       } />
                       <Route path="references" element={
                         <Suspense fallback={<PageFallback />}><AdminReferences /></Suspense>
+                      } />
+                      <Route path="corpus" element={
+                        <Suspense fallback={<PageFallback />}><AdminCorpus /></Suspense>
                       } />
                       <Route path="access-requests" element={
                         <Suspense fallback={<PageFallback />}><AdminAccessRequests /></Suspense>

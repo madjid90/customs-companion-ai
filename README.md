@@ -1,73 +1,38 @@
-# Welcome to your Lovable project
+# Douane AI
 
-## Project info
+Assistant douanier marocain pour la classification SH, l'analyse juridique, la gestion des dossiers import/export et la génération de livrables sourcés.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Architecture
 
-## How can I edit this code?
+- **Application** : React, TypeScript, Vite et shadcn/ui
+- **Données et authentification** : Supabase Postgres, Auth, Storage et Edge Functions
+- **IA** : OpenAI pour le chat, la vision, l'extraction structurée et les embeddings; Anthropic peut être activé pour l'analyse PDF longue
+- **Déploiement** : Vercel pour l'application et Supabase pour le backend
 
-There are several ways of editing your application.
+Le corpus sépare les sources officielles, documents immuables, exécutions d'ingestion, textes juridiques versionnés, dispositions, relations, nomenclatures SH et mesures réglementaires. Les données client sont isolées par organisation avec RLS.
 
-**Use Lovable**
+## Développement local
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+```bash
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Variables frontend requises :
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```text
+VITE_SUPABASE_URL=
+VITE_SUPABASE_PUBLISHABLE_KEY=
+```
 
-**Use GitHub Codespaces**
+Secrets Supabase Edge Functions : `OPENAI_API_KEY`, `OPENAI_CHAT_MODEL` et, si l'analyse PDF Claude est utilisée, `ANTHROPIC_API_KEY`.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Contrôles
 
-## What technologies are used for this project?
+```bash
+npm run lint
+npm test
+npm run build
+```
 
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Les migrations sont dans `supabase/migrations`, les fonctions dans `supabase/functions` et les contrats du cerveau douanier dans `docs/architecture`.

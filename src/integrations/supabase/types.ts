@@ -4066,6 +4066,15 @@ export type Database = {
       }
     }
     Functions: {
+      ensure_my_organization: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          organization_id: string
+          role: string
+          organization_name: string
+          organization_slug: string
+        }[]
+      }
       calculate_dum_item_taxes: {
         Args: {
           p_cif_value: number

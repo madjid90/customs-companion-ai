@@ -1,3 +1,3 @@
 User-agent: *
 Allow: /
-Sitemap: https://douane-ai.lovable.app/sitemap.xml
+Sitemap: https://customs-companion.vercel.app/sitemap.xml

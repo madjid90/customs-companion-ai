@@ -47,7 +47,7 @@ import {
   analyzeQuestion,
   extractHistoryContext,
   analyzePdfWithClaude,
-  analyzeImageWithLovableAI,
+  analyzeImageWithOpenAI,
   type ImageInput,
   type PdfInput,
   type ImageAnalysisResult,
@@ -81,8 +81,8 @@ import { postProcessResponse, saveToCache, type PostProcessResult } from "./post
 // CONFIGURATION
 // =============================================================================
 
-const LOVABLE_AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const LOVABLE_AI_MODEL = "google/gemini-2.5-flash";
+const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+const OPENAI_CHAT_MODEL = Deno.env.get("OPENAI_CHAT_MODEL") || "gpt-4.1-mini";
 
 // Configuration des timeouts
 const TIMEOUTS = {
@@ -188,22 +188,22 @@ function createSSEStream(
 }
 
 /**
- * Appelle Lovable AI avec streaming activé et retourne la réponse complète
+ * Appelle OpenAI avec streaming activé et retourne la réponse complète
  */
-async function streamLovableAI(
+async function streamOpenAI(
   systemPrompt: string,
   messages: Array<{ role: string; content: string }>,
   apiKey: string,
   onChunk: (text: string) => void
 ): Promise<string> {
-  const response = await fetch(LOVABLE_AI_GATEWAY, {
+  const response = await fetch(OPENAI_CHAT_ENDPOINT, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: LOVABLE_AI_MODEL,
+      model: OPENAI_CHAT_MODEL,
       max_tokens: 2048,
       temperature: 0.3,
       stream: true,
@@ -216,7 +216,7 @@ async function streamLovableAI(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Lovable AI error: ${response.status} - ${errorText}`);
+    throw new Error(`OpenAI error: ${response.status} - ${errorText}`);
   }
 
   if (!response.body) {
@@ -318,7 +318,7 @@ serve(async (req) => {
     // =========================================================================
     // VALIDATION DES CLÉS API
     // =========================================================================
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const OPENAI_CHAT_API_KEY = Deno.env.get("OPENAI_API_KEY");
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -326,7 +326,7 @@ serve(async (req) => {
 
     // Vérifier les clés OBLIGATOIRES
     const missingKeys: string[] = [];
-    if (!LOVABLE_API_KEY) missingKeys.push("LOVABLE_API_KEY");
+    if (!OPENAI_CHAT_API_KEY) missingKeys.push("OPENAI_CHAT_API_KEY");
     if (!SUPABASE_URL) missingKeys.push("SUPABASE_URL");
     if (!SUPABASE_SERVICE_ROLE_KEY) missingKeys.push("SUPABASE_SERVICE_ROLE_KEY");
     
@@ -393,9 +393,9 @@ serve(async (req) => {
     
     // Analyse des images
     if (images && images.length > 0) {
-      console.log("Analyzing", images.length, "image(s) with Lovable AI Vision...");
+      console.log("Analyzing", images.length, "image(s) with OpenAI Vision...");
       try {
-        imageAnalysis = await analyzeImageWithLovableAI(images as ImageInput[], question || "Identifie ce produit", LOVABLE_API_KEY!);
+        imageAnalysis = await analyzeImageWithOpenAI(images as ImageInput[], question || "Identifie ce produit", OPENAI_CHAT_API_KEY!);
         console.log("Image analysis result:", JSON.stringify(imageAnalysis));
         
         enrichedQuestion = `${question || "Identifie ce produit et donne-moi le code SH"}
@@ -500,7 +500,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     if (question && !pdfAnalysis?.isDUM) {
       const [expandedText, synonymResults] = await Promise.all([
         withTimeout(
-          expandQuery(question, LOVABLE_API_KEY!, { synonyms: true, translation: true, hsCodeHints: true }),
+          expandQuery(question, OPENAI_CHAT_API_KEY!, { synonyms: true, translation: true, hsCodeHints: true }),
           3000, question, "Query expansion"
         ),
         withTimeout(
@@ -1452,7 +1452,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       context.tariff_notes.length + 
       ((context as any)._legalChunks?.length || 0);
 
-    if (totalRetrievedPassages > 5 && LOVABLE_API_KEY) {
+    if (totalRetrievedPassages > 5 && OPENAI_CHAT_API_KEY) {
       // Build unified passage list for re-ranking
       const passagesForReranking: Array<{ text: string; type: string; metadata?: any }> = [];
       const passageSourceMap: Array<{ type: string; index: number }> = [];
@@ -1484,7 +1484,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
 
       if (passagesForReranking.length > 3) {
         const reranked = await withTimeout(
-          rerankWithLLM(enrichedQuestion || question || '', passagesForReranking, LOVABLE_API_KEY!, 15),
+          rerankWithLLM(enrichedQuestion || question || '', passagesForReranking, OPENAI_CHAT_API_KEY!, 15),
           5000,
           rerankWithTFIDF(enrichedQuestion || question || '', passagesForReranking),
           "LLM re-ranking"
@@ -1541,6 +1541,31 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       knowledge_documents: context.knowledge_documents.length,
     });
 
+    // Canonical customs brain: validated, versioned HS and legal context.
+    // This complements the legacy RAG tables while the historical corpus is migrated.
+    try {
+      const detectedCode = analysis.detectedCodes?.[0]?.replace(/\D/g, "") || "";
+      const keyword = analysis.keywords?.find((value: string) => value.length >= 4) || "";
+      const [canonicalHs, canonicalMeasures, canonicalLaw] = await Promise.all([
+        detectedCode.length >= 2
+          ? supabase.from("hs_nodes").select("code,level,description_official,description_resolved,chapter_number,review_status").like("code", `${detectedCode.slice(0, 6)}%`).eq("review_status", "validated").limit(20)
+          : Promise.resolve({ data: [], error: null }),
+        detectedCode.length >= 2
+          ? supabase.from("regulatory_measures").select("measure_type,title,description,hs_prefix,effective_from,effective_to,parameters,validation_status").like("hs_prefix", `${detectedCode.slice(0, 6)}%`).eq("validation_status", "validated").limit(20)
+          : Promise.resolve({ data: [], error: null }),
+        keyword
+          ? supabase.from("legal_provisions").select("provision_type,number,heading,body_text,hierarchy_path,page_start,review_status").ilike("body_text", `%${keyword}%`).eq("review_status", "validated").limit(15)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      (context as any)._customsBrain = {
+        hs: canonicalHs.data || [],
+        measures: canonicalMeasures.data || [],
+        provisions: canonicalLaw.data || [],
+      };
+    } catch (canonicalError) {
+      logger.warn("Canonical customs brain lookup unavailable", { error: String(canonicalError) });
+    }
+
     // =========================================================================
     // BUILD SYSTEM PROMPT
     // =========================================================================
@@ -1574,7 +1599,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     });
 
     // =========================================================================
-    // CALL LOVABLE AI (avec support streaming)
+    // CALL OPENAI (avec support streaming)
     // =========================================================================
     const startTime = Date.now();
 
@@ -1589,10 +1614,10 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           const sse = createSSEStream(controller, encoder);
           
           try {
-            const fullResponseText = await streamLovableAI(
+            const fullResponseText = await streamOpenAI(
               systemPrompt,
               claudeMessages,
-              LOVABLE_API_KEY!,
+              OPENAI_CHAT_API_KEY!,
               (chunk) => sse.sendContent(chunk)
             );
             
@@ -1648,20 +1673,20 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     
     let aiResponse: Response;
     try {
-      logger.info("Calling Lovable AI with retry + circuit breaker", { model: LOVABLE_AI_MODEL });
+      logger.info("Calling OpenAI with retry + circuit breaker", { model: OPENAI_CHAT_MODEL });
       
       aiResponse = await withCircuitBreaker(
-        'lovable-ai',
+        'openai-chat',
         async () => fetchWithRetry(
-          LOVABLE_AI_GATEWAY,
+          OPENAI_CHAT_ENDPOINT,
           {
             method: "POST",
             headers: {
-              "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+              "Authorization": `Bearer ${OPENAI_CHAT_API_KEY}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              model: LOVABLE_AI_MODEL,
+              model: OPENAI_CHAT_MODEL,
               max_tokens: 4096,
               messages: [
                 { role: "system", content: systemPrompt },
@@ -1670,7 +1695,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
             }),
           },
           {
-            ...RETRY_CONFIGS.lovableAI,
+            ...RETRY_CONFIGS.openAIChat,
             onRetry: (attempt, error, delay) => {
               logger.warn(`LLM retry ${attempt}`, { error: error.message, delay });
             },
@@ -1680,19 +1705,19 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       );
       
     } catch (fetchError: any) {
-      logger.error("Lovable AI fetch error after retries", fetchError);
+      logger.error("OpenAI fetch error after retries", fetchError);
       return errorResponse(req, "Service temporairement indisponible. Veuillez réessayer.", 503);
     }
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
-      logger.error("Lovable AI non-OK response", new Error(errorText), { status: aiResponse.status });
+      logger.error("OpenAI non-OK response", new Error(errorText), { status: aiResponse.status });
       
       if (aiResponse.status === 429) {
         return errorResponse(req, "Trop de requêtes. Veuillez réessayer.", 429);
       }
       if (aiResponse.status === 402) {
-        return errorResponse(req, "Crédits Lovable AI épuisés.", 402);
+        return errorResponse(req, "Crédits OpenAI épuisés.", 402);
       }
       return errorResponse(req, "Service temporairement indisponible.", 503);
     }

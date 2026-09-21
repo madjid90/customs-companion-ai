@@ -72,6 +72,59 @@ const DOCUMENT_TYPES: { value: DocumentType; label: string; icon: React.ReactNod
   { value: "anrt_dispense", label: "ANRT - Équip. Dispensés", icon: <Database className="h-4 w-4" />, description: "Liste des équipements dispensés ANRT (~40k lignes)", pipeline: "anrt", acceptedFiles: ".xlsx,.xls,.csv" },
 ];
 
+const CANONICAL_DOCUMENT_TYPES: Record<string, string> = {
+  tarif: "tariff",
+  accord: "agreement",
+  reglementation: "customs_code",
+  circulaire: "circular",
+  nenc: "section_note",
+  nesh: "section_note",
+};
+
+async function sha256Hex(file: File) {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function registerCanonicalIngestion(file: File, filePath: string, docType: DocumentType, title: string) {
+  const { data: auth } = await supabase.auth.getUser();
+  const { data: source, error: sourceError } = await supabase
+    .from("regulatory_sources")
+    .select("id")
+    .eq("code", "ADII")
+    .single();
+  if (sourceError) throw sourceError;
+  const hash = await sha256Hex(file);
+  const { data: existing } = await supabase.from("source_documents").select("id").eq("source_id", source.id).eq("sha256", hash).maybeSingle();
+  if (existing) return existing.id;
+  const { data: document, error } = await supabase.from("source_documents").insert({
+    source_id: source.id,
+    title,
+    document_type: CANONICAL_DOCUMENT_TYPES[docType] || "other",
+    language_code: "fr",
+    storage_bucket: "pdf-documents",
+    storage_path: filePath,
+    mime_type: file.type || "application/pdf",
+    byte_size: file.size,
+    sha256: hash,
+    lifecycle_status: "draft",
+    uploaded_by: auth.user?.id || null,
+    metadata: { original_file_name: file.name, legacy_pipeline: docType },
+  }).select("id").single();
+  if (error) throw error;
+  const extractionMethod = file.type.includes("sheet") || file.name.match(/\.xlsx?$/i) ? "spreadsheet" : "hybrid";
+  const { error: runError } = await supabase.from("ingestion_runs").insert({
+    source_document_id: document.id,
+    pipeline_version: "customs-brain-v1",
+    extraction_method: extractionMethod,
+    status: "processing",
+    started_at: new Date().toISOString(),
+    created_by: auth.user?.id || null,
+  });
+  if (runError) throw runError;
+  return document.id;
+}
+
 // ANRT Excel import handler (shared for both agréés and dispensés)
 async function processAnrtExcelFile(
   file: File,
@@ -660,6 +713,7 @@ export default function AdminUpload() {
       return;
     }
 
+    let canonicalDocumentId: string | null = null;
     try {
       // 0. Check for duplicates based on file name - DELETE old version to allow replacement
       const pdfTitle = file.name.replace(".pdf", "").replace(/_/g, " ");
@@ -817,6 +871,7 @@ export default function AdminUpload() {
         .single();
 
       if (insertError) throw insertError;
+      canonicalDocumentId = await registerCanonicalIngestion(file, filePath, effectiveDocType, pdfTitle);
       updateFileStatus(fileId, { 
         progress: 60, 
         status: "analyzing",
@@ -858,6 +913,8 @@ export default function AdminUpload() {
             title: "✅ Document réglementaire ingéré",
             description: `${ingestionResult.chunks_created} segments créés, ${ingestionResult.detected_codes_count} codes SH détectés pour le RAG`,
           });
+          await supabase.from("ingestion_runs").update({ status: "quality_review", completed_at: new Date().toISOString(), processed_pages: ingestionResult.pages_processed }).eq("source_document_id", canonicalDocumentId).eq("status", "processing");
+          await supabase.from("source_documents").update({ lifecycle_status: "quality_review" }).eq("id", canonicalDocumentId);
         } catch (err: any) {
           console.error("Legal ingestion error:", err);
           updateFileStatus(fileId, {
@@ -870,6 +927,7 @@ export default function AdminUpload() {
             description: err.message || "Impossible d'ingérer le document",
             variant: "destructive",
           });
+          await supabase.from("ingestion_runs").update({ status: "failed", completed_at: new Date().toISOString(), error_summary: err.message || "Erreur d'ingestion" }).eq("source_document_id", canonicalDocumentId).eq("status", "processing");
         }
       } else {
         // ========== TARIFF EXTRACTION (analyze-pdf) ==========
@@ -971,6 +1029,8 @@ export default function AdminUpload() {
             title: "📋 Analyse terminée - Prévisualisation",
             description: `${hsCount} codes SH et ${tariffCount} lignes tarifaires détectés. Cliquez sur "Prévisualiser" pour valider.`,
           });
+          await supabase.from("ingestion_runs").update({ status: "quality_review", completed_at: new Date().toISOString(), extracted_hs_codes: hsCount }).eq("source_document_id", canonicalDocumentId).eq("status", "processing");
+          await supabase.from("source_documents").update({ lifecycle_status: "quality_review" }).eq("id", canonicalDocumentId);
         }
       }
     } catch (error: any) {
@@ -984,6 +1044,9 @@ export default function AdminUpload() {
         description: error.message || "Impossible d'uploader le fichier",
         variant: "destructive",
       });
+      if (canonicalDocumentId) {
+        await supabase.from("ingestion_runs").update({ status: "failed", completed_at: new Date().toISOString(), error_summary: error.message || "Erreur d'ingestion" }).eq("source_document_id", canonicalDocumentId).eq("status", "processing");
+      }
     }
   };
 

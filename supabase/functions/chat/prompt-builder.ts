@@ -309,6 +309,15 @@ ${availableSources.slice(0, 15).join('\n\n')}
   // ===== RAG CONTEXT =====
   const ragParts: string[] = [];
 
+  const customsBrain = (context as any)._customsBrain;
+  if (customsBrain && (customsBrain.hs?.length || customsBrain.measures?.length || customsBrain.provisions?.length)) {
+    ragParts.push(`### CERVEAU DOUANIER CANONIQUE — DONNÉES VALIDÉES ET VERSIONNÉES
+Codes SH: ${JSON.stringify(customsBrain.hs || [])}
+Mesures applicables: ${JSON.stringify(customsBrain.measures || [])}
+Dispositions juridiques: ${JSON.stringify(customsBrain.provisions || [])}
+Utilise ces éléments avant les anciennes tables. Ne présente jamais un brouillon ou une proposition non validée comme une règle applicable.`);
+  }
+
   // Image analysis
   if (imageAnalysisContext) {
     ragParts.push(imageAnalysisContext);

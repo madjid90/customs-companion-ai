@@ -45,8 +45,8 @@ const DEFAULT_CONFIG: RetryConfig = {
 // ============================================================================
 
 export const RETRY_CONFIGS = {
-  // Lovable AI - génération de texte (chat)
-  lovableAI: {
+  // OpenAI - génération de texte (chat)
+  openAIChat: {
     maxRetries: 3,
     initialDelayMs: 2000,
     maxDelayMs: 15000,

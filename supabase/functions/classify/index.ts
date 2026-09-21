@@ -12,8 +12,8 @@ import {
 } from "../_shared/cors.ts";
 import { requireAuth } from "../_shared/auth-check.ts";
 
-const LOVABLE_AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const LOVABLE_AI_MODEL = "google/gemini-2.5-flash";
+const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+const OPENAI_CHAT_MODEL = Deno.env.get("OPENAI_CHAT_MODEL") || "gpt-4.1-mini";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return handleCorsPreFlight(req);
@@ -41,12 +41,12 @@ serve(async (req) => {
       return errorResponse(req, "Description du produit requise (min 3 caractères)", 400);
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const OPENAI_CHAT_API_KEY = Deno.env.get("OPENAI_API_KEY");
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    if (!LOVABLE_API_KEY) {
+    if (!OPENAI_CHAT_API_KEY) {
       return errorResponse(req, "Configuration serveur manquante", 500);
     }
 
@@ -60,14 +60,14 @@ serve(async (req) => {
 
     if (hasDocuments && images?.length) {
       try {
-        const imgRes = await fetch(LOVABLE_AI_GATEWAY, {
+        const imgRes = await fetch(OPENAI_CHAT_ENDPOINT, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            Authorization: `Bearer ${OPENAI_CHAT_API_KEY}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: LOVABLE_AI_MODEL,
+            model: OPENAI_CHAT_MODEL,
             max_tokens: 1000,
             messages: [{
               role: "user",
@@ -266,14 +266,14 @@ Réponds UNIQUEMENT en JSON:
   }]
 }`;
 
-    const llmResponse = await fetch(LOVABLE_AI_GATEWAY, {
+    const llmResponse = await fetch(OPENAI_CHAT_ENDPOINT, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${OPENAI_CHAT_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: LOVABLE_AI_MODEL,
+        model: OPENAI_CHAT_MODEL,
         max_tokens: 4000,
         temperature: 0.2,
         messages: [

@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Inbox,
   Library,
+  Database,
   LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -26,6 +27,7 @@ const menuItems: MenuItem[] = [
   { type: "link", icon: Inbox, label: "Gestion utilisateurs", href: "/admin/access-requests" },
   { type: "separator" },
   { type: "link", icon: Upload, label: "Upload fichiers", href: "/admin/upload" },
+  { type: "link", icon: Database, label: "Corpus & qualité", href: "/admin/corpus" },
   { type: "separator" },
   { type: "link", icon: Package, label: "Codes SH", href: "/admin/hs-codes" },
   { type: "link", icon: FileText, label: "Documents", href: "/admin/documents" },
