@@ -1548,13 +1548,13 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       const keyword = analysis.keywords?.find((value: string) => value.length >= 4) || "";
       const [canonicalHs, canonicalMeasures, canonicalLaw] = await Promise.all([
         detectedCode.length >= 2
-          ? supabase.from("hs_nodes").select("code,level,description_official,description_resolved,chapter_number,review_status").like("code", `${detectedCode.slice(0, 6)}%`).eq("review_status", "validated").limit(20)
+          ? supabase.from("hs_nodes").select("code,level,description_official,description_resolved,chapter_number,review_status,hs_nomenclatures!inner(status)").like("code", `${detectedCode.slice(0, 6)}%`).eq("review_status", "validated").eq("hs_nomenclatures.status", "published").limit(20)
           : Promise.resolve({ data: [], error: null }),
         detectedCode.length >= 2
-          ? supabase.from("regulatory_measures").select("measure_type,title,description,hs_prefix,effective_from,effective_to,parameters,validation_status").like("hs_prefix", `${detectedCode.slice(0, 6)}%`).eq("validation_status", "validated").limit(20)
+          ? supabase.from("regulatory_measures").select("measure_type,title,description,hs_prefix,effective_from,effective_to,parameters,validation_status,legal_provisions!inner(legal_versions!inner(status))").like("hs_prefix", `${detectedCode.slice(0, 6)}%`).eq("validation_status", "validated").eq("legal_provisions.legal_versions.status", "published").limit(20)
           : Promise.resolve({ data: [], error: null }),
         keyword
-          ? supabase.from("legal_provisions").select("provision_type,number,heading,body_text,hierarchy_path,page_start,review_status").ilike("body_text", `%${keyword}%`).eq("review_status", "validated").limit(15)
+          ? supabase.from("legal_provisions").select("provision_type,number,heading,body_text,hierarchy_path,page_start,review_status,legal_versions!inner(status)").ilike("body_text", `%${keyword}%`).eq("review_status", "validated").eq("legal_versions.status", "published").limit(15)
           : Promise.resolve({ data: [], error: null }),
       ]);
       (context as any)._customsBrain = {

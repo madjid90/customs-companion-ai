@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Derived corpus text and one-time SQL batches stay local; original PDFs are not versioned.
+docs/corpus/hs-extraction-review.json
+docs/corpus/legal-extraction-review.json
+docs/corpus/sql-batches/

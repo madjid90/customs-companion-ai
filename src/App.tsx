@@ -33,6 +33,10 @@ const AdminDocuments = lazy(() => import("@/pages/admin/AdminDocuments"));
 const AdminAccessRequests = lazy(() => import("@/pages/admin/AdminAccessRequests"));
 const AdminReferences = lazy(() => import("@/pages/admin/AdminReferences"));
 const AdminCorpus = lazy(() => import("@/pages/admin/AdminCorpus"));
+const AdminBulkImport = lazy(() => import("@/pages/admin/AdminBulkImport"));
+const AdminLegalReview = lazy(() => import("@/pages/admin/AdminLegalReview"));
+const AdminLegalVersions = lazy(() => import("@/pages/admin/AdminLegalVersions"));
+const AdminHSReview = lazy(() => import("@/pages/admin/AdminHSReview"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
 
@@ -111,6 +115,18 @@ const App = () => {
                       } />
                       <Route path="corpus" element={
                         <Suspense fallback={<PageFallback />}><AdminCorpus /></Suspense>
+                      } />
+                      <Route path="corpus/import" element={
+                        <Suspense fallback={<PageFallback />}><AdminBulkImport /></Suspense>
+                      } />
+                      <Route path="juridique" element={
+                        <Suspense fallback={<PageFallback />}><AdminLegalReview /></Suspense>
+                      } />
+                      <Route path="versions-juridiques" element={
+                        <Suspense fallback={<PageFallback />}><AdminLegalVersions /></Suspense>
+                      } />
+                      <Route path="revue-sh" element={
+                        <Suspense fallback={<PageFallback />}><AdminHSReview /></Suspense>
                       } />
                       <Route path="access-requests" element={
                         <Suspense fallback={<PageFallback />}><AdminAccessRequests /></Suspense>

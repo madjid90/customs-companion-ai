@@ -1613,6 +1613,12 @@ export type Database = {
           },
         ]
       }
+      hs_extraction_candidates: {
+        Row: { id: string; source_sha256: string; source_relative_path: string; source_document_id: string | null; source_page_id: string | null; page_number: number; line_number: number; code: string; chapter_number: string; description_fragment: string; raw_line: string; derivation_method: string; confidence: number; duty_rate_candidate: string | null; review_status: string; reviewed_by: string | null; reviewed_at: string | null; review_note: string | null; created_at: string }
+        Insert: { id?: string; source_sha256: string; source_relative_path: string; source_document_id?: string | null; source_page_id?: string | null; page_number: number; line_number: number; code: string; chapter_number: string; description_fragment: string; raw_line: string; derivation_method: string; confidence: number; duty_rate_candidate?: string | null; review_status?: string; reviewed_by?: string | null; reviewed_at?: string | null; review_note?: string | null; created_at?: string }
+        Update: { id?: string; source_sha256?: string; source_relative_path?: string; source_document_id?: string | null; source_page_id?: string | null; page_number?: number; line_number?: number; code?: string; chapter_number?: string; description_fragment?: string; raw_line?: string; derivation_method?: string; confidence?: number; duty_rate_candidate?: string | null; review_status?: string; reviewed_by?: string | null; reviewed_at?: string | null; review_note?: string | null; created_at?: string }
+        Relationships: []
+      }
       hs_nodes: {
         Row: {
           chapter_number: string
@@ -2106,6 +2112,7 @@ export type Database = {
           review_status: string
           sequence_number: number
           source_bbox: Json | null
+          source_page_id: string | null
         }
         Insert: {
           body_text: string
@@ -2123,6 +2130,7 @@ export type Database = {
           review_status?: string
           sequence_number: number
           source_bbox?: Json | null
+          source_page_id?: string | null
         }
         Update: {
           body_text?: string
@@ -2140,6 +2148,7 @@ export type Database = {
           review_status?: string
           sequence_number?: number
           source_bbox?: Json | null
+          source_page_id?: string | null
         }
         Relationships: [
           {
@@ -2154,6 +2163,13 @@ export type Database = {
             columns: ["parent_id"]
             isOneToOne: false
             referencedRelation: "legal_provisions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "legal_provisions_source_page_id_fkey"
+            columns: ["source_page_id"]
+            isOneToOne: false
+            referencedRelation: "source_pages"
             referencedColumns: ["id"]
           },
         ]
@@ -3449,6 +3465,54 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      source_pages: {
+        Row: {
+          id: string
+          source_document_id: string
+          page_number: number
+          text_content: string
+          text_sha256: string
+          extraction_method: string
+          extraction_confidence: number | null
+          review_status: string
+          metadata: Json
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          source_document_id: string
+          page_number: number
+          text_content: string
+          text_sha256: string
+          extraction_method: string
+          extraction_confidence?: number | null
+          review_status?: string
+          metadata?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          source_document_id?: string
+          page_number?: number
+          text_content?: string
+          text_sha256?: string
+          extraction_method?: string
+          extraction_confidence?: number | null
+          review_status?: string
+          metadata?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [{
+          foreignKeyName: "source_pages_source_document_id_fkey"
+          columns: ["source_document_id"]
+          isOneToOne: false
+          referencedRelation: "source_documents"
+          referencedColumns: ["id"]
+        }]
       }
       statistics: {
         Row: {

@@ -75,7 +75,7 @@ const DOCUMENT_TYPES: { value: DocumentType; label: string; icon: React.ReactNod
 const CANONICAL_DOCUMENT_TYPES: Record<string, string> = {
   tarif: "tariff",
   accord: "agreement",
-  reglementation: "customs_code",
+  reglementation: "other",
   circulaire: "circular",
   nenc: "section_note",
   nesh: "section_note",
@@ -86,24 +86,27 @@ async function sha256Hex(file: File) {
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function registerCanonicalIngestion(file: File, filePath: string, docType: DocumentType, title: string) {
+async function registerCanonicalIngestion(file: File, _legacyFilePath: string, docType: DocumentType, title: string) {
   const { data: auth } = await supabase.auth.getUser();
   const { data: source, error: sourceError } = await supabase
     .from("regulatory_sources")
     .select("id")
-    .eq("code", "ADII")
+    .eq("code", "MA_ADII")
     .single();
   if (sourceError) throw sourceError;
   const hash = await sha256Hex(file);
   const { data: existing } = await supabase.from("source_documents").select("id").eq("source_id", source.id).eq("sha256", hash).maybeSingle();
   if (existing) return existing.id;
+  const privatePath = `manual/${hash}/${crypto.randomUUID()}.pdf`;
+  const { error: privateUploadError } = await supabase.storage.from("legal-source-pdfs").upload(privatePath, file, { upsert: false, contentType: file.type || "application/pdf" });
+  if (privateUploadError) throw privateUploadError;
   const { data: document, error } = await supabase.from("source_documents").insert({
     source_id: source.id,
     title,
     document_type: CANONICAL_DOCUMENT_TYPES[docType] || "other",
     language_code: "fr",
-    storage_bucket: "pdf-documents",
-    storage_path: filePath,
+    storage_bucket: "legal-source-pdfs",
+    storage_path: privatePath,
     mime_type: file.type || "application/pdf",
     byte_size: file.size,
     sha256: hash,

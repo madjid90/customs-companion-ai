@@ -15,6 +15,8 @@ import {
   Inbox,
   Library,
   Database,
+  FolderOpen,
+  Scale,
   LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -28,6 +30,10 @@ const menuItems: MenuItem[] = [
   { type: "separator" },
   { type: "link", icon: Upload, label: "Upload fichiers", href: "/admin/upload" },
   { type: "link", icon: Database, label: "Corpus & qualité", href: "/admin/corpus" },
+  { type: "link", icon: FolderOpen, label: "Import corpus", href: "/admin/corpus/import" },
+  { type: "link", icon: Scale, label: "Revue juridique", href: "/admin/juridique" },
+  { type: "link", icon: Scale, label: "Versions juridiques", href: "/admin/versions-juridiques" },
+  { type: "link", icon: Package, label: "Revue SH", href: "/admin/revue-sh" },
   { type: "separator" },
   { type: "link", icon: Package, label: "Codes SH", href: "/admin/hs-codes" },
   { type: "link", icon: FileText, label: "Documents", href: "/admin/documents" },
