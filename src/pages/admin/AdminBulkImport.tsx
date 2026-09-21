@@ -22,7 +22,10 @@ const readerType: Record<string,string> = {
   "produits controles": "technical_control",
 };
 const normalize = (value:string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
-const docType = (file:File) => readerType[normalize((file.webkitRelativePath || file.name).split("/")[0])] || "other";
+const docType = (file:File) => {
+  const segments = (file.webkitRelativePath || file.name).split("/").map(normalize);
+  return segments.map(segment => readerType[segment]).find(Boolean) || "other";
+};
 async function digest(data: ArrayBuffer) {
   const hash = await crypto.subtle.digest("SHA-256", data);
   return Array.from(new Uint8Array(hash), b=>b.toString(16).padStart(2,"0")).join("");
@@ -55,13 +58,15 @@ export default function AdminBulkImport() {
     try {
       const bytes = await file.arrayBuffer();
       const sha256 = await digest(bytes);
-      const {data: existing,error:duplicateError} = await supabase.from("source_documents").select("id").eq("source_id",sourceId).eq("sha256",sha256).maybeSingle();
+      const {data: existing,error:duplicateError} = await supabase.from("source_documents").select("id,lifecycle_status,storage_path").eq("source_id",sourceId).eq("sha256",sha256).maybeSingle();
       if (duplicateError) throw duplicateError;
-      if (existing) return {name:relative,status:"duplicate"};
+      if (existing && existing.lifecycle_status !== "draft") return {name:relative,status:"duplicate"};
       const storagePath = `manual/${sha256}/${encodeURIComponent(file.name)}`;
-      const {error:storageError} = await supabase.storage.from("legal-source-pdfs").upload(storagePath,file,{contentType:"application/pdf",upsert:false});
-      if (storageError) throw storageError;
-      const {data:document,error:documentError} = await supabase.from("source_documents").insert({
+      if (!existing) {
+        const {error:storageError} = await supabase.storage.from("legal-source-pdfs").upload(storagePath,file,{contentType:"application/pdf",upsert:false});
+        if (storageError && !/already exists|duplicate/i.test(storageError.message)) throw storageError;
+      }
+      const {data:document,error:documentError} = existing ? {data:existing,error:null} : await supabase.from("source_documents").insert({
         source_id: sourceId,
         title: file.name.replace(/\.pdf$/i, ""),
         document_type: docType(file),
@@ -82,19 +87,25 @@ export default function AdminBulkImport() {
       const task = pdfjs.getDocument({data:new Uint8Array(bytes)});
       pdf = await task.promise;
       let empty = 0;
+      const pageBatch: Array<{source_document_id:string;page_number:number;text_content:string;text_sha256:string;extraction_method:string;extraction_confidence:number;review_status:string;metadata:{chars:number}}> = [];
+      const issueBatch: Array<{ingestion_run_id:string;page_number:number;issue_type:string;severity:string;description:string;evidence:{chars:number}}> = [];
+      const flush = async (pageNumber:number) => {
+        if (pageBatch.length) { const {error} = await supabase.from("source_pages").upsert(pageBatch.splice(0),{onConflict:"source_document_id,page_number"}); if (error) throw error; }
+        if (issueBatch.length) { const {error} = await supabase.from("ingestion_issues").insert(issueBatch.splice(0)); if (error) throw error; }
+        const {error} = await supabase.from("ingestion_runs").update({total_pages:pdf!.numPages,processed_pages:pageNumber,failed_pages:empty}).eq("id",run!.id);
+        if (error) throw error;
+      };
       for (let pageNumber=1; pageNumber<=pdf.numPages; pageNumber++) {
         const page = await pdf.getPage(pageNumber);
         const content = await page.getTextContent();
         const text = pageText(content.items);
         const textHash = await digest(new TextEncoder().encode(text).buffer);
-        const {error:pageError} = await supabase.from("source_pages").upsert({source_document_id:document.id,page_number:pageNumber,text_content:text,text_sha256:textHash,extraction_method:"native_pdf",extraction_confidence:text.length<80?0:70,review_status:text.length<80?"needs_review":"unreviewed",metadata:{chars:text.length}},{onConflict:"source_document_id,page_number"});
-        if (pageError) throw pageError;
+        pageBatch.push({source_document_id:document.id,page_number:pageNumber,text_content:text,text_sha256:textHash,extraction_method:"native_pdf",extraction_confidence:text.length<80?0:70,review_status:text.length<80?"needs_review":"unreviewed",metadata:{chars:text.length}});
         if (text.length<80) {
           empty++;
-          const {error:issueError} = await supabase.from("ingestion_issues").insert({ingestion_run_id:run.id,page_number:pageNumber,issue_type:"empty_page",severity:"blocking",description:"Texte absent ou insuffisant : OCR et contrôle visuel requis",evidence:{chars:text.length}});
-          if (issueError) throw issueError;
+          issueBatch.push({ingestion_run_id:run.id,page_number:pageNumber,issue_type:"empty_page",severity:"blocking",description:"Texte absent ou insuffisant : OCR et contrôle visuel requis",evidence:{chars:text.length}});
         }
-        await supabase.from("ingestion_runs").update({total_pages:pdf.numPages,processed_pages:pageNumber,failed_pages:empty}).eq("id",run.id);
+        if (pageBatch.length>=25 || pageNumber===pdf.numPages) await flush(pageNumber);
       }
       const {error:completeError} = await supabase.from("ingestion_runs").update({status:"quality_review",total_pages:pdf.numPages,processed_pages:pdf.numPages,failed_pages:empty,quality_score:Math.round(100*(pdf.numPages-empty)/Math.max(1,pdf.numPages)),completed_at:new Date().toISOString()}).eq("id",run.id);
       if (completeError) throw completeError;
