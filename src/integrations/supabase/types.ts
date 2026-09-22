@@ -4148,6 +4148,21 @@ export type Database = {
       }
     }
     Functions: {
+      search_hs_document_mentions: {
+        Args: { search_code: string; result_limit?: number }
+        Returns: {
+          source_page_id: string
+          code: string
+          title: string
+          file_title: string
+          document_type: string
+          lifecycle_status: string
+          storage_bucket: string
+          storage_path: string
+          page_number: number
+          excerpt: string
+        }[]
+      }
       correct_source_page: { Args: { target_issue_id: string; corrected_text_input: string; correction_reason_input: string }; Returns: string }
       promote_reviewed_hs_candidate: { Args: { candidate_id: string; target_nomenclature_id: string }; Returns: string }
       ensure_my_organization: {

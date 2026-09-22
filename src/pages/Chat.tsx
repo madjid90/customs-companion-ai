@@ -4,7 +4,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { getAuthHeaders } from "@/lib/authHeaders";
 import { useToast } from "@/hooks/use-toast";
-import { ChatMessage, ChatTypingIndicator } from "@/components/chat/ChatMessage";
+import { ChatMessage, ChatTypingIndicator, type ProvisionalSource } from "@/components/chat/ChatMessage";
 import { ChatWelcome } from "@/components/chat/ChatWelcome";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ChatHistory } from "@/components/chat/ChatHistory";
@@ -47,6 +47,7 @@ interface Message {
   conversationId?: string;
   attachedFiles?: AttachedFile[];
   citedCirculars?: CircularReference[];
+  provisionalSources?: ProvisionalSource[];
   hasDbEvidence?: boolean;
   validationMessage?: string;
   isStreaming?: boolean;
@@ -165,6 +166,7 @@ async function streamChatResponse(params: {
       params.onDone({
         confidence: data.confidence,
         cited_circulars: data.cited_circulars || [],
+        provisional_sources: data.provisional_sources || [],
         has_db_evidence: data.has_db_evidence ?? true,
         validation_message: data.validation_message,
         context: data.context,
@@ -587,6 +589,7 @@ export default function Chat() {
                     sources_validated: metadata.context.sources_validated || 0,
                   } : undefined,
                   citedCirculars: metadata?.cited_circulars || [],
+                  provisionalSources: metadata?.provisional_sources || [],
                   hasDbEvidence: metadata?.has_db_evidence ?? true,
                   validationMessage: metadata?.validation_message,
                 }

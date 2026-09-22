@@ -8,6 +8,7 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { CitedCirculars, type CircularReference } from "./CitedCirculars";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -40,9 +41,20 @@ interface Message {
   context?: MessageContext;
   attachedFiles?: AttachedFile[];
   citedCirculars?: CircularReference[];
+  provisionalSources?: ProvisionalSource[];
   hasDbEvidence?: boolean;
   validationMessage?: string;
   isStreaming?: boolean;
+}
+
+export interface ProvisionalSource {
+  id: string;
+  title: string;
+  file: string;
+  page_number: number;
+  storage_bucket: string;
+  storage_path: string;
+  status: "provisional";
 }
 
 interface ChatMessageProps {
@@ -583,6 +595,19 @@ export function ChatMessage({
                 hasDbEvidence={message.hasDbEvidence}
                 validationMessage={message.validationMessage}
               />
+            )}
+            {!message.isStreaming && Boolean(message.provisionalSources?.length) && (
+              <div className="mt-4 rounded-lg border border-amber-300/50 bg-amber-50/40 p-3 dark:bg-amber-950/10">
+                <p className="text-xs font-semibold">Extraits du corpus en cours de vérification</p>
+                <p className="mt-1 text-xs text-muted-foreground">Ils servent de pistes documentaires ; leur portée juridique et leur date d'application restent à confirmer.</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {message.provisionalSources?.map(source => <Button key={source.id} variant="outline" size="sm" className="h-auto max-w-full whitespace-normal text-left" onClick={async () => {
+                    const { data, error } = await supabase.storage.from(source.storage_bucket).createSignedUrl(source.storage_path, 300);
+                    if (error || !data?.signedUrl) { toast.error("PDF indisponible pour ce compte"); return; }
+                    window.open(`${data.signedUrl}#page=${source.page_number}`, "_blank", "noopener,noreferrer");
+                  }}>{source.title || source.file} · p. {source.page_number}<ExternalLink className="ml-1 h-3 w-3 shrink-0"/></Button>)}
+                </div>
+              </div>
             )}
           </div>
         ) : (

@@ -30,24 +30,9 @@ export default function HSExplorer(){
   }});
   const exactCode=query.replace(/\D/g,"");
   const {data:relatedPages=[]}=useQuery({queryKey:["hs-context",exactCode],enabled:exactCode.length===10,queryFn:async()=>{
-    const {data:mentions,error:mentionError}=await supabase.from("source_page_hs_mentions").select("source_page_id").eq("code",exactCode).limit(80);
-    if(mentionError)throw mentionError;
-    const pageIds=(mentions??[]).map(mention=>mention.source_page_id);
-    if(pageIds.length===0)return [];
-    const {data:pages,error:pageError}=await supabase.from("source_pages").select("id,source_document_id,page_number,text_content").in("id",pageIds);
-    if(pageError)throw pageError;
-    const documentIds=[...new Set((pages??[]).map(page=>page.source_document_id))];
-    const {data:documents,error:documentError}=await supabase.from("source_documents").select("id,title,document_type,lifecycle_status,storage_bucket,storage_path,metadata").in("id",documentIds);
-    if(documentError)throw documentError;
-    const byId=new Map((documents??[]).map(document=>[document.id,document]));
-    const seen=new Set<string>();
-    return (pages??[]).flatMap(page=>{
-      const document=byId.get(page.source_document_id);
-      if(!document||seen.has(document.id))return [];
-      seen.add(document.id);
-      const position=page.text_content.indexOf(exactCode);
-      return [{...page,document,excerpt:page.text_content.slice(Math.max(0,position-120),Math.max(0,position-120)+450)}];
-    }).sort((a,b)=>Number(a.document.document_type==="tariff")-Number(b.document.document_type==="tariff")).slice(0,8);
+    const {data,error}=await supabase.rpc("search_hs_document_mentions",{search_code:exactCode,result_limit:8});
+    if(error)throw error;
+    return data??[];
   }});
   async function openPdf(bucket:string,path:string,pageNumber:number){
     const {data,error}=await supabase.storage.from(bucket).createSignedUrl(path,300);
@@ -64,5 +49,5 @@ export default function HSExplorer(){
   {analysis&&<Card className="border-primary/30"><CardHeader><CardTitle>Analyse assistée</CardTitle></CardHeader><CardContent><pre className="whitespace-pre-wrap text-sm overflow-auto">{analysis}</pre><div className="mt-4 flex gap-2 text-xs text-muted-foreground"><AlertCircle className="h-4 w-4"/>Toute proposition doit être validée avec ses sources avant déclaration.</div></CardContent></Card>}
   <div className="space-y-3">{query.length>=2&&codes.length===0&&candidates.length===0?<Card><CardContent className="py-10 text-center text-muted-foreground">Aucun code ni candidat extrait ne correspond.</CardContent></Card>:codes.map(c=><Card key={c.id}><CardHeader className="py-4"><div className="flex gap-4"><div className="font-mono text-lg font-bold text-primary min-w-32">{c.code}</div><div className="flex-1"><CardTitle className="text-base">{c.description_resolved}</CardTitle><p className="text-sm text-muted-foreground mt-1">{c.description_official}</p></div><div className="flex flex-col gap-2"><Badge variant="outline">{c.level}</Badge><Badge variant="secondary">{c.review_status}</Badge></div></div></CardHeader></Card>)}</div>
   {candidates.length>0&&<section className="space-y-3"><h2 className="text-xl font-semibold">Candidats extraits des PDF</h2><p className="text-sm text-muted-foreground">Ces lignes servent à orienter la recherche. Un code extrait automatiquement peut être erroné ou obsolète ; vérifiez la page source avant toute déclaration.</p>{candidates.map(candidate=><Card key={candidate.id}><CardContent className="py-4 flex flex-wrap items-start gap-4"><span className="font-mono font-bold text-primary">{candidate.code}</span><div className="flex-1 min-w-48"><p className="font-medium">{candidate.description_fragment}</p><p className="text-sm text-muted-foreground">{candidate.source_documents?.title} · page {candidate.page_number} · extraction {candidate.derivation_method} · confiance technique {candidate.confidence}%</p><Button variant="link" className="px-0" onClick={()=>openCandidateSource(candidate)}>Voir la preuve PDF</Button></div><Badge variant="outline">{candidate.review_status==="validated"?"Extrait vérifié":"Provisoire"}</Badge></CardContent></Card>)}</section>}
-  {exactCode.length===10&&<section className="space-y-3"><h2 className="text-xl font-semibold">Documents mentionnant ce code</h2><p className="text-sm text-muted-foreground">Association textuelle automatique. La présence du code dans un document ne signifie pas que ses règles s'appliquent à votre opération.</p>{relatedPages.length===0?<Card><CardContent className="py-6 text-sm text-muted-foreground">Aucune mention directe trouvée dans les documents accessibles.</CardContent></Card>:relatedPages.map(page=><Card key={page.id}><CardContent className="py-4"><div className="flex flex-wrap items-center gap-2 mb-2"><Badge variant="outline">{page.document.document_type}</Badge><span className="font-medium">{page.document.title}</span><span className="text-sm text-muted-foreground">page {page.page_number}</span></div><p className="text-sm whitespace-pre-wrap line-clamp-4">{page.excerpt}</p><Button variant="link" className="px-0 mt-2" onClick={()=>openPdf(page.document.storage_bucket,page.document.storage_path,page.page_number)}>Voir le PDF source</Button></CardContent></Card>)}</section>}</div>;
+  {exactCode.length===10&&<section className="space-y-3"><h2 className="text-xl font-semibold">Documents mentionnant ce code</h2><p className="text-sm text-muted-foreground">Association textuelle automatique. La présence du code dans un document ne signifie pas que ses règles s'appliquent à votre opération.</p>{relatedPages.length===0?<Card><CardContent className="py-6 text-sm text-muted-foreground">Aucune mention directe trouvée dans les documents accessibles.</CardContent></Card>:relatedPages.map(page=><Card key={page.source_page_id}><CardContent className="py-4"><div className="flex flex-wrap items-center gap-2 mb-2"><Badge variant="outline">{page.document_type}</Badge><span className="font-medium">{page.title}</span><span className="text-sm text-muted-foreground">page {page.page_number}</span></div><p className="text-sm whitespace-pre-wrap line-clamp-4">{page.excerpt}</p><Button variant="link" className="px-0 mt-2" onClick={()=>openPdf(page.storage_bucket,page.storage_path,page.page_number)}>Voir le PDF source</Button></CardContent></Card>)}</section>}</div>;
 }

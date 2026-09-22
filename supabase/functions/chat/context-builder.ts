@@ -383,6 +383,13 @@ export function buildAvailableSources(
     });
   }
 
+  const provisional = (context as any)._provisionalCorpus;
+  if (provisional?.pages?.length || provisional?.linked?.length) {
+    for (const page of [...(provisional.pages || []), ...(provisional.linked || [])].slice(0, 12)) {
+      availableSources.push(`EXTRAIT PROVISOIRE: ${page.title || page.file || "Document"}, page ${page.page || "?"}. Vérification juridique et date d'applicabilité en attente.`);
+    }
+  }
+
   // Message par défaut si aucune source
   if (availableSources.length === 0) {
     availableSources.push(

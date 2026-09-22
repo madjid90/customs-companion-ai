@@ -25,8 +25,6 @@ import {
   SEMANTIC_THRESHOLDS,
   getAdaptiveThresholds,
   generateQueryEmbedding,
-  checkResponseCache,
-  saveToResponseCache,
   searchHSCodesSemantic,
   searchKnowledgeHybrid,
   searchPDFsHybrid,
@@ -75,7 +73,7 @@ import {
 import { expandQuery, expandWithSynonyms } from "./query-expander.ts";
 import { rerankWithLLM, rerankWithTFIDF, type RankedResult } from "./reranker.ts";
 // Post-processing unifié
-import { postProcessResponse, saveToCache, type PostProcessResult } from "./post-processor.ts";
+import { postProcessResponse, type PostProcessResult } from "./post-processor.ts";
 
 // =============================================================================
 // CONFIGURATION
@@ -157,6 +155,7 @@ interface StreamChunk {
   metadata?: {
     confidence: string;
     cited_circulars: any[];
+    provisional_sources?: any[];
     has_db_evidence: boolean;
     validation_message?: string;
     context: any;
@@ -359,26 +358,9 @@ serve(async (req) => {
       queryEmbedding = await generateQueryEmbedding(question, OPENAI_API_KEY);
       useSemanticSearch = queryEmbedding !== null;
 
-      if (queryEmbedding && (!images || images.length === 0)) {
-        const cachedResponse = await checkResponseCache(supabase, queryEmbedding, 0.92);
-        if (cachedResponse.found && cachedResponse.response) {
-          console.log("Cache hit! Similarity:", cachedResponse.response.similarity);
-          // Nettoyer la réponse en cache (peut contenir d'anciennes URLs)
-          const cleanedCachedText = stripUrlsFromResponse(cachedResponse.response.text);
-          return new Response(
-            JSON.stringify({
-              response: cleanedCachedText,
-              confidence: cachedResponse.response.confidence,
-              cached: true,
-              metadata: { cached: true, similarity: cachedResponse.response.similarity },
-              cited_circulars: cachedResponse.response.cited_circulars || [],
-              has_db_evidence: cachedResponse.response.has_db_evidence ?? true,
-              validation_message: cachedResponse.response.validation_message,
-            }),
-            { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
-          );
-        }
-      }
+      // Corpus pages and legal versions change independently of the old
+      // semantic cache. Keep embeddings for retrieval, but bypass cached
+      // answers until cache keys include a corpus revision and validity date.
     }
 
     // =========================================================================
@@ -1574,7 +1556,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       const [pageResult, hsResult, linkedResult] = await Promise.all([
         searchTerm
           ? supabase.from("source_pages")
-            .select("page_number,text_content,review_status,source_documents!inner(title,metadata,lifecycle_status,storage_path,regulatory_sources!inner(code))")
+            .select("id,page_number,text_content,review_status,source_documents!inner(id,title,metadata,lifecycle_status,storage_bucket,storage_path,regulatory_sources!inner(code))")
             .ilike("text_content", `%${searchTerm}%`)
             .neq("review_status", "rejected")
             .in("source_documents.lifecycle_status", ["extracted", "quality_review", "legal_review"])
@@ -1590,13 +1572,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
             .limit(8)
           : Promise.resolve({ data: [], error: null }),
         detectedCode.length === 10
-          ? supabase.from("source_page_hs_mentions")
-            .select("code,source_pages!inner(page_number,text_content,review_status,source_documents!inner(title,metadata,document_type,lifecycle_status,regulatory_sources!inner(code)))")
-            .eq("code", detectedCode)
-            .neq("source_pages.review_status", "rejected")
-            .in("source_pages.source_documents.lifecycle_status", ["extracted", "quality_review", "legal_review"])
-            .eq("source_pages.source_documents.regulatory_sources.code", "MA_MANUAL_CORPUS")
-            .limit(8)
+          ? supabase.rpc("search_hs_document_mentions", { search_code: detectedCode, result_limit: 8 })
           : Promise.resolve({ data: [], error: null }),
       ]);
       if (pageResult.error) logger.warn("Provisional page lookup failed", { error: String(pageResult.error) });
@@ -1611,19 +1587,29 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           excerpt: page.text_content.slice(0, 900),
         })),
         hs: hsResult.data || [],
-        linked: (linkedResult.data || []).map((item: any) => {
-          const page = item.source_pages;
-          const position = page?.text_content?.indexOf(detectedCode) ?? -1;
-          return {
-            code: item.code,
-            title: page?.source_documents?.metadata?.auto_profile?.heading || page?.source_documents?.title,
-            file: page?.source_documents?.title,
-            document_type: page?.source_documents?.document_type,
-            page: page?.page_number,
-            excerpt: page?.text_content?.slice(Math.max(0, position - 120), Math.max(0, position - 120) + 600),
-          };
-        }),
+        linked: (linkedResult.data || []).map((item: any) => ({
+          code: item.code, title: item.title, file: item.file_title,
+          document_type: item.document_type, page: item.page_number,
+          excerpt: item.excerpt,
+        })),
       };
+      const refs = [
+        ...(pageResult.data || []).map((page: any) => ({
+          id: page.id,
+          title: page.source_documents?.metadata?.auto_profile?.heading || page.source_documents?.title,
+          file: page.source_documents?.title,
+          page_number: page.page_number,
+          storage_bucket: page.source_documents?.storage_bucket,
+          storage_path: page.source_documents?.storage_path,
+        })),
+        ...(linkedResult.data || []).map((item: any) => ({
+          id: item.source_page_id, title: item.title, file: item.file_title,
+          page_number: item.page_number, storage_bucket: item.storage_bucket,
+          storage_path: item.storage_path,
+        })),
+      ];
+      (context as any)._provisionalSources = [...new Map(refs.filter((ref: any) => ref.id && ref.storage_bucket && ref.storage_path)
+        .map((ref: any) => [`${ref.storage_path}:${ref.page_number}`, { ...ref, status: "provisional" }])).values()].slice(0, 10);
     } catch (provisionalError) {
       logger.warn("Provisional corpus lookup unavailable", { error: String(provisionalError) });
     }
@@ -1693,12 +1679,12 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
             });
             
             // Save to cache
-            saveToCache(supabase, saveToResponseCache, question || "", queryEmbedding, result, images);
             
             // Send final metadata via SSE
             sse.sendDone({
               confidence: result.confidence,
               cited_circulars: result.citedCirculars,
+              provisional_sources: (context as any)._provisionalSources || [],
               has_db_evidence: result.sourceValidation.has_evidence,
               validation_message: result.sourceValidation.message,
               context: {
@@ -1796,7 +1782,6 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     });
 
     // Save to cache
-    saveToCache(supabase, saveToResponseCache, question || "", queryEmbedding, result, images);
 
     return new Response(
       JSON.stringify({
@@ -1813,6 +1798,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           legal_references_found: context.legal_references.length,
         },
         cited_circulars: result.citedCirculars,
+        provisional_sources: (context as any)._provisionalSources || [],
         sources_validated: result.sourceValidation.sources_validated,
         sources_rejected_count: result.sourceValidation.sources_rejected.length,
         has_db_evidence: result.sourceValidation.has_evidence,
