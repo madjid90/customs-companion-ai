@@ -1571,10 +1571,10 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     try {
       const searchTerm = (analysis.keywords || []).find((value: string) => value.length >= 4)?.replace(/[%_,()]/g, "").slice(0, 60);
       const detectedCode = analysis.detectedCodes?.[0]?.replace(/\D/g, "") || "";
-      const [pageResult, hsResult] = await Promise.all([
+      const [pageResult, hsResult, linkedResult] = await Promise.all([
         searchTerm
           ? supabase.from("source_pages")
-            .select("page_number,text_content,review_status,source_documents!inner(title,lifecycle_status,storage_path,regulatory_sources!inner(code))")
+            .select("page_number,text_content,review_status,source_documents!inner(title,metadata,lifecycle_status,storage_path,regulatory_sources!inner(code))")
             .ilike("text_content", `%${searchTerm}%`)
             .neq("review_status", "rejected")
             .in("source_documents.lifecycle_status", ["extracted", "quality_review", "legal_review"])
@@ -1589,17 +1589,40 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
             .eq("source_documents.regulatory_sources.code", "MA_MANUAL_CORPUS")
             .limit(8)
           : Promise.resolve({ data: [], error: null }),
+        detectedCode.length === 10
+          ? supabase.from("source_page_hs_mentions")
+            .select("code,source_pages!inner(page_number,text_content,review_status,source_documents!inner(title,metadata,document_type,lifecycle_status,regulatory_sources!inner(code)))")
+            .eq("code", detectedCode)
+            .neq("source_pages.review_status", "rejected")
+            .in("source_pages.source_documents.lifecycle_status", ["extracted", "quality_review", "legal_review"])
+            .eq("source_pages.source_documents.regulatory_sources.code", "MA_MANUAL_CORPUS")
+            .limit(8)
+          : Promise.resolve({ data: [], error: null }),
       ]);
       if (pageResult.error) logger.warn("Provisional page lookup failed", { error: String(pageResult.error) });
       if (hsResult.error) logger.warn("Provisional HS lookup failed", { error: String(hsResult.error) });
+      if (linkedResult.error) logger.warn("HS documentary link lookup failed", { error: String(linkedResult.error) });
       (context as any)._provisionalCorpus = {
         pages: (pageResult.data || []).map((page: any) => ({
-          title: page.source_documents?.title,
+          title: page.source_documents?.metadata?.auto_profile?.heading || page.source_documents?.title,
+          file: page.source_documents?.title,
           page: page.page_number,
           review_status: page.review_status,
           excerpt: page.text_content.slice(0, 900),
         })),
         hs: hsResult.data || [],
+        linked: (linkedResult.data || []).map((item: any) => {
+          const page = item.source_pages;
+          const position = page?.text_content?.indexOf(detectedCode) ?? -1;
+          return {
+            code: item.code,
+            title: page?.source_documents?.metadata?.auto_profile?.heading || page?.source_documents?.title,
+            file: page?.source_documents?.title,
+            document_type: page?.source_documents?.document_type,
+            page: page?.page_number,
+            excerpt: page?.text_content?.slice(Math.max(0, position - 120), Math.max(0, position - 120) + 600),
+          };
+        }),
       };
     } catch (provisionalError) {
       logger.warn("Provisional corpus lookup unavailable", { error: String(provisionalError) });

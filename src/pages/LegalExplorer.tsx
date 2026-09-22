@@ -8,7 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Search, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
-type SourceDocument = { id: string; title: string; document_type: string; lifecycle_status: string; storage_bucket: string; storage_path: string; source_url: string | null };
+type SourceDocument = { id: string; title: string; document_type: string; lifecycle_status: string; storage_bucket: string; storage_path: string; source_url: string | null; metadata: unknown };
+
+function documentHeading(document: SourceDocument) {
+  const metadata = document.metadata as { auto_profile?: { heading?: string; family?: string } } | null;
+  return metadata?.auto_profile?.heading || document.title;
+}
 
 export default function LegalExplorer() {
   const [query, setQuery] = useState("");
@@ -18,7 +23,7 @@ export default function LegalExplorer() {
     enabled: search.length >= 3,
     queryFn: async () => {
       const { data, error } = await supabase.from("source_pages")
-        .select("id,page_number,text_content,review_status,source_documents!inner(id,title,document_type,lifecycle_status,storage_bucket,storage_path,source_url)")
+        .select("id,page_number,text_content,review_status,source_documents!inner(id,title,document_type,lifecycle_status,storage_bucket,storage_path,source_url,metadata)")
         .ilike("text_content", `%${search.replace(/[%_]/g, "")}%`)
         .neq("review_status", "rejected")
         .limit(30);
@@ -58,7 +63,7 @@ export default function LegalExplorer() {
       const document = page.source_documents as SourceDocument;
       const position = page.text_content.toLocaleLowerCase().indexOf(search.toLocaleLowerCase());
       const excerpt = page.text_content.slice(Math.max(0, position - 180), Math.max(0, position - 180) + 650);
-      return <Card key={page.id}><CardHeader className="pb-2"><div className="flex flex-wrap items-start justify-between gap-3"><div><CardTitle className="text-base">{document.title}</CardTitle><p className="text-sm text-muted-foreground">Page {page.page_number} · {document.document_type}</p></div><Badge variant={document.lifecycle_status === "published" ? "default" : "outline"}>{document.lifecycle_status === "published" ? "Publié" : "Extrait provisoire"}</Badge></div></CardHeader><CardContent><p className="text-sm whitespace-pre-wrap line-clamp-6">{excerpt}</p><Button variant="link" className="px-0 mt-2" onClick={() => openSource(document, page.page_number)}>Voir le PDF source <ExternalLink className="ml-1 h-3 w-3"/></Button></CardContent></Card>;
+      return <Card key={page.id}><CardHeader className="pb-2"><div className="flex flex-wrap items-start justify-between gap-3"><div><CardTitle className="text-base">{documentHeading(document)}</CardTitle><p className="text-sm text-muted-foreground">{document.title} · page {page.page_number} · {document.document_type}</p></div><Badge variant={document.lifecycle_status === "published" ? "default" : "outline"}>{document.lifecycle_status === "published" ? "Publié" : "Extrait provisoire"}</Badge></div></CardHeader><CardContent><p className="text-sm whitespace-pre-wrap line-clamp-6">{excerpt}</p><Button variant="link" className="px-0 mt-2" onClick={() => openSource(document, page.page_number)}>Voir le PDF source <ExternalLink className="ml-1 h-3 w-3"/></Button></CardContent></Card>;
     })}</div>
     {instruments.length > 0 && <section className="space-y-2"><h2 className="text-xl font-semibold">Textes structurés</h2>{instruments.map(instrument => <Card key={instrument.id}><CardContent className="py-4"><div className="font-medium">{instrument.canonical_title}</div><div className="text-sm text-muted-foreground">{instrument.official_reference} · {instrument.instrument_type} · {instrument.status}</div></CardContent></Card>)}</section>}
   </div>;

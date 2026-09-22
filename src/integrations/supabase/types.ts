@@ -3466,6 +3466,18 @@ export type Database = {
           },
         ]
       }
+      source_page_hs_mentions: {
+        Row: { source_page_id: string; code: string; extraction_method: string; created_at: string }
+        Insert: { source_page_id: string; code: string; extraction_method?: string; created_at?: string }
+        Update: { source_page_id?: string; code?: string; extraction_method?: string; created_at?: string }
+        Relationships: [{
+          foreignKeyName: "source_page_hs_mentions_source_page_id_fkey"
+          columns: ["source_page_id"]
+          isOneToOne: false
+          referencedRelation: "source_pages"
+          referencedColumns: ["id"]
+        }]
+      }
       source_pages: {
         Row: {
           id: string
