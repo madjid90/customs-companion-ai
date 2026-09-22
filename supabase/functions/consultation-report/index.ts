@@ -238,10 +238,10 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
 
   // 1. Fetch tariff data from DB — cascade: exact code → 6-digit → circular → keyword
   let tariffContext = "";
-  let dutyRate = 25;
-  let vatRate = 20;
+  let dutyRate = Number.NaN;
+  let vatRate = Number.NaN;
   let tariffFound = false;
-  let tariffSource = "default";
+  let tariffSource = "unavailable";
 
   if (hs_code) {
     const cleanCode = hs_code.replace(/[.\s-]/g, "");
@@ -258,8 +258,8 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
       .limit(5);
 
     if (exactTariffs?.length > 0) {
-      dutyRate = exactTariffs[0].duty_rate ?? 25;
-      vatRate = exactTariffs[0].vat_rate ?? 20;
+      dutyRate = exactTariffs[0].duty_rate ?? Number.NaN;
+      vatRate = exactTariffs[0].vat_rate ?? Number.NaN;
       tariffFound = true;
       tariffSource = exactTariffs[0].source || "tariff";
       tariffContext = exactTariffs.map((t: any) =>
@@ -286,7 +286,7 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
           if (allSame) {
             // All children have the same rate — use it confidently
             dutyRate = rates[0];
-            vatRate = childTariffs[0].vat_rate ?? 20;
+            vatRate = childTariffs[0].vat_rate ?? Number.NaN;
             tariffSource = "children_uniform";
           } else {
             // Variable rates — use the MOST FREQUENT rate (mode) among children
@@ -299,7 +299,7 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
             dutyRate = modeRate;
             // Pick vat_rate from the first child matching the mode rate
             const modeChild = childTariffs.find((t: any) => t.duty_rate === modeRate);
-            vatRate = modeChild?.vat_rate ?? 20;
+            vatRate = modeChild?.vat_rate ?? Number.NaN;
             tariffSource = "children_mode";
             const minRate = Math.min(...rates);
             const maxRate = Math.max(...rates);
@@ -336,7 +336,7 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
           const allSame = rates.every((r: number) => r === rates[0]);
           if (allSame) {
             dutyRate = rates[0];
-            vatRate = prefixTariffs[0].vat_rate ?? 20;
+            vatRate = prefixTariffs[0].vat_rate ?? Number.NaN;
           } else {
             // Use most frequent rate (mode)
             const freq = new Map<number, number>();
@@ -347,7 +347,7 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
             }
             dutyRate = modeRate;
             const modeChild = prefixTariffs.find((t: any) => t.duty_rate === modeRate);
-            vatRate = modeChild?.vat_rate ?? 20;
+            vatRate = modeChild?.vat_rate ?? Number.NaN;
           }
           tariffFound = true;
           tariffSource = prefixTariffs[0].source || "tariff";
@@ -375,8 +375,8 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
         .limit(5);
 
       if (circularTariffs?.length > 0) {
-        dutyRate = circularTariffs[0].duty_rate ?? 25;
-        vatRate = circularTariffs[0].vat_rate ?? 20;
+        dutyRate = circularTariffs[0].duty_rate ?? Number.NaN;
+        vatRate = circularTariffs[0].vat_rate ?? Number.NaN;
         tariffFound = true;
         tariffSource = "circular";
         tariffContext = circularTariffs.map((t: any) =>
@@ -423,8 +423,8 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
         .limit(5);
       if (data?.length > 0) {
         if (!tariffFound) {
-          dutyRate = data[0].duty_rate ?? 25;
-          vatRate = data[0].vat_rate ?? 20;
+          dutyRate = data[0].duty_rate ?? Number.NaN;
+          vatRate = data[0].vat_rate ?? Number.NaN;
           tariffFound = true;
           tariffSource = data[0].source || "keyword";
         }
@@ -437,10 +437,8 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
 
   console.log(`Tariff lookup: found=${tariffFound}, dutyRate=${dutyRate}%, vatRate=${vatRate}%, source=${tariffSource}`);
 
-  // Alert if using default rate
-  if (!tariffFound) {
-    console.warn(`⚠️ ALERTE: Taux par défaut utilisé (DDI=${dutyRate}%, TVA=${vatRate}%). Code SH non trouvé en base.`);
-    tariffContext += `\n⚠️ ATTENTION: Taux par défaut (25% DDI, 20% TVA) — code SH non trouvé en base. Vérifier sur BADR.`;
+  if (!tariffFound || !Number.isFinite(dutyRate) || !Number.isFinite(vatRate)) {
+    tariffContext += "\nTaux douaniers indisponibles ou incomplets dans la base. Aucun calcul fiscal fiable ne peut être fourni ; vérifier le tarif officiel applicable.";
   }
 
   // ── Seasonal tariff detection ──
@@ -595,15 +593,16 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
   }
 
   // 4. Calculate taxes
-  const exchangeRate = EXCHANGE_RATES[currency] || 10;
-  const cafResult = calculateCAF({
+  const exchangeRate = currency === "MAD" ? 1 : Number(inputs.exchange_rate);
+  const hasExchangeRate = Number.isFinite(exchangeRate) && exchangeRate > 0;
+  const cafResult = hasExchangeRate ? calculateCAF({
     value: parseFloat(value) || 0,
     currency,
     incoterm: incoterm || "FOB",
     freight: freight ? parseFloat(freight) : undefined,
     insurance: insurance ? parseFloat(insurance) : undefined,
     exchange_rate: exchangeRate,
-  });
+  }) : { caf_mad: null, details: ["Taux de change daté indisponible : calcul en MAD suspendu."] };
 
   // 4b. Lookup preferential rate from country_tariffs with matching agreement_code
   let preferentialDutyRate: number | null = null;
@@ -660,13 +659,13 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
     }
   }
 
-  const taxes = calculateTaxes({
-    caf_mad: cafResult.caf_mad,
+  const taxes = hasExchangeRate && tariffFound && Number.isFinite(dutyRate) && Number.isFinite(vatRate) ? calculateTaxes({
+    caf_mad: cafResult.caf_mad!,
     duty_rate: dutyRate,
     vat_rate: vatRate,
     tic_rate: ticRate,
     agreement_reduction: agreementReduction > 0 ? agreementReduction : 0,
-  });
+  }) : null;
 
   // 5. Call LLM
   const fullContext = [legalContext, fileContext, documentsContext ? `\n## DOCUMENTS D'IMPORTATION REQUIS\n${documentsContext}` : ""].join("\n");
@@ -680,16 +679,17 @@ async function processImportReport(supabase: any, inputs: any, fileContext: stri
     ...aiReport,
     taxes: {
       caf_details: cafResult.details,
-      exchange_rate: exchangeRate,
+      exchange_rate: hasExchangeRate ? exchangeRate : null,
       currency,
       tariff_from_db: tariffFound,
       tariff_source: tariffSource,
-      duty_rate: dutyRate,
-      vat_rate: vatRate,
+      duty_rate: Number.isFinite(dutyRate) ? dutyRate : null,
+      vat_rate: Number.isFinite(vatRate) ? vatRate : null,
       preferential_duty_rate: preferentialDutyRate,
       agreement_name: agreementName || undefined,
       proof_required: proofRequired || undefined,
-      ...taxes,
+      ...(taxes || {}),
+      calculation_status: taxes ? "calculated" : "unavailable_without_tariff_or_exchange_rate",
       caf_value_mad: cafResult.caf_mad,
     },
     input_summary: {
@@ -807,11 +807,8 @@ async function processMREReport(supabase: any, inputs: any, fileContext: string 
 
   return {
     ...aiReport,
-    vehicle_taxes: vehicleTaxes ? {
-      with_mre: vehicleTaxes,
-      without_mre: vehicleTaxesWithout,
-      savings: vehicleTaxesWithout ? vehicleTaxesWithout.total - vehicleTaxes.total : 0,
-    } : null,
+    vehicle_taxes: null,
+    calculation_status: "unavailable_without_verified_vehicle_classification_and_rates",
     input_summary: { import_type, vehicle: vehicleInfo, mre_situation: mreInfo },
   };
 }
@@ -935,12 +932,12 @@ async function processInvestorReport(supabase: any, inputs: any, fileContext: st
   const { sector, zone, material_description, material_hs_code, material_value, material_currency, preferred_regime } = inputs;
 
   const mValue = parseFloat(material_value) || 0;
-  const exchangeRate = EXCHANGE_RATES[material_currency] || 10;
-  const caf_mad = Math.ceil(mValue * exchangeRate);
+  const exchangeRate = material_currency === "MAD" ? 1 : Number(inputs.exchange_rate);
+  const caf_mad = Number.isFinite(exchangeRate) && exchangeRate > 0 ? Math.ceil(mValue * exchangeRate) : null;
 
   // Fetch full tariff context (not just duty_rate)
-  let dutyRate = 2.5;
-  let vatRate = 20;
+  let dutyRate = Number.NaN;
+  let vatRate = Number.NaN;
   let tariffContext = "";
   if (material_hs_code) {
     const cleanCode = material_hs_code.replace(/[.\s-]/g, "");
@@ -953,17 +950,16 @@ async function processInvestorReport(supabase: any, inputs: any, fileContext: st
       .eq("is_active", true)
       .limit(5);
     if (tariffs?.length) {
-      dutyRate = tariffs[0].duty_rate ?? 2.5;
-      vatRate = tariffs[0].vat_rate ?? 20;
+      dutyRate = tariffs[0].duty_rate ?? Number.NaN;
+      vatRate = tariffs[0].vat_rate ?? Number.NaN;
       tariffContext = "\n\n## TARIFS DB\n" + tariffs.map((t: any) =>
         `Code: ${t.national_code || t.hs_code_6} | Désignation: ${t.description_local} | DI: ${t.duty_rate}% | TVA: ${t.vat_rate}%`
       ).join("\n");
     }
   }
 
-  const regime_common = calculateTaxes({ caf_mad, duty_rate: dutyRate, vat_rate: vatRate });
-  const regime_franchise = calculateTaxes({ caf_mad, duty_rate: 0, vat_rate: 0, tpi_rate: 0.25 });
-  const regime_zone_franche = calculateTaxes({ caf_mad, duty_rate: 0, vat_rate: 0, tpi_rate: 0 });
+  const regime_common = caf_mad !== null && Number.isFinite(dutyRate) && Number.isFinite(vatRate)
+    ? calculateTaxes({ caf_mad, duty_rate: dutyRate, vat_rate: vatRate }) : null;
 
   // Fetch trade agreements applicable
   let agreementsContext = "";
@@ -1005,7 +1001,8 @@ async function processInvestorReport(supabase: any, inputs: any, fileContext: st
 
   return {
     ...aiReport,
-    regime_comparison: { droit_commun: regime_common, franchise: regime_franchise, zone_franche: regime_zone_franche, caf_mad },
+    regime_comparison: { droit_commun: regime_common, franchise: null, zone_franche: null, caf_mad,
+      calculation_status: regime_common ? "common_rate_only" : "unavailable_without_tariff_or_exchange_rate" },
     input_summary: { sector, zone, material: material_description, value: `${material_value} ${material_currency}` },
   };
 }

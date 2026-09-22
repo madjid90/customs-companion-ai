@@ -15,8 +15,46 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from pypdf import PdfReader
+import pypdfium2 as pdfium
 
 logging.getLogger("pypdf").setLevel(logging.CRITICAL)
+
+
+def extract_pages(path):
+    """Use PDFium when pypdf cannot parse a file or misses an embedded text layer."""
+    try:
+        reader = PdfReader(path, strict=False)
+        if reader.is_encrypted and not reader.decrypt(""):
+            raise RuntimeError("Encrypted PDF requires password or alternative source")
+        texts = []
+        for page in reader.pages:
+            try:
+                texts.append((page.extract_text() or "").strip())
+            except Exception:
+                texts.append("")
+    except Exception:
+        texts = None
+
+    if texts is None or any(len(text) < 80 for text in texts):
+        document = pdfium.PdfDocument(path)
+        if texts is None or len(texts) != len(document):
+            texts = [""] * len(document)
+        for index, text in enumerate(texts):
+            if len(text) >= 80:
+                continue
+            page = document.get_page(index)
+            try:
+                textpage = page.get_textpage()
+                try:
+                    candidate = textpage.get_text_range().strip()
+                finally:
+                    textpage.close()
+                if len(candidate) > len(text):
+                    texts[index] = candidate
+            finally:
+                page.close()
+        document.close()
+    return texts
 
 
 def request(endpoint, token, action, payload, headers=None, attempts=3):
@@ -58,16 +96,10 @@ def import_one(row, root, endpoint, token):
     if response["status"] == "duplicate":
         return {"sha256": row["sha256"], "path": row["relative_path"], "status": "duplicate"}
     run_id = response["run_id"]
-    reader = PdfReader(path, strict=False)
-    if reader.is_encrypted and not reader.decrypt(""):
-        raise RuntimeError("Encrypted PDF requires password or alternative source")
+    texts = extract_pages(path)
     pages = []
     empty = 0
-    for number, page in enumerate(reader.pages, 1):
-        try:
-            text = (page.extract_text() or "").strip()
-        except Exception:
-            text = ""
+    for number, text in enumerate(texts, 1):
         if len(text) < 80:
             empty += 1
         pages.append({"number": number, "text": text})
@@ -76,8 +108,8 @@ def import_one(row, root, endpoint, token):
             pages = []
     if pages:
         request(endpoint, token, "pages", {"run_id": run_id, "pages": pages})
-    result = request(endpoint, token, "complete", {"run_id": run_id, "total_pages": len(reader.pages)})
-    return {"sha256": row["sha256"], "path": row["relative_path"], "status": result["status"], "pages": len(reader.pages), "pages_requiring_review": empty}
+    result = request(endpoint, token, "complete", {"run_id": run_id, "total_pages": len(texts)})
+    return {"sha256": row["sha256"], "path": row["relative_path"], "status": result["status"], "pages": len(texts), "pages_requiring_review": empty}
 
 
 def main():

@@ -1566,6 +1566,45 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       logger.warn("Canonical customs brain lookup unavailable", { error: String(canonicalError) });
     }
 
+    // Search provisional evidence independently of the legal publication queue.
+    // It can support an answer, but cannot establish an applicable rule or rate.
+    try {
+      const searchTerm = (analysis.keywords || []).find((value: string) => value.length >= 4)?.replace(/[%_,()]/g, "").slice(0, 60);
+      const detectedCode = analysis.detectedCodes?.[0]?.replace(/\D/g, "") || "";
+      const [pageResult, hsResult] = await Promise.all([
+        searchTerm
+          ? supabase.from("source_pages")
+            .select("page_number,text_content,review_status,source_documents!inner(title,lifecycle_status,storage_path,regulatory_sources!inner(code))")
+            .ilike("text_content", `%${searchTerm}%`)
+            .neq("review_status", "rejected")
+            .in("source_documents.lifecycle_status", ["extracted", "quality_review", "legal_review"])
+            .eq("source_documents.regulatory_sources.code", "MA_MANUAL_CORPUS")
+            .limit(5)
+          : Promise.resolve({ data: [], error: null }),
+        detectedCode.length >= 2
+          ? supabase.from("hs_extraction_candidates")
+            .select("code,description_fragment,page_number,confidence,derivation_method,review_status,source_documents!inner(title,lifecycle_status,regulatory_sources!inner(code))")
+            .like("code", `${detectedCode.slice(0, 6)}%`)
+            .neq("review_status", "rejected")
+            .eq("source_documents.regulatory_sources.code", "MA_MANUAL_CORPUS")
+            .limit(8)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (pageResult.error) logger.warn("Provisional page lookup failed", { error: String(pageResult.error) });
+      if (hsResult.error) logger.warn("Provisional HS lookup failed", { error: String(hsResult.error) });
+      (context as any)._provisionalCorpus = {
+        pages: (pageResult.data || []).map((page: any) => ({
+          title: page.source_documents?.title,
+          page: page.page_number,
+          review_status: page.review_status,
+          excerpt: page.text_content.slice(0, 900),
+        })),
+        hs: hsResult.data || [],
+      };
+    } catch (provisionalError) {
+      logger.warn("Provisional corpus lookup unavailable", { error: String(provisionalError) });
+    }
+
     // =========================================================================
     // BUILD SYSTEM PROMPT
     // =========================================================================
