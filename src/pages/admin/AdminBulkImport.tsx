@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import { pdfjs } from "react-pdf";
 import type { PDFDocumentProxy } from "pdfjs-dist";
+import type { Worker as TesseractWorker } from "tesseract.js";
+import { createPdfOcrWorker, recognizePdfPage } from "@/lib/pdf/ocr";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,6 +51,8 @@ export default function AdminBulkImport() {
   const [running,setRunning] = useState(false);
   const stop = useRef(false);
   const [progress,setProgress] = useState(0);
+  const ocrWorker = useRef<TesseractWorker | null>(null);
+  const ocrUnavailable = useRef(false);
 
   async function importOne(file: File, sourceId: string, userId: string):Promise<ImportResult> {
     const relative = file.webkitRelativePath || file.name;
@@ -86,32 +90,49 @@ export default function AdminBulkImport() {
       runId = run.id;
       const task = pdfjs.getDocument({data:new Uint8Array(bytes)});
       pdf = await task.promise;
-      let empty = 0;
-      const pageBatch: Array<{source_document_id:string;page_number:number;text_content:string;text_sha256:string;extraction_method:string;extraction_confidence:number;review_status:string;metadata:{chars:number}}> = [];
-      const issueBatch: Array<{ingestion_run_id:string;page_number:number;issue_type:string;severity:string;description:string;evidence:{chars:number}}> = [];
+      let needsReview = 0;
+      let ocrPages = 0;
+      const pageBatch: Array<{source_document_id:string;page_number:number;text_content:string;text_sha256:string;extraction_method:string;extraction_confidence:number;review_status:string;metadata:Record<string,number>}> = [];
+      const issueBatch: Array<{ingestion_run_id:string;page_number:number;issue_type:string;severity:string;description:string;evidence:Record<string,number>}> = [];
       const flush = async (pageNumber:number) => {
         if (pageBatch.length) { const {error} = await supabase.from("source_pages").upsert(pageBatch.splice(0),{onConflict:"source_document_id,page_number"}); if (error) throw error; }
         if (issueBatch.length) { const {error} = await supabase.from("ingestion_issues").insert(issueBatch.splice(0)); if (error) throw error; }
-        const {error} = await supabase.from("ingestion_runs").update({total_pages:pdf!.numPages,processed_pages:pageNumber,failed_pages:empty}).eq("id",run!.id);
+        const {error} = await supabase.from("ingestion_runs").update({total_pages:pdf!.numPages,processed_pages:pageNumber,failed_pages:needsReview}).eq("id",run!.id);
         if (error) throw error;
       };
       for (let pageNumber=1; pageNumber<=pdf.numPages; pageNumber++) {
         const page = await pdf.getPage(pageNumber);
         const content = await page.getTextContent();
-        const text = pageText(content.items);
+        let text = pageText(content.items);
+        let ocrConfidence: number | null = null;
+        if (text.length < 80 && !ocrUnavailable.current) {
+          try {
+            if (!ocrWorker.current) ocrWorker.current = await createPdfOcrWorker();
+            const recognized = await recognizePdfPage(page, ocrWorker.current);
+            if (recognized.text.length > text.length) {
+              text = recognized.text;
+              ocrConfidence = recognized.confidence;
+              ocrPages++;
+            }
+          } catch (ocrError) {
+            console.warn("OCR indisponible pour cette session", ocrError);
+            ocrUnavailable.current = true;
+          }
+        }
         const textHash = await digest(new TextEncoder().encode(text).buffer);
-        pageBatch.push({source_document_id:document.id,page_number:pageNumber,text_content:text,text_sha256:textHash,extraction_method:"native_pdf",extraction_confidence:text.length<80?0:70,review_status:text.length<80?"needs_review":"unreviewed",metadata:{chars:text.length}});
-        if (text.length<80) {
-          empty++;
-          issueBatch.push({ingestion_run_id:run.id,page_number:pageNumber,issue_type:"empty_page",severity:"blocking",description:"Texte absent ou insuffisant : OCR et contrôle visuel requis",evidence:{chars:text.length}});
+        const review = text.length < 80 || ocrConfidence !== null;
+        if (review) needsReview++;
+        pageBatch.push({source_document_id:document.id,page_number:pageNumber,text_content:text,text_sha256:textHash,extraction_method:ocrConfidence!==null?"ocr":"native_pdf",extraction_confidence:ocrConfidence??(text.length<80?0:70),review_status:review?"needs_review":"unreviewed",metadata:{chars:text.length,...(ocrConfidence!==null?{ocr_confidence:ocrConfidence}:{})}});
+        if (review) {
+          issueBatch.push({ingestion_run_id:run.id,page_number:pageNumber,issue_type:ocrConfidence!==null?"ocr_noise":"empty_page",severity:ocrConfidence!==null?"warning":"blocking",description:ocrConfidence!==null?"Texte obtenu par OCR automatique : contrôler les caractères et les tableaux SH":"Texte absent ou insuffisant après extraction",evidence:{chars:text.length,...(ocrConfidence!==null?{ocr_confidence:ocrConfidence}:{})}});
         }
         if (pageBatch.length>=25 || pageNumber===pdf.numPages) await flush(pageNumber);
       }
-      const {error:completeError} = await supabase.from("ingestion_runs").update({status:"quality_review",total_pages:pdf.numPages,processed_pages:pdf.numPages,failed_pages:empty,quality_score:Math.round(100*(pdf.numPages-empty)/Math.max(1,pdf.numPages)),completed_at:new Date().toISOString()}).eq("id",run.id);
+      const {error:completeError} = await supabase.from("ingestion_runs").update({status:"quality_review",extraction_method:ocrPages>0?"hybrid":"native_pdf",total_pages:pdf.numPages,processed_pages:pdf.numPages,failed_pages:needsReview,quality_score:Math.round(100*(pdf.numPages-needsReview)/Math.max(1,pdf.numPages)),completed_at:new Date().toISOString()}).eq("id",run.id);
       if (completeError) throw completeError;
       const {error:lifecycleError} = await supabase.from("source_documents").update({lifecycle_status:"quality_review"}).eq("id",document.id);
       if (lifecycleError) throw lifecycleError;
-      return {name:relative,status:"imported",detail:`${pdf.numPages} pages, ${empty} à revoir`};
+      return {name:relative,status:"imported",detail:`${pdf.numPages} pages, ${ocrPages} OCR, ${needsReview} à revoir`};
     } catch(error) {
       if (runId) await supabase.from("ingestion_runs").update({status:"failed",error_summary:String(error),completed_at:new Date().toISOString()}).eq("id",runId);
       return {name:relative,status:"failed",detail:error instanceof Error?error.message:String(error)};
@@ -139,13 +160,16 @@ export default function AdminBulkImport() {
       }
       setProgress(Math.round(100*(index+1)/files.length));
     }
+    await ocrWorker.current?.terminate();
+    ocrWorker.current=null;
+    ocrUnavailable.current=false;
     setRunning(false);
   }
 
   const imported=results.filter(r=>r.status==="imported").length;
   const duplicated=results.filter(r=>r.status==="duplicate").length;
   const failed=results.filter(r=>r.status==="failed").length;
-  return <div className="space-y-6"><div><p className="text-sm font-semibold text-primary">IMPORT INITIAL</p><h1 className="text-3xl font-bold">Corpus PDF local</h1><p className="text-muted-foreground">Déposez un dossier complet. Les doublons SHA-256 sont ignorés et chaque page est conservée en brouillon pour revue.</p></div>
+  return <div className="space-y-6"><div><p className="text-sm font-semibold text-primary">IMPORT INITIAL</p><h1 className="text-3xl font-bold">Corpus PDF local</h1><p className="text-muted-foreground">Déposez un dossier complet. Les pages sans texte exploitable passent automatiquement en OCR français, arabe et anglais ; leurs résultats restent signalés comme provisoires.</p></div>
   <Card><CardHeader><CardTitle className="flex items-center gap-2"><FolderOpen className="h-5 w-5"/>Choisir le dossier</CardTitle></CardHeader><CardContent className="space-y-4"><input type="file" accept=".pdf,application/pdf" multiple disabled={running} onChange={event=>{setFiles(Array.from(event.target.files||[]).filter(file=>file.name.toLowerCase().endsWith(".pdf")));setResults([]);setProgress(0);}} {...{webkitdirectory:""}} className="block w-full text-sm"/><div className="flex items-center gap-3"><Badge variant="outline">{files.length} PDF</Badge><Button onClick={start} disabled={!files.length||running}><Play className="mr-2 h-4 w-4"/>{results.length?"Reprendre":"Importer"}</Button><Button variant="outline" onClick={()=>{stop.current=true}} disabled={!running}><Pause className="mr-2 h-4 w-4"/>Arrêter après ce fichier</Button></div><Progress value={progress}/><p className="text-xs text-muted-foreground">Reprenez après une interruption en sélectionnant le même dossier. Les fichiers déjà déposés sont détectés par leur empreinte.</p></CardContent></Card>
   <div className="grid gap-4 sm:grid-cols-3"><Metric label="Importés" value={imported}/><Metric label="Doublons" value={duplicated}/><Metric label="Erreurs" value={failed}/></div>
   <Card><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5"/>Journal de traitement</CardTitle></CardHeader><CardContent className="max-h-96 overflow-auto divide-y">{results.length===0?<p className="py-8 text-center text-muted-foreground">Aucun traitement lancé.</p>:results.map(result=><div key={result.name} className="flex justify-between gap-3 py-2 text-sm"><span className="truncate">{result.name}</span><span className={result.status==="failed"?"text-destructive":"text-muted-foreground"}>{result.status}{result.detail&&` · ${result.detail}`}</span></div>)}</CardContent></Card></div>;

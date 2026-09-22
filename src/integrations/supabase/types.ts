@@ -4148,6 +4148,7 @@ export type Database = {
       }
     }
     Functions: {
+      apply_automatic_ocr: { Args: { target_issue_id: string; ocr_text: string; ocr_confidence: number }; Returns: string }
       search_hs_document_mentions: {
         Args: { search_code: string; result_limit?: number }
         Returns: {
