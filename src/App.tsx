@@ -39,6 +39,7 @@ const AdminLegalVersions = lazy(() => import("@/pages/admin/AdminLegalVersions")
 const AdminHSReview = lazy(() => import("@/pages/admin/AdminHSReview"));
 const AdminRegulatoryContext = lazy(() => import("@/pages/admin/AdminRegulatoryContext"));
 const AdminPageQuality = lazy(() => import("@/pages/admin/AdminPageQuality"));
+const AdminLegalRelationships = lazy(() => import("@/pages/admin/AdminLegalRelationships"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
 
@@ -129,6 +130,9 @@ const App = () => {
                       } />
                       <Route path="versions-juridiques" element={
                         <Suspense fallback={<PageFallback />}><AdminLegalVersions /></Suspense>
+                      } />
+                      <Route path="relations-juridiques" element={
+                        <Suspense fallback={<PageFallback />}><AdminLegalRelationships /></Suspense>
                       } />
                       <Route path="revue-sh" element={
                         <Suspense fallback={<PageFallback />}><AdminHSReview /></Suspense>
