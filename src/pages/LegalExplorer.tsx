@@ -14,6 +14,9 @@ function documentHeading(document: SourceDocument) {
   const metadata = document.metadata as { auto_profile?: { heading?: string; family?: string } } | null;
   return metadata?.auto_profile?.heading || document.title;
 }
+function legalContext(document: SourceDocument) {
+  return (document.metadata as { auto_legal_context?: { official_reference_candidate?: string; publication_date_text_candidate?: string; object_candidate?: string } } | null)?.auto_legal_context;
+}
 
 export default function LegalExplorer() {
   const [query, setQuery] = useState("");
@@ -61,9 +64,10 @@ export default function LegalExplorer() {
     {search.length >= 3 && !isFetching && pages.length === 0 && <Card><CardContent className="py-8 text-muted-foreground">Aucun extrait correspondant. Essayez un autre terme ou une référence plus courte.</CardContent></Card>}
     <div className="space-y-3">{pages.map(page => {
       const document = page.source_documents as SourceDocument;
+      const legal = legalContext(document);
       const position = page.text_content.toLocaleLowerCase().indexOf(search.toLocaleLowerCase());
       const excerpt = page.text_content.slice(Math.max(0, position - 180), Math.max(0, position - 180) + 650);
-      return <Card key={page.id}><CardHeader className="pb-2"><div className="flex flex-wrap items-start justify-between gap-3"><div><CardTitle className="text-base">{documentHeading(document)}</CardTitle><p className="text-sm text-muted-foreground">{document.title} · page {page.page_number} · {document.document_type}</p></div><Badge variant={document.lifecycle_status === "published" ? "default" : "outline"}>{document.lifecycle_status === "published" ? "Publié" : "Extrait provisoire"}</Badge></div></CardHeader><CardContent><p className="text-sm whitespace-pre-wrap line-clamp-6">{excerpt}</p><Button variant="link" className="px-0 mt-2" onClick={() => openSource(document, page.page_number)}>Voir le PDF source <ExternalLink className="ml-1 h-3 w-3"/></Button></CardContent></Card>;
+      return <Card key={page.id}><CardHeader className="pb-2"><div className="flex flex-wrap items-start justify-between gap-3"><div><CardTitle className="text-base">{legal?.object_candidate || documentHeading(document)}</CardTitle><p className="text-sm text-muted-foreground">{legal?.official_reference_candidate ? `Circulaire ${legal.official_reference_candidate} · ` : ""}{legal?.publication_date_text_candidate ? `${legal.publication_date_text_candidate} · ` : ""}{document.title} · page {page.page_number}</p></div><Badge variant={document.lifecycle_status === "published" ? "default" : "outline"}>{document.lifecycle_status === "published" ? "Publié" : "Contexte automatique"}</Badge></div></CardHeader><CardContent><p className="text-sm whitespace-pre-wrap line-clamp-6">{excerpt}</p><Button variant="link" className="px-0 mt-2" onClick={() => openSource(document, page.page_number)}>Voir le PDF source <ExternalLink className="ml-1 h-3 w-3"/></Button></CardContent></Card>;
     })}</div>
     {instruments.length > 0 && <section className="space-y-2"><h2 className="text-xl font-semibold">Textes structurés</h2>{instruments.map(instrument => <Card key={instrument.id}><CardContent className="py-4"><div className="font-medium">{instrument.canonical_title}</div><div className="text-sm text-muted-foreground">{instrument.official_reference} · {instrument.instrument_type} · {instrument.status}</div></CardContent></Card>)}</section>}
   </div>;

@@ -1578,6 +1578,13 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       if (pageResult.error) logger.warn("Provisional page lookup failed", { error: String(pageResult.error) });
       if (hsResult.error) logger.warn("Provisional HS lookup failed", { error: String(hsResult.error) });
       if (linkedResult.error) logger.warn("HS documentary link lookup failed", { error: String(linkedResult.error) });
+      const provisionalDocumentIds = [...new Set((pageResult.data || []).map((page: any) => page.source_documents?.id).filter(Boolean))];
+      const relationResult = provisionalDocumentIds.length
+        ? await supabase.from("source_document_reference_mentions")
+          .select("source_document_id,referenced_reference,relationship_hint,extraction_confidence,validation_status")
+          .in("source_document_id", provisionalDocumentIds).neq("validation_status", "rejected").limit(20)
+        : { data: [], error: null };
+      if (relationResult.error) logger.warn("Provisional legal relation lookup failed", { error: String(relationResult.error) });
       (context as any)._provisionalCorpus = {
         pages: (pageResult.data || []).map((page: any) => ({
           title: page.source_documents?.metadata?.auto_profile?.heading || page.source_documents?.title,
@@ -1592,6 +1599,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           document_type: item.document_type, page: item.page_number,
           excerpt: item.excerpt,
         })),
+        relations: relationResult.data || [],
       };
       const refs = [
         ...(pageResult.data || []).map((page: any) => ({
