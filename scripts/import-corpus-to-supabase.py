@@ -100,6 +100,9 @@ def import_one(row, root, endpoint, token):
     pages = []
     empty = 0
     for number, text in enumerate(texts, 1):
+        # PostgreSQL text cannot store NUL characters occasionally emitted by
+        # broken PDF font maps. They carry no legal meaning and abort a batch.
+        text = text.replace("\x00", "")
         if len(text) < 80:
             empty += 1
         pages.append({"number": number, "text": text})

@@ -1,8 +1,11 @@
 {
-  "generated_at": "2026-09-20T21:18:36.247Z",
+  "generated_at": "2026-09-23T00:11:08.918Z",
   "root_label": "Document ai ",
   "total_files": 2987,
   "total_bytes": 1235399794,
+  "unique_contents": 2316,
+  "duplicate_groups": 495,
+  "duplicate_instances": 671,
   "counts": {
     "agreement": 547,
     "circular": 1408,
@@ -11,7 +14,6 @@
     "tariff": 98,
     "technical_control": 1
   },
-  "duplicate_groups": 495,
   "duplicates": [
     {
       "sha256": "0d409ab6d46a484cf8f6fef1ad4ca1ce499f2fed5fb2e7491b97589e0217d81b",

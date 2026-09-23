@@ -21,5 +21,5 @@ for(let i=0;i<files.length;i++){const file=files[i];const stat=await fs.stat(fil
 const byHash=new Map();for(const r of records){const list=byHash.get(r.sha256)||[];list.push(r.relative_path);byHash.set(r.sha256,list);}
 const duplicates=[...byHash.entries()].filter(([,v])=>v.length>1).map(([sha256,paths])=>({sha256,paths}));
 const counts=Object.fromEntries(Object.entries(records.reduce((a,r)=>({...a,[r.document_type]:(a[r.document_type]||0)+1}),{})).sort());
-const manifest={generated_at:new Date().toISOString(),root_label:path.basename(root),total_files:records.length,total_bytes:records.reduce((n,r)=>n+r.byte_size,0),counts,duplicate_groups:duplicates.length,duplicates,documents:records};
+const manifest={generated_at:new Date().toISOString(),root_label:path.basename(root),total_files:records.length,total_bytes:records.reduce((n,r)=>n+r.byte_size,0),unique_contents:byHash.size,duplicate_groups:duplicates.length,duplicate_instances:records.length-byHash.size,counts,duplicates,documents:records};
 await fs.writeFile(output,JSON.stringify(manifest,null,2)+'\n');process.stderr.write(`\nWrote ${output}\n`);
