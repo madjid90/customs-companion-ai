@@ -1,0 +1,89 @@
+# Pipeline d'ingestion
+
+## États
+
+```text
+discovered -> downloaded -> diagnosed -> extracting -> normalized
+-> quality_check -> ready_for_publication -> published
+                         \-> retryable_failure -> extracting
+                         \-> quarantined
+```
+
+Un échec sur un document n'arrête jamais le corpus. Une tâche conserve son entrée,
+sa version de pipeline, ses tentatives, son erreur structurée et sa prochaine action.
+
+## Étapes obligatoires
+
+### 1. Découverte
+
+Enregistrer fournisseur, identifiant externe, URL, chemin, horodatages, MIME,
+taille, ETag ou révision et date d'observation. Ne télécharger que les ressources
+nouvelles ou modifiées.
+
+### 2. Acquisition immuable
+
+Télécharger dans une zone temporaire, vérifier MIME, signature PDF, taille et
+SHA-256, puis déplacer vers `legal-source-pdfs/<sha256>.pdf`. Relier toutes les
+occurrences au même contenu.
+
+### 3. Diagnostic
+
+Mesurer page par page : texte incorporé, densité, langue, rotation, résolution,
+colonnes, tableaux, formulaires, images, corruption et chiffrement. Le diagnostic
+choisit la stratégie d'extraction.
+
+### 4. Extraction multi-moteur
+
+- texte natif lorsque la couche texte est cohérente ;
+- PDFium comme second moteur ;
+- OCR français/arabe/anglais pour les zones insuffisantes ;
+- vision de mise en page pour tableaux et documents complexes ;
+- extraction des coordonnées de chaque bloc, ligne, mot, tableau et cellule.
+
+Conserver chaque sortie de moteur. La fusion produit une nouvelle révision ; elle
+ne détruit jamais les sorties précédentes.
+
+### 5. Fusion et normalisation
+
+Comparer les moteurs par zone. Normaliser Unicode, espaces, chiffres arabes et
+ponctuation tout en conservant le texte original. Reconstruire ordre de lecture,
+en-têtes, pieds, paragraphes, tableaux et continuités entre pages.
+
+### 6. Routage métier
+
+Classifier le document, puis appeler un extracteur spécialisé : tarif, code,
+RDII, circulaire, accord, contrôle, autorisation, origine ou procédure.
+
+### 7. Contrôles
+
+Exécuter les contraintes décrites dans `QUALITY_GATES.md`. Les problèmes
+réparables déclenchent une nouvelle extraction. Les contradictions restent en
+quarantaine et n'entrent pas dans la base canonique.
+
+### 8. Publication atomique
+
+Publier ensemble le document, ses pages, ses entités, ses relations, ses règles
+et ses index. Si une étape échoue, conserver la version canonique précédente.
+
+### 9. Propagation
+
+Identifier les codes SH, règles, produits et dossiers affectés. Invalider les
+caches concernés et recalculer uniquement les vues dépendantes.
+
+## Boucle de mise à jour
+
+```mermaid
+flowchart LR
+  S[Surveillance] --> D[Diff source]
+  D -->|inchangé| N[Mettre à jour last_seen]
+  D -->|nouveau| I[Ingestion]
+  D -->|modifié| V[Nouvelle version]
+  V --> I --> Q[Qualité]
+  Q --> P[Publication atomique]
+  P --> A[Analyse d'impact]
+  A --> S
+```
+
+Jamais de suppression automatique sur simple disparition d'une page web. Une
+abrogation est un fait juridique sourcé, distinct d'une indisponibilité technique.
+

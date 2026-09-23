@@ -11,6 +11,10 @@ Assistant douanier marocain pour la classification SH, l'analyse juridique, la g
 
 Le corpus sépare les sources officielles, documents immuables, exécutions d'ingestion, textes juridiques versionnés, dispositions, relations, nomenclatures SH et mesures réglementaires. Les données client sont isolées par organisation avec RLS.
 
+La documentation faisant autorité pour le cerveau douanier se trouve dans
+[`docs/architecture`](docs/architecture/README.md). Tout agent de développement
+doit commencer par lire [`AGENTS.md`](AGENTS.md).
+
 ## Développement local
 
 ```bash
