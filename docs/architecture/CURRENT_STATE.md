@@ -26,6 +26,13 @@ Dernière mesure : 23 septembre 2026. Projet Supabase :
 - Les diagnostics, tâches, sorties de moteurs et blocs sont privés et accessibles
   uniquement au rôle serveur.
 - Le diagnostic géométrique des PDF et l'exécution du worker OCR restent à faire.
+- Le worker Node PDF/OCR est implémenté avec réclamation des tâches, téléchargement
+  Storage, rendu Poppler, Tesseract multilingue, sorties immuables, blocs,
+  diagnostics, complétion et reprise des erreurs.
+- Un test réel sur `circulaire_48416`, page 2, a extrait 1 338 caractères avec
+  une confiance OCR de 67 et un score technique de 85,53/100.
+- Le worker doit encore être installé sur un environnement serveur disposant de
+  Poppler et du secret `SUPABASE_SERVICE_ROLE_KEY` avant de consommer la file.
 
 ## Qualité d'extraction
 

@@ -87,3 +87,23 @@ flowchart LR
 Jamais de suppression automatique sur simple disparition d'une page web. Une
 abrogation est un fait juridique sourcé, distinct d'une indisponibilité technique.
 
+## Exécution du worker OCR
+
+Le worker courant est `scripts/run-ingestion-worker.mjs`. Il nécessite Poppler,
+Node.js, les langues Tesseract et des variables serveur. Le secret service role ne
+doit jamais être transmis au frontend.
+
+```bash
+npm run worker:ingestion
+```
+
+Test local sans accès Supabase :
+
+```bash
+node scripts/run-ingestion-worker.mjs --local-pdf /path/document.pdf --page 1
+```
+
+Le worker conserve la sortie OCR dans `page_engine_outputs` et les blocs dans
+`page_blocks`. Il actualise le diagnostic, puis termine la tâche. Il ne remplace
+pas directement le texte canonique : une étape de fusion auditée choisira la
+meilleure sortie.
