@@ -6,9 +6,9 @@ est `done` uniquement lorsque son critère de fin est mesuré.
 | Ordre | Chantier | État | Critère de fin |
 | ---: | --- | --- | --- |
 | 1 | Provenance, SHA-256 et occurrences | done | 2 987/2 987 rattachées, 0 échec |
-| 2 | Orchestrateur durable et tâches reprenables | todo | reprise après crash et idempotence démontrées |
-| 3 | Diagnostic PDF par page | todo | stratégie enregistrée pour 100 % des pages |
-| 4 | OCR serveur multilingue | todo | 2 323 pages traitées et seuils OCR mesurés |
+| 2 | Orchestrateur durable et tâches reprenables | in_progress | reprise après crash et idempotence démontrées |
+| 3 | Diagnostic PDF par page | in_progress | stratégie enregistrée pour 100 % des pages |
+| 4 | OCR serveur multilingue | in_progress | 2 323 pages traitées et seuils OCR mesurés |
 | 5 | Blocs, géométrie et tableaux | todo | modèle de mise en page persisté et testé |
 | 6 | Extracteur tarifaire SH v2 | todo | code–désignation–taux ≥ seuils du benchmark |
 | 7 | Extracteur juridique hiérarchique | todo | code et RDII structurés jusqu'à l'alinéa |
@@ -27,10 +27,10 @@ est `done` uniquement lorsque son critère de fin est mesuré.
 
 ## Prochaine tranche de développement
 
-1. créer les tables de tâches, diagnostics, blocs et sorties de moteurs ;
-2. construire le worker d'extraction reprenable ;
-3. diagnostiquer les 14 118 pages ;
-4. traiter les 2 323 pages faibles par OCR ;
+1. finaliser et tester le worker d'extraction reprenable ;
+2. enrichir les 14 118 diagnostics avec géométrie et images PDF ;
+3. traiter les 2 323 tâches OCR déjà créées ;
+4. comparer automatiquement texte natif, PDFium et OCR ;
 5. produire le premier rapport de qualité page par page ;
 6. utiliser ces sorties pour le nouvel extracteur SH et l'extracteur juridique.
 

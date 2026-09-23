@@ -14,6 +14,19 @@ Dernière mesure : 23 septembre 2026. Projet Supabase :
 - 14 118 pages enregistrées.
 - 0 exécution d'ingestion actuellement en échec.
 
+## Orchestration durable
+
+- `page-diagnostic-v1` est la première version de pipeline active.
+- 14 118 diagnostics textuels sont enregistrés et versionnés.
+- 11 795 pages sont orientées vers la couche texte native.
+- 2 323 pages sont orientées vers OCR.
+- 2 323 tâches OCR idempotentes sont en file d'attente.
+- La file prend en charge verrouillage concurrent, heartbeat, reprises
+  exponentielles, nombre maximal de tentatives et quarantaine.
+- Les diagnostics, tâches, sorties de moteurs et blocs sont privés et accessibles
+  uniquement au rôle serveur.
+- Le diagnostic géométrique des PDF et l'exécution du worker OCR restent à faire.
+
 ## Qualité d'extraction
 
 - 11 795 pages possèdent un texte natif d'au moins 80 caractères.
@@ -58,4 +71,3 @@ consultable et utile pour retrouver des preuves. Elle n'est pas encore autorisé
 de droits. Les principaux risques sont l'OCR incomplet, les tableaux tarifaires,
 la hiérarchie juridique, la temporalité et l'absence de mesures sur une vérité
 terrain.
-
