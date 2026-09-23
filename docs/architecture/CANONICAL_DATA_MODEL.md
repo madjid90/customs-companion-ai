@@ -8,6 +8,13 @@
 
 Un candidat ne devient jamais canonique uniquement parce qu'un LLM l'a produit.
 
+## Portée juridictionnelle obligatoire
+
+Chaque fait et règle porte `jurisdiction_code`, `territory_scope`, `authority_id`,
+`valid_from`, `valid_to`, `recorded_at`, `source_document_id`, `evidence_id` et
+`publication_status`. Les règles héritées portent aussi `inherits_from_rule_id`,
+`overrides_rule_id` et `priority`.
+
 ## Nomenclature et tarifs
 
 ```text
@@ -80,3 +87,9 @@ Toutes les entités métier utilisent des intervalles `[valid_from, valid_to)`.
 `recorded_at` représente la connaissance du système ; `valid_from` représente le
 monde juridique. Ces deux temps ne doivent jamais être confondus.
 
+## Résolution des packs
+
+Le moteur compose le socle international, le pack régional, le pack national,
+l'accord applicable puis les règles privées autorisées. Une surcharge doit être
+sourcée, datée et limitée à sa juridiction. La règle la plus récente n'est jamais
+supposée prioritaire sans base juridique.

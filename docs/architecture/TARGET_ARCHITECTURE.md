@@ -25,13 +25,19 @@ flowchart TB
     MERGE[Fusion par blocs]
     QA[Contrôles qualité]
   end
-  subgraph Brain["Cerveau douanier"]
+  subgraph Brain["Noyau douanier commun"]
     EVI[Corpus probant]
     HS[Nomenclature et tarifs]
     LAW[Hiérarchie juridique]
     GRAPH[Graphe réglementaire]
     TIME[Droit applicable dans le temps]
     RULES[Règles métier exécutables]
+  end
+  subgraph Packs["Packs de juridiction"]
+    INT[International OMD]
+    MA[Maroc]
+    EU[Union européenne]
+    AF[Extensions Afrique]
   end
   subgraph Access
     API[API métier]
@@ -53,7 +59,8 @@ flowchart TB
   EVI --> LAW
   HS --> GRAPH
   LAW --> GRAPH --> TIME --> RULES
-  RULES --> API --> DEC
+  RULES --> Packs
+  Packs --> API --> DEC
   EVI --> RET --> DEC
   DEC --> CHAT
   DEC --> AGENT
@@ -69,6 +76,8 @@ flowchart TB
 - **Cerveau** consolide les versions, relations, périodes et règles applicables.
 - **Moteur de décision** combine des faits publiés pour un contexte donné.
 - **LLM** reformule, explique, demande les informations manquantes et cite les preuves.
+- **Pack de juridiction** ajoute les extensions SH, textes, mesures,
+  administrations, procédures et priorités nationales sans modifier le noyau.
 
 ## Services cibles
 
@@ -87,3 +96,5 @@ dead-letter queue et métriques. Vercel sert l'application et les API courtes ; 
 traitements PDF longs s'exécutent dans un worker durable séparé. Supabase reste le
 registre transactionnel, le stockage probant et la base du graphe métier.
 
+Le démarrage reste un monolithe modulaire. Un service n'est séparé physiquement
+que lorsque sa charge, son cycle de déploiement ou son isolation l'exige.

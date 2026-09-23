@@ -19,6 +19,11 @@ est `done` uniquement lorsque son critère de fin est mesuré.
 | 12 | Surveillance et nouvelles versions | todo | découverte, diff, ingestion et impact automatiques |
 | 13 | API du cerveau douanier | todo | contrats métier sourcés et stables |
 | 14 | Chat et agents sur l'API | todo | aucune donnée métier inventée par le LLM |
+| 15 | Noyau commun et pack Maroc | todo | aucune règle MA dans le noyau, résolution MA testée |
+| 16 | API plug-and-play et OpenAPI | todo | contrat `/v1` stable et SDK générables |
+| 17 | Adaptateur WhatsApp | todo | même dossier utilisable sur web et WhatsApp |
+| 18 | MCP et outils d'agents | todo | agents spécialisés limités aux outils autorisés |
+| 19 | Webhooks et intégrations ERP | todo | événements signés, repris et auditables |
 
 ## Prochaine tranche de développement
 
@@ -28,6 +33,10 @@ est `done` uniquement lorsque son critère de fin est mesuré.
 4. traiter les 2 323 pages faibles par OCR ;
 5. produire le premier rapport de qualité page par page ;
 6. utiliser ces sorties pour le nouvel extracteur SH et l'extracteur juridique.
+
+Le pack Maroc couvre le SH national, le Code des douanes, le RDII, les
+circulaires, notes, accords applicables, droits, taxes, origine, autorisations,
+contrôles, organismes, procédures, documents, délais, exceptions et sanctions.
 
 ## Définition de fini d'une tranche
 
@@ -39,4 +48,3 @@ est `done` uniquement lorsque son critère de fin est mesuré.
 - état de ce document et de `CURRENT_STATE.md` mis à jour ;
 - build et tests applicatifs réussis ;
 - code poussé sur la branche de travail.
-

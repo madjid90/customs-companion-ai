@@ -15,6 +15,9 @@ Lire dans cet ordre :
 5. `docs/architecture/CANONICAL_DATA_MODEL.md`
 6. `docs/architecture/QUALITY_GATES.md`
 7. `docs/architecture/IMPLEMENTATION_PLAN.md`
+8. `docs/architecture/COUNTRY_PACKS.md`
+9. `docs/architecture/CHANNELS_AND_INTEGRATIONS.md`
+10. `docs/architecture/DELIVERY_ESTIMATE.md`
 
 Ces fichiers constituent la source de vérité du projet. Les anciens documents
 dans `docs/` restent utiles comme historique, mais ne priment pas sur
@@ -39,6 +42,11 @@ dans `docs/` restent utiles comme historique, mais ne priment pas sur
   `QUALITY_GATES.md`.
 - Les données d'entreprise restent isolées par organisation ; le corpus
   réglementaire partagé ne contient aucune donnée client.
+- Le noyau ne contient aucune hypothèse propre au Maroc. Les règles nationales
+  appartiennent au pack `MA`, construit en premier.
+- Web, WhatsApp, ERP, SDK, MCP et agents consomment les mêmes contrats versionnés.
+- Les agents spécialisés partagent le cerveau et ne conservent aucune copie
+  autonome de la réglementation.
 
 ## Discipline de modification
 
@@ -63,4 +71,3 @@ dans `docs/` restent utiles comme historique, mais ne priment pas sur
 6. moteur de règles ;
 7. API du cerveau ;
 8. chat, agents et génération de documents.
-
