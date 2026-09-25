@@ -12,10 +12,18 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { createClient } from "@supabase/supabase-js";
 import { createWorker } from "tesseract.js";
+import {
+  FUSION_ALGORITHM_VERSION,
+  FUSION_PIPELINE_VERSION,
+  decidePageFusion,
+  normalizeExtractedText,
+  serializeFusionCandidates,
+} from "./lib/page-fusion.mjs";
 
 const execFileAsync = promisify(execFile);
 const PIPELINE_VERSION = "page-diagnostic-v1";
 const ENGINE_VERSION = "tesseract.js-6.0.1";
+const PDFIUM_SCRIPT = new URL("./extract-pdfium-page.py", import.meta.url).pathname;
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 1) {
   const key = process.argv[index];
@@ -28,7 +36,7 @@ for (let index = 2; index < process.argv.length; index += 1) {
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
-const compact = (value) => value.replaceAll("\u0000", "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+const compact = normalizeExtractedText;
 const wordCount = (value) => value ? value.split(/\s+/u).filter(Boolean).length : 0;
 const tesseractOptions = () => ({ cachePath: process.env.TESSERACT_CACHE_PATH || path.join(tmpdir(), "douane-ai-tesseract-cache") });
 const qualityScore = (text, confidence) => {
@@ -71,6 +79,31 @@ async function recognizePage(ocrWorker, pdfPath, pageNumber) {
   }
 }
 
+async function extractPdfiumPage(pdfPath, pageNumber) {
+  const { stdout } = await execFileAsync(process.env.PYTHON_PATH || "python3", [PDFIUM_SCRIPT, pdfPath, "--page", String(pageNumber)], {
+    timeout: 120_000,
+    maxBuffer: 10_000_000,
+  });
+  const result = JSON.parse(stdout);
+  const text = compact(result.text || "");
+  return {
+    text,
+    confidence: text.length >= 80 ? 82 : text.length ? 45 : 0,
+    engine: "pypdfium2",
+    engineVersion: result.engine_version || "unknown",
+    pdfiumVersion: result.pdfium_version || "unknown",
+  };
+}
+
+async function loadSourcePage(db, sourcePageId) {
+  const { data, error } = await db.from("source_pages")
+    .select("text_content,text_sha256,extraction_confidence,extraction_method")
+    .eq("id", sourcePageId)
+    .single();
+  if (error) throw new Error(`page_lookup:${error.message}`);
+  return data;
+}
+
 async function downloadDocument(db, job, directory) {
   const { data: document, error } = await db.from("source_documents").select("storage_bucket,storage_path").eq("id", job.source_document_id).single();
   if (error) throw new Error(`document_lookup:${error.message}`);
@@ -81,32 +114,46 @@ async function downloadDocument(db, job, directory) {
   return filePath;
 }
 
-async function saveOutput(db, job, recognized) {
-  const outputSha256 = sha256(recognized.text);
+async function saveEngineOutput(db, job, output) {
+  const text = compact(output.text || "");
+  const outputSha256 = sha256(text);
   const identity = {
     source_page_id: job.source_page_id,
     pipeline_version_id: PIPELINE_VERSION,
-    engine: "tesseract.js",
-    engine_version: ENGINE_VERSION,
-    output_kind: "ocr",
+    engine: output.engine,
+    engine_version: output.engineVersion,
+    output_kind: output.outputKind,
     output_sha256: outputSha256,
   };
-  let { data: existing, error: existingError } = await db.from("page_engine_outputs").select("id").match(identity).maybeSingle();
+  const { data: existing, error: existingError } = await db.from("page_engine_outputs").select("id").match(identity).maybeSingle();
   if (existingError) throw new Error(`output_lookup:${existingError.message}`);
-  let outputId = existing?.id;
-  if (!outputId) {
-    const { data: inserted, error } = await db.from("page_engine_outputs").insert({
-      ...identity,
-      text_content: recognized.text,
-      confidence: recognized.confidence,
-      payload: { image_sha256: recognized.imageSha256, languages: process.env.OCR_LANGUAGES || "fra+ara+eng" },
-    }).select("id").single();
-    if (error) throw new Error(`output_insert:${error.message}`);
-    outputId = inserted.id;
-    if (recognized.blocks.length) {
-      const { error: blockError } = await db.from("page_blocks").insert(recognized.blocks.map((block) => ({ ...block, source_page_id: job.source_page_id, engine_output_id: outputId })));
-      if (blockError) throw new Error(`blocks_insert:${blockError.message}`);
-    }
+  if (existing?.id) return { id: existing.id, text, textSha256: outputSha256 };
+
+  const { data: inserted, error } = await db.from("page_engine_outputs").insert({
+    ...identity,
+    text_content: text,
+    confidence: output.confidence,
+    payload: output.payload || {},
+  }).select("id").single();
+  if (error) throw new Error(`output_insert:${error.message}`);
+  return { id: inserted.id, text, textSha256: outputSha256 };
+}
+
+async function saveOutput(db, job, recognized) {
+  const saved = await saveEngineOutput(db, job, {
+    engine: "tesseract.js",
+    engineVersion: ENGINE_VERSION,
+    outputKind: "ocr",
+    text: recognized.text,
+    confidence: recognized.confidence,
+    payload: { image_sha256: recognized.imageSha256, languages: process.env.OCR_LANGUAGES || "fra+ara+eng" },
+  });
+  const outputId = saved.id;
+  const { count, error: blockCountError } = await db.from("page_blocks").select("id", { count: "exact", head: true }).eq("engine_output_id", outputId);
+  if (blockCountError) throw new Error(`blocks_lookup:${blockCountError.message}`);
+  if (!count && recognized.blocks.length) {
+    const { error: blockError } = await db.from("page_blocks").insert(recognized.blocks.map((block) => ({ ...block, source_page_id: job.source_page_id, engine_output_id: outputId })));
+    if (blockError) throw new Error(`blocks_insert:${blockError.message}`);
   }
   const score = qualityScore(recognized.text, recognized.confidence);
   const { error: diagnosticError } = await db.from("page_diagnostics").update({
@@ -123,14 +170,82 @@ async function saveOutput(db, job, recognized) {
   return { output_id: outputId, chars: recognized.text.length, confidence: recognized.confidence, quality_score: score, blocks: recognized.blocks.length };
 }
 
+async function saveFusionDecision(db, job, decision) {
+  const selected = decision.selected;
+  const record = {
+    source_page_id: job.source_page_id,
+    pipeline_version_id: FUSION_PIPELINE_VERSION,
+    input_signature: decision.inputSignature,
+    selected_source: selected?.source || "none",
+    selected_engine_output_id: selected?.engineOutputId || null,
+    selected_text_sha256: selected?.textSha256 || null,
+    selected_score: selected?.score ?? null,
+    status: decision.status,
+    reason_codes: decision.reasonCodes,
+    candidate_scores: serializeFusionCandidates(decision),
+    algorithm_version: FUSION_ALGORITHM_VERSION,
+  };
+  const { data: existing, error: lookupError } = await db.from("page_fusion_decisions")
+    .select("id")
+    .eq("source_page_id", job.source_page_id)
+    .eq("pipeline_version_id", FUSION_PIPELINE_VERSION)
+    .eq("input_signature", decision.inputSignature)
+    .maybeSingle();
+  if (lookupError) throw new Error(`fusion_lookup:${lookupError.message}`);
+  if (existing?.id) return existing.id;
+  const { data, error } = await db.from("page_fusion_decisions").insert(record).select("id").single();
+  if (error) throw new Error(`fusion_insert:${error.message}`);
+  return data.id;
+}
+
 async function processJob(db, ocrWorker, job, workerId) {
   const directory = await mkdtemp(path.join(tmpdir(), "douane-ai-pdf-"));
   try {
     const pageNumber = Number(job.payload?.page_number);
     if (!Number.isInteger(pageNumber) || pageNumber < 1) throw new Error("invalid_page_number");
-    const pdfPath = await downloadDocument(db, job, directory);
+    const [pdfPath, sourcePage] = await Promise.all([
+      downloadDocument(db, job, directory),
+      loadSourcePage(db, job.source_page_id),
+    ]);
+    const pdfium = await extractPdfiumPage(pdfPath, pageNumber);
+    const savedPdfium = await saveEngineOutput(db, job, {
+      engine: pdfium.engine,
+      engineVersion: pdfium.engineVersion,
+      outputKind: "text",
+      text: pdfium.text,
+      confidence: pdfium.confidence,
+      payload: { page_number: pageNumber, pdfium_version: pdfium.pdfiumVersion },
+    });
     const recognized = await recognizePage(ocrWorker, pdfPath, pageNumber);
-    const summary = await saveOutput(db, job, recognized);
+    const ocrSummary = await saveOutput(db, job, recognized);
+    const decision = decidePageFusion([
+      {
+        source: "native_pdf",
+        text: sourcePage.text_content,
+        confidence: sourcePage.extraction_confidence ?? 50,
+      },
+      {
+        source: "pdfium",
+        engineOutputId: savedPdfium.id,
+        text: savedPdfium.text,
+        confidence: pdfium.confidence,
+      },
+      {
+        source: "ocr",
+        engineOutputId: ocrSummary.output_id,
+        text: recognized.text,
+        confidence: recognized.confidence,
+      },
+    ]);
+    const fusionDecisionId = await saveFusionDecision(db, job, decision);
+    const summary = {
+      ...ocrSummary,
+      pdfium_output_id: savedPdfium.id,
+      fusion_decision_id: fusionDecisionId,
+      fusion_status: decision.status,
+      selected_source: decision.selected?.source || "none",
+      selected_score: decision.selected?.score ?? null,
+    };
     const { data: completed, error } = await db.rpc("complete_ingestion_job", { job_id: job.id, worker_id: workerId, job_result: summary });
     if (error || !completed) throw new Error(`complete_job:${error?.message || "lease lost"}`);
     process.stdout.write(`${JSON.stringify({ event: "job_completed", job_id: job.id, ...summary })}\n`);
@@ -147,8 +262,27 @@ async function processJob(db, ocrWorker, job, workerId) {
 async function localMode(pdfPath, pageNumber) {
   const worker = await createWorker((process.env.OCR_LANGUAGES || "fra+ara+eng").split("+"), 1, tesseractOptions());
   try {
-    const result = await recognizePage(worker, pdfPath, pageNumber);
-    process.stdout.write(`${JSON.stringify({ page: pageNumber, chars: result.text.length, confidence: result.confidence, quality_score: qualityScore(result.text, result.confidence), blocks: result.blocks.length, excerpt: result.text.slice(0, 300) }, null, 2)}\n`);
+    const [pdfium, ocr] = await Promise.all([
+      extractPdfiumPage(pdfPath, pageNumber),
+      recognizePage(worker, pdfPath, pageNumber),
+    ]);
+    const decision = decidePageFusion([
+      { source: "pdfium", text: pdfium.text, confidence: pdfium.confidence },
+      { source: "ocr", text: ocr.text, confidence: ocr.confidence },
+    ]);
+    process.stdout.write(`${JSON.stringify({
+      page: pageNumber,
+      pdfium: { chars: pdfium.text.length, confidence: pdfium.confidence, excerpt: pdfium.text.slice(0, 240) },
+      ocr: { chars: ocr.text.length, confidence: ocr.confidence, blocks: ocr.blocks.length, excerpt: ocr.text.slice(0, 240) },
+      fusion: {
+        status: decision.status,
+        selected_source: decision.selected?.source || "none",
+        selected_score: decision.selected?.score ?? null,
+        reason_codes: decision.reasonCodes,
+        comparison: decision.comparison,
+        input_signature: decision.inputSignature,
+      },
+    }, null, 2)}\n`);
   } finally {
     await worker.terminate();
   }

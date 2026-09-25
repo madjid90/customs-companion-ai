@@ -104,6 +104,9 @@ node scripts/run-ingestion-worker.mjs --local-pdf /path/document.pdf --page 1
 ```
 
 Le worker conserve la sortie OCR dans `page_engine_outputs` et les blocs dans
-`page_blocks`. Il actualise le diagnostic, puis termine la tâche. Il ne remplace
-pas directement le texte canonique : une étape de fusion auditée choisira la
-meilleure sortie.
+`page_blocks`. Il conserve aussi la sortie PDFium, puis compare texte natif,
+PDFium et OCR avec `deterministic-page-fusion-v1`. La décision immuable est
+inscrite dans `page_fusion_decisions` avec la signature des entrées, tous les
+scores, les motifs et la sortie retenue. Une divergence serrée entre deux textes
+déclenche `review_required`. La décision ne remplace pas directement le texte
+canonique : la publication reste une étape atomique séparée.

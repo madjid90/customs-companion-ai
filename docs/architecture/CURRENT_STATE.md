@@ -1,6 +1,6 @@
 # État réel du système
 
-Dernière mesure : 23 septembre 2026. Projet Supabase :
+Dernière mesure : 25 septembre 2026. Projet Supabase :
 `raygpbajipeyzxfxpbku`. Branche : `codex/regulatory-ingestion-foundation`.
 
 ## Corpus et provenance
@@ -33,6 +33,11 @@ Dernière mesure : 23 septembre 2026. Projet Supabase :
   une confiance OCR de 67 et un score technique de 85,53/100.
 - Le worker doit encore être installé sur un environnement serveur disposant de
   Poppler et du secret `SUPABASE_SERVICE_ROLE_KEY` avant de consommer la file.
+- `page-fusion-v1` et la table privée `page_fusion_decisions` sont déployés.
+  Chaque décision conserve la signature des entrées, les scores des candidats,
+  la sortie sélectionnée, les motifs et la version de l'algorithme.
+- Le worker compare maintenant texte natif, PDFium et OCR. Il conserve chaque
+  sortie et n'écrase pas directement le texte canonique.
 
 ## Qualité d'extraction
 
@@ -43,6 +48,9 @@ Dernière mesure : 23 septembre 2026. Projet Supabase :
 - L'OCR navigateur existe, mais aucune campagne OCR serveur complète et
   reproductible n'a encore été appliquée au corpus.
 - Les caractères NUL produits par certaines tables de polices PDF sont filtrés.
+- Un test multi-moteur réel sur `circulaire_48416`, page 2, a constaté 0 caractère
+  PDFium et 1 338 caractères OCR. La fusion a sélectionné l'OCR avec un score de
+  86,23/100. Ce test valide le mécanisme, pas encore la qualité du corpus complet.
 
 ## Classification et contexte
 

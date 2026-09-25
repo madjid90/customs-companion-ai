@@ -34,7 +34,8 @@ inscrire sa preuve mesurée dans `CURRENT_STATE.md`.
 1. finaliser et tester le worker d'extraction reprenable ;
 2. enrichir les 14 118 diagnostics avec géométrie et images PDF ;
 3. traiter les 2 323 tâches OCR déjà créées ;
-4. comparer automatiquement texte natif, PDFium et OCR ;
+4. ~~comparer automatiquement texte natif, PDFium et OCR~~ — moteur et registre
+   de décisions déployés ; exécuter la comparaison sur les 2 323 pages ;
 5. produire le premier rapport de qualité page par page ;
 6. utiliser ces sorties pour le nouvel extracteur SH et l'extracteur juridique.
 
