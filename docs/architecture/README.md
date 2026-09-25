@@ -4,6 +4,7 @@ Ce dossier est la source de vérité pour le développement de Douane AI.
 
 | Document | Rôle |
 | --- | --- |
+| `PRODUCT_REQUIREMENTS.md` | Les dix exigences validées et leurs critères d'acceptation |
 | `CURRENT_STATE.md` | Mesures réelles, limites et état déployé |
 | `TARGET_ARCHITECTURE.md` | Architecture finale et séparation des responsabilités |
 | `INGESTION_PIPELINE.md` | Étapes, reprises, extraction et boucle de mise à jour |

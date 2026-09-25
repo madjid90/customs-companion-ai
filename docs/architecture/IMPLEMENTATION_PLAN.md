@@ -3,6 +3,10 @@
 Les états autorisés sont `todo`, `in_progress`, `blocked` et `done`. Un chantier
 est `done` uniquement lorsque son critère de fin est mesuré.
 
+Chaque chantier réalise une ou plusieurs exigences `REQ-01` à `REQ-10` définies
+dans `PRODUCT_REQUIREMENTS.md`. Une livraison doit citer ces identifiants et
+inscrire sa preuve mesurée dans `CURRENT_STATE.md`.
+
 | Ordre | Chantier | État | Critère de fin |
 | ---: | --- | --- | --- |
 | 1 | Provenance, SHA-256 et occurrences | done | 2 987/2 987 rattachées, 0 échec |
