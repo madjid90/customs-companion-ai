@@ -110,3 +110,8 @@ inscrite dans `page_fusion_decisions` avec la signature des entrées, tous les
 scores, les motifs et la sortie retenue. Une divergence serrée entre deux textes
 déclenche `review_required`. La décision ne remplace pas directement le texte
 canonique : la publication reste une étape atomique séparée.
+
+Hors réseau privé, `ingestion-worker-gateway` distribue des URL Storage signées
+et reçoit les sorties du worker. Son jeton est court, haché en base et limité au
+scope `ocr_page`. Une page vide dans les trois moteurs crée automatiquement une
+tâche `analyze_layout` au lieu de terminer silencieusement le parcours.

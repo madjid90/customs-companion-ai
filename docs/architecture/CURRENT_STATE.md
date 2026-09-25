@@ -20,7 +20,8 @@ Dernière mesure : 25 septembre 2026. Projet Supabase :
 - 14 118 diagnostics textuels sont enregistrés et versionnés.
 - 11 795 pages sont orientées vers la couche texte native.
 - 2 323 pages sont orientées vers OCR.
-- 2 323 tâches OCR idempotentes sont en file d'attente.
+- 2 323 tâches OCR idempotentes ont été créées : 4 sont terminées et 2 319
+  restent en file d'attente après le lot de validation de la passerelle.
 - La file prend en charge verrouillage concurrent, heartbeat, reprises
   exponentielles, nombre maximal de tentatives et quarantaine.
 - Les diagnostics, tâches, sorties de moteurs et blocs sont privés et accessibles
@@ -33,6 +34,9 @@ Dernière mesure : 25 septembre 2026. Projet Supabase :
   une confiance OCR de 67 et un score technique de 85,53/100.
 - Le worker doit encore être installé sur un environnement serveur disposant de
   Poppler et du secret `SUPABASE_SERVICE_ROLE_KEY` avant de consommer la file.
+- Une passerelle Edge sécurisée est maintenant déployée. Elle utilise des jetons
+  courts, stockés uniquement sous forme de SHA-256 et limités au scope
+  `ocr_page`; le worker externe n'a plus besoin de recevoir la clé service role.
 - `page-fusion-v1` et la table privée `page_fusion_decisions` sont déployés.
   Chaque décision conserve la signature des entrées, les scores des candidats,
   la sortie sélectionnée, les motifs et la version de l'algorithme.
@@ -51,6 +55,9 @@ Dernière mesure : 25 septembre 2026. Projet Supabase :
 - Un test multi-moteur réel sur `circulaire_48416`, page 2, a constaté 0 caractère
   PDFium et 1 338 caractères OCR. La fusion a sélectionné l'OCR avec un score de
   86,23/100. Ce test valide le mécanisme, pas encore la qualité du corpus complet.
+- Le premier lot distant de 4 pages a produit 2 sélections OCR (85,53 et 92,06)
+  et 2 rejets parce que les trois moteurs étaient vides. Ces deux rejets ont créé
+  automatiquement 2 tâches `analyze_layout`; aucune page n'a été abandonnée.
 
 ## Classification et contexte
 

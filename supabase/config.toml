@@ -62,3 +62,6 @@ verify_jwt = true
 
 [functions.import-anrt-dispensed]
 verify_jwt = true
+
+[functions.ingestion-worker-gateway]
+verify_jwt = false

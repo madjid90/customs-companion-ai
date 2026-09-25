@@ -308,6 +308,65 @@ async function queueMode() {
   }
 }
 
+async function gatewayRequest(gatewayUrl, token, action, body) {
+  const response = await fetch(`${gatewayUrl}?action=${action}`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(`gateway_${action}:${result.error || response.status}`);
+  return result;
+}
+
+async function processGatewayJob(gatewayUrl, token, ocrWorker, job, workerId) {
+  const directory = await mkdtemp(path.join(tmpdir(), "douane-ai-gateway-"));
+  try {
+    const pageNumber = Number(job.payload?.page_number);
+    const response = await fetch(job.download_url);
+    if (!response.ok) throw new Error(`signed_download:${response.status}`);
+    const pdfPath = path.join(directory, `${job.source_document_id}.pdf`);
+    await writeFile(pdfPath, new Uint8Array(await response.arrayBuffer()));
+    const pdfium = await extractPdfiumPage(pdfPath, pageNumber);
+    const ocr = await recognizePage(ocrWorker, pdfPath, pageNumber);
+    const decision = decidePageFusion([
+      { source: "native_pdf", text: job.source_page.text_content, confidence: job.source_page.extraction_confidence ?? 50 },
+      { source: "pdfium", text: pdfium.text, confidence: pdfium.confidence },
+      { source: "ocr", text: ocr.text, confidence: ocr.confidence },
+    ]);
+    await gatewayRequest(gatewayUrl, token, "submit", {
+      worker_id: workerId,
+      job_id: job.id,
+      pdfium: { text: pdfium.text, sha256: sha256(pdfium.text), confidence: pdfium.confidence, engine_version: pdfium.engineVersion, pdfium_version: pdfium.pdfiumVersion },
+      ocr: { text: ocr.text, sha256: sha256(ocr.text), confidence: ocr.confidence, engine_version: ENGINE_VERSION, image_sha256: ocr.imageSha256, languages: process.env.OCR_LANGUAGES || "fra+ara+eng", blocks: ocr.blocks },
+      native_text: job.source_page.text_content,
+      fusion: { input_signature: decision.inputSignature, selected_source: decision.selected?.source || "none", selected_text_sha256: decision.selected?.textSha256 || null, selected_score: decision.selected?.score ?? null, status: decision.status, reason_codes: decision.reasonCodes, candidate_scores: serializeFusionCandidates(decision), algorithm_version: FUSION_ALGORITHM_VERSION },
+    });
+    process.stdout.write(`${JSON.stringify({ event: "job_completed", job_id: job.id, fusion_status: decision.status, selected_source: decision.selected?.source || "none", selected_score: decision.selected?.score ?? null })}\n`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    try { await gatewayRequest(gatewayUrl, token, "fail", { worker_id: workerId, job_id: job.id, error_code: message.split(":", 1)[0], error_message: message }); } catch {}
+    process.stderr.write(`${JSON.stringify({ event: "job_failed", job_id: job.id, error: message })}\n`);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+}
+
+async function gatewayMode() {
+  const gatewayUrl = process.env.CORPUS_GATEWAY_URL;
+  const token = process.env.CORPUS_WORKER_TOKEN;
+  if (!gatewayUrl || !token) throw new Error("CORPUS_GATEWAY_URL and CORPUS_WORKER_TOKEN are required");
+  const workerId = process.env.CORPUS_WORKER_ID || `ocr-${process.pid}`;
+  const batchSize = clamp(Number(process.env.WORKER_BATCH_SIZE || 1), 1, 5);
+  const ocrWorker = await createWorker((process.env.OCR_LANGUAGES || "fra+ara+eng").split("+"), 1, tesseractOptions());
+  try {
+    do {
+      const { jobs } = await gatewayRequest(gatewayUrl, token, "claim", { worker_id: workerId, batch_size: batchSize });
+      for (const job of jobs || []) await processGatewayJob(gatewayUrl, token, ocrWorker, job, workerId);
+      if (!args.has("--loop") || !jobs?.length) break;
+    } while (true);
+  } finally { await ocrWorker.terminate(); }
+}
+
 const localPdf = args.get("--local-pdf");
 if (localPdf) await localMode(path.resolve(String(localPdf)), Number(args.get("--page") || 1));
+else if (process.env.CORPUS_GATEWAY_URL) await gatewayMode();
 else await queueMode();
