@@ -115,3 +115,8 @@ Hors réseau privé, `ingestion-worker-gateway` distribue des URL Storage signé
 et reçoit les sorties du worker. Son jeton est court, haché en base et limité au
 scope `ocr_page`. Une page vide dans les trois moteurs crée automatiquement une
 tâche `analyze_layout` au lieu de terminer silencieusement le parcours.
+
+Une campagne corpus complète s'exécute uniquement sur un worker durable et
+supervisé. `claim_ingestion_jobs` récupère automatiquement les baux sans heartbeat
+depuis quinze minutes ; un arrêt contrôlé remet immédiatement les tâches en file.
+Une session locale n'est admise que pour un lot de validation borné.

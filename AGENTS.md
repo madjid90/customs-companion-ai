@@ -39,6 +39,9 @@ dans `docs/` restent utiles comme historique, mais ne priment pas sur
 - Une absence de récupération ne signifie jamais suppression ou abrogation.
 - Toute règle, mesure et relation possède une période de validité explicite.
 - Toute extraction doit être idempotente, observable, reprenable et versionnée.
+- Une campagne complète ne s'exécute jamais depuis une session locale temporaire.
+  Les lots locaux servent uniquement à valider le pipeline ; la production exige
+  un worker durable, supervisé, avec arrêt propre, métriques et secrets gérés.
 - Ne jamais annoncer 98 % sans mesure sur le jeu de référence décrit dans
   `QUALITY_GATES.md`.
 - Les données d'entreprise restent isolées par organisation ; le corpus

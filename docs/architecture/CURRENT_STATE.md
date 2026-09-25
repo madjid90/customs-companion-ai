@@ -20,8 +20,8 @@ Dernière mesure : 25 septembre 2026. Projet Supabase :
 - 14 118 diagnostics textuels sont enregistrés et versionnés.
 - 11 795 pages sont orientées vers la couche texte native.
 - 2 323 pages sont orientées vers OCR.
-- 2 323 tâches OCR idempotentes ont été créées : 4 sont terminées et 2 319
-  restent en file d'attente après le lot de validation de la passerelle.
+- 2 323 tâches OCR idempotentes ont été créées : 24 sont terminées et 2 299
+  restent à traiter après les lots de validation de la passerelle.
 - La file prend en charge verrouillage concurrent, heartbeat, reprises
   exponentielles, nombre maximal de tentatives et quarantaine.
 - Les diagnostics, tâches, sorties de moteurs et blocs sont privés et accessibles
@@ -58,6 +58,10 @@ Dernière mesure : 25 septembre 2026. Projet Supabase :
 - Le premier lot distant de 4 pages a produit 2 sélections OCR (85,53 et 92,06)
   et 2 rejets parce que les trois moteurs étaient vides. Ces deux rejets ont créé
   automatiquement 2 tâches `analyze_layout`; aucune page n'a été abandonnée.
+- Une campagne locale élargie a été arrêtée après 24 pages : elle validait le
+  débit mais ne constitue pas l'infrastructure de production exigée. Son jeton a
+  été révoqué, les 10 baux interrompus ont été remis en file sans consommer de
+  tentative, et la récupération automatique des baux expirés est déployée.
 
 ## Classification et contexte
 
