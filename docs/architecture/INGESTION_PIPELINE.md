@@ -116,6 +116,12 @@ scores, les motifs et la sortie retenue. Une divergence serrée entre deux texte
 déclenche `review_required`. La décision ne remplace pas directement le texte
 canonique : la publication reste une étape atomique séparée.
 
+`publish_selected_page_fusion` applique automatiquement une amélioration lorsque
+la décision est `selected` et atteint 80/100. La fonction vérifie la preuve, le
+SHA-256, l'état du document et l'absence de validation humaine antérieure. Elle
+conserve le texte précédent dans `page_publication_revisions`; les autres
+décisions restent disponibles sans modifier la page canonique.
+
 Hors réseau privé, `ingestion-worker-gateway` distribue des URL Storage signées
 et reçoit les sorties du worker. Son jeton est court, haché en base et limité au
 scope `ocr_page`. Une page vide dans les trois moteurs crée automatiquement une

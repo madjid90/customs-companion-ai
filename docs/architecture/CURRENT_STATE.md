@@ -63,6 +63,14 @@ Dernière mesure : 25 septembre 2026. Projet Supabase :
 - L'image de worker reproductible est définie par `Dockerfile.worker` avec Node
   22, Poppler, PDFium, Tesseract, processus non-root, `tini`, endpoints de santé
   et arrêt propre. Sa construction locale reste à vérifier sur un hôte Docker.
+- La publication atomique des décisions de fusion est déployée. Seules les
+  décisions `selected` avec un score d'au moins 80 peuvent remplacer le texte
+  courant ; les pages validées humainement et les documents publiés sont
+  immuables. Chaque remplacement conserve intégralement l'ancien texte dans
+  `page_publication_revisions`.
+- Le premier backfill contrôlé a publié 21 améliorations OCR, avec des scores de
+  82,63 à 92,06. La décision à 68,47 et les deux rejets sont restés hors du texte
+  canonique. Les 21 textes précédents sont conservés pour audit et restauration.
 - Un test multi-moteur réel sur `circulaire_48416`, page 2, a constaté 0 caractère
   PDFium et 1 338 caractères OCR. La fusion a sélectionné l'OCR avec un score de
   86,23/100. Ce test valide le mécanisme, pas encore la qualité du corpus complet.

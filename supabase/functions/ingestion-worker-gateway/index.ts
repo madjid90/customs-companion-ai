@@ -85,7 +85,12 @@ async function submit(input: Record<string, any>) {
     const {error:visionError}=await db.from("ingestion_jobs").upsert({job_type:"analyze_layout",pipeline_version_id:"page-diagnostic-v1",source_document_id:job.source_document_id,source_page_id:job.source_page_id,idempotency_key:`analyze_layout:${job.source_page_id}:page-diagnostic-v1`,payload:{reason:"all_text_engines_empty",page_number:job.payload.page_number},priority:95},{onConflict:"idempotency_key",ignoreDuplicates:true});
     if(visionError)throw visionError;
   }
-  const { data: completed, error: completeError }=await db.rpc("complete_ingestion_job",{job_id:job.id,worker_id:workerId,job_result:{fusion_decision_id:decisionId,fusion_status:fusion.status,selected_source:fusion.selected_source,selected_score:fusion.selected_score,pdfium_output_id:pdfiumOutputId,ocr_output_id:ocrOutputId}});
+  let publicationStatus="not_eligible";
+  if(fusion.status==="selected"&&Number(fusion.selected_score)>=80){
+    const {error:publicationError}=await db.rpc("publish_selected_page_fusion",{target_decision_id:decisionId,minimum_score:80});
+    publicationStatus=publicationError?"blocked":"published";
+  }
+  const { data: completed, error: completeError }=await db.rpc("complete_ingestion_job",{job_id:job.id,worker_id:workerId,job_result:{fusion_decision_id:decisionId,fusion_status:fusion.status,selected_source:fusion.selected_source,selected_score:fusion.selected_score,pdfium_output_id:pdfiumOutputId,ocr_output_id:ocrOutputId,publication_status:publicationStatus}});
   if(completeError||!completed)return json({error:"lease_lost"},409);
   return json({status:"completed",decision_id:decisionId});
 }
