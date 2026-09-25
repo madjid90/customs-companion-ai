@@ -6,6 +6,7 @@
  */
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
+import { createServer } from "node:http";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -19,12 +20,17 @@ import {
   normalizeExtractedText,
   serializeFusionCandidates,
 } from "./lib/page-fusion.mjs";
+import { DIAGNOSTIC_VERSION, classifyPage } from "./lib/page-diagnostic.mjs";
 
 const execFileAsync = promisify(execFile);
 const PIPELINE_VERSION = "page-diagnostic-v1";
 const ENGINE_VERSION = "tesseract.js-6.0.1";
 const PDFIUM_SCRIPT = new URL("./extract-pdfium-page.py", import.meta.url).pathname;
+const DIAGNOSTIC_SCRIPT = new URL("./diagnose-pdf-page.py", import.meta.url).pathname;
 const args = new Map();
+let stopping = false;
+const runtimeState = { ready: false, currentJobId: null, completed: 0, failed: 0, startedAt: new Date().toISOString(), lastActivityAt: null };
+for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, () => { stopping = true; });
 for (let index = 2; index < process.argv.length; index += 1) {
   const key = process.argv[index];
   const next = process.argv[index + 1];
@@ -46,6 +52,19 @@ const qualityScore = (text, confidence) => {
 
 function locatePdfToPpm() {
   return process.env.PDFTOPPM_PATH || "pdftoppm";
+}
+
+function startHealthServer() {
+  const port = Number(process.env.HEALTH_PORT || 0);
+  if (!port) return null;
+  const server = createServer((req, res) => {
+    const ready = runtimeState.ready && !stopping;
+    const status = req.url === "/readyz" && !ready ? 503 : 200;
+    res.writeHead(status, { "content-type": "application/json" });
+    res.end(JSON.stringify({ status: ready ? "ready" : stopping ? "stopping" : "starting", ...runtimeState }));
+  });
+  server.listen(port, "0.0.0.0");
+  return server;
 }
 
 async function renderPage(pdfPath, pageNumber, outputDirectory) {
@@ -93,6 +112,12 @@ async function extractPdfiumPage(pdfPath, pageNumber) {
     engineVersion: result.engine_version || "unknown",
     pdfiumVersion: result.pdfium_version || "unknown",
   };
+}
+
+async function diagnosePdfPage(pdfPath, pageNumber) {
+  const { stdout } = await execFileAsync(process.env.PYTHON_PATH || "python3", [DIAGNOSTIC_SCRIPT, pdfPath, "--page", String(pageNumber)], { timeout: 120_000, maxBuffer: 2_000_000 });
+  const metrics = JSON.parse(stdout);
+  return { ...classifyPage(metrics), metrics, version: DIAGNOSTIC_VERSION };
 }
 
 async function loadSourcePage(db, sourcePageId) {
@@ -262,6 +287,7 @@ async function processJob(db, ocrWorker, job, workerId) {
 async function localMode(pdfPath, pageNumber) {
   const worker = await createWorker((process.env.OCR_LANGUAGES || "fra+ara+eng").split("+"), 1, tesseractOptions());
   try {
+    const diagnostic = await diagnosePdfPage(pdfPath, pageNumber);
     const [pdfium, ocr] = await Promise.all([
       extractPdfiumPage(pdfPath, pageNumber),
       recognizePage(worker, pdfPath, pageNumber),
@@ -272,6 +298,7 @@ async function localMode(pdfPath, pageNumber) {
     ]);
     process.stdout.write(`${JSON.stringify({
       page: pageNumber,
+      diagnostic,
       pdfium: { chars: pdfium.text.length, confidence: pdfium.confidence, excerpt: pdfium.text.slice(0, 240) },
       ocr: { chars: ocr.text.length, confidence: ocr.confidence, blocks: ocr.blocks.length, excerpt: ocr.text.slice(0, 240) },
       fusion: {
@@ -321,12 +348,21 @@ async function gatewayRequest(gatewayUrl, token, action, body) {
 
 async function processGatewayJob(gatewayUrl, token, ocrWorker, job, workerId) {
   const directory = await mkdtemp(path.join(tmpdir(), "douane-ai-gateway-"));
+  runtimeState.currentJobId = job.id;
+  runtimeState.lastActivityAt = new Date().toISOString();
   try {
     const pageNumber = Number(job.payload?.page_number);
     const response = await fetch(job.download_url);
     if (!response.ok) throw new Error(`signed_download:${response.status}`);
     const pdfPath = path.join(directory, `${job.source_document_id}.pdf`);
     await writeFile(pdfPath, new Uint8Array(await response.arrayBuffer()));
+    const diagnostic = await diagnosePdfPage(pdfPath, pageNumber);
+    if (diagnostic.pageClass === "blank") {
+      await gatewayRequest(gatewayUrl, token, "complete_blank", { worker_id: workerId, job_id: job.id, diagnostic });
+      process.stdout.write(`${JSON.stringify({ event: "job_completed", job_id: job.id, page_class: "blank", selected_source: "none" })}\n`);
+      runtimeState.completed += 1;
+      return;
+    }
     const pdfium = await extractPdfiumPage(pdfPath, pageNumber);
     const ocr = await recognizePage(ocrWorker, pdfPath, pageNumber);
     const decision = decidePageFusion([
@@ -337,17 +373,20 @@ async function processGatewayJob(gatewayUrl, token, ocrWorker, job, workerId) {
     await gatewayRequest(gatewayUrl, token, "submit", {
       worker_id: workerId,
       job_id: job.id,
+      diagnostic,
       pdfium: { text: pdfium.text, sha256: sha256(pdfium.text), confidence: pdfium.confidence, engine_version: pdfium.engineVersion, pdfium_version: pdfium.pdfiumVersion },
       ocr: { text: ocr.text, sha256: sha256(ocr.text), confidence: ocr.confidence, engine_version: ENGINE_VERSION, image_sha256: ocr.imageSha256, languages: process.env.OCR_LANGUAGES || "fra+ara+eng", blocks: ocr.blocks },
       native_text: job.source_page.text_content,
       fusion: { input_signature: decision.inputSignature, selected_source: decision.selected?.source || "none", selected_text_sha256: decision.selected?.textSha256 || null, selected_score: decision.selected?.score ?? null, status: decision.status, reason_codes: decision.reasonCodes, candidate_scores: serializeFusionCandidates(decision), algorithm_version: FUSION_ALGORITHM_VERSION },
     });
     process.stdout.write(`${JSON.stringify({ event: "job_completed", job_id: job.id, fusion_status: decision.status, selected_source: decision.selected?.source || "none", selected_score: decision.selected?.score ?? null })}\n`);
+    runtimeState.completed += 1;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     try { await gatewayRequest(gatewayUrl, token, "fail", { worker_id: workerId, job_id: job.id, error_code: message.split(":", 1)[0], error_message: message }); } catch {}
     process.stderr.write(`${JSON.stringify({ event: "job_failed", job_id: job.id, error: message })}\n`);
-  } finally { await rm(directory, { recursive: true, force: true }); }
+    runtimeState.failed += 1;
+  } finally { runtimeState.currentJobId = null; runtimeState.lastActivityAt = new Date().toISOString(); await rm(directory, { recursive: true, force: true }); }
 }
 
 async function gatewayMode() {
@@ -356,14 +395,16 @@ async function gatewayMode() {
   if (!gatewayUrl || !token) throw new Error("CORPUS_GATEWAY_URL and CORPUS_WORKER_TOKEN are required");
   const workerId = process.env.CORPUS_WORKER_ID || `ocr-${process.pid}`;
   const batchSize = clamp(Number(process.env.WORKER_BATCH_SIZE || 1), 1, 5);
+  const healthServer = startHealthServer();
   const ocrWorker = await createWorker((process.env.OCR_LANGUAGES || "fra+ara+eng").split("+"), 1, tesseractOptions());
+  runtimeState.ready = true;
   try {
     do {
       const { jobs } = await gatewayRequest(gatewayUrl, token, "claim", { worker_id: workerId, batch_size: batchSize });
-      for (const job of jobs || []) await processGatewayJob(gatewayUrl, token, ocrWorker, job, workerId);
-      if (!args.has("--loop") || !jobs?.length) break;
-    } while (true);
-  } finally { await ocrWorker.terminate(); }
+      for (const job of jobs || []) { if (stopping) break; await processGatewayJob(gatewayUrl, token, ocrWorker, job, workerId); }
+      if (stopping || !args.has("--loop") || !jobs?.length) break;
+    } while (!stopping);
+  } finally { runtimeState.ready = false; await ocrWorker.terminate(); healthServer?.close(); }
 }
 
 const localPdf = args.get("--local-pdf");

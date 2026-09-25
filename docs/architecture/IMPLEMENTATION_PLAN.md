@@ -11,7 +11,7 @@ inscrire sa preuve mesurée dans `CURRENT_STATE.md`.
 | ---: | --- | --- | --- |
 | 1 | Provenance, SHA-256 et occurrences | done | 2 987/2 987 rattachées, 0 échec |
 | 2 | Orchestrateur durable et tâches reprenables | in_progress | reprise après crash et idempotence démontrées |
-| 3 | Diagnostic PDF par page | in_progress | stratégie enregistrée pour 100 % des pages |
+| 3 | Diagnostic PDF par page | in_progress | v2 déployé ; exécuter et mesurer les classes sur 100 % des pages |
 | 4 | OCR serveur multilingue | in_progress | 2 323 pages traitées et seuils OCR mesurés |
 | 5 | Blocs, géométrie et tableaux | todo | modèle de mise en page persisté et testé |
 | 6 | Extracteur tarifaire SH v2 | todo | code–désignation–taux ≥ seuils du benchmark |

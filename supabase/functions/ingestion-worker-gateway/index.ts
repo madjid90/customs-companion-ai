@@ -6,6 +6,8 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 const hex = (bytes: Uint8Array) => Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
 const hash = async (value: string) => hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))));
 const validHash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+const pageClasses=new Set(["blank","native_text","scanned","hybrid","short_text","table","form","vector_complex","unknown"]);
+const strategies=new Set(["none","native_pdf","compare","pdfium","ocr","layout","vision","hybrid","quarantine"]);
 
 async function authorize(req: Request) {
   const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
@@ -43,6 +45,7 @@ async function submit(input: Record<string, any>) {
   const jobId = String(input.job_id || "");
   const { data: job } = await db.from("ingestion_jobs").select("*").eq("id", jobId).eq("status", "running").eq("locked_by", workerId).maybeSingle();
   if (!job) return json({ error: "lease_lost" }, 409);
+  await saveDiagnostic(job.source_page_id,input.diagnostic);
   const pdfium = input.pdfium || {}, ocr = input.ocr || {}, fusion = input.fusion || {};
   if (typeof pdfium.text !== "string" || typeof ocr.text !== "string" || pdfium.text.length>250000 || ocr.text.length>250000 || !validHash(pdfium.sha256) || !validHash(ocr.sha256) || !validHash(fusion.input_signature)) return json({ error: "invalid_output" }, 400);
   const outputs:any[] = [];
@@ -87,6 +90,23 @@ async function submit(input: Record<string, any>) {
   return json({status:"completed",decision_id:decisionId});
 }
 
+async function saveDiagnostic(sourcePageId:string, diagnostic:any){
+  if(!diagnostic||!pageClasses.has(diagnostic.pageClass)||!strategies.has(diagnostic.strategy)||typeof diagnostic.metrics!=="object")throw new Error("invalid_diagnostic");
+  const {error}=await db.from("page_diagnostic_results").upsert({source_page_id:sourcePageId,pipeline_version_id:"page-diagnostic-v2",page_class:diagnostic.pageClass,recommended_strategy:diagnostic.strategy,confidence:diagnostic.confidence,reason_codes:diagnostic.reasons||[],metrics:diagnostic.metrics},{onConflict:"source_page_id,pipeline_version_id"});
+  if(error)throw error;
+}
+
+async function completeBlank(input:Record<string,any>){
+  const workerId=String(input.worker_id||""),jobId=String(input.job_id||"");
+  const {data:job}=await db.from("ingestion_jobs").select("*").eq("id",jobId).eq("status","running").eq("locked_by",workerId).maybeSingle();
+  if(!job)return json({error:"lease_lost"},409);
+  if(input.diagnostic?.pageClass!=="blank")return json({error:"blank_class_required"},400);
+  await saveDiagnostic(job.source_page_id,input.diagnostic);
+  const {data,error}=await db.rpc("complete_ingestion_job",{job_id:job.id,worker_id:workerId,job_result:{page_class:"blank",fusion_status:"not_required",selected_source:"none"}});
+  if(error||!data)return json({error:"lease_lost"},409);
+  return json({status:"completed",page_class:"blank"});
+}
+
 async function failJob(input: Record<string, unknown>) {
   const workerId=String(input.worker_id||""), jobId=String(input.job_id||""), message=String(input.error_message||"worker_error").slice(0,2000);
   const {data,error}=await db.rpc("fail_ingestion_job",{job_id:jobId,worker_id:workerId,error_code:String(input.error_code||"worker_error").slice(0,120),error_message:message});
@@ -97,6 +117,6 @@ async function failJob(input: Record<string, unknown>) {
 serve(async req => {
   if(req.method!=="POST")return json({error:"POST required"},405);
   if(!await authorize(req))return json({error:"Unauthorized"},401);
-  try { const input=await req.json(); const action=new URL(req.url).searchParams.get("action"); if(action==="claim")return await claim(input); if(action==="submit")return await submit(input); if(action==="fail")return await failJob(input); return json({error:"unknown_action"},400); }
+  try { const input=await req.json(); const action=new URL(req.url).searchParams.get("action"); if(action==="claim")return await claim(input); if(action==="submit")return await submit(input); if(action==="complete_blank")return await completeBlank(input); if(action==="fail")return await failJob(input); return json({error:"unknown_action"},400); }
   catch(error){return json({error:error instanceof Error?error.message:String(error)},500);}
 });

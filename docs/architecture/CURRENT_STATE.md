@@ -52,6 +52,17 @@ Dernière mesure : 25 septembre 2026. Projet Supabase :
 - L'OCR navigateur existe, mais aucune campagne OCR serveur complète et
   reproductible n'a encore été appliquée au corpus.
 - Les caractères NUL produits par certaines tables de polices PDF sont filtrés.
+- Un audit PDFium indépendant des 2 316 SHA-256 uniques a ouvert 100 % des
+  documents et compté exactement 14 118 pages : 11 791 pages avec au moins 80
+  caractères, 175 pages courtes et 2 152 pages sans caractère extractible.
+- `page-diagnostic-v2` est déployé. Il distingue `blank`, `native_text`,
+  `scanned`, `hybrid`, `short_text`, `table`, `form`, `vector_complex` et
+  `unknown` à partir du texte, des objets PDF, de la géométrie et de l'encre
+  rendue. Ses résultats sont privés et versionnés dans
+  `page_diagnostic_results`.
+- L'image de worker reproductible est définie par `Dockerfile.worker` avec Node
+  22, Poppler, PDFium, Tesseract, processus non-root, `tini`, endpoints de santé
+  et arrêt propre. Sa construction locale reste à vérifier sur un hôte Docker.
 - Un test multi-moteur réel sur `circulaire_48416`, page 2, a constaté 0 caractère
   PDFium et 1 338 caractères OCR. La fusion a sélectionné l'OCR avec un score de
   86,23/100. Ce test valide le mécanisme, pas encore la qualité du corpus complet.

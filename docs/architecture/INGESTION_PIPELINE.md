@@ -32,6 +32,11 @@ Mesurer page par page : texte incorporé, densité, langue, rotation, résolutio
 colonnes, tableaux, formulaires, images, corruption et chiffrement. Le diagnostic
 choisit la stratégie d'extraction.
 
+`page-diagnostic-v2` mesure aussi les objets texte, image et vectoriels ainsi que
+le ratio d'encre d'un rendu basse résolution. Il distingue une page blanche d'un
+scan visible sans couche texte. Les classes et mesures sont conservées dans
+`page_diagnostic_results` avant tout OCR.
+
 ### 4. Extraction multi-moteur
 
 - texte natif lorsque la couche texte est cohérente ;
