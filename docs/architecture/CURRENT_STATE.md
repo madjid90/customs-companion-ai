@@ -101,6 +101,20 @@ Dernière mesure : 25 septembre 2026. Projet Supabase :
 - 22 373 codes distincts mentionnés sur 2 515 pages.
 - Les tableaux, désignations, unités et taux ne sont pas encore reconstruits avec
   une précision démontrée.
+- `tariff-extractor-v2` est déployé comme pipeline actif. Son modèle probant
+  sépare désormais exécution, tableau, ligne et cellule ; chaque cellule peut
+  conserver bloc source, page, coordonnées, valeur brute, valeur normalisée,
+  confiance et empreinte SHA-256.
+- 783 pages canoniques des 97 documents tarifaires ou nomenclatures possèdent un
+  texte exploitable et ont reçu une tâche `extract_tariff` idempotente. Ces
+  tâches ne sont pas encore exécutées : le worker tarifaire durable reste à
+  brancher à la passerelle.
+- Le validateur déterministe v2 normalise les codes de 4, 6, 8 et 10 chiffres,
+  conserve les zéros initiaux et rejette notamment les dates, références
+  juridiques hors contexte tarifaire, longueurs invalides et chapitre 77 réservé.
+- La sortie v2 reste exclusivement candidate. Elle ne peut pas alimenter les
+  faits SH ou taux canoniques avant les contrôles de ligne, de hiérarchie, de
+  cellule et le benchmark de référence.
 
 ## Métadonnées canoniques manquantes
 

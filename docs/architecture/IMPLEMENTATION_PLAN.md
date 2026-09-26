@@ -13,8 +13,8 @@ inscrire sa preuve mesurée dans `CURRENT_STATE.md`.
 | 2 | Orchestrateur durable et tâches reprenables | in_progress | reprise après crash et idempotence démontrées |
 | 3 | Diagnostic PDF par page | in_progress | v2 déployé ; exécuter et mesurer les classes sur 100 % des pages |
 | 4 | OCR serveur multilingue | in_progress | 2 323 pages traitées et seuils OCR mesurés |
-| 5 | Blocs, géométrie et tableaux | todo | modèle de mise en page persisté et testé |
-| 6 | Extracteur tarifaire SH v2 | todo | code–désignation–taux ≥ seuils du benchmark |
+| 5 | Blocs, géométrie et tableaux | in_progress | modèle probant tableau–ligne–cellule déployé ; produire la géométrie sur le corpus et la benchmarker |
+| 6 | Extracteur tarifaire SH v2 | in_progress | pipeline et validation déterministe déployés ; exécuter les 783 tâches puis mesurer code–désignation–taux |
 | 7 | Extracteur juridique hiérarchique | todo | code et RDII structurés jusqu'à l'alinéa |
 | 8 | Métadonnées et sources canoniques | todo | références, dates, autorités et URL publiées |
 | 9 | Graphe réglementaire | in_progress | relations disposition–SH–mesure datées |
@@ -37,7 +37,10 @@ inscrire sa preuve mesurée dans `CURRENT_STATE.md`.
 4. ~~comparer automatiquement texte natif, PDFium et OCR~~ — moteur et registre
    de décisions déployés ; exécuter la comparaison sur les 2 323 pages ;
 5. produire le premier rapport de qualité page par page ;
-6. utiliser ces sorties pour le nouvel extracteur SH et l'extracteur juridique.
+6. brancher le worker `tariff-extractor-v2` sur les 783 pages tarifaires mises en
+   file et produire les lignes/cellules candidates ;
+7. constituer le benchmark tarifaire avant toute publication canonique ;
+8. utiliser le même corpus probant pour l'extracteur juridique.
 
 Le pack Maroc couvre le SH national, le Code des douanes, le RDII, les
 circulaires, notes, accords applicables, droits, taxes, origine, autorisations,
