@@ -141,6 +141,12 @@ document, extrait les candidats hiérarchiques et les relations juridiques, puis
 les écrit dans des tables candidates séparées. Il ne publie jamais directement
 dans `legal_provisions` ni `legal_relationships`.
 
+Quand aucun worker externe n'est disponible, Supabase exécute aussi un processeur
+en ligne `public.run_online_legal_extraction_batch`. Il est planifié par
+`pg_cron`, traite de petits lots et reste candidat-only. Cette voie sert à faire
+avancer le corpus sans terminal local, mais les traitements PDF lourds restent à
+héberger sur un worker durable.
+
 Création d'un jeton worker court :
 
 ```bash

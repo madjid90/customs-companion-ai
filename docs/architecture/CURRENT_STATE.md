@@ -142,10 +142,13 @@ Dernière mesure : 26 septembre 2026. Projet Supabase :
 - Les relations candidates distinguent notamment mention, modification,
   abrogation, remplacement, complément et application, avec texte de preuve,
   référence normalisée, date candidate et empreinte SHA-256.
-- La migration est appliquée sur Supabase et 1 047 tâches `extract_legal` sont
-  en file. Aucun candidat juridique n'est publié automatiquement. Il reste à
-  exécuter les tâches corpus, mesurer articles/alinéas/relations sur un jeu de
-  référence et construire la promotion contrôlée vers les faits canoniques.
+- La migration est appliquée sur Supabase et 1 047 tâches `extract_legal` ont été
+  créées. Un processeur en ligne `public.run_online_legal_extraction_batch` est
+  planifié par `pg_cron` à 10 documents par minute pour produire des candidats
+  sans dépendre d'un terminal local.
+- Aucun candidat juridique n'est publié automatiquement. Il reste à mesurer
+  articles/alinéas/relations sur un jeu de référence, analyser les rejets et
+  construire la promotion contrôlée vers les faits canoniques.
 
 ## Métadonnées canoniques manquantes
 
