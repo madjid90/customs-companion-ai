@@ -12,6 +12,7 @@
     "worker:ingestion": "node scripts/run-ingestion-worker.mjs --loop",
     "worker:tariff": "node scripts/run-tariff-worker.mjs --loop",
     "worker:token": "node scripts/create-worker-token.mjs",
+    "report:tariff-extraction": "node scripts/report-tariff-extraction.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
