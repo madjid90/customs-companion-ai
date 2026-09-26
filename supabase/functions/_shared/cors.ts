@@ -12,8 +12,6 @@ const IS_PRODUCTION = (() => {
 const PRODUCTION_ORIGINS = [
   "https://customs-companion.vercel.app",
   "https://customs-companion.netlify.app",
-  // Lovable Cloud published domain
-  "https://id-preview--51d41d3f-1b65-481d-b04a-12695ec7c38e.lovable.app",
 ];
 
 // Development origins (only used in non-production)
@@ -23,21 +21,9 @@ const DEVELOPMENT_ORIGINS = [
   "http://localhost:8080",
 ];
 
-// Lovable preview/published domains
-function isLovableDomain(origin: string): boolean {
-  // Allow all Lovable-managed domains (preview, published, dev)
-  // These are trusted origins managed by the Lovable platform
-  return origin.includes('.lovableproject.com') || 
-         origin.includes('.lovable.app') ||
-         origin.includes('.lovableproject.dev');
-}
-
 // Check if origin is allowed
 export function isOriginAllowed(origin: string | null): boolean {
   if (!origin) return false;
-
-  // Always allow Lovable platform domains (trusted infrastructure)
-  if (isLovableDomain(origin)) return true;
 
   // Production: only explicitly listed domains
   if (IS_PRODUCTION) {

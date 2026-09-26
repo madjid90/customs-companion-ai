@@ -9,8 +9,13 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
+    "worker:ingestion": "node scripts/run-ingestion-worker.mjs --loop",
+    "worker:tariff": "node scripts/run-tariff-worker.mjs --loop",
+    "worker:token": "node scripts/create-worker-token.mjs",
+    "report:tariff-extraction": "node scripts/report-tariff-extraction.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "worker:legal": "node scripts/run-legal-worker.mjs --loop"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -64,6 +69,7 @@
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
+    "tesseract.js": "^6.0.1",
     "vaul": "^0.9.9",
     "xlsx": "^0.18.5",
     "zod": "^3.25.76",
@@ -84,7 +90,6 @@
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
     "jsdom": "^20.0.3",
-    "lovable-tagger": "^1.1.13",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",

@@ -1,0 +1,8 @@
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+const review=JSON.parse(readFileSync('docs/corpus/hs-extraction-review.json','utf8'));
+const rows=[];
+for(const doc of review.documents){for(const page of doc.pages){for(const c of page.candidates){rows.push({source_sha256:doc.sha256,source_relative_path:doc.relative_path,page_number:page.page,line_number:c.line_number,code:c.code,chapter_number:c.chapter,description_fragment:c.description_fragment,raw_line:c.raw_line,derivation_method:c.method,confidence:c.confidence,duty_rate_candidate:c.duty_rate_candidate});}}}
+mkdirSync('docs/corpus/sql-batches',{recursive:true});
+const count=400;
+for(let offset=0;offset<rows.length;offset+=count){const batch=rows.slice(offset,offset+count);const json=JSON.stringify(batch).replaceAll("'","''");const sql=`insert into public.hs_extraction_candidates(source_sha256,source_relative_path,page_number,line_number,code,chapter_number,description_fragment,raw_line,derivation_method,confidence,duty_rate_candidate)\nselect source_sha256,source_relative_path,page_number,line_number,code,chapter_number,description_fragment,raw_line,derivation_method,confidence,duty_rate_candidate\nfrom jsonb_to_recordset('${json}'::jsonb) as x(source_sha256 text,source_relative_path text,page_number integer,line_number integer,code text,chapter_number text,description_fragment text,raw_line text,derivation_method text,confidence numeric,duty_rate_candidate text)\non conflict(source_sha256,page_number,line_number,code) do nothing;\n`;writeFileSync(`docs/corpus/sql-batches/hs-candidates-${String(Math.floor(offset/count)+1).padStart(2,'0')}.sql`,sql);}
+console.log({candidates:rows.length,batches:Math.ceil(rows.length/count)});

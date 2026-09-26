@@ -2,7 +2,7 @@
 -- TABLE: response_cache - Cache sémantique des réponses pour éviter les appels API répétés
 -- ============================================================================
 
-CREATE TABLE public.response_cache (
+CREATE TABLE IF NOT EXISTS public.response_cache (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   question_hash TEXT NOT NULL UNIQUE,
   question_text TEXT NOT NULL,
@@ -17,16 +17,17 @@ CREATE TABLE public.response_cache (
 );
 
 -- Index pour la recherche sémantique vectorielle
-CREATE INDEX idx_response_cache_embedding ON public.response_cache 
+CREATE INDEX IF NOT EXISTS idx_response_cache_embedding ON public.response_cache
 USING ivfflat (question_embedding vector_cosine_ops) WITH (lists = 50);
 
 -- Index pour le nettoyage des entrées expirées
-CREATE INDEX idx_response_cache_expires_at ON public.response_cache (expires_at);
+CREATE INDEX IF NOT EXISTS idx_response_cache_expires_at ON public.response_cache (expires_at);
 
 -- Index pour le hash de question (recherche exacte)
-CREATE INDEX idx_response_cache_question_hash ON public.response_cache (question_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_response_cache_question_hash ON public.response_cache (question_hash);
 
 -- Trigger pour updated_at
+DROP TRIGGER IF EXISTS update_response_cache_updated_at ON public.response_cache;
 CREATE TRIGGER update_response_cache_updated_at
   BEFORE UPDATE ON public.response_cache
   FOR EACH ROW
@@ -36,6 +37,7 @@ CREATE TRIGGER update_response_cache_updated_at
 ALTER TABLE public.response_cache ENABLE ROW LEVEL SECURITY;
 
 -- Policy: Service role can manage cache
+DROP POLICY IF EXISTS "Service role can manage response_cache" ON public.response_cache;
 CREATE POLICY "Service role can manage response_cache"
   ON public.response_cache
   FOR ALL

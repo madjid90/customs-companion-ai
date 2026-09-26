@@ -13,6 +13,11 @@ VALUES
 ('gb', 'Accord Maroc-Royaume-Uni', '["Maroc","Royaume-Uni"]', 'EUR.1', true)
 ON CONFLICT (code) DO NOTHING;
 
+-- Fresh databases do not contain reference-country seed data yet.
+INSERT INTO public.countries (code, code_alpha3, name_fr, name_en, currency_code, is_active)
+VALUES ('MA', 'MAR', 'Maroc', 'Morocco', 'MAD', true)
+ON CONFLICT (code) DO NOTHING;
+
 -- Seed: Controlled Products
 INSERT INTO public.controlled_products (hs_code, country_code, control_type, control_authority, standard_required, required_documents, notes, procedure_steps, estimated_delay, estimated_cost, required_before, portal_url, legal_basis, is_active)
 VALUES

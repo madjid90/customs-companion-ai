@@ -25,8 +25,6 @@ import {
   SEMANTIC_THRESHOLDS,
   getAdaptiveThresholds,
   generateQueryEmbedding,
-  checkResponseCache,
-  saveToResponseCache,
   searchHSCodesSemantic,
   searchKnowledgeHybrid,
   searchPDFsHybrid,
@@ -47,7 +45,7 @@ import {
   analyzeQuestion,
   extractHistoryContext,
   analyzePdfWithClaude,
-  analyzeImageWithLovableAI,
+  analyzeImageWithOpenAI,
   type ImageInput,
   type PdfInput,
   type ImageAnalysisResult,
@@ -75,14 +73,14 @@ import {
 import { expandQuery, expandWithSynonyms } from "./query-expander.ts";
 import { rerankWithLLM, rerankWithTFIDF, type RankedResult } from "./reranker.ts";
 // Post-processing unifié
-import { postProcessResponse, saveToCache, type PostProcessResult } from "./post-processor.ts";
+import { postProcessResponse, type PostProcessResult } from "./post-processor.ts";
 
 // =============================================================================
 // CONFIGURATION
 // =============================================================================
 
-const LOVABLE_AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const LOVABLE_AI_MODEL = "google/gemini-2.5-flash";
+const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+const OPENAI_CHAT_MODEL = Deno.env.get("OPENAI_CHAT_MODEL") || "gpt-4.1-mini";
 
 // Configuration des timeouts
 const TIMEOUTS = {
@@ -157,6 +155,7 @@ interface StreamChunk {
   metadata?: {
     confidence: string;
     cited_circulars: any[];
+    provisional_sources?: any[];
     has_db_evidence: boolean;
     validation_message?: string;
     context: any;
@@ -188,22 +187,22 @@ function createSSEStream(
 }
 
 /**
- * Appelle Lovable AI avec streaming activé et retourne la réponse complète
+ * Appelle OpenAI avec streaming activé et retourne la réponse complète
  */
-async function streamLovableAI(
+async function streamOpenAI(
   systemPrompt: string,
   messages: Array<{ role: string; content: string }>,
   apiKey: string,
   onChunk: (text: string) => void
 ): Promise<string> {
-  const response = await fetch(LOVABLE_AI_GATEWAY, {
+  const response = await fetch(OPENAI_CHAT_ENDPOINT, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: LOVABLE_AI_MODEL,
+      model: OPENAI_CHAT_MODEL,
       max_tokens: 2048,
       temperature: 0.3,
       stream: true,
@@ -216,7 +215,7 @@ async function streamLovableAI(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Lovable AI error: ${response.status} - ${errorText}`);
+    throw new Error(`OpenAI error: ${response.status} - ${errorText}`);
   }
 
   if (!response.body) {
@@ -318,7 +317,7 @@ serve(async (req) => {
     // =========================================================================
     // VALIDATION DES CLÉS API
     // =========================================================================
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const OPENAI_CHAT_API_KEY = Deno.env.get("OPENAI_API_KEY");
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -326,7 +325,7 @@ serve(async (req) => {
 
     // Vérifier les clés OBLIGATOIRES
     const missingKeys: string[] = [];
-    if (!LOVABLE_API_KEY) missingKeys.push("LOVABLE_API_KEY");
+    if (!OPENAI_CHAT_API_KEY) missingKeys.push("OPENAI_CHAT_API_KEY");
     if (!SUPABASE_URL) missingKeys.push("SUPABASE_URL");
     if (!SUPABASE_SERVICE_ROLE_KEY) missingKeys.push("SUPABASE_SERVICE_ROLE_KEY");
     
@@ -359,26 +358,9 @@ serve(async (req) => {
       queryEmbedding = await generateQueryEmbedding(question, OPENAI_API_KEY);
       useSemanticSearch = queryEmbedding !== null;
 
-      if (queryEmbedding && (!images || images.length === 0)) {
-        const cachedResponse = await checkResponseCache(supabase, queryEmbedding, 0.92);
-        if (cachedResponse.found && cachedResponse.response) {
-          console.log("Cache hit! Similarity:", cachedResponse.response.similarity);
-          // Nettoyer la réponse en cache (peut contenir d'anciennes URLs)
-          const cleanedCachedText = stripUrlsFromResponse(cachedResponse.response.text);
-          return new Response(
-            JSON.stringify({
-              response: cleanedCachedText,
-              confidence: cachedResponse.response.confidence,
-              cached: true,
-              metadata: { cached: true, similarity: cachedResponse.response.similarity },
-              cited_circulars: cachedResponse.response.cited_circulars || [],
-              has_db_evidence: cachedResponse.response.has_db_evidence ?? true,
-              validation_message: cachedResponse.response.validation_message,
-            }),
-            { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
-          );
-        }
-      }
+      // Corpus pages and legal versions change independently of the old
+      // semantic cache. Keep embeddings for retrieval, but bypass cached
+      // answers until cache keys include a corpus revision and validity date.
     }
 
     // =========================================================================
@@ -393,9 +375,9 @@ serve(async (req) => {
     
     // Analyse des images
     if (images && images.length > 0) {
-      console.log("Analyzing", images.length, "image(s) with Lovable AI Vision...");
+      console.log("Analyzing", images.length, "image(s) with OpenAI Vision...");
       try {
-        imageAnalysis = await analyzeImageWithLovableAI(images as ImageInput[], question || "Identifie ce produit", LOVABLE_API_KEY!);
+        imageAnalysis = await analyzeImageWithOpenAI(images as ImageInput[], question || "Identifie ce produit", OPENAI_CHAT_API_KEY!);
         console.log("Image analysis result:", JSON.stringify(imageAnalysis));
         
         enrichedQuestion = `${question || "Identifie ce produit et donne-moi le code SH"}
@@ -500,7 +482,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     if (question && !pdfAnalysis?.isDUM) {
       const [expandedText, synonymResults] = await Promise.all([
         withTimeout(
-          expandQuery(question, LOVABLE_API_KEY!, { synonyms: true, translation: true, hsCodeHints: true }),
+          expandQuery(question, OPENAI_CHAT_API_KEY!, { synonyms: true, translation: true, hsCodeHints: true }),
           3000, question, "Query expansion"
         ),
         withTimeout(
@@ -1452,7 +1434,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       context.tariff_notes.length + 
       ((context as any)._legalChunks?.length || 0);
 
-    if (totalRetrievedPassages > 5 && LOVABLE_API_KEY) {
+    if (totalRetrievedPassages > 5 && OPENAI_CHAT_API_KEY) {
       // Build unified passage list for re-ranking
       const passagesForReranking: Array<{ text: string; type: string; metadata?: any }> = [];
       const passageSourceMap: Array<{ type: string; index: number }> = [];
@@ -1484,7 +1466,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
 
       if (passagesForReranking.length > 3) {
         const reranked = await withTimeout(
-          rerankWithLLM(enrichedQuestion || question || '', passagesForReranking, LOVABLE_API_KEY!, 15),
+          rerankWithLLM(enrichedQuestion || question || '', passagesForReranking, OPENAI_CHAT_API_KEY!, 15),
           5000,
           rerankWithTFIDF(enrichedQuestion || question || '', passagesForReranking),
           "LLM re-ranking"
@@ -1541,6 +1523,105 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       knowledge_documents: context.knowledge_documents.length,
     });
 
+    // Canonical customs brain: validated, versioned HS and legal context.
+    // This complements the legacy RAG tables while the historical corpus is migrated.
+    try {
+      const detectedCode = analysis.detectedCodes?.[0]?.replace(/\D/g, "") || "";
+      const keyword = analysis.keywords?.find((value: string) => value.length >= 4) || "";
+      const [canonicalHs, canonicalMeasures, canonicalLaw] = await Promise.all([
+        detectedCode.length >= 2
+          ? supabase.from("hs_nodes").select("code,level,description_official,description_resolved,chapter_number,review_status,hs_nomenclatures!inner(status)").like("code", `${detectedCode.slice(0, 6)}%`).eq("review_status", "validated").eq("hs_nomenclatures.status", "published").limit(20)
+          : Promise.resolve({ data: [], error: null }),
+        detectedCode.length >= 2
+          ? supabase.from("regulatory_measures").select("measure_type,title,description,hs_prefix,effective_from,effective_to,parameters,validation_status,legal_provisions!inner(legal_versions!inner(status))").like("hs_prefix", `${detectedCode.slice(0, 6)}%`).eq("validation_status", "validated").eq("legal_provisions.legal_versions.status", "published").limit(20)
+          : Promise.resolve({ data: [], error: null }),
+        keyword
+          ? supabase.from("legal_provisions").select("provision_type,number,heading,body_text,hierarchy_path,page_start,review_status,legal_versions!inner(status)").ilike("body_text", `%${keyword}%`).eq("review_status", "validated").eq("legal_versions.status", "published").limit(15)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      (context as any)._customsBrain = {
+        hs: canonicalHs.data || [],
+        measures: canonicalMeasures.data || [],
+        provisions: canonicalLaw.data || [],
+      };
+    } catch (canonicalError) {
+      logger.warn("Canonical customs brain lookup unavailable", { error: String(canonicalError) });
+    }
+
+    // Search provisional evidence independently of the legal publication queue.
+    // It can support an answer, but cannot establish an applicable rule or rate.
+    try {
+      const searchTerm = (analysis.keywords || []).find((value: string) => value.length >= 4)?.replace(/[%_,()]/g, "").slice(0, 60);
+      const detectedCode = analysis.detectedCodes?.[0]?.replace(/\D/g, "") || "";
+      const [pageResult, hsResult, linkedResult] = await Promise.all([
+        searchTerm
+          ? supabase.from("source_pages")
+            .select("id,page_number,text_content,review_status,source_documents!inner(id,title,metadata,lifecycle_status,storage_bucket,storage_path,regulatory_sources!inner(code))")
+            .ilike("text_content", `%${searchTerm}%`)
+            .neq("review_status", "rejected")
+            .in("source_documents.lifecycle_status", ["extracted", "quality_review", "legal_review"])
+            .eq("source_documents.regulatory_sources.code", "MA_MANUAL_CORPUS")
+            .limit(5)
+          : Promise.resolve({ data: [], error: null }),
+        detectedCode.length >= 2
+          ? supabase.from("hs_extraction_candidates")
+            .select("code,description_fragment,page_number,confidence,derivation_method,review_status,source_documents!inner(title,lifecycle_status,regulatory_sources!inner(code))")
+            .like("code", `${detectedCode.slice(0, 6)}%`)
+            .neq("review_status", "rejected")
+            .eq("source_documents.regulatory_sources.code", "MA_MANUAL_CORPUS")
+            .limit(8)
+          : Promise.resolve({ data: [], error: null }),
+        detectedCode.length === 10
+          ? supabase.rpc("search_hs_document_mentions", { search_code: detectedCode, result_limit: 8 })
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (pageResult.error) logger.warn("Provisional page lookup failed", { error: String(pageResult.error) });
+      if (hsResult.error) logger.warn("Provisional HS lookup failed", { error: String(hsResult.error) });
+      if (linkedResult.error) logger.warn("HS documentary link lookup failed", { error: String(linkedResult.error) });
+      const provisionalDocumentIds = [...new Set((pageResult.data || []).map((page: any) => page.source_documents?.id).filter(Boolean))];
+      const relationResult = provisionalDocumentIds.length
+        ? await supabase.from("source_document_reference_mentions")
+          .select("source_document_id,referenced_reference,relationship_hint,extraction_confidence,validation_status")
+          .in("source_document_id", provisionalDocumentIds).neq("validation_status", "rejected").limit(20)
+        : { data: [], error: null };
+      if (relationResult.error) logger.warn("Provisional legal relation lookup failed", { error: String(relationResult.error) });
+      (context as any)._provisionalCorpus = {
+        pages: (pageResult.data || []).map((page: any) => ({
+          title: page.source_documents?.metadata?.auto_profile?.heading || page.source_documents?.title,
+          file: page.source_documents?.title,
+          page: page.page_number,
+          review_status: page.review_status,
+          excerpt: page.text_content.slice(0, 900),
+        })),
+        hs: hsResult.data || [],
+        linked: (linkedResult.data || []).map((item: any) => ({
+          code: item.code, title: item.title, file: item.file_title,
+          document_type: item.document_type, page: item.page_number,
+          excerpt: item.excerpt,
+        })),
+        relations: relationResult.data || [],
+      };
+      const refs = [
+        ...(pageResult.data || []).map((page: any) => ({
+          id: page.id,
+          title: page.source_documents?.metadata?.auto_profile?.heading || page.source_documents?.title,
+          file: page.source_documents?.title,
+          page_number: page.page_number,
+          storage_bucket: page.source_documents?.storage_bucket,
+          storage_path: page.source_documents?.storage_path,
+        })),
+        ...(linkedResult.data || []).map((item: any) => ({
+          id: item.source_page_id, title: item.title, file: item.file_title,
+          page_number: item.page_number, storage_bucket: item.storage_bucket,
+          storage_path: item.storage_path,
+        })),
+      ];
+      (context as any)._provisionalSources = [...new Map(refs.filter((ref: any) => ref.id && ref.storage_bucket && ref.storage_path)
+        .map((ref: any) => [`${ref.storage_path}:${ref.page_number}`, { ...ref, status: "provisional" }])).values()].slice(0, 10);
+    } catch (provisionalError) {
+      logger.warn("Provisional corpus lookup unavailable", { error: String(provisionalError) });
+    }
+
     // =========================================================================
     // BUILD SYSTEM PROMPT
     // =========================================================================
@@ -1574,7 +1655,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     });
 
     // =========================================================================
-    // CALL LOVABLE AI (avec support streaming)
+    // CALL OPENAI (avec support streaming)
     // =========================================================================
     const startTime = Date.now();
 
@@ -1589,10 +1670,10 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           const sse = createSSEStream(controller, encoder);
           
           try {
-            const fullResponseText = await streamLovableAI(
+            const fullResponseText = await streamOpenAI(
               systemPrompt,
               claudeMessages,
-              LOVABLE_API_KEY!,
+              OPENAI_CHAT_API_KEY!,
               (chunk) => sse.sendContent(chunk)
             );
             
@@ -1606,12 +1687,12 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
             });
             
             // Save to cache
-            saveToCache(supabase, saveToResponseCache, question || "", queryEmbedding, result, images);
             
             // Send final metadata via SSE
             sse.sendDone({
               confidence: result.confidence,
               cited_circulars: result.citedCirculars,
+              provisional_sources: (context as any)._provisionalSources || [],
               has_db_evidence: result.sourceValidation.has_evidence,
               validation_message: result.sourceValidation.message,
               context: {
@@ -1648,20 +1729,20 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     
     let aiResponse: Response;
     try {
-      logger.info("Calling Lovable AI with retry + circuit breaker", { model: LOVABLE_AI_MODEL });
+      logger.info("Calling OpenAI with retry + circuit breaker", { model: OPENAI_CHAT_MODEL });
       
       aiResponse = await withCircuitBreaker(
-        'lovable-ai',
+        'openai-chat',
         async () => fetchWithRetry(
-          LOVABLE_AI_GATEWAY,
+          OPENAI_CHAT_ENDPOINT,
           {
             method: "POST",
             headers: {
-              "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+              "Authorization": `Bearer ${OPENAI_CHAT_API_KEY}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              model: LOVABLE_AI_MODEL,
+              model: OPENAI_CHAT_MODEL,
               max_tokens: 4096,
               messages: [
                 { role: "system", content: systemPrompt },
@@ -1670,7 +1751,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
             }),
           },
           {
-            ...RETRY_CONFIGS.lovableAI,
+            ...RETRY_CONFIGS.openAIChat,
             onRetry: (attempt, error, delay) => {
               logger.warn(`LLM retry ${attempt}`, { error: error.message, delay });
             },
@@ -1680,19 +1761,19 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
       );
       
     } catch (fetchError: any) {
-      logger.error("Lovable AI fetch error after retries", fetchError);
+      logger.error("OpenAI fetch error after retries", fetchError);
       return errorResponse(req, "Service temporairement indisponible. Veuillez réessayer.", 503);
     }
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
-      logger.error("Lovable AI non-OK response", new Error(errorText), { status: aiResponse.status });
+      logger.error("OpenAI non-OK response", new Error(errorText), { status: aiResponse.status });
       
       if (aiResponse.status === 429) {
         return errorResponse(req, "Trop de requêtes. Veuillez réessayer.", 429);
       }
       if (aiResponse.status === 402) {
-        return errorResponse(req, "Crédits Lovable AI épuisés.", 402);
+        return errorResponse(req, "Crédits OpenAI épuisés.", 402);
       }
       return errorResponse(req, "Service temporairement indisponible.", 503);
     }
@@ -1709,7 +1790,6 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
     });
 
     // Save to cache
-    saveToCache(supabase, saveToResponseCache, question || "", queryEmbedding, result, images);
 
     return new Response(
       JSON.stringify({
@@ -1726,6 +1806,7 @@ ${pdfAnalysis.suggestedCodes.length > 0 ? `=== CODES SH IDENTIFIÉS ===\n${pdfAn
           legal_references_found: context.legal_references.length,
         },
         cited_circulars: result.citedCirculars,
+        provisional_sources: (context as any)._provisionalSources || [],
         sources_validated: result.sourceValidation.sources_validated,
         sources_rejected_count: result.sourceValidation.sources_rejected.length,
         has_db_evidence: result.sourceValidation.has_evidence,

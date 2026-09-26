@@ -1796,23 +1796,23 @@ async function mergeSummaries(
   if (!firstSummary) return lastSummary;
   if (!lastSummary) return firstSummary;
   
-  const LOVABLE_AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
-  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+  const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+  const openAIKey = Deno.env.get("OPENAI_API_KEY");
   
-  if (!lovableKey) {
+  if (!openAIKey) {
     // Fallback: concatenate
     return `${firstSummary}\n\n---\n\n${lastSummary}`;
   }
   
   try {
-    const response = await fetch(LOVABLE_AI_GATEWAY, {
+    const response = await fetch(OPENAI_CHAT_ENDPOINT, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${lovableKey}`,
+        "Authorization": `Bearer ${openAIKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-lite",
+        model: Deno.env.get("OPENAI_CHAT_MODEL") || "gpt-4.1-mini",
         max_tokens: 800,
         temperature: 0.1,
         messages: [

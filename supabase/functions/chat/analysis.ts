@@ -55,7 +55,7 @@ export interface PdfAnalysisResult {
 // CONFIGURATION
 // ============================================================================
 
-const LOVABLE_AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 const CLAUDE_PDF_API_URL = "https://api.anthropic.com/v1/messages";
 
 // ============================================================================
@@ -527,13 +527,13 @@ async function analyzeDUMDocument(
 }
 
 // ============================================================================
-// ANALYSE D'IMAGE AVEC LOVABLE AI
+// ANALYSE D'IMAGE AVEC OPENAI
 // ============================================================================
 
 /**
- * Analyse d'images avec Lovable AI (Gemini Vision)
+ * Analyse d'images avec OpenAI (Gemini Vision)
  */
-export async function analyzeImageWithLovableAI(
+export async function analyzeImageWithOpenAI(
   images: ImageInput[],
   question: string,
   apiKey: string
@@ -551,14 +551,14 @@ export async function analyzeImageWithLovableAI(
 
   let response: Response;
   try {
-    response = await fetch(LOVABLE_AI_GATEWAY, {
+    response = await fetch(OPENAI_CHAT_ENDPOINT, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: Deno.env.get("OPENAI_CHAT_MODEL") || "gpt-4.1-mini",
         max_tokens: 2048,
         messages: [
           {

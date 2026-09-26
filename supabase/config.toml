@@ -1,22 +1,22 @@
-project_id = "mefyrysrlmzzcsyyysqp"
+project_id = "raygpbajipeyzxfxpbku"
 
 [functions.chat]
-verify_jwt = false
+verify_jwt = true
 
 [functions.analyze-pdf]
-verify_jwt = false
+verify_jwt = true
 
 [functions.answer-with-sources]
 verify_jwt = false
 
 [functions.ingest-legal-doc]
-verify_jwt = false
+verify_jwt = true
 
 [functions.analyze-dum]
-verify_jwt = false
+verify_jwt = true
 
 [functions.analyze-product-image]
-verify_jwt = false
+verify_jwt = true
 
 [functions.send-otp]
 verify_jwt = false
@@ -25,13 +25,13 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.invite-agent]
-verify_jwt = false
+verify_jwt = true
 
 [functions.approve-access]
-verify_jwt = false
+verify_jwt = true
 
 [functions.generate-embeddings]
-verify_jwt = false
+verify_jwt = true
 
 [functions.refresh-embeddings]
 verify_jwt = false
@@ -49,10 +49,19 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.populate-references]
-verify_jwt = false
+verify_jwt = true
 
 [functions.consultation-report]
-verify_jwt = false
+verify_jwt = true
 
 [functions.classify]
+verify_jwt = true
+
+[functions.import-anrt-csv]
+verify_jwt = true
+
+[functions.import-anrt-dispensed]
+verify_jwt = true
+
+[functions.ingestion-worker-gateway]
 verify_jwt = false

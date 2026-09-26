@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Logo } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/button";
 import { useAppAuth } from "@/hooks/useAppAuth";
-import { LogOut, Menu, MessageSquare, ClipboardList } from "lucide-react";
+import { LogOut, Menu, MessageSquare, FolderKanban, Scale, Tags, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AppHeaderProps {
@@ -17,7 +17,10 @@ export function AppHeader({ onHistoryToggle, isHistoryOpen }: AppHeaderProps) {
 
   const navItems = [
     { label: "Chat", href: "/app/chat", icon: MessageSquare },
-    // Consultation est intégrée dans le Chat via détection d'intent (deeplink uniquement)
+    { label: "Dossiers", href: "/app/dossiers", icon: FolderKanban },
+    { label: "Classement SH", href: "/app/classement-sh", icon: Tags },
+    { label: "Produits", href: "/app/produits", icon: Package },
+    { label: "Juridique", href: "/app/juridique", icon: Scale },
     { label: "Historique", href: "/app/historique", icon: Menu },
   ];
 

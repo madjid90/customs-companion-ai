@@ -3,7 +3,7 @@
 // Scores each passage 0-10 for relevance to the exact question
 // ============================================================================
 
-const LOVABLE_AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 
 export interface RankedResult {
   index: number;
@@ -39,14 +39,14 @@ export async function rerankWithLLM(
   ).join('\n\n');
 
   try {
-    const response = await fetch(LOVABLE_AI_GATEWAY, {
+    const response = await fetch(OPENAI_CHAT_ENDPOINT, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-lite",
+        model: Deno.env.get("OPENAI_CHAT_MODEL") || "gpt-4.1-mini",
         max_tokens: 200,
         temperature: 0,
         tools: [

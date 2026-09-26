@@ -51,12 +51,11 @@ function isOriginAllowed(
     return productionOrigins.includes(origin);
   }
   if (origin.startsWith("http://localhost:")) return true;
-  if (origin.includes('.lovable.app') || origin.includes('.lovableproject.com')) return true;
   return productionOrigins.includes(origin);
 }
 
 const PROD_ORIGINS = [
-  "https://id-preview--51d41d3f-1b65-481d-b04a-12695ec7c38e.lovable.app",
+  "https://customs-companion.vercel.app",
 ];
 
 Deno.test("CORS: production mode rejects localhost origins", () => {
@@ -70,9 +69,9 @@ Deno.test("CORS: production mode accepts listed production origins", () => {
   );
 });
 
-Deno.test("CORS: production mode rejects random lovable domains", () => {
+Deno.test("CORS: production mode rejects unlisted domains", () => {
   assertEquals(
-    isOriginAllowed("https://attacker-project.lovable.app", true, PROD_ORIGINS),
+    isOriginAllowed("https://attacker.example", true, PROD_ORIGINS),
     false
   );
 });
@@ -85,10 +84,10 @@ Deno.test("CORS: dev mode allows localhost", () => {
   assertEquals(isOriginAllowed("http://localhost:5173", false, PROD_ORIGINS), true);
 });
 
-Deno.test("CORS: dev mode allows lovable domains", () => {
+Deno.test("CORS: dev mode rejects unlisted domains", () => {
   assertEquals(
-    isOriginAllowed("https://some-preview.lovable.app", false, PROD_ORIGINS),
-    true
+    isOriginAllowed("https://some-preview.example", false, PROD_ORIGINS),
+    false
   );
 });
 

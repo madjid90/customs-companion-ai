@@ -1,7 +1,7 @@
 // ============================================================================
 // PIPELINE D'EXTRACTION DES TABLES DE RÉFÉRENCE
 // ============================================================================
-// Utilise Lovable AI (Gemini) pour extraire des données structurées
+// Utilise OpenAI (Gemini) pour extraire des données structurées
 // depuis les legal_chunks existants vers les tables de référence :
 // trade_agreements, origin_rules, controlled_products, knowledge_documents
 // + Liaison des taux préférentiels (country_tariffs.agreement_code)
@@ -11,8 +11,8 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { getCorsHeaders, handleCorsPreFlight } from "../_shared/cors.ts";
 import { requireAuth } from "../_shared/auth-check.ts";
 
-const LOVABLE_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const MODEL = "google/gemini-2.5-flash";
+const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+const MODEL = Deno.env.get("OPENAI_CHAT_MODEL") || "gpt-4.1-mini";
 const CHUNK_BATCH_SIZE = 15; // Chunks per AI call
 const MAX_SOURCES = 50; // Max sources to process per run
 
@@ -54,14 +54,14 @@ interface AIExtractionResult {
   source_info?: string;
 }
 
-async function callLovableAI(
+async function callOpenAI(
   apiKey: string,
   systemPrompt: string,
   userPrompt: string,
   tools: any[],
   toolChoice: any,
 ): Promise<any> {
-  const response = await fetch(LOVABLE_GATEWAY, {
+  const response = await fetch(OPENAI_CHAT_ENDPOINT, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -160,7 +160,7 @@ Les parties doivent être des codes pays ISO ou noms d'organisations.`;
     ).join("\n\n---\n\n");
 
     try {
-      const extracted = await callLovableAI(
+      const extracted = await callOpenAI(
         apiKey,
         systemPrompt,
         `Analyse ces textes juridiques et extrais les accords commerciaux mentionnés:\n\n${textsBlock}`,
@@ -275,7 +275,7 @@ Types de règles: ctc (changement de classification), value_added, specific_proc
     ).join("\n\n---\n\n");
 
     try {
-      const extracted = await callLovableAI(
+      const extracted = await callOpenAI(
         apiKey,
         systemPrompt,
         `Extrais les règles d'origine de ces textes:\n\n${textsBlock}`,
@@ -392,7 +392,7 @@ Autorités courantes: ADII, ONSSA, Ministère du Commerce, Office des Changes, A
     ).join("\n\n---\n\n");
 
     try {
-      const extracted = await callLovableAI(
+      const extracted = await callOpenAI(
         apiKey,
         systemPrompt,
         `Extrais les produits contrôlés/réglementés de ces textes:\n\n${textsBlock}`,
@@ -522,7 +522,7 @@ Inclus les codes SH mentionnés dans related_hs_codes.`;
     ).join("\n\n");
 
     try {
-      const doc = await callLovableAI(
+      const doc = await callOpenAI(
         apiKey,
         systemPrompt,
         `Synthétise ce document juridique:\nTitre: ${source.title || source.source_ref}\nType: ${source.source_type}\n\n${sourceText.substring(0, 12000)}`,
@@ -672,7 +672,7 @@ RÈGLES D'EXTRACTION:
     ).join("\n\n---\n\n");
 
     try {
-      const extracted = await callLovableAI(
+      const extracted = await callOpenAI(
         apiKey,
         systemPrompt,
         `Extrais les taux préférentiels de ces extraits de circulaires:\n\n${textsBlock}`,
@@ -803,9 +803,9 @@ serve(async (req) => {
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+  const OPENAI_CHAT_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !LOVABLE_API_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !OPENAI_CHAT_API_KEY) {
     return new Response(
       JSON.stringify({ error: "Missing configuration" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -840,7 +840,7 @@ serve(async (req) => {
       console.log(`[populate-references] Processing ${table}...`);
 
       if (table === "knowledge_documents") {
-        results[table] = await synthesizeKnowledgeDocs(supabase, LOVABLE_API_KEY);
+        results[table] = await synthesizeKnowledgeDocs(supabase, OPENAI_CHAT_API_KEY);
       } else if (table === "preferential_tariffs") {
         // Fetch table-type chunks with tariff data directly (more targeted than keyword search)
         const { data: tableChunks, error: tcErr } = await supabase
@@ -868,7 +868,7 @@ serve(async (req) => {
           }
           
           console.log(`[populate-references] preferential_tariffs: Found ${tableChunks?.length || 0} table chunks + ${keywordChunks.length} keyword chunks = ${allChunks.length} total`);
-          results[table] = await linkPreferentialTariffs(supabase, LOVABLE_API_KEY, allChunks);
+          results[table] = await linkPreferentialTariffs(supabase, OPENAI_CHAT_API_KEY, allChunks);
         }
       } else {
         const keywords = TABLE_KEYWORDS[table];
@@ -882,13 +882,13 @@ serve(async (req) => {
 
         switch (table) {
           case "trade_agreements":
-            results[table] = await extractTradeAgreements(supabase, LOVABLE_API_KEY, chunks);
+            results[table] = await extractTradeAgreements(supabase, OPENAI_CHAT_API_KEY, chunks);
             break;
           case "origin_rules":
-            results[table] = await extractOriginRules(supabase, LOVABLE_API_KEY, chunks);
+            results[table] = await extractOriginRules(supabase, OPENAI_CHAT_API_KEY, chunks);
             break;
           case "controlled_products":
-            results[table] = await extractControlledProducts(supabase, LOVABLE_API_KEY, chunks);
+            results[table] = await extractControlledProducts(supabase, OPENAI_CHAT_API_KEY, chunks);
             break;
         }
       }
