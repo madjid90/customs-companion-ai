@@ -127,6 +127,26 @@ et reçoit les sorties du worker. Son jeton est court, haché en base et limité
 scope `ocr_page`. Une page vide dans les trois moteurs crée automatiquement une
 tâche `analyze_layout` au lieu de terminer silencieusement le parcours.
 
+Le worker tarifaire courant est `scripts/run-tariff-worker.mjs`. Il consomme les
+tâches `extract_tariff` via la même passerelle avec le scope `extract_tariff`.
+Son premier mode est `line_based_text` : il écrit des tableaux, lignes et cellules
+candidates à partir du texte canonique, avec SHA-256 et validation SH
+déterministe. Les coordonnées restent absentes tant que la géométrie de page n'a
+pas été produite ; ces résultats ne peuvent donc pas être publiés comme faits
+canoniques sans benchmark.
+
+Création d'un jeton worker court :
+
+```bash
+npm run worker:token -- --scopes extract_tariff --name tariff-campaign
+```
+
+Exécution du worker tarifaire :
+
+```bash
+npm run worker:tariff
+```
+
 Une campagne corpus complète s'exécute uniquement sur un worker durable et
 supervisé. `claim_ingestion_jobs` récupère automatiquement les baux sans heartbeat
 depuis quinze minutes ; un arrêt contrôlé remet immédiatement les tâches en file.

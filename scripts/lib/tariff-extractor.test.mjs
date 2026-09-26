@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyNumericToken, extractHsCandidatesFromLine, normalizeHsCode, validateHsCode } from "./tariff-extractor.mjs";
+import { classifyNumericToken, extractHsCandidatesFromLine, extractTariffPage, normalizeHsCode, validateHsCode } from "./tariff-extractor.mjs";
 
 describe("tariff extractor v2", () => {
   it("normalizes Moroccan national codes without losing leading zeroes", () => {
@@ -29,5 +29,25 @@ describe("tariff extractor v2", () => {
     expect(candidate.valid).toBe(false);
     expect(candidate.reasons).toContain("reserved_chapter_77");
   });
-});
 
+  it("builds unpublished tariff row and cell candidates from canonical text", () => {
+    const result = extractTariffPage([
+      "8471.30 00 00 Machines automatiques portatives unite Droit 2,5 % TVA 20 %",
+      "Circulaire n° 48.416 du 26-09-2026",
+    ].join("\n"));
+    expect(result).toMatchObject({
+      status: "completed",
+      table_count: 1,
+      row_count: 1,
+      valid_row_count: 1,
+    });
+    expect(result.tables[0].rows[0]).toMatchObject({
+      hs_code_normalized: "8471300000",
+      designation: "Machines automatiques portatives unite Droit 2,5 % TVA 20 %",
+      duty_rate: 2.5,
+      vat_rate: 20,
+      validation_status: "valid",
+    });
+    expect(result.tables[0].rows[0].cells.map((cell) => cell.column_name)).toEqual(["hs_code", "designation", "unit", "duty_rate", "vat_rate"]);
+  });
+});

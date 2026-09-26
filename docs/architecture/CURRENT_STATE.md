@@ -107,11 +107,21 @@ Dernière mesure : 25 septembre 2026. Projet Supabase :
   confiance et empreinte SHA-256.
 - 783 pages canoniques des 97 documents tarifaires ou nomenclatures possèdent un
   texte exploitable et ont reçu une tâche `extract_tariff` idempotente. Ces
-  tâches ne sont pas encore exécutées : le worker tarifaire durable reste à
-  brancher à la passerelle.
+  tâches ne sont pas encore exécutées : il reste à créer un jeton worker
+  `extract_tariff` et à lancer le worker tarifaire durable.
 - Le validateur déterministe v2 normalise les codes de 4, 6, 8 et 10 chiffres,
   conserve les zéros initiaux et rejette notamment les dates, références
   juridiques hors contexte tarifaire, longueurs invalides et chapitre 77 réservé.
+- Le worker `scripts/run-tariff-worker.mjs` est implémenté. Il consomme les tâches
+  via `ingestion-worker-gateway`, vérifie l'empreinte du texte canonique, extrait
+  des lignes et cellules candidates, et transmet uniquement des résultats
+  candidats au modèle probant.
+- `ingestion-worker-gateway` version 5 est déployée avec scopes séparés
+  `ocr_page` et `extract_tariff`. Un jeton tarifaire ne peut pas soumettre une
+  tâche OCR, et inversement.
+- L'extraction tarifaire actuelle est `line_based_text` : elle conserve la preuve
+  textuelle et les empreintes des cellules, mais ne fournit pas encore les
+  coordonnées de tableau lorsque la géométrie de page n'existe pas.
 - La sortie v2 reste exclusivement candidate. Elle ne peut pas alimenter les
   faits SH ou taux canoniques avant les contrôles de ligne, de hiérarchie, de
   cellule et le benchmark de référence.
