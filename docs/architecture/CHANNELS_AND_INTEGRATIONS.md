@@ -8,10 +8,15 @@ Le cerveau est headless. Une page web, WhatsApp, un ERP ou un agent utilise la
 même API et reçoit le même résultat canonique. L'adaptateur change la présentation,
 jamais la règle métier.
 
+La page web n'est pas le produit ; elle est un canal consommateur. Elle arrive
+dans l'ordre de construction après la data, le contexte, le moteur de décision,
+l'API `/v1` et les agents métier. Les pages créées avant cette étape servent
+uniquement à l'administration du corpus, au contrôle qualité et à la revue.
+
 ```mermaid
 flowchart TB
   B[Cerveau douanier] --> API[API versionnée /v1]
-  API --> WEB[Page et widget web]
+  API --> WEB[Pages web finales]
   API --> WA[WhatsApp Adapter]
   API --> ERP[ERP / TMS]
   API --> SDK[SDK JavaScript et Python]
@@ -19,6 +24,16 @@ flowchart TB
   API --> AG[Agents spécialisés]
   API --> HOOK[Webhooks]
 ```
+
+## Ordre de construction des canaux
+
+1. Construire le cerveau et ses contrats API.
+2. Brancher les agents métier SH, juridique et opérations pour valider les
+   sorties du cerveau.
+3. Exposer les SDK, MCP, webhooks et intégrations serveur.
+4. Construire les pages web finales comme expérience utilisateur au-dessus de ces
+   mêmes contrats.
+5. Ajouter WhatsApp et ERP/TMS avec les mêmes statuts, preuves et dossiers.
 
 ## Contrats obligatoires
 

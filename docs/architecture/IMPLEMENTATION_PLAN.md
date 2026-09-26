@@ -22,12 +22,22 @@ inscrire sa preuve mesurée dans `CURRENT_STATE.md`.
 | 11 | Jeu de référence et CI qualité | todo | rapport automatique et seuils bloquants |
 | 12 | Surveillance et nouvelles versions | todo | découverte, diff, ingestion et impact automatiques |
 | 13 | API du cerveau douanier | todo | contrats métier sourcés et stables |
-| 14 | Chat et agents sur l'API | todo | aucune donnée métier inventée par le LLM |
+| 14 | Agents métier sur l'API | todo | agents SH, juridique et opérations sans donnée inventée |
 | 15 | Noyau commun et pack Maroc | todo | aucune règle MA dans le noyau, résolution MA testée |
 | 16 | API plug-and-play et OpenAPI | todo | contrat `/v1` stable et SDK générables |
 | 17 | Adaptateur WhatsApp | todo | même dossier utilisable sur web et WhatsApp |
 | 18 | MCP et outils d'agents | todo | agents spécialisés limités aux outils autorisés |
 | 19 | Webhooks et intégrations ERP | todo | événements signés, repris et auditables |
+| 20 | Pages web métier finales | todo | pages branchées uniquement sur l'API `/v1` du cerveau |
+
+## Règle d'ordre produit
+
+Les pages web ne sont pas le produit central. Elles sont des consommateurs finaux
+du cerveau, comme WhatsApp, ERP/TMS, MCP, SDK et agents. Jusqu'à la stabilisation
+de l'API `/v1`, le développement frontend se limite aux écrans nécessaires pour
+surveiller l'ingestion, contrôler la qualité, auditer les preuves et valider les
+candidats. Les parcours utilisateur finaux sont construits après les chantiers
+13 à 16.
 
 ## Prochaine tranche de développement
 
@@ -42,7 +52,9 @@ inscrire sa preuve mesurée dans `CURRENT_STATE.md`.
 7. mesurer les candidats produits : faux positifs SH, code–désignation, taux,
    unités, pages rejetées et cas `review_required` ;
 8. constituer le benchmark tarifaire avant toute publication canonique ;
-9. utiliser le même corpus probant pour l'extracteur juridique.
+9. utiliser le même corpus probant pour l'extracteur juridique ;
+10. ne pas démarrer la refonte des pages métier tant que les contrats du cerveau
+    ne sont pas stabilisés, sauf écrans admin liés à la qualité data.
 
 Le pack Maroc couvre le SH national, le Code des douanes, le RDII, les
 circulaires, notes, accords applicables, droits, taxes, origine, autorisations,
@@ -57,4 +69,6 @@ contrôles, organismes, procédures, documents, délais, exceptions et sanctions
 - échecs observables et reprenables ;
 - état de ce document et de `CURRENT_STATE.md` mis à jour ;
 - build et tests applicatifs réussis ;
-- code poussé sur la branche de travail.
+- code poussé sur la branche de travail ;
+- si une page est modifiée, preuve qu'elle consomme l'API métier et ne porte pas
+  de règle douanière en dur.

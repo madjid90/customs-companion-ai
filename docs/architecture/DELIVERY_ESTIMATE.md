@@ -15,7 +15,8 @@ l'implémentation, mais ne remplacent pas l'évaluation juridique et tarifaire.
 | Code, RDII et hiérarchie juridique | 4–6 semaines | dispositions structurées jusqu'à l'alinéa |
 | Circulaires, accords et graphe | 4–6 semaines | relations, autorisations, origine et mesures datées |
 | Moteur temporel et règles métier | 3–5 semaines | règle applicable calculée par contexte et date |
-| API `/v1`, web, agents et WhatsApp | 3–5 semaines | sorties plug-and-play et sessions multicanales |
+| API `/v1` et agents métier | 2–4 semaines | sorties plug-and-play, agents SH/juridique/opérations |
+| Pages web finales et canaux WhatsApp/ERP | 2–4 semaines | expérience utilisateur branchée sur l'API, sessions multicanales |
 | Sécurité, charge, restauration et pilote | 3–4 semaines | version de production pilotable |
 
 Les phases se chevauchent partiellement et ne s'additionnent pas toutes de façon
@@ -28,7 +29,8 @@ séquentielle.
 - **8 à 12 semaines** : pilote Maroc utilisable par une équipe accompagnée, avec
   citations et limites explicites.
 - **16 à 24 semaines** : produit Maroc opérationnel en production, couvrant SH,
-  juridique, réglementaire, API, sécurité et mises à jour.
+  juridique, réglementaire, API, sécurité, mises à jour et pages finales branchées
+  sur le cerveau.
 - **6 à 9 mois** : précision élevée démontrée sur le benchmark complet, avec
   correction des cas rares et validation métier.
 
@@ -41,7 +43,8 @@ Avec une seule personne, même assistée par des agents de code, prévoir au moi
 Toutes les familles Maroc prévues sont ingérées, versionnées, requêtables et
 sourcées ; les traitements sont reprenables ; les erreurs sont visibles ; les
 décisions incertaines sont signalées ; les mises à jour conservent l'historique ;
-les seuils du benchmark sont atteints. Cela ne signifie pas zéro erreur possible.
+les seuils du benchmark sont atteints ; les pages et canaux consomment l'API du
+cerveau sans logique douanière en dur. Cela ne signifie pas zéro erreur possible.
 
 ## Dépendances pouvant modifier le délai
 

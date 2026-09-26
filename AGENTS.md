@@ -49,6 +49,8 @@ dans `docs/` restent utiles comme historique, mais ne priment pas sur
 - Le noyau ne contient aucune hypothèse propre au Maroc. Les règles nationales
   appartiennent au pack `MA`, construit en premier.
 - Web, WhatsApp, ERP, SDK, MCP et agents consomment les mêmes contrats versionnés.
+- Les pages web sont des consommateurs du cerveau, pas le produit central. Elles
+  affichent les résultats de l'API métier et ne portent aucune règle douanière.
 - Les agents spécialisés partagent le cerveau et ne conservent aucune copie
   autonome de la réglementation.
 
@@ -76,4 +78,5 @@ dans `docs/` restent utiles comme historique, mais ne priment pas sur
 5. graphe de contexte ;
 6. moteur de règles ;
 7. API du cerveau ;
-8. chat, agents et génération de documents.
+8. agents, génération de documents et canaux ;
+9. pages web finales branchées sur l'API.

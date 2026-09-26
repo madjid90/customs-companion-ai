@@ -1,6 +1,7 @@
 # Regulatory ingestion foundation
 
 Status: first isolated policy module, not integrated into the live application.
+This document is historical; `docs/architecture/` is the current source of truth.
 The publication gate is not an authorization boundary: the future backend must
 derive reviewer identity and approval from authenticated, persisted records.
 Clients must never be allowed to self-assert these fields. Approval of the original
@@ -25,6 +26,11 @@ approval to an immutable extraction/rules revision.
 
 ## Target flow
 
+The target product flow is brain-first: source data becomes evidence, candidates,
+canonical facts, relationships, rules and API responses before any final page is
+rebuilt. Pages, chat, agents, WhatsApp and ERP/TMS are only consumers of the same
+brain API.
+
 Official feed/export/API (HTML collection when needed) -> immutable source copy
 and SHA-256 -> duplicate/version detection -> page-aware extraction -> structured
 codes/articles/tables -> proposed legal relations -> quality checks -> review of
@@ -42,9 +48,10 @@ Preserve raw source and extraction/rule revisions, reviewer and audit history.
 1. Fix audited authentication and ingestion defects; restore reproducible CI.
 2. Durable worker, versioned storage, page accounting and retry/idempotency.
 3. OMD + Morocco pilot, explicit links and reviewed rule applicability.
-4. Shared retrieval/classification/context service and isolated dossier memory.
-5. Templates from structured decisions, revisioned generated documents.
-6. Official-source connectors and change review; EU pack; production pilot.
+4. Shared retrieval/classification/context service, brain API and isolated dossier memory.
+5. Agents and generated documents from structured decisions.
+6. Final web pages and channel adapters on the same API.
+7. Official-source connectors and change review; EU pack; production pilot.
 
 Production acceptance requires corpus-based SH/extraction evaluation, tenant and
 role isolation tests, migration rehearsal, restore test, source citation checks,

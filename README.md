@@ -1,10 +1,15 @@
 # Douane AI
 
-Assistant douanier marocain pour la classification SH, l'analyse juridique, la gestion des dossiers import/export et la génération de livrables sourcés.
+Assistant douanier marocain centré sur un cerveau réglementaire unique : classification SH, analyse juridique, contexte réglementaire, gestion des dossiers import/export et génération de livrables sourcés.
 
 ## Architecture
 
-- **Application** : React, TypeScript, Vite et shadcn/ui
+Le produit central est le cerveau douanier : ingestion fiable, données canoniques,
+graphe de contexte, règles métier et API versionnée. L'application web est un
+consommateur de ce cerveau, comme WhatsApp, les agents métier, ERP/TMS, MCP ou
+SDK. Les pages ne doivent pas contenir de logique douanière en dur.
+
+- **Application consommatrice** : React, TypeScript, Vite et shadcn/ui
 - **Données et authentification** : Supabase Postgres, Auth, Storage et Edge Functions
 - **IA** : OpenAI pour le chat, la vision, l'extraction structurée et les embeddings; Anthropic peut être activé pour l'analyse PDF longue
 - **Déploiement** : Vercel pour l'application et Supabase pour le backend

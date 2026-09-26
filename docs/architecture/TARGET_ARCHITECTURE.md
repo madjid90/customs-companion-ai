@@ -44,11 +44,14 @@ flowchart TB
     RET[Récupération hybride]
     DEC[Moteur de décision]
   end
-  subgraph Products
+  subgraph Consumers["Canaux consommateurs finaux"]
+    WEB[Pages web]
     CHAT[Chat]
     AGENT[Agents]
     DOC[Documents]
     CASE[Dossiers]
+    WA[WhatsApp]
+    ERP[ERP / TMS]
   end
   Sources --> DISC --> REG --> VER --> RAW --> PDF
   PDF --> TXT --> MERGE
@@ -60,12 +63,16 @@ flowchart TB
   HS --> GRAPH
   LAW --> GRAPH --> TIME --> RULES
   RULES --> Packs
-  Packs --> API --> DEC
+  Packs --> DEC
   EVI --> RET --> DEC
-  DEC --> CHAT
-  DEC --> AGENT
-  DEC --> DOC
-  DEC --> CASE
+  DEC --> API
+  API --> WEB
+  API --> CHAT
+  API --> AGENT
+  API --> DOC
+  API --> CASE
+  API --> WA
+  API --> ERP
 ```
 
 ## Séparation des responsabilités
@@ -75,6 +82,9 @@ flowchart TB
 - **Normalisation** transforme les résultats en entités métier candidates.
 - **Cerveau** consolide les versions, relations, périodes et règles applicables.
 - **Moteur de décision** combine des faits publiés pour un contexte donné.
+- **API métier** expose les résultats du moteur sous contrats versionnés.
+- **Canaux consommateurs** collectent la demande, présentent la réponse et
+  conservent le parcours utilisateur ; ils ne décident pas du droit applicable.
 - **LLM** reformule, explique, demande les informations manquantes et cite les preuves.
 - **Pack de juridiction** ajoute les extensions SH, textes, mesures,
   administrations, procédures et priorités nationales sans modifier le noyau.
@@ -90,6 +100,7 @@ flowchart TB
 7. `quality-evaluator`
 8. `publication-compiler`
 9. `customs-brain-api`
+10. `channel-adapters`
 
 Les workers communiquent par des tâches durables avec idempotence, tentatives,
 dead-letter queue et métriques. Vercel sert l'application et les API courtes ; les
@@ -98,3 +109,9 @@ registre transactionnel, le stockage probant et la base du graphe métier.
 
 Le démarrage reste un monolithe modulaire. Un service n'est séparé physiquement
 que lorsque sa charge, son cycle de déploiement ou son isolation l'exige.
+
+La construction des pages métier est volontairement placée après l'API du
+cerveau. Les écrans web existants peuvent rester disponibles pour consultation ou
+administration, mais toute nouvelle expérience utilisateur finale doit consommer
+les contrats `/v1` au lieu d'accéder directement aux tables ou de réimplémenter de
+la logique métier.

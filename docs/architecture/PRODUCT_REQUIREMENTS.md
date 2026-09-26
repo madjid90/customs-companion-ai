@@ -8,6 +8,20 @@ Une exigence n'est `done` que lorsque son critère d'acceptation est mesuré et 
 la preuve correspondante est inscrite dans `CURRENT_STATE.md`. La présence d'une
 table, d'un écran ou d'un prototype ne suffit pas.
 
+## Principe produit — cerveau d'abord, pages ensuite
+
+Douane AI n'est pas défini par ses pages. Le produit est le cerveau douanier :
+corpus probant, faits canoniques, graphe de contexte, règles dans le temps et API
+métier. Les pages web, le chat, les agents, WhatsApp, ERP/TMS, MCP et SDK sont des
+consommateurs de cette API.
+
+Aucune page métier ne doit contenir de règle douanière, de logique SH, de calcul
+de taux ou de relation juridique en dur. Une page peut seulement collecter le
+besoin utilisateur, appeler l'API du cerveau, afficher les preuves et aider à la
+revue. La refonte des pages arrive après les chantiers data, contexte, moteur de
+décision et contrat `/v1`, sauf pour les écrans d'administration indispensables à
+la qualité de l'ingestion.
+
 ## REQ-01 — Ingestion fiable et automatique
 
 Chaque fichier est identifié, dédupliqué, versionné et suivi. Les pages difficiles
@@ -94,6 +108,8 @@ accords, et contrat de pack conforme à `COUNTRY_PACKS.md`.
 
 Une API métier versionnée alimente l'application web, les agents SH, juridique et
 opérations, WhatsApp, les ERP/TMS, les SDK, MCP, webhooks et futurs partenaires.
+L'application web est un consommateur de l'API au même titre que les autres
+canaux ; elle ne devient prioritaire qu'après stabilisation des contrats métier.
 
 Critères d'acceptation : contrat OpenAPI `/v1`, authentification et scopes,
 idempotence, mêmes résultats canoniques sur chaque canal, aucune lecture directe
@@ -124,7 +140,7 @@ conservent les citations, versions et statuts d'incertitude.
 | REQ-06 | 11, 13–14 | todo | citations exactes et tests anti-invention |
 | REQ-07 | 10, 12 | todo | nouvelle version, impact et retour arrière |
 | REQ-08 | 15 | todo | tests du noyau et du pack `MA` |
-| REQ-09 | 13, 16–19 | todo | OpenAPI et tests identiques par canal |
+| REQ-09 | 13, 16–20 | todo | OpenAPI avant pages, tests identiques par canal |
 | REQ-10 | 13–14 et génération documentaire | todo | parcours Maroc et livrables sourcés |
 
 ## Règle de suivi

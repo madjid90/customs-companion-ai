@@ -132,6 +132,15 @@ Les colonnes `official_reference`, `publication_date`, `effective_from` et
 `source_url` ne sont pas encore alimentées pour le corpus importé. Des candidats
 existent dans `metadata`, mais ils ne constituent pas des faits canoniques.
 
+## Position produit et interfaces
+
+Les pages actuelles restent utiles pour consulter, administrer et tester le
+corpus, mais elles ne représentent pas le produit final. Le produit à terminer en
+priorité est le cerveau douanier : data fiable, faits canoniques, contexte,
+relations, règles temporelles et API métier. La refonte des pages métier doit
+attendre que les contrats `/v1` soient stabilisés, sauf écrans nécessaires à la
+qualité de l'ingestion et à la revue des preuves.
+
 ## Conclusion opérationnelle
 
 La provenance, le stockage immuable et la déduplication sont solides. La base est
@@ -139,4 +148,5 @@ consultable et utile pour retrouver des preuves. Elle n'est pas encore autorisé
 à produire seule une décision juridique, un classement SH définitif ou un calcul
 de droits. Les principaux risques sont l'OCR incomplet, les tableaux tarifaires,
 la hiérarchie juridique, la temporalité et l'absence de mesures sur une vérité
-terrain.
+terrain. Le prochain développement reste donc centré sur la data et le cerveau,
+pas sur la refonte des pages finales.

@@ -5,6 +5,10 @@ decision system. It is manual-first: official documents are deposited by an
 administrator, reviewed, and published. RSS can later provide change notices; no
 scraper or external connector is required for the first Morocco release.
 
+This document is historical. The authoritative architecture is now under
+`docs/architecture/`. The product center is the customs brain and its API; web
+pages, chat, agents and integrations are consumers built on top of that API.
+
 ## Domain boundaries
 
 1. **Sources and ingestion** preserve the original file, its SHA-256, every
@@ -61,7 +65,8 @@ batches:
 
 ## Next implementation slice
 
-The next slice is the manual corpus workbench: source registration, file deposit,
-ingestion status, issue queue, side-by-side source/extraction review, and expert
-approval. After that, the current chat and classification functions will read
-only published versions and measures.
+The next slice is the corpus workbench and durable ingestion pipeline: source
+registration, file deposit, ingestion status, issue queue, side-by-side
+source/extraction review, and approval gates. After that, the brain API reads only
+published versions and measures. The chat, agents and final pages consume that API
+instead of querying corpus tables or implementing customs logic directly.

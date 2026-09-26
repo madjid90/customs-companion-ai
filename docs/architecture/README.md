@@ -24,9 +24,15 @@ Construire un cerveau douanier versionné et sourcé qui répond à la question 
 > taxes, autorisations, règles et pièces sont applicables, et quelles preuves
 > officielles les justifient ?
 
-Les interfaces consomment le cerveau au moyen d'une API métier. Le chat et les
-agents ne lisent pas directement les PDF et ne décident pas seuls du droit
-applicable.
+Le produit central est le cerveau douanier. Les pages web, le chat, WhatsApp,
+les agents, les ERP/TMS et les futurs connecteurs sont des consommateurs. Ils
+interrogent l'API métier, affichent ou orchestrent ses réponses et ne portent pas
+les règles douanières.
+
+Les pages web sont donc construites en dernier, après la fiabilisation de la data,
+du graphe de contexte, du moteur de décision et des contrats API. Avant cette
+étape, seules les pages nécessaires à l'administration du corpus et au contrôle
+qualité sont prioritaires.
 
 La cible validée est un monolithe modulaire : noyau commun, packs réglementaires
 par juridiction, workers durables, API unique et adaptateurs de canaux. Le Maroc
@@ -37,10 +43,13 @@ flowchart LR
   S[Sources officielles et Drive] --> I[Plateforme d'ingestion]
   I --> B[Cerveau douanier canonique]
   B --> A[API métier]
+  A --> W[Pages web]
   A --> C[Chat]
   A --> G[Agents]
   A --> D[Documents]
   A --> O[Dossiers]
+  A --> WA[WhatsApp]
+  A --> ERP[ERP / TMS]
 ```
 
 ## Règle de priorité documentaire
