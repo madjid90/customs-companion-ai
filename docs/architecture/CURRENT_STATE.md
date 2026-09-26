@@ -1,6 +1,6 @@
 # État réel du système
 
-Dernière mesure : 25 septembre 2026. Projet Supabase :
+Dernière mesure : 26 septembre 2026. Projet Supabase :
 `raygpbajipeyzxfxpbku`. Branche : `codex/regulatory-ingestion-foundation`.
 
 ## Corpus et provenance
@@ -125,6 +125,26 @@ Dernière mesure : 25 septembre 2026. Projet Supabase :
 - La sortie v2 reste exclusivement candidate. Elle ne peut pas alimenter les
   faits SH ou taux canoniques avant les contrôles de ligne, de hiérarchie, de
   cellule et le benchmark de référence.
+
+
+## Extraction juridique hiérarchique
+
+- `legal-structure-extractor-v1` est implémenté en mode candidat uniquement. Il
+  détecte livres, titres, chapitres, sections, articles, paragraphes et annexes à
+  partir du texte canonique des pages.
+- Le modèle probant sépare `legal_extraction_runs`,
+  `legal_provision_candidates` et `legal_relationship_candidates` des tables
+  canoniques `legal_instruments`, `legal_versions`, `legal_provisions` et
+  `legal_relationships`.
+- Le worker `scripts/run-legal-worker.mjs` consomme les tâches `extract_legal`,
+  calcule une signature d'entrée, écrit les candidats de façon idempotente et
+  termine les jobs avec métriques.
+- Les relations candidates distinguent notamment mention, modification,
+  abrogation, remplacement, complément et application, avec texte de preuve,
+  référence normalisée, date candidate et empreinte SHA-256.
+- Aucun candidat juridique n'est publié automatiquement. Il reste à exécuter les
+  tâches corpus, mesurer articles/alinéas/relations sur un jeu de référence et
+  construire la promotion contrôlée vers les faits canoniques.
 
 ## Métadonnées canoniques manquantes
 

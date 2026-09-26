@@ -135,6 +135,12 @@ déterministe. Les coordonnées restent absentes tant que la géométrie de page
 pas été produite ; ces résultats ne peuvent donc pas être publiés comme faits
 canoniques sans benchmark.
 
+Le worker juridique courant est `scripts/run-legal-worker.mjs`. Il consomme les
+tâches `extract_legal` avec un accès serveur, lit toutes les pages canoniques d'un
+document, extrait les candidats hiérarchiques et les relations juridiques, puis
+les écrit dans des tables candidates séparées. Il ne publie jamais directement
+dans `legal_provisions` ni `legal_relationships`.
+
 Création d'un jeton worker court :
 
 ```bash
@@ -145,6 +151,12 @@ Exécution du worker tarifaire :
 
 ```bash
 npm run worker:tariff
+```
+
+Exécution du worker juridique :
+
+```bash
+npm run worker:legal
 ```
 
 Une campagne corpus complète s'exécute uniquement sur un worker durable et

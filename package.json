@@ -14,7 +14,8 @@
     "worker:token": "node scripts/create-worker-token.mjs",
     "report:tariff-extraction": "node scripts/report-tariff-extraction.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "worker:legal": "node scripts/run-legal-worker.mjs --loop"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
