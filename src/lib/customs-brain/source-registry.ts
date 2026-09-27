@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const jurisdictionScopeSchema = z.enum(["country", "region", "international"]);
+export const jurisdictionScopeSchema = z.enum(["national", "regional", "international", "private", "country"]);
 export const packStatusSchema = z.enum(["draft", "active", "deprecated", "archived"]);
 export const sourcePrioritySchema = z.enum(["P0", "P1", "P2", "P3"]);
 export const sourceAutomationStatusSchema = z.enum([
@@ -84,12 +84,13 @@ export const sourceCatalogSchema = z.object({
 
 export const sourceConnectorPlanSchema = z.object({
   connectorCode: z.string().trim().min(2),
-  connectorType: z.enum(["document_fetcher", "browser_snapshot", "web_crawler", "manual_upload", "licensed_manual"]),
+  connectorType: z.enum(["direct_pdf_fetcher", "pdf_link_extractor", "portal_index_monitor", "html_crawler", "manual_upload", "blocked"]),
   pipelineComponent: z.enum([
-    "document_ingestion_worker",
-    "source_discovery_worker",
-    "manual_upload_worker",
-    "manual_license_gate",
+    "document-ingestion-worker",
+    "legal-structure-extractor",
+    "obligation-extractor",
+    "tariff-extractor",
+    "manual-upload-worker",
   ]),
   schedulePolicy: z.enum(["manual", "manual_until_validated", "event_driven", "daily", "weekly", "monthly", "annual"]),
   status: connectorStatusSchema,
@@ -176,21 +177,33 @@ export function buildSourceConnectorPlan(source: SourceCatalogEntry): SourceConn
   if (source.ingestionStrategy === "blocked_pending_access" || source.automationStatus === "license_required") {
     return sourceConnectorPlanSchema.parse({
       connectorCode: `${source.sourceCode.toLowerCase()}_connector`,
-      connectorType: "licensed_manual",
-      pipelineComponent: "manual_license_gate",
+      connectorType: "blocked",
+      pipelineComponent: "document-ingestion-worker",
       schedulePolicy: "manual",
       status: "blocked",
       requiresReviewBeforeActivation: true,
     });
   }
 
-  const directDocument = source.accessMethod === "direct_pdf" || source.accessMethod === "pdf_index";
-  const portal = source.accessMethod === "portal";
+  const connectorType = source.accessMethod === "direct_pdf"
+    ? "direct_pdf_fetcher"
+    : source.accessMethod === "pdf_index"
+      ? "pdf_link_extractor"
+      : source.accessMethod === "portal"
+        ? "portal_index_monitor"
+        : "html_crawler";
+  const pipelineComponent = source.sourceFamily === "tariff"
+    ? "tariff-extractor"
+    : ["legal", "circular"].includes(source.sourceFamily)
+      ? "legal-structure-extractor"
+      : source.ingestionStrategy === "download_and_extract"
+        ? "obligation-extractor"
+        : "obligation-extractor";
   return sourceConnectorPlanSchema.parse({
     connectorCode: `${source.sourceCode.toLowerCase()}_connector`,
-    connectorType: directDocument ? "document_fetcher" : portal ? "browser_snapshot" : "web_crawler",
-    pipelineComponent: source.ingestionStrategy === "download_and_extract" ? "document_ingestion_worker" : "source_discovery_worker",
-    schedulePolicy: source.updateFrequency === "annual" ? "annual" : "manual_until_validated",
+    connectorType,
+    pipelineComponent,
+    schedulePolicy: source.updateFrequency === "annual" ? "manual" : "manual",
     status: "draft",
     requiresReviewBeforeActivation: true,
   });

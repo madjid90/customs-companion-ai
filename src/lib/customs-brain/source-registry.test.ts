@@ -12,7 +12,7 @@ const pack: JurisdictionPack = {
   jurisdictionCode: "MA",
   packCode: "ma_v1",
   displayName: "Maroc V1",
-  scope: "country",
+  scope: "national",
   status: "draft",
   versionLabel: "v1",
   coverageNotes: null,
@@ -64,9 +64,9 @@ describe("source registry", () => {
   it("plans a portal source as a browser snapshot connector until validation", () => {
     expect(buildSourceConnectorPlan(adiiTariff)).toMatchObject({
       connectorCode: "adii_tarif_connector",
-      connectorType: "browser_snapshot",
-      pipelineComponent: "source_discovery_worker",
-      schedulePolicy: "manual_until_validated",
+      connectorType: "portal_index_monitor",
+      pipelineComponent: "tariff-extractor",
+      schedulePolicy: "manual",
       status: "draft",
     });
     expect(sourceReadinessBlockers(adiiTariff)).toEqual(["connector_not_activated"]);
@@ -91,8 +91,8 @@ describe("source registry", () => {
     };
 
     expect(buildSourceConnectorPlan(wco)).toMatchObject({
-      connectorType: "licensed_manual",
-      pipelineComponent: "manual_license_gate",
+      connectorType: "blocked",
+      pipelineComponent: "document-ingestion-worker",
       status: "blocked",
     });
     expect(sourceReadinessBlockers(wco)).toEqual([

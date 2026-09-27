@@ -48,10 +48,10 @@ Dernière mesure : 27 septembre 2026. Projet Supabase :
 - La migration locale `supabase/migrations/20260927220000_jurisdiction_source_catalog.sql` définit le registre générique `jurisdiction_packs`, `authority_catalog`, `source_catalog` et `source_connector_configs`.
 - Le pack Maroc V1 y charge 1 juridiction, 12 autorités officielles, 17 sources dont 16 P0, et 17 connecteurs en brouillon ou bloqués selon le statut d'accès.
 - Ce registre sépare le noyau commun des règles pays : les sources, autorités, formats, priorités et stratégies d'ingestion sont des données configurables du pack.
-- Vérification distante du 27 septembre 2026 : les tables n'existent pas encore dans Supabase production `raygpbajipeyzxfxpbku`. Les requêtes de lecture MCP fonctionnent, mais les écritures DDL/DML ont été rejetées par le connecteur avant exécution avec `INVALID_ARGUMENT`.
-- Tant que la migration n'est pas appliquée, le chantier 1 reste `blocked` côté base distante, mais le code SQL versionné est prêt à appliquer via SQL Editor, CLI authentifiée ou connexion Postgres serveur.
+- Vérification distante du 27 septembre 2026 : les tables existent dans Supabase production `raygpbajipeyzxfxpbku` et contiennent 1 pack, 12 autorités, 17 sources, 16 sources P0 et 17 connecteurs.
+- Les connecteurs sont en `draft` pour les sources P0 automatisables et `blocked` pour WCO/OMD tant que la licence n'est pas clarifiée. Le chantier 1 est appliqué et vérifié.
 
-- La couche applicative `src/lib/customs-brain/source-registry.ts` valide un registre source sans logique Maroc en dur et génère un plan de connecteur (`document_fetcher`, `browser_snapshot`, `web_crawler`, `licensed_manual`) à partir des champs du catalogue.
+- La couche applicative `src/lib/customs-brain/source-registry.ts` valide un registre source sans logique Maroc en dur et génère un plan de connecteur (`direct_pdf_fetcher`, `pdf_link_extractor`, `portal_index_monitor`, `html_crawler`, `blocked`) à partir des champs du catalogue.
 - Les tests `source-registry.test.ts` couvrent un portail ADII, une autorité manquante et une source internationale WCO/OMD bloquée par licence.
 - Le pack `src/lib/customs-brain/country-packs/morocco-v1.ts` expose ces 12 autorités et 17 sources comme configuration testable ; il n'ajoute aucune branche métier Maroc dans le noyau.
 

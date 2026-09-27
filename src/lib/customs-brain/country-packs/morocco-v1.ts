@@ -5,7 +5,7 @@ export const moroccoV1SourceRegistry: SourceRegistry = {
     jurisdictionCode: "MA",
     packCode: "ma_v1",
     displayName: "Maroc V1",
-    scope: "country",
+    scope: "national",
     status: "draft",
     versionLabel: "v1",
     coverageNotes: "Pack Maroc initial : ADII, tarif, bases juridiques, circulaires, autorisations et contrôles P0 identifiés.",

@@ -12,13 +12,13 @@ describe("morocco V1 country pack", () => {
 
   it("derives connector plans from data, not country-specific code", () => {
     const plans = moroccoV1SourceRegistry.sources.map(buildSourceConnectorPlan);
-    expect(plans.filter((plan) => plan.connectorType === "browser_snapshot").map((plan) => plan.connectorCode)).toEqual([
+    expect(plans.filter((plan) => plan.connectorType === "portal_index_monitor").map((plan) => plan.connectorCode)).toEqual([
       "adii_tarif_connector",
       "anrt_equipment_approval_connector",
     ]);
-    expect(plans.filter((plan) => plan.connectorType === "document_fetcher").length).toBe(5);
+    expect(plans.filter((plan) => plan.connectorType === "direct_pdf_fetcher").length).toBe(4);
     expect(plans.find((plan) => plan.connectorCode === "wco_hs_international_connector")).toMatchObject({
-      connectorType: "licensed_manual",
+      connectorType: "blocked",
       status: "blocked",
     });
   });
