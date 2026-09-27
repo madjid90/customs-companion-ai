@@ -146,12 +146,20 @@ Dernière mesure : 27 septembre 2026. Projet Supabase :
 - La migration est appliquée sur Supabase et 1 047 tâches `extract_legal` ont été
   créées puis consommées par le processeur en ligne planifié
   `public.run_online_legal_extraction_batch`.
-- Les 1 047 jobs `extract_legal` sont terminés côté file, mais la qualité montre
-  que ce n'est qu'une première passe candidate : 18 runs sont `completed`, 351
-  sont `review_required` et 678 sont `rejected`.
-- La passe a produit 3 882 `legal_provision_candidates` : 1 376 paragraphes,
-  1 095 articles, 615 chapitres, 589 annexes, 173 sections, 33 titres et 1 livre.
-  Tous restent `validation_status=proposed` et `publication_status=candidate`.
+- Les 1 047 jobs `extract_legal` sont terminés côté file. La première passe
+  orientée articles avait produit 18 runs `completed`, 351 `review_required` et
+  678 `rejected`.
+- Une réparation candidate-only `postgres_circular_fallback_v1` a été appliquée
+  aux circulaires, accords et documents assimilés qui ne suivent pas toujours une
+  structure d'articles. Elle extrait des sections et paragraphes bornés par page,
+  mais ne publie aucun fait canonique.
+- Après cette réparation, l'état juridique candidat est : 18 runs `completed`,
+  903 `review_required` et 126 `rejected`. Les rejets restants sont surtout des
+  documents avec moins de trois candidats utiles ou sans contenu exploitable.
+- La base contient maintenant 9 584 `legal_provision_candidates`, dont 5 702
+  candidats fallback sur 614 runs. Les 1 095 articles initiaux restent séparés
+  des paragraphes/sections fallback. Tous restent `validation_status=proposed` et
+  `publication_status=candidate`.
 - La passe a produit 4 964 `legal_relationship_candidates` : 3 872 mentions,
   570 modifications, 455 applications, 26 compléments, 19 remplacements, 18
   abrogations et 4 suspensions. Ces relations restent candidates.

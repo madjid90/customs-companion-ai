@@ -15,7 +15,7 @@ inscrire sa preuve mesurée dans `CURRENT_STATE.md`.
 | 4 | OCR serveur multilingue | in_progress | 2 323 pages traitées et seuils OCR mesurés |
 | 5 | Blocs, géométrie et tableaux | in_progress | modèle probant tableau–ligne–cellule déployé ; produire la géométrie sur le corpus et la benchmarker |
 | 6 | Extracteur tarifaire SH v2 | in_progress | pipeline, worker et validation déterministe déployés ; exécuter les 783 tâches puis mesurer code–désignation–taux |
-| 7 | Extracteur juridique hiérarchique | in_progress | première passe candidate exécutée sur 1 047 documents ; analyser les rejets, benchmarker articles/alinéas/relations puis construire la promotion canonique |
+| 7 | Extracteur juridique hiérarchique | in_progress | première passe et fallback circulaires/accords exécutés ; 18 runs propres, 903 à revoir, 126 rejetés ; benchmarker puis construire la promotion canonique |
 | 8 | Métadonnées et sources canoniques | todo | références, dates, autorités et URL publiées |
 | 9 | Graphe réglementaire | in_progress | relations disposition–SH–mesure datées |
 | 10 | Compilateur temporel | todo | règle applicable calculée pour une date donnée |
@@ -52,11 +52,12 @@ candidats. Les parcours utilisateur finaux sont construits après les chantiers
 7. mesurer les candidats produits : faux positifs SH, code–désignation, taux,
    unités, pages rejetées et cas `review_required` ;
 8. constituer le benchmark tarifaire avant toute publication canonique ;
-9. analyser les 1 047 runs juridiques candidats : 18 propres, 351 en revue et 678 rejetés ;
-10. rapport de qualité juridique admin livré : résumé global et liste des runs par document sans exposition du texte candidat ;
-11. analyser les rejets à partir de ce rapport, corriger les règles d'extraction et définir les seuils de promotion ;
-12. définir puis implémenter la promotion contrôlée des candidats vers `legal_instruments`, `legal_versions`, `legal_provisions` et `legal_relationships` ;
-13. ne pas démarrer la refonte des pages métier ni l'API `/v1` complète tant que les faits canoniques, les règles de sécurité et les seuils qualité ne sont pas stabilisés, sauf écrans admin liés à la qualité data.
+9. rapport de qualité juridique admin livré : résumé global et liste des runs par document sans exposition du texte candidat ;
+10. fallback juridique candidat livré pour les circulaires/accords sans articles : 5 702 candidats ajoutés, 903 runs à revoir, 126 rejetés ;
+11. benchmarker les candidats articles, paragraphes, relations et références sur un jeu probant ;
+12. définir les seuils de promotion et les règles de rejet définitif ;
+13. définir puis implémenter la promotion contrôlée des candidats vers `legal_instruments`, `legal_versions`, `legal_provisions` et `legal_relationships` ;
+14. ne pas démarrer la refonte des pages métier ni l'API `/v1` complète tant que les faits canoniques, les règles de sécurité et les seuils qualité ne sont pas stabilisés, sauf écrans admin liés à la qualité data.
 
 Le pack Maroc couvre le SH national, le Code des douanes, le RDII, les
 circulaires, notes, accords applicables, droits, taxes, origine, autorisations,
