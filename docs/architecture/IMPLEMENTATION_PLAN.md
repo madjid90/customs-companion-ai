@@ -57,9 +57,10 @@ candidats. Les parcours utilisateur finaux sont construits après les chantiers
 11. benchmark admin livré : buckets de promotion potentielle, candidats fallback, relations fortes et documents sans signal ;
 12. staging de promotion livré : lot auditable de 15 runs prêt à revue, sans insertion canonique ;
 13. promotion contrôlée draft livrée : premier run promu en `review`, 1 779 provisions en `needs_review`, zéro publication ;
-14. définir les seuils de validation/rejet définitif et la promotion des relations juridiques candidates ;
-15. implémenter ensuite la publication contrôlée uniquement quand les provisions et relations sont validées ;
-16. ne pas démarrer la refonte des pages métier ni l'API `/v1` complète tant que les faits canoniques, les règles de sécurité et les seuils qualité ne sont pas stabilisés, sauf écrans admin liés à la qualité data.
+14. revue auditée des provisions livrée : validation/rejet par RPC admin, événements d'audit, résumé et bloqueurs de publication ;
+15. définir les seuils de validation/rejet définitif en masse et la promotion des relations juridiques candidates ;
+16. implémenter ensuite la publication contrôlée uniquement quand les provisions et relations sont validées ;
+17. ne pas démarrer la refonte des pages métier ni l'API `/v1` complète tant que les faits canoniques, les règles de sécurité et les seuils qualité ne sont pas stabilisés, sauf écrans admin liés à la qualité data.
 
 Le pack Maroc couvre le SH national, le Code des douanes, le RDII, les
 circulaires, notes, accords applicables, droits, taxes, origine, autorisations,

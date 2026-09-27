@@ -187,9 +187,13 @@ Dernière mesure : 27 septembre 2026. Projet Supabase :
 - La promotion contrôlée vers le brouillon canonique est disponible via
   `public.promote_legal_staging_batch_to_draft(batch_id, max_runs)`. Le premier
   test a promu un seul run en revue : 1 instrument brouillon, 1 version juridique
-  `review` et 1 779 provisions `needs_review`. Aucune version n'est `published`,
-  aucune provision n'est `validated`, et aucune relation ou mesure réglementaire
-  n'est publiée.
+  `review` et 1 779 provisions initialement `needs_review`.
+- La revue auditée des provisions est disponible via
+  `public.review_legal_provision(provision_id, status, note, reason)` et
+  `public.get_legal_version_review_summary(version_id)`. Un premier test a validé
+  1 provision avec trace d'audit ; 1 778 provisions restent `needs_review`. Aucune
+  version n'est `published`, et les bloqueurs `unvalidated_provisions` et
+  `source_document_not_published` empêchent toujours la publication.
 
 ## Métadonnées canoniques manquantes
 
