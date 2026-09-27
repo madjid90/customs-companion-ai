@@ -55,6 +55,13 @@ Dernière mesure : 27 septembre 2026. Projet Supabase :
 - Les tests `source-registry.test.ts` couvrent un portail ADII, une autorité manquante et une source internationale WCO/OMD bloquée par licence.
 - Le pack `src/lib/customs-brain/country-packs/morocco-v1.ts` expose ces 12 autorités et 17 sources comme configuration testable ; il n'ajoute aucune branche métier Maroc dans le noyau.
 
+## Quarantaine legacy et non-régression
+
+- Le legacy encore utilisé est documenté dans `docs/architecture/LEGACY_QUARANTINE.md`.
+- Les anciennes tables `country_tariffs`, `legal_chunks`, `controlled_products`, `tariff_notes`, `knowledge_documents`, `pdf_extractions` et `regulatory_sources` ne doivent plus être étendues comme source de vérité.
+- Le test `src/lib/customs-brain/legacy-boundaries.test.ts` bloque tout nouveau fichier qui référencerait ces tables sans être explicitement listé dans la quarantaine.
+- La quarantaine ne valide pas le legacy comme cible finale : elle fige le périmètre à remplacer, puis à supprimer, au fur et à mesure que les endpoints `/v1` du cerveau prennent le relais.
+
 ## Qualité d'extraction
 
 - 11 795 pages possèdent un texte natif d'au moins 80 caractères.
