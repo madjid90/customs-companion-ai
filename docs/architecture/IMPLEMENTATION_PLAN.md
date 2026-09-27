@@ -51,34 +51,36 @@ comme source de vérité.
 
 ## Prochaine tranche de développement
 
-1. finaliser et tester le worker d'extraction reprenable ;
-2. enrichir les 14 118 diagnostics avec géométrie et images PDF ;
-3. traiter les 2 323 tâches OCR déjà créées ;
-4. ~~comparer automatiquement texte natif, PDFium et OCR~~ — moteur et registre
+1. appliquer `supabase/migrations/20260927223000_source_discovery_runs.sql` pour auditer les découvertes source et rattacher `source_assets` au `source_catalog` ;
+2. brancher les adapters V1 sur Supabase : créer `source_discovery_runs`, inscrire les assets découverts, calculer SHA-256 et ne créer que des jobs candidats ;
+3. finaliser et tester le worker d'extraction reprenable ;
+4. enrichir les 14 118 diagnostics avec géométrie et images PDF ;
+5. traiter les 2 323 tâches OCR déjà créées ;
+6. ~~comparer automatiquement texte natif, PDFium et OCR~~ — moteur et registre
    de décisions déployés ; exécuter la comparaison sur les 2 323 pages ;
-5. produire le premier rapport de qualité page par page ;
-6. créer un jeton worker `extract_tariff`, lancer `npm run worker:tariff` sur les
+7. produire le premier rapport de qualité page par page ;
+8. créer un jeton worker `extract_tariff`, lancer `npm run worker:tariff` sur les
    783 pages tarifaires mises en file et produire les lignes/cellules candidates ;
-7. mesurer les candidats produits : faux positifs SH, code–désignation, taux,
+9. mesurer les candidats produits : faux positifs SH, code–désignation, taux,
    unités, pages rejetées et cas `review_required` ;
-8. constituer le benchmark tarifaire avant toute publication canonique ;
-9. rapport de qualité juridique admin livré : résumé global et liste des runs par document sans exposition du texte candidat ;
-10. fallback juridique candidat livré pour les circulaires/accords sans articles : 5 702 candidats ajoutés, 903 runs à revoir, 126 rejetés ;
-11. benchmark admin livré : buckets de promotion potentielle, candidats fallback, relations fortes et documents sans signal ;
-12. staging de promotion livré : lot auditable de 15 runs prêt à revue, sans insertion canonique ;
-13. promotion contrôlée draft livrée : premier run promu en `review`, 1 779 provisions en `needs_review`, zéro publication ;
-14. revue auditée des provisions livrée : validation/rejet par RPC admin, événements d'audit, résumé et bloqueurs de publication ;
-15. validation/rejet en masse par seuils livré : dry-run obligatoire possible, 837 provisions validées automatiquement sur le premier draft ;
-16. diagnostic `needs_review` livré : les 941 restantes ont été ventilées par type, longueur, parent et confiance ;
-17. revue hiérarchique livrée : 930 validations supplémentaires après dry-run, état final 1 768 `validated`, 11 `needs_review`, 0 `rejected`, 0 `published` ;
-18. corriger le parseur juridique sur les 11 anomalies restantes : fragments isolés, titres internes typés paragraphes et blocs fusionnés ;
-19. promotion draft des relations juridiques livrée : 111 candidates fortes dédupliquées en 10 relations `implements` proposées, avec instruments cibles brouillons et preuve liée ;
-20. enrichir les relations proposées : résolution officielle des cibles, dates d'effet, versions cibles et validation avant publication ;
-21. construire ensuite les liens SH–mesures–provisions à partir des faits SH validés ;
-22. implémenter ensuite la publication contrôlée uniquement quand les provisions et relations sont validées ;
-23. construire l'adaptateur WhatsApp obligatoire V1 dès que les contrats `/v1` du cerveau sont stables : demande, dossier, preuves, reprise web et audit ;
-24. refondre toutes les pages web, admin et utilisateur après stabilisation de l'API : aucune règle métier dans l'interface, aucune lecture directe des tables canoniques ;
-25. ne pas démarrer la refonte complète des pages métier avant les faits canoniques, les règles de sécurité et les seuils qualité, sauf écrans admin liés à la qualité data.
+10. constituer le benchmark tarifaire avant toute publication canonique ;
+11. rapport de qualité juridique admin livré : résumé global et liste des runs par document sans exposition du texte candidat ;
+12. fallback juridique candidat livré pour les circulaires/accords sans articles : 5 702 candidats ajoutés, 903 runs à revoir, 126 rejetés ;
+13. benchmark admin livré : buckets de promotion potentielle, candidats fallback, relations fortes et documents sans signal ;
+14. staging de promotion livré : lot auditable de 15 runs prêt à revue, sans insertion canonique ;
+15. promotion contrôlée draft livrée : premier run promu en `review`, 1 779 provisions en `needs_review`, zéro publication ;
+16. revue auditée des provisions livrée : validation/rejet par RPC admin, événements d'audit, résumé et bloqueurs de publication ;
+17. validation/rejet en masse par seuils livré : dry-run obligatoire possible, 837 provisions validées automatiquement sur le premier draft ;
+18. diagnostic `needs_review` livré : les 941 restantes ont été ventilées par type, longueur, parent et confiance ;
+19. revue hiérarchique livrée : 930 validations supplémentaires après dry-run, état final 1 768 `validated`, 11 `needs_review`, 0 `rejected`, 0 `published` ;
+20. corriger le parseur juridique sur les 11 anomalies restantes : fragments isolés, titres internes typés paragraphes et blocs fusionnés ;
+21. promotion draft des relations juridiques livrée : 111 candidates fortes dédupliquées en 10 relations `implements` proposées, avec instruments cibles brouillons et preuve liée ;
+22. enrichir les relations proposées : résolution officielle des cibles, dates d'effet, versions cibles et validation avant publication ;
+23. construire ensuite les liens SH–mesures–provisions à partir des faits SH validés ;
+24. implémenter ensuite la publication contrôlée uniquement quand les provisions et relations sont validées ;
+25. construire l'adaptateur WhatsApp obligatoire V1 dès que les contrats `/v1` du cerveau sont stables : demande, dossier, preuves, reprise web et audit ;
+26. refondre toutes les pages web, admin et utilisateur après stabilisation de l'API : aucune règle métier dans l'interface, aucune lecture directe des tables canoniques ;
+27. ne pas démarrer la refonte complète des pages métier avant les faits canoniques, les règles de sécurité et les seuils qualité, sauf écrans admin liés à la qualité data.
 
 Le pack Maroc couvre le SH national, le Code des douanes, le RDII, les
 circulaires, notes, accords applicables, droits, taxes, origine, autorisations,

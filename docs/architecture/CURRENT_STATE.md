@@ -55,6 +55,14 @@ Dernière mesure : 27 septembre 2026. Projet Supabase :
 - Les tests `source-registry.test.ts` couvrent un portail ADII, une autorité manquante et une source internationale WCO/OMD bloquée par licence.
 - Le pack `src/lib/customs-brain/country-packs/morocco-v1.ts` expose ces 12 autorités et 17 sources comme configuration testable ; il n'ajoute aucune branche métier Maroc dans le noyau.
 
+## Source adapters V1
+
+- La couche `src/lib/customs-brain/source-adapters.ts` transforme les entrées `source_catalog` et `source_connector_configs` en plans d'actions contrôlés.
+- Les adapters couvrent `direct_pdf_fetcher`, `pdf_link_extractor`, `portal_index_monitor`, `html_crawler`, `manual_upload` et `blocked`.
+- Pour le pack Maroc V1, 17 sources sont planifiées : 4 PDF directs, 1 index PDF, 2 portails nécessitant snapshot navigateur, 9 pages HTML et 1 source bloquée par licence.
+- Les actions de découverte produisent uniquement des assets, index ou notices bloquées ; elles n'écrivent aucun fait canonique SH, juridique ou réglementaire.
+- La migration locale `supabase/migrations/20260927223000_source_discovery_runs.sql` ajoute l'audit des découvertes et rattache `source_assets` au `source_catalog`. Elle doit être appliquée sur Supabase avant exécution réelle des découvertes.
+
 ## Quarantaine legacy et non-régression
 
 - Le legacy encore utilisé est documenté dans `docs/architecture/LEGACY_QUARANTINE.md`.
