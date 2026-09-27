@@ -89,6 +89,12 @@ flowchart TB
   API --> AG[Agents SH/Juridique/Ops]
 ```
 
+### Statut chantier 1 — registre générique et pack Maroc
+
+La migration `supabase/migrations/20260927220000_jurisdiction_source_catalog.sql` matérialise le registre attendu : pack juridictionnel, autorités, sources officielles et configurations de connecteurs. Elle charge le pack Maroc V1 avec 12 autorités et 17 sources, dont les sources P0 ADII, PortNet, MIC, ONSSA, AMMPS, Santé, ANRT et Office des Changes. WCO/OMD est présent comme source P1 bloquée tant que la licence n'est pas clarifiée.
+
+Le 27 septembre 2026, la lecture Supabase MCP confirme que les quatre tables ne sont pas encore créées en production. Les écritures DDL/DML via le connecteur ont été rejetées avant exécution avec `INVALID_ARGUMENT`. Le chantier est donc bloqué uniquement sur l'application distante. La conception, le fichier SQL versionné et la couche applicative `src/lib/customs-brain/source-registry.ts` sont prêts : validation du registre, génération du plan connecteur et blocages de readiness sans règle Maroc codée dans le noyau.
+
 ## Backlog V1 Maroc borné
 
 Un chantier est `done` uniquement si son critère de fin est mesuré dans
@@ -97,7 +103,7 @@ Un chantier est `done` uniquement si son critère de fin est mesuré dans
 | Ordre | Chantier V1 | État | Critère de fin mesurable |
 | ---: | --- | --- | --- |
 | 0 | Audit sources/obligations Maroc | done | `MOROCCO_SOURCE_OBLIGATION_AUDIT.md` créé et relié à la documentation |
-| 1 | Alignement modèle noyau + pack Maroc | todo | tables `jurisdiction_packs`, `authority_catalog`, `source_catalog`, `source_connector_configs` créées ; P0 Maroc chargé |
+| 1 | Alignement modèle noyau + pack Maroc | blocked | migration locale prête pour `jurisdiction_packs`, `authority_catalog`, `source_catalog`, `source_connector_configs` ; application Supabase distante bloquée par `INVALID_ARGUMENT` côté connecteur ; P0 Maroc prêt dans le seed |
 | 2 | Source adapters multi-format | todo | adapters ADII/MIC/ONSSA/PortNet/ANRT/AMMPS/Office Changes enregistrent assets, versions, statut accès et preuves |
 | 3 | Ingestion P0 Maroc | in_progress | toutes les sources P0 ont au moins une stratégie : auto, semi-auto validée, manuel versionné ou bloqué documenté |
 | 4 | OCR/layout/fusion production | in_progress | 100 % pages P0 ont état terminal ; pages faibles traitées ou quarantaine justifiée |

@@ -43,6 +43,17 @@ Dernière mesure : 27 septembre 2026. Projet Supabase :
 - Le worker compare maintenant texte natif, PDFium et OCR. Il conserve chaque
   sortie et n'écrase pas directement le texte canonique.
 
+## Registre sources et pack Maroc
+
+- La migration locale `supabase/migrations/20260927220000_jurisdiction_source_catalog.sql` définit le registre générique `jurisdiction_packs`, `authority_catalog`, `source_catalog` et `source_connector_configs`.
+- Le pack Maroc V1 y charge 1 juridiction, 12 autorités officielles, 17 sources dont 16 P0, et 17 connecteurs en brouillon ou bloqués selon le statut d'accès.
+- Ce registre sépare le noyau commun des règles pays : les sources, autorités, formats, priorités et stratégies d'ingestion sont des données configurables du pack.
+- Vérification distante du 27 septembre 2026 : les tables n'existent pas encore dans Supabase production `raygpbajipeyzxfxpbku`. Les requêtes de lecture MCP fonctionnent, mais les écritures DDL/DML ont été rejetées par le connecteur avant exécution avec `INVALID_ARGUMENT`.
+- Tant que la migration n'est pas appliquée, le chantier 1 reste `blocked` côté base distante, mais le code SQL versionné est prêt à appliquer via SQL Editor, CLI authentifiée ou connexion Postgres serveur.
+
+- La couche applicative `src/lib/customs-brain/source-registry.ts` valide un registre source sans logique Maroc en dur et génère un plan de connecteur (`document_fetcher`, `browser_snapshot`, `web_crawler`, `licensed_manual`) à partir des champs du catalogue.
+- Les tests `source-registry.test.ts` couvrent un portail ADII, une autorité manquante et une source internationale WCO/OMD bloquée par licence.
+
 ## Qualité d'extraction
 
 - 11 795 pages possèdent un texte natif d'au moins 80 caractères.
