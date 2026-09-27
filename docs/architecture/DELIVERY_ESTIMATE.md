@@ -56,3 +56,7 @@ cerveau sans logique douanière en dur. Cela ne signifie pas zéro erreur possib
 - infrastructure des workers OCR ;
 - volume du jeu de référence annoté.
 
+
+## Mise à jour après audit code/source
+
+Les estimations doivent maintenant être relues à travers `CODEBASE_AUDIT_AND_V1_BACKLOG.md`. La V1 ne se limite plus à ADII : elle inclut les sources P0 Maroc, WhatsApp obligatoire et refonte complète des pages après stabilisation de l’API `/v1`. Tout délai annoncé sans couverture P0, benchmarks et critères de fin mesurés reste indicatif.

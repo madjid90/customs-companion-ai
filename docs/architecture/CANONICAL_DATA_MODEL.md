@@ -15,6 +15,15 @@ Chaque fait et règle porte `jurisdiction_code`, `territory_scope`, `authority_i
 `publication_status`. Les règles héritées portent aussi `inherits_from_rule_id`,
 `overrides_rule_id` et `priority`.
 
+## Sources, autorités et packs
+
+`JurisdictionPack`, `Authority`, `SourceCatalogEntry` et `SourceConnectorConfig`
+font partie du modèle canonique V1. Ils décrivent le pays, l'organisme, la source,
+le format, la méthode d'accès, la fréquence de surveillance, le statut
+d'automatisation et le pipeline d'extraction applicable. Un fait métier ne doit
+pas seulement pointer vers un document ; il doit aussi pointer vers une source
+officielle cataloguée et une autorité compétente lorsque c'est applicable.
+
 ## Nomenclature et tarifs
 
 ```text
@@ -65,6 +74,14 @@ un document complet.
 un régime, un pays, une organisation compétente et une période. Ses types incluent
 droit, taxe, autorisation, contrôle, prohibition, document, origine, procédure,
 délai, exception et sanction.
+
+## Obligations, procédures et documents
+
+La V1 distingue les mesures réglementaires générales de leurs détails métier :
+autorisation, licence, contrôle technique, contrôle sanitaire, document requis,
+procédure, délai, canal, organisme responsable, sanction et exception. Ces objets
+restent génériques ; le pack Maroc fournit les autorités ADII, MIC, ONSSA, ANRT,
+AMMPS, Office des Changes, PortNet et autres sources.
 
 ## Règles métier
 

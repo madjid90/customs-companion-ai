@@ -18,7 +18,9 @@ Lire dans cet ordre :
 8. `docs/architecture/IMPLEMENTATION_PLAN.md`
 9. `docs/architecture/COUNTRY_PACKS.md`
 10. `docs/architecture/CHANNELS_AND_INTEGRATIONS.md`
-11. `docs/architecture/DELIVERY_ESTIMATE.md`
+11. `docs/architecture/MOROCCO_SOURCE_OBLIGATION_AUDIT.md`
+12. `docs/architecture/CODEBASE_AUDIT_AND_V1_BACKLOG.md`
+13. `docs/architecture/DELIVERY_ESTIMATE.md`
 
 Ces fichiers constituent la source de vérité du projet. Les anciens documents
 dans `docs/` restent utiles comme historique, mais ne priment pas sur
@@ -53,6 +55,8 @@ dans `docs/` restent utiles comme historique, mais ne priment pas sur
   affichent les résultats de l'API métier et ne portent aucune règle douanière.
 - Les agents spécialisés partagent le cerveau et ne conservent aucune copie
   autonome de la réglementation.
+- Étendre une table ou fonction legacy comme source de vérité est interdit pour la V1 ;
+  toute donnée métier doit être migrée ou normalisée vers le modèle canonique.
 
 ## Discipline de modification
 

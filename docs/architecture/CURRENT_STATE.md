@@ -246,6 +246,17 @@ relations, règles temporelles et API métier. La refonte des pages métier doit
 attendre que les contrats `/v1` soient stabilisés, sauf écrans nécessaires à la
 qualité de l'ingestion et à la revue des preuves.
 
+## Audit code et V1 Maroc
+
+Un audit code/documentation est maintenant disponible dans
+`CODEBASE_AUDIT_AND_V1_BACKLOG.md`. Il confirme deux couches dans le projet : un
+legacy métier utile mais à ne plus étendre comme source de vérité, et un modèle
+canonique récent à consolider. La V1 Maroc est désormais cadrée autour de 16
+chantiers bornés : source catalog, adapters multi-format, ingestion P0, SH/tarif
+canonique, juridique ADII, obligations MIC/ONSSA/ANRT/AMMPS/Office Changes,
+graphe contexte, compilateur temporel, API `/v1`, agents, WhatsApp obligatoire,
+refonte complète des pages et sécurité/observabilité.
+
 ## Conclusion opérationnelle
 
 La provenance, le stockage immuable, la déduplication et le déploiement cloud de

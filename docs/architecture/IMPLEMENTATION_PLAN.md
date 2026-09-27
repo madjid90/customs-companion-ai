@@ -40,6 +40,15 @@ le développement frontend se limite aux écrans nécessaires pour surveiller
 l'ingestion, contrôler la qualité, auditer les preuves et valider les candidats.
 Les parcours utilisateur finaux sont construits après les chantiers 13 à 17.
 
+## Périmètre V1 Maroc figé après audit
+
+La V1 Maroc est pilotée par `CODEBASE_AUDIT_AND_V1_BACKLOG.md`. Ce document est
+la référence pour les chantiers restants : noyau générique, pack Maroc, ingestion
+multi-source, sources P0, graphe contexte, API `/v1`, WhatsApp obligatoire et
+refonte complète web/admin/utilisateur. Les nouveaux développements doivent
+indiquer quel chantier V1 ils font avancer et ne doivent plus étendre le legacy
+comme source de vérité.
+
 ## Prochaine tranche de développement
 
 1. finaliser et tester le worker d'extraction reprenable ;

@@ -5,7 +5,8 @@ obligatoire avant toute modification du code et prime sur une description plus
 ancienne ou plus générale du produit.
 
 Une exigence n'est `done` que lorsque son critère d'acceptation est mesuré et que
-la preuve correspondante est inscrite dans `CURRENT_STATE.md`. La présence d'une
+la preuve correspondante est inscrite dans `CURRENT_STATE.md`. Le périmètre V1
+Maroc est borné par `CODEBASE_AUDIT_AND_V1_BACKLOG.md`. La présence d'une
 table, d'un écran ou d'un prototype ne suffit pas.
 
 ## Principe produit — cerveau d'abord, pages ensuite

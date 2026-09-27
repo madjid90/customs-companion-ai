@@ -13,6 +13,8 @@ flowchart TB
   end
   subgraph Acquisition
     DISC[Découverte]
+    SCAT[Source catalog]
+    ADAPT[Source adapters multi-format]
     REG[Registre des occurrences]
     VER[Versions et empreintes]
     RAW[Stockage immuable]
@@ -53,7 +55,7 @@ flowchart TB
     WA[WhatsApp]
     ERP[ERP / TMS]
   end
-  Sources --> DISC --> REG --> VER --> RAW --> PDF
+  Sources --> DISC --> SCAT --> ADAPT --> REG --> VER --> RAW --> PDF
   PDF --> TXT --> MERGE
   PDF --> OCR --> MERGE
   PDF --> VIS --> MERGE
@@ -92,15 +94,17 @@ flowchart TB
 ## Services cibles
 
 1. `source-discovery-worker`
-2. `document-ingestion-worker`
-3. `ocr-and-layout-worker`
-4. `tariff-extractor`
-5. `legal-structure-extractor`
-6. `context-graph-builder`
-7. `quality-evaluator`
-8. `publication-compiler`
-9. `customs-brain-api`
-10. `channel-adapters`
+2. `source-adapter-worker`
+3. `document-ingestion-worker`
+4. `ocr-and-layout-worker`
+5. `tariff-extractor`
+6. `legal-structure-extractor`
+7. `obligation-extractor`
+8. `context-graph-builder`
+9. `quality-evaluator`
+10. `publication-compiler`
+11. `customs-brain-api`
+12. `channel-adapters`
 
 Les workers communiquent par des tâches durables avec idempotence, tentatives,
 dead-letter queue et métriques. Vercel sert l'application et les API courtes ; les
@@ -115,3 +119,7 @@ cerveau. Les écrans web existants peuvent rester disponibles pour consultation 
 administration, mais toute nouvelle expérience utilisateur finale doit consommer
 les contrats `/v1` au lieu d'accéder directement aux tables ou de réimplémenter de
 la logique métier.
+
+## Impact de l’audit V1 Maroc
+
+Le source catalog et les adapters multi-format deviennent des couches obligatoires. Le pipeline ne traite plus uniquement des PDF : il doit accepter pages web, PDF juridiques, PDF tableaux, fichiers tabulaires, guides de procédure et sources manuelles versionnées. Les données Maroc restent dans le pack `MA`; le noyau conserve uniquement le modèle générique, les preuves, l’orchestration, la temporalité et les contrats.

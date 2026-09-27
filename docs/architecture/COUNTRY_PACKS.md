@@ -59,3 +59,15 @@ Chaque pack fournit un registre de sources, une taxonomie, des extracteurs, des
 mappings vers le noyau, ses règles de priorité, ses tests de référence, ses
 migrations et un rapport de couverture. Il possède une version indépendante.
 
+
+## Pack Maroc V1 après audit
+
+Le pack `MA` V1 doit charger au minimum les sources P0 définies dans
+`MOROCCO_SOURCE_OBLIGATION_AUDIT.md` : ADII, PortNet, MIC, ONSSA, AMMPS/Santé,
+ANRT, Office des Changes et couche internationale OMD/WCO selon droits
+d'utilisation. Chaque source est déclarée dans le source catalog avec stratégie
+d'accès : automatique, semi-automatique validée, manuel versionné ou bloqué.
+
+Le pack `MA` n'est pas du code métier dispersé : il contient sources, autorités,
+taxonomies, mappings, règles de priorité, tests de référence et données
+canoniques publiables.
