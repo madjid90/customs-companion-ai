@@ -104,7 +104,7 @@ Un chantier est `done` uniquement si son critère de fin est mesuré dans
 | ---: | --- | --- | --- |
 | 0 | Audit sources/obligations Maroc | done | `MOROCCO_SOURCE_OBLIGATION_AUDIT.md` créé et relié à la documentation |
 | 1 | Alignement modèle noyau + pack Maroc | done | tables `jurisdiction_packs`, `authority_catalog`, `source_catalog`, `source_connector_configs` créées ; 1 pack, 12 autorités, 17 sources, 16 P0 et 17 connecteurs vérifiés en production |
-| 2 | Source adapters multi-format | in_progress | plans adapters V1 livrés et testés pour 17 sources Maroc ; appliquer `20260927223000_source_discovery_runs.sql`, puis enregistrer assets, versions, statut accès et preuves en base |
+| 2 | Source adapters multi-format | in_progress | plans adapters V1 livrés/testés pour 17 sources Maroc ; audit `source_discovery_runs` appliqué ; prochain cran : enregistrer assets, versions, statut accès et preuves en base |
 | 3 | Ingestion P0 Maroc | in_progress | toutes les sources P0 ont au moins une stratégie : auto, semi-auto validée, manuel versionné ou bloqué documenté |
 | 4 | OCR/layout/fusion production | in_progress | 100 % pages P0 ont état terminal ; pages faibles traitées ou quarantaine justifiée |
 | 5 | SH/tarif canonique | in_progress | tarif P0 extrait en candidats ligne/cellule, benchmark code-libellé-unité-taux atteint, promotion canonique contrôlée |

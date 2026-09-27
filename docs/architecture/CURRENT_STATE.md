@@ -61,7 +61,7 @@ Dernière mesure : 27 septembre 2026. Projet Supabase :
 - Les adapters couvrent `direct_pdf_fetcher`, `pdf_link_extractor`, `portal_index_monitor`, `html_crawler`, `manual_upload` et `blocked`.
 - Pour le pack Maroc V1, 17 sources sont planifiées : 4 PDF directs, 1 index PDF, 2 portails nécessitant snapshot navigateur, 9 pages HTML et 1 source bloquée par licence.
 - Les actions de découverte produisent uniquement des assets, index ou notices bloquées ; elles n'écrivent aucun fait canonique SH, juridique ou réglementaire.
-- La migration locale `supabase/migrations/20260927223000_source_discovery_runs.sql` ajoute l'audit des découvertes et rattache `source_assets` au `source_catalog`. Elle doit être appliquée sur Supabase avant exécution réelle des découvertes.
+- La migration `supabase/migrations/20260927223000_source_discovery_runs.sql` est appliquée sur Supabase production. `source_discovery_runs` existe, `source_assets` est rattachable à `source_catalog` et `source_connector_configs`, la contrainte FK est présente, et la lecture est limitée aux admins via `private.is_platform_admin()`.
 
 ## Quarantaine legacy et non-régression
 

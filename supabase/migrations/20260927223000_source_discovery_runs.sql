@@ -32,9 +32,18 @@ create table if not exists public.source_discovery_runs (
   updated_at timestamptz not null default now()
 );
 
-alter table public.source_assets
-  add constraint source_assets_discovery_run_fk foreign key (discovery_run_id)
-  references public.source_discovery_runs(id) on delete set null;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'source_assets_discovery_run_fk'
+      and conrelid = 'public.source_assets'::regclass
+  ) then
+    alter table public.source_assets
+      add constraint source_assets_discovery_run_fk foreign key (discovery_run_id)
+      references public.source_discovery_runs(id) on delete set null;
+  end if;
+end $$;
 
 create index if not exists source_discovery_runs_source_idx on public.source_discovery_runs(source_catalog_id, status, created_at desc);
 create index if not exists source_discovery_runs_connector_idx on public.source_discovery_runs(source_connector_config_id, status, created_at desc)
@@ -47,7 +56,7 @@ grant select on public.source_discovery_runs to authenticated;
 
 drop policy if exists source_discovery_runs_admin_read on public.source_discovery_runs;
 create policy source_discovery_runs_admin_read on public.source_discovery_runs for select to authenticated
-using (public.is_admin());
+using ((select private.is_platform_admin()));
 
 comment on table public.source_discovery_runs is 'Audited discovery/import runs for source_catalog connectors. Runs store plan, counts and errors before assets become documents.';
 comment on column public.source_assets.source_catalog_id is 'Official source catalog entry that discovered or owns this asset occurrence.';
