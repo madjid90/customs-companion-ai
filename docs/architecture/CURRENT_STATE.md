@@ -178,6 +178,12 @@ Dernière mesure : 27 septembre 2026. Projet Supabase :
   sans signal exploitable. La mesure actuelle identifie 18 runs candidats à
   l'échantillonnage de promotion, 1 095 articles à confiance 90+, 5 107
   candidats fallback à confiance 70+ et 1 092 relations à confiance 75+.
+- Le staging de promotion canonique est déployé via `legal_promotion_batches`,
+  `legal_promotion_batch_runs`, `public.create_legal_promotion_sample_batch()` et
+  `public.get_legal_promotion_batch(batch_id)`. Un premier lot d'échantillon
+  contient 15 runs prêts à revue de promotion : 5 runs fondés sur articles et 10
+  runs de contexte circulaire, représentant 992 articles forts, 870 candidats
+  fallback et 827 relations. Les tables canoniques restent volontairement vides.
 
 ## Métadonnées canoniques manquantes
 
