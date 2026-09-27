@@ -195,10 +195,26 @@ Dernière mesure : 27 septembre 2026. Projet Supabase :
 - La validation en masse par seuils stricts est disponible via
   `public.apply_legal_provision_review_thresholds(version_id, ...)`. Sur la
   version du Code des douanes en revue, 837 validations automatiques ont été
-  appliquées après dry-run : 838 provisions sont maintenant `validated`, 941
-  restent `needs_review`, 0 est `rejected` et 0 version est `published`. Les
-  bloqueurs `unvalidated_provisions` et `source_document_not_published` empêchent
-  toujours la publication.
+  appliquées après dry-run. Cette première passe a montré que 941 provisions
+  restaient `needs_review`, principalement parce que la règle ne tenait pas
+  compte de la hiérarchie parent/enfant.
+- Un diagnostic admin dédié est disponible via
+  `public.get_legal_needs_review_diagnostics(version_id)`. Il ventile les
+  provisions restantes par type, longueur, confiance, parent validé et exemples
+  de preuve. Le diagnostic a montré que la majorité des 941 restantes étaient des
+  paragraphes fiables rattachés à un article déjà validé.
+- La revue hiérarchique est disponible via
+  `public.apply_hierarchy_aware_legal_review(version_id, ...)`. Après dry-run,
+  elle a validé 925 provisions supplémentaires : 745 paragraphes avec parent
+  validé, 176 noeuds de structure et 4 articles courts explicitement abrogés.
+  Une règle complémentaire a ensuite validé 5 paragraphes courts `abrogé`. L'état
+  mesuré du draft juridique est maintenant : 1 768 provisions `validated`, 11
+  `needs_review`, 0 `rejected` et 0 version `published`.
+- Les 11 provisions encore `needs_review` sont conservées volontairement : elles
+  correspondent à de vrais signaux faibles d'extraction, notamment des fragments
+  trop courts (`Toutefois,`), des titres internes mal typés (`– Electeurs`,
+  `Surveillance :`) et des blocs très longs probablement fusionnés. Elles doivent
+  alimenter l'amélioration du parseur juridique, pas être forcées en validation.
 
 ## Métadonnées canoniques manquantes
 

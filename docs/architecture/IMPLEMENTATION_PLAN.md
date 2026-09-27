@@ -15,7 +15,7 @@ inscrire sa preuve mesurée dans `CURRENT_STATE.md`.
 | 4 | OCR serveur multilingue | in_progress | 2 323 pages traitées et seuils OCR mesurés |
 | 5 | Blocs, géométrie et tableaux | in_progress | modèle probant tableau–ligne–cellule déployé ; produire la géométrie sur le corpus et la benchmarker |
 | 6 | Extracteur tarifaire SH v2 | in_progress | pipeline, worker et validation déterministe déployés ; exécuter les 783 tâches puis mesurer code–désignation–taux |
-| 7 | Extracteur juridique hiérarchique | in_progress | première passe et fallback circulaires/accords exécutés ; 18 runs propres, 903 à revoir, 126 rejetés ; benchmarker puis construire la promotion canonique |
+| 7 | Extracteur juridique hiérarchique | in_progress | promotion draft et revue hiérarchique exécutées ; 1 768/1 779 provisions validées, 11 anomalies restantes à traiter par le parseur |
 | 8 | Métadonnées et sources canoniques | todo | références, dates, autorités et URL publiées |
 | 9 | Graphe réglementaire | in_progress | relations disposition–SH–mesure datées |
 | 10 | Compilateur temporel | todo | règle applicable calculée pour une date donnée |
@@ -58,10 +58,13 @@ candidats. Les parcours utilisateur finaux sont construits après les chantiers
 12. staging de promotion livré : lot auditable de 15 runs prêt à revue, sans insertion canonique ;
 13. promotion contrôlée draft livrée : premier run promu en `review`, 1 779 provisions en `needs_review`, zéro publication ;
 14. revue auditée des provisions livrée : validation/rejet par RPC admin, événements d'audit, résumé et bloqueurs de publication ;
-15. validation/rejet en masse par seuils livré : dry-run obligatoire possible, 837 provisions validées automatiquement sur le premier draft, 941 restent à revoir ;
-16. promouvoir et auditer les relations juridiques candidates liées aux provisions validées ;
-17. implémenter ensuite la publication contrôlée uniquement quand les provisions et relations sont validées ;
-18. ne pas démarrer la refonte des pages métier ni l'API `/v1` complète tant que les faits canoniques, les règles de sécurité et les seuils qualité ne sont pas stabilisés, sauf écrans admin liés à la qualité data.
+15. validation/rejet en masse par seuils livré : dry-run obligatoire possible, 837 provisions validées automatiquement sur le premier draft ;
+16. diagnostic `needs_review` livré : les 941 restantes ont été ventilées par type, longueur, parent et confiance ;
+17. revue hiérarchique livrée : 930 validations supplémentaires après dry-run, état final 1 768 `validated`, 11 `needs_review`, 0 `rejected`, 0 `published` ;
+18. corriger le parseur juridique sur les 11 anomalies restantes : fragments isolés, titres internes typés paragraphes et blocs fusionnés ;
+19. promouvoir et auditer les relations juridiques candidates liées aux provisions validées ;
+20. implémenter ensuite la publication contrôlée uniquement quand les provisions et relations sont validées ;
+21. ne pas démarrer la refonte des pages métier ni l'API `/v1` complète tant que les faits canoniques, les règles de sécurité et les seuils qualité ne sont pas stabilisés, sauf écrans admin liés à la qualité data.
 
 Le pack Maroc couvre le SH national, le Code des douanes, le RDII, les
 circulaires, notes, accords applicables, droits, taxes, origine, autorisations,
