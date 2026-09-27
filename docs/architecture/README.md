@@ -12,6 +12,7 @@ Ce dossier est la source de vérité pour le développement de Douane AI.
 | `QUALITY_GATES.md` | Définition mesurable de la fiabilité et seuils de publication |
 | `IMPLEMENTATION_PLAN.md` | Chantiers, ordre d'exécution et critères de fin |
 | `COUNTRY_PACKS.md` | Noyau international et extensions par juridiction |
+| `MOROCCO_SOURCE_OBLIGATION_AUDIT.md` | Sources officielles, obligations métier et gaps du pack Maroc avant gel V1 |
 | `CHANNELS_AND_INTEGRATIONS.md` | API plug-and-play, agents, web, WhatsApp et ERP |
 | `DELIVERY_ESTIMATE.md` | Phases et estimation de livraison du pack Maroc |
 | `decisions/` | Décisions d'architecture difficiles à inverser |
