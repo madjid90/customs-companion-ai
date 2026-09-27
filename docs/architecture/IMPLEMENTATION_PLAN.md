@@ -17,7 +17,7 @@ inscrire sa preuve mesurée dans `CURRENT_STATE.md`.
 | 6 | Extracteur tarifaire SH v2 | in_progress | pipeline, worker et validation déterministe déployés ; exécuter les 783 tâches puis mesurer code–désignation–taux |
 | 7 | Extracteur juridique hiérarchique | in_progress | promotion draft et revue hiérarchique exécutées ; 1 768/1 779 provisions validées, 11 anomalies restantes à traiter par le parseur |
 | 8 | Métadonnées et sources canoniques | todo | références, dates, autorités et URL publiées |
-| 9 | Graphe réglementaire | in_progress | relations disposition–SH–mesure datées |
+| 9 | Graphe réglementaire | in_progress | 10 relations juridiques proposées depuis le Code des douanes ; construire ensuite les liens SH–mesures et les dates d'effet |
 | 10 | Compilateur temporel | todo | règle applicable calculée pour une date donnée |
 | 11 | Jeu de référence et CI qualité | todo | rapport automatique et seuils bloquants |
 | 12 | Surveillance et nouvelles versions | todo | découverte, diff, ingestion et impact automatiques |
@@ -62,9 +62,11 @@ candidats. Les parcours utilisateur finaux sont construits après les chantiers
 16. diagnostic `needs_review` livré : les 941 restantes ont été ventilées par type, longueur, parent et confiance ;
 17. revue hiérarchique livrée : 930 validations supplémentaires après dry-run, état final 1 768 `validated`, 11 `needs_review`, 0 `rejected`, 0 `published` ;
 18. corriger le parseur juridique sur les 11 anomalies restantes : fragments isolés, titres internes typés paragraphes et blocs fusionnés ;
-19. promouvoir et auditer les relations juridiques candidates liées aux provisions validées ;
-20. implémenter ensuite la publication contrôlée uniquement quand les provisions et relations sont validées ;
-21. ne pas démarrer la refonte des pages métier ni l'API `/v1` complète tant que les faits canoniques, les règles de sécurité et les seuils qualité ne sont pas stabilisés, sauf écrans admin liés à la qualité data.
+19. promotion draft des relations juridiques livrée : 111 candidates fortes dédupliquées en 10 relations `implements` proposées, avec instruments cibles brouillons et preuve liée ;
+20. enrichir les relations proposées : résolution officielle des cibles, dates d'effet, versions cibles et validation avant publication ;
+21. construire ensuite les liens SH–mesures–provisions à partir des faits SH validés ;
+22. implémenter ensuite la publication contrôlée uniquement quand les provisions et relations sont validées ;
+23. ne pas démarrer la refonte des pages métier ni l'API `/v1` complète tant que les faits canoniques, les règles de sécurité et les seuils qualité ne sont pas stabilisés, sauf écrans admin liés à la qualité data.
 
 Le pack Maroc couvre le SH national, le Code des douanes, le RDII, les
 circulaires, notes, accords applicables, droits, taxes, origine, autorisations,

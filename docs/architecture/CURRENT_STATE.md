@@ -215,6 +215,14 @@ Dernière mesure : 27 septembre 2026. Projet Supabase :
   trop courts (`Toutefois,`), des titres internes mal typés (`– Electeurs`,
   `Surveillance :`) et des blocs très longs probablement fusionnés. Elles doivent
   alimenter l'amélioration du parseur juridique, pas être forcées en validation.
+- La promotion contrôlée des relations juridiques est disponible via
+  `public.promote_legal_relationship_candidates_to_draft(version_id, ...)`. Sur
+  la version du Code des douanes en revue, 111 relations candidates fortes ont
+  été dédupliquées en 10 relations canoniques `proposed` de type `implements`,
+  avec preuve rattachée à une provision validée. Les cibles sont créées comme
+  instruments brouillons : 9 lois/dahirs et 1 décret. Aucune relation n'est
+  `validated` tant que les versions juridiques et leurs dates d'effet ne sont pas
+  publiées.
 
 ## Métadonnées canoniques manquantes
 
