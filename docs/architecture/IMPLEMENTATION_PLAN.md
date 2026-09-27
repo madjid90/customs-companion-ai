@@ -25,19 +25,20 @@ inscrire sa preuve mesurée dans `CURRENT_STATE.md`.
 | 14 | Agents métier sur l'API | todo | agents SH, juridique et opérations sans donnée inventée |
 | 15 | Noyau commun et pack Maroc | todo | aucune règle MA dans le noyau, résolution MA testée |
 | 16 | API plug-and-play et OpenAPI | todo | contrat `/v1` stable et SDK générables |
-| 17 | Adaptateur WhatsApp | todo | même dossier utilisable sur web et WhatsApp |
+| 17 | Adaptateur WhatsApp obligatoire V1 | todo | demande, suivi dossier, preuves et reprise web utilisables sur WhatsApp |
 | 18 | MCP et outils d'agents | todo | agents spécialisés limités aux outils autorisés |
 | 19 | Webhooks et intégrations ERP | todo | événements signés, repris et auditables |
-| 20 | Pages web métier finales | todo | pages branchées uniquement sur l'API `/v1` du cerveau |
+| 20 | Refonte complète pages web/admin/utilisateur | todo | toutes les pages finales branchées uniquement sur l'API `/v1` du cerveau |
 
 ## Règle d'ordre produit
 
 Les pages web ne sont pas le produit central. Elles sont des consommateurs finaux
-du cerveau, comme WhatsApp, ERP/TMS, MCP, SDK et agents. Jusqu'à la stabilisation
-de l'API `/v1`, le développement frontend se limite aux écrans nécessaires pour
-surveiller l'ingestion, contrôler la qualité, auditer les preuves et valider les
-candidats. Les parcours utilisateur finaux sont construits après les chantiers
-13 à 16.
+du cerveau, comme WhatsApp, ERP/TMS, MCP, SDK et agents. WhatsApp et la refonte
+complète web/admin/utilisateur sont obligatoires pour la V1 Maroc, mais ils sont
+construits après stabilisation du cerveau et de l'API `/v1`. Jusqu'à cette étape,
+le développement frontend se limite aux écrans nécessaires pour surveiller
+l'ingestion, contrôler la qualité, auditer les preuves et valider les candidats.
+Les parcours utilisateur finaux sont construits après les chantiers 13 à 17.
 
 ## Prochaine tranche de développement
 
@@ -66,7 +67,9 @@ candidats. Les parcours utilisateur finaux sont construits après les chantiers
 20. enrichir les relations proposées : résolution officielle des cibles, dates d'effet, versions cibles et validation avant publication ;
 21. construire ensuite les liens SH–mesures–provisions à partir des faits SH validés ;
 22. implémenter ensuite la publication contrôlée uniquement quand les provisions et relations sont validées ;
-23. ne pas démarrer la refonte des pages métier ni l'API `/v1` complète tant que les faits canoniques, les règles de sécurité et les seuils qualité ne sont pas stabilisés, sauf écrans admin liés à la qualité data.
+23. construire l'adaptateur WhatsApp obligatoire V1 dès que les contrats `/v1` du cerveau sont stables : demande, dossier, preuves, reprise web et audit ;
+24. refondre toutes les pages web, admin et utilisateur après stabilisation de l'API : aucune règle métier dans l'interface, aucune lecture directe des tables canoniques ;
+25. ne pas démarrer la refonte complète des pages métier avant les faits canoniques, les règles de sécurité et les seuils qualité, sauf écrans admin liés à la qualité data.
 
 Le pack Maroc couvre le SH national, le Code des douanes, le RDII, les
 circulaires, notes, accords applicables, droits, taxes, origine, autorisations,

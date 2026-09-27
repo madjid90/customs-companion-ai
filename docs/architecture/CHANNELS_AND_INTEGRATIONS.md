@@ -6,9 +6,12 @@ Statut : architecture validée.
 
 Le cerveau est headless. Une page web, WhatsApp, un ERP ou un agent utilise la
 même API et reçoit le même résultat canonique. L'adaptateur change la présentation,
-jamais la règle métier.
+jamais la règle métier. WhatsApp est obligatoire dans la V1 Maroc : il doit être
+conçu comme un canal principal pour poser une question, suivre un dossier et
+recevoir les preuves, pas comme une option marketing ajoutée plus tard.
 
-La page web n'est pas le produit ; elle est un canal consommateur. Elle arrive
+La page web n'est pas le produit ; elle est un canal consommateur. La refonte
+complète des pages web, admin et utilisateur est obligatoire, mais elle arrive
 dans l'ordre de construction après la data, le contexte, le moteur de décision,
 l'API `/v1` et les agents métier. Les pages créées avant cette étape servent
 uniquement à l'administration du corpus, au contrôle qualité et à la revue.
@@ -31,9 +34,11 @@ flowchart TB
 2. Brancher les agents métier SH, juridique et opérations pour valider les
    sorties du cerveau.
 3. Exposer les SDK, MCP, webhooks et intégrations serveur.
-4. Construire les pages web finales comme expérience utilisateur au-dessus de ces
-   mêmes contrats.
-5. Ajouter WhatsApp et ERP/TMS avec les mêmes statuts, preuves et dossiers.
+4. Construire l'adaptateur WhatsApp obligatoire sur les mêmes contrats : session,
+   dossier, preuves, reprise web et limites de sécurité.
+5. Construire les pages web finales, admin et utilisateur, comme expérience
+   complète au-dessus de ces mêmes contrats.
+6. Ajouter ensuite ERP/TMS et autres intégrations partenaires.
 
 ## Contrats obligatoires
 
@@ -66,6 +71,23 @@ agent possède mission, outils, scopes, budget, version, tests et journal d'audi
 Une conversation transporte `organization_id`, `user_id`, `channel`,
 `conversation_id`, `request_id`, `case_id`, langue et permissions. Un dossier
 commencé sur WhatsApp peut être repris sur le web sans perdre ses preuves.
+
+## WhatsApp obligatoire V1
+
+L'adaptateur WhatsApp doit permettre au minimum : création d'une demande,
+qualification produit/opération/origine, récupération d'un dossier existant,
+réponse sourcée courte, envoi d'une checklist, demande de complément, escalade
+vers revue humaine/admin quand le cerveau répond `ambiguous` ou `unknown`, et
+journal d'audit identique au web. WhatsApp ne porte aucune règle métier : il
+appelle l'API `/v1` et affiche les résultats du cerveau.
+
+## Refonte obligatoire des pages
+
+La V1 doit remplacer les pages génériques actuelles par des pages métier branchées
+sur l'API : recherche SH, parcours import/export, exploration juridique sourcée,
+dossier client, génération de checklist/note, revue qualité admin, ingestion/admin
+data, relations juridiques et réglementaires. Les pages admin et utilisateur ne
+lisent pas directement les tables canoniques et ne dupliquent pas les règles.
 
 ## Sécurité
 

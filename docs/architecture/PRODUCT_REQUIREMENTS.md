@@ -13,14 +13,17 @@ table, d'un écran ou d'un prototype ne suffit pas.
 Douane AI n'est pas défini par ses pages. Le produit est le cerveau douanier :
 corpus probant, faits canoniques, graphe de contexte, règles dans le temps et API
 métier. Les pages web, le chat, les agents, WhatsApp, ERP/TMS, MCP et SDK sont des
-consommateurs de cette API.
+consommateurs de cette API. Pour la V1 Maroc, WhatsApp est un canal obligatoire :
+il doit pouvoir créer ou reprendre une demande, interroger le même cerveau,
+recevoir les mêmes preuves et conserver le même dossier que le web.
 
 Aucune page métier ne doit contenir de règle douanière, de logique SH, de calcul
 de taux ou de relation juridique en dur. Une page peut seulement collecter le
 besoin utilisateur, appeler l'API du cerveau, afficher les preuves et aider à la
-revue. La refonte des pages arrive après les chantiers data, contexte, moteur de
-décision et contrat `/v1`, sauf pour les écrans d'administration indispensables à
-la qualité de l'ingestion.
+revue. La refonte complète des pages web, admin et utilisateur est obligatoire,
+mais elle arrive après les chantiers data, contexte, moteur de décision et contrat
+`/v1`, sauf pour les écrans d'administration indispensables à la qualité de
+l'ingestion.
 
 ## REQ-01 — Ingestion fiable et automatique
 
@@ -108,12 +111,15 @@ accords, et contrat de pack conforme à `COUNTRY_PACKS.md`.
 
 Une API métier versionnée alimente l'application web, les agents SH, juridique et
 opérations, WhatsApp, les ERP/TMS, les SDK, MCP, webhooks et futurs partenaires.
-L'application web est un consommateur de l'API au même titre que les autres
-canaux ; elle ne devient prioritaire qu'après stabilisation des contrats métier.
+WhatsApp fait partie du périmètre obligatoire de la V1 Maroc, pas d'une extension
+future. L'application web est un consommateur de l'API au même titre que les
+autres canaux ; elle ne devient prioritaire qu'après stabilisation des contrats
+métier.
 
 Critères d'acceptation : contrat OpenAPI `/v1`, authentification et scopes,
 idempotence, mêmes résultats canoniques sur chaque canal, aucune lecture directe
-des tables canoniques depuis un frontend ou un agent.
+des tables canoniques depuis un frontend ou un agent, session WhatsApp reliée à
+un `case_id` récupérable sur le web.
 
 ## REQ-10 — Fonctions métier finales
 
@@ -140,7 +146,7 @@ conservent les citations, versions et statuts d'incertitude.
 | REQ-06 | 11, 13–14 | todo | citations exactes et tests anti-invention |
 | REQ-07 | 10, 12 | todo | nouvelle version, impact et retour arrière |
 | REQ-08 | 15 | todo | tests du noyau et du pack `MA` |
-| REQ-09 | 13, 16–20 | todo | OpenAPI avant pages, tests identiques par canal |
+| REQ-09 | 13, 16–20 | todo | OpenAPI avant pages, WhatsApp V1 obligatoire, tests identiques par canal |
 | REQ-10 | 13–14 et génération documentaire | todo | parcours Maroc et livrables sourcés |
 
 ## Règle de suivi
