@@ -53,9 +53,10 @@ candidats. Les parcours utilisateur finaux sont construits après les chantiers
    unités, pages rejetées et cas `review_required` ;
 8. constituer le benchmark tarifaire avant toute publication canonique ;
 9. analyser les 1 047 runs juridiques candidats : 18 propres, 351 en revue et 678 rejetés ;
-10. construire le rapport de qualité juridique par document, type de disposition, référence et relation ;
-11. définir puis implémenter la promotion contrôlée des candidats vers `legal_instruments`, `legal_versions`, `legal_provisions` et `legal_relationships` ;
-12. ne pas démarrer la refonte des pages métier ni l'API `/v1` complète tant que les faits canoniques, les règles de sécurité et les seuils qualité ne sont pas stabilisés, sauf écrans admin liés à la qualité data.
+10. rapport de qualité juridique admin livré : résumé global et liste des runs par document sans exposition du texte candidat ;
+11. analyser les rejets à partir de ce rapport, corriger les règles d'extraction et définir les seuils de promotion ;
+12. définir puis implémenter la promotion contrôlée des candidats vers `legal_instruments`, `legal_versions`, `legal_provisions` et `legal_relationships` ;
+13. ne pas démarrer la refonte des pages métier ni l'API `/v1` complète tant que les faits canoniques, les règles de sécurité et les seuils qualité ne sont pas stabilisés, sauf écrans admin liés à la qualité data.
 
 Le pack Maroc couvre le SH national, le Code des douanes, le RDII, les
 circulaires, notes, accords applicables, droits, taxes, origine, autorisations,

@@ -158,6 +158,11 @@ Dernière mesure : 27 septembre 2026. Projet Supabase :
 - Aucun candidat juridique n'est publié automatiquement. Il reste à analyser les
   678 rejets, mesurer articles/alinéas/relations sur un jeu de référence et
   construire la promotion contrôlée vers les faits canoniques.
+- Un reporting qualité admin est disponible via
+  `public.get_legal_extraction_quality_summary()` et
+  `public.list_legal_extraction_quality_runs(status, limit)`. Il expose les
+  statuts, scores et volumes par document sans publier le texte candidat ni les
+  preuves juridiques brutes.
 
 ## Métadonnées canoniques manquantes
 
