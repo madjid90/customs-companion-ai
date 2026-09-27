@@ -15,7 +15,7 @@ inscrire sa preuve mesurée dans `CURRENT_STATE.md`.
 | 4 | OCR serveur multilingue | in_progress | 2 323 pages traitées et seuils OCR mesurés |
 | 5 | Blocs, géométrie et tableaux | in_progress | modèle probant tableau–ligne–cellule déployé ; produire la géométrie sur le corpus et la benchmarker |
 | 6 | Extracteur tarifaire SH v2 | in_progress | pipeline, worker et validation déterministe déployés ; exécuter les 783 tâches puis mesurer code–désignation–taux |
-| 7 | Extracteur juridique hiérarchique | in_progress | modèle candidat, extracteur et worker déployés ; exécuter les tâches puis benchmarker articles/alinéas |
+| 7 | Extracteur juridique hiérarchique | in_progress | première passe candidate exécutée sur 1 047 documents ; analyser les rejets, benchmarker articles/alinéas/relations puis construire la promotion canonique |
 | 8 | Métadonnées et sources canoniques | todo | références, dates, autorités et URL publiées |
 | 9 | Graphe réglementaire | in_progress | relations disposition–SH–mesure datées |
 | 10 | Compilateur temporel | todo | règle applicable calculée pour une date donnée |
@@ -52,10 +52,10 @@ candidats. Les parcours utilisateur finaux sont construits après les chantiers
 7. mesurer les candidats produits : faux positifs SH, code–désignation, taux,
    unités, pages rejetées et cas `review_required` ;
 8. constituer le benchmark tarifaire avant toute publication canonique ;
-9. exécuter les tâches `extract_legal` avec le worker juridique, puis mesurer articles, alinéas, références, dates et relations candidates ;
-10. utiliser le même corpus probant pour l'extracteur juridique ;
-11. ne pas démarrer la refonte des pages métier tant que les contrats du cerveau
-    ne sont pas stabilisés, sauf écrans admin liés à la qualité data.
+9. analyser les 1 047 runs juridiques candidats : 18 propres, 351 en revue et 678 rejetés ;
+10. construire le rapport de qualité juridique par document, type de disposition, référence et relation ;
+11. définir puis implémenter la promotion contrôlée des candidats vers `legal_instruments`, `legal_versions`, `legal_provisions` et `legal_relationships` ;
+12. ne pas démarrer la refonte des pages métier ni l'API `/v1` complète tant que les faits canoniques, les règles de sécurité et les seuils qualité ne sont pas stabilisés, sauf écrans admin liés à la qualité data.
 
 Le pack Maroc couvre le SH national, le Code des douanes, le RDII, les
 circulaires, notes, accords applicables, droits, taxes, origine, autorisations,

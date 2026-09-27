@@ -1,7 +1,7 @@
 # État réel du système
 
-Dernière mesure : 26 septembre 2026. Projet Supabase :
-`raygpbajipeyzxfxpbku`. Branche : `codex/regulatory-ingestion-foundation`.
+Dernière mesure : 27 septembre 2026. Projet Supabase :
+`raygpbajipeyzxfxpbku`. Branche principale déployée : `main`.
 
 ## Corpus et provenance
 
@@ -20,8 +20,8 @@ Dernière mesure : 26 septembre 2026. Projet Supabase :
 - 14 118 diagnostics textuels sont enregistrés et versionnés.
 - 11 795 pages sont orientées vers la couche texte native.
 - 2 323 pages sont orientées vers OCR.
-- 2 323 tâches OCR idempotentes ont été créées : 24 sont terminées et 2 299
-  restent à traiter après les lots de validation de la passerelle.
+- 2 323 tâches OCR idempotentes ont été créées : 24 sont terminées, 2 289
+  sont en file `queued` et 10 sont en `retry_wait`.
 - La file prend en charge verrouillage concurrent, heartbeat, reprises
   exponentielles, nombre maximal de tentatives et quarantaine.
 - Les diagnostics, tâches, sorties de moteurs et blocs sont privés et accessibles
@@ -107,8 +107,9 @@ Dernière mesure : 26 septembre 2026. Projet Supabase :
   confiance et empreinte SHA-256.
 - 783 pages canoniques des 97 documents tarifaires ou nomenclatures possèdent un
   texte exploitable et ont reçu une tâche `extract_tariff` idempotente. Ces
-  tâches ne sont pas encore exécutées : il reste à créer un jeton worker
-  `extract_tariff` et à lancer le worker tarifaire durable.
+  783 tâches sont en file `queued` et aucune exécution tarifaire n'a encore
+  produit de `tariff_extraction_runs` ni de `tariff_row_candidates`. Il reste à
+  créer un jeton worker `extract_tariff` et à lancer le worker tarifaire durable.
 - Le validateur déterministe v2 normalise les codes de 4, 6, 8 et 10 chiffres,
   conserve les zéros initiaux et rejette notamment les dates, références
   juridiques hors contexte tarifaire, longueurs invalides et chapitre 77 réservé.
@@ -143,11 +144,19 @@ Dernière mesure : 26 septembre 2026. Projet Supabase :
   abrogation, remplacement, complément et application, avec texte de preuve,
   référence normalisée, date candidate et empreinte SHA-256.
 - La migration est appliquée sur Supabase et 1 047 tâches `extract_legal` ont été
-  créées. Un processeur en ligne `public.run_online_legal_extraction_batch` est
-  planifié par `pg_cron` à 10 documents par minute pour produire des candidats
-  sans dépendre d'un terminal local.
-- Aucun candidat juridique n'est publié automatiquement. Il reste à mesurer
-  articles/alinéas/relations sur un jeu de référence, analyser les rejets et
+  créées puis consommées par le processeur en ligne planifié
+  `public.run_online_legal_extraction_batch`.
+- Les 1 047 jobs `extract_legal` sont terminés côté file, mais la qualité montre
+  que ce n'est qu'une première passe candidate : 18 runs sont `completed`, 351
+  sont `review_required` et 678 sont `rejected`.
+- La passe a produit 3 882 `legal_provision_candidates` : 1 376 paragraphes,
+  1 095 articles, 615 chapitres, 589 annexes, 173 sections, 33 titres et 1 livre.
+  Tous restent `validation_status=proposed` et `publication_status=candidate`.
+- La passe a produit 4 964 `legal_relationship_candidates` : 3 872 mentions,
+  570 modifications, 455 applications, 26 compléments, 19 remplacements, 18
+  abrogations et 4 suspensions. Ces relations restent candidates.
+- Aucun candidat juridique n'est publié automatiquement. Il reste à analyser les
+  678 rejets, mesurer articles/alinéas/relations sur un jeu de référence et
   construire la promotion contrôlée vers les faits canoniques.
 
 ## Métadonnées canoniques manquantes
@@ -156,7 +165,14 @@ Les colonnes `official_reference`, `publication_date`, `effective_from` et
 `source_url` ne sont pas encore alimentées pour le corpus importé. Des candidats
 existent dans `metadata`, mais ils ne constituent pas des faits canoniques.
 
-## Position produit et interfaces
+## Position produit, interfaces et déploiement
+
+Le projet est maintenant déployé sur Vercel et connecté à Supabase. Les routes SPA
+Vercel, la connexion admin, la demande d'accès, l'approbation utilisateur, les
+fonctions `submit-access-request`, `verify-otp` et `approve-access`, ainsi que les
+grants de rôle admin ont été corrigés et vérifiés. Cette étape valide le tuyau
+GitHub → Vercel → Supabase ; elle ne transforme pas les pages actuelles en produit
+final.
 
 Les pages actuelles restent utiles pour consulter, administrer et tester le
 corpus, mais elles ne représentent pas le produit final. Le produit à terminer en
@@ -167,10 +183,12 @@ qualité de l'ingestion et à la revue des preuves.
 
 ## Conclusion opérationnelle
 
-La provenance, le stockage immuable et la déduplication sont solides. La base est
-consultable et utile pour retrouver des preuves. Elle n'est pas encore autorisée
-à produire seule une décision juridique, un classement SH définitif ou un calcul
-de droits. Les principaux risques sont l'OCR incomplet, les tableaux tarifaires,
-la hiérarchie juridique, la temporalité et l'absence de mesures sur une vérité
-terrain. Le prochain développement reste donc centré sur la data et le cerveau,
-pas sur la refonte des pages finales.
+La provenance, le stockage immuable, la déduplication et le déploiement cloud de
+base sont solides. La base est consultable et utile pour retrouver des preuves.
+Elle n'est pas encore autorisée à produire seule une décision juridique, un
+classement SH définitif ou un calcul de droits. Les principaux risques sont l'OCR
+incomplet, les tableaux tarifaires non exécutés, la hiérarchie juridique candidate
+non promue, la temporalité et l'absence de mesures sur une vérité terrain. Le
+prochain développement reste donc centré sur la data, l'ingestion, les candidats,
+la promotion canonique et la sécurité, pas sur la refonte des pages finales ni sur
+l'API avant stabilisation des faits.
