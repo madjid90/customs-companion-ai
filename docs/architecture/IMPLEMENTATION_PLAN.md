@@ -54,8 +54,8 @@ candidats. Les parcours utilisateur finaux sont construits après les chantiers
 8. constituer le benchmark tarifaire avant toute publication canonique ;
 9. rapport de qualité juridique admin livré : résumé global et liste des runs par document sans exposition du texte candidat ;
 10. fallback juridique candidat livré pour les circulaires/accords sans articles : 5 702 candidats ajoutés, 903 runs à revoir, 126 rejetés ;
-11. benchmarker les candidats articles, paragraphes, relations et références sur un jeu probant ;
-12. définir les seuils de promotion et les règles de rejet définitif ;
+11. benchmark admin livré : buckets de promotion potentielle, candidats fallback, relations fortes et documents sans signal ;
+12. définir les seuils de promotion et les règles de rejet définitif à partir du benchmark ;
 13. définir puis implémenter la promotion contrôlée des candidats vers `legal_instruments`, `legal_versions`, `legal_provisions` et `legal_relationships` ;
 14. ne pas démarrer la refonte des pages métier ni l'API `/v1` complète tant que les faits canoniques, les règles de sécurité et les seuils qualité ne sont pas stabilisés, sauf écrans admin liés à la qualité data.
 

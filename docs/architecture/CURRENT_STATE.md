@@ -171,6 +171,13 @@ Dernière mesure : 27 septembre 2026. Projet Supabase :
   `public.list_legal_extraction_quality_runs(status, limit)`. Il expose les
   statuts, scores et volumes par document sans publier le texte candidat ni les
   preuves juridiques brutes.
+- Un benchmark admin est disponible via `public.get_legal_candidate_benchmark()`
+  et `public.list_legal_candidate_benchmark_runs(limit)`. Il classe les runs en
+  buckets de travail avant promotion canonique : articles forts, contexte
+  circulaire fallback, structure sans relation, faibles candidats et documents
+  sans signal exploitable. La mesure actuelle identifie 18 runs candidats à
+  l'échantillonnage de promotion, 1 095 articles à confiance 90+, 5 107
+  candidats fallback à confiance 70+ et 1 092 relations à confiance 75+.
 
 ## Métadonnées canoniques manquantes
 
