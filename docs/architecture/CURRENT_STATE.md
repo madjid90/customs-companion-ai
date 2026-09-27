@@ -53,6 +53,7 @@ Dernière mesure : 27 septembre 2026. Projet Supabase :
 
 - La couche applicative `src/lib/customs-brain/source-registry.ts` valide un registre source sans logique Maroc en dur et génère un plan de connecteur (`document_fetcher`, `browser_snapshot`, `web_crawler`, `licensed_manual`) à partir des champs du catalogue.
 - Les tests `source-registry.test.ts` couvrent un portail ADII, une autorité manquante et une source internationale WCO/OMD bloquée par licence.
+- Le pack `src/lib/customs-brain/country-packs/morocco-v1.ts` expose ces 12 autorités et 17 sources comme configuration testable ; il n'ajoute aucune branche métier Maroc dans le noyau.
 
 ## Qualité d'extraction
 
