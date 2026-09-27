@@ -183,7 +183,13 @@ Dernière mesure : 27 septembre 2026. Projet Supabase :
   `public.get_legal_promotion_batch(batch_id)`. Un premier lot d'échantillon
   contient 15 runs prêts à revue de promotion : 5 runs fondés sur articles et 10
   runs de contexte circulaire, représentant 992 articles forts, 870 candidats
-  fallback et 827 relations. Les tables canoniques restent volontairement vides.
+  fallback et 827 relations.
+- La promotion contrôlée vers le brouillon canonique est disponible via
+  `public.promote_legal_staging_batch_to_draft(batch_id, max_runs)`. Le premier
+  test a promu un seul run en revue : 1 instrument brouillon, 1 version juridique
+  `review` et 1 779 provisions `needs_review`. Aucune version n'est `published`,
+  aucune provision n'est `validated`, et aucune relation ou mesure réglementaire
+  n'est publiée.
 
 ## Métadonnées canoniques manquantes
 
