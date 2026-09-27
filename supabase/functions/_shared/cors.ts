@@ -12,6 +12,14 @@ const IS_PRODUCTION = (() => {
 const PRODUCTION_ORIGINS = [
   "https://customs-companion.vercel.app",
   "https://customs-companion.netlify.app",
+  "https://customs-companion-ai.vercel.app",
+  "https://customs-companion-ai-jurisai.vercel.app",
+  "https://customs-companion-g3vhe2rp6-jurisai.vercel.app",
+];
+
+const PRODUCTION_ORIGIN_PATTERNS = [
+  /^https:\/\/customs-companion-ai-[a-z0-9-]+\.vercel\.app$/,
+  /^https:\/\/customs-companion-[a-z0-9-]+-jurisai\.vercel\.app$/,
 ];
 
 // Development origins (only used in non-production)
@@ -25,9 +33,9 @@ const DEVELOPMENT_ORIGINS = [
 export function isOriginAllowed(origin: string | null): boolean {
   if (!origin) return false;
 
-  // Production: only explicitly listed domains
+  // Production: only explicitly listed project domains and Vercel preview URLs for this project
   if (IS_PRODUCTION) {
-    return PRODUCTION_ORIGINS.includes(origin);
+    return PRODUCTION_ORIGINS.includes(origin) || PRODUCTION_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
   }
 
   // Development: also allow localhost
