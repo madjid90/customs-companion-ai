@@ -5,25 +5,33 @@ export const packStatusSchema = z.enum(["draft", "active", "deprecated", "archiv
 export const sourcePrioritySchema = z.enum(["P0", "P1", "P2", "P3"]);
 export const sourceAutomationStatusSchema = z.enum([
   "manual",
+  "manual_versioned",
   "semi_automatic",
+  "automatic",
   "automatic_candidate",
   "license_required",
   "blocked",
+  "unknown",
 ]);
 export const sourceReuseStatusSchema = z.enum([
   "official",
+  "authorized",
   "license_required",
   "review_required",
+  "restricted",
   "blocked",
   "unknown",
 ]);
 export const sourceReliabilityLevelSchema = z.enum([
   "official",
+  "official_mirror",
   "partner",
   "manual_upload",
+  "secondary",
+  "internal",
   "unknown",
 ]);
-export const connectorStatusSchema = z.enum(["draft", "active", "paused", "blocked", "deprecated"]);
+export const connectorStatusSchema = z.enum(["draft", "active", "paused", "blocked", "deprecated", "retired"]);
 
 const nonEmptyCode = z.string().trim().min(2).regex(/^[A-Z0-9_]+$/, "Code normalisé attendu");
 const url = z.string().trim().url();
@@ -217,9 +225,10 @@ export function buildSourceConnectorPlan(source: SourceCatalogEntry): SourceConn
 export function sourceReadinessBlockers(source: SourceCatalogEntry, plan = buildSourceConnectorPlan(source)): string[] {
   const blockers: string[] = [];
   if (!source.active) blockers.push("inactive_source");
-  if (source.reuseStatus === "blocked") blockers.push("reuse_blocked");
+  if (["blocked", "restricted"].includes(source.reuseStatus)) blockers.push("reuse_blocked");
   if (source.reuseStatus === "license_required") blockers.push("license_required");
   if (source.automationStatus === "blocked") blockers.push("automation_blocked");
+  if (source.automationStatus === "unknown") blockers.push("automation_unknown");
   if (plan.status === "blocked") blockers.push("connector_blocked");
   if (plan.requiresReviewBeforeActivation && plan.status !== "active") blockers.push("connector_not_activated");
   if (source.priority === "P0" && source.formats.length === 0) blockers.push("missing_formats");
