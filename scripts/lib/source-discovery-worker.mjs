@@ -24,6 +24,8 @@ export function parseWorkerArgs(argv = process.argv.slice(2)) {
     connectorType: typeof args.get("--connector-type") === "string" ? String(args.get("--connector-type")) : null,
     limit: clampNumber(Number(args.get("--limit") || 10), 1, 100),
     maxBytes: clampNumber(Number(args.get("--max-bytes") || DEFAULT_MAX_BYTES), 1, 250 * 1024 * 1024),
+    materializeDocuments: args.has("--materialize-documents"),
+    storageBucket: typeof args.get("--storage-bucket") === "string" ? String(args.get("--storage-bucket")) : (process.env.SOURCE_DOCUMENT_BUCKET || "legal-source-pdfs"),
   };
 }
 
@@ -130,6 +132,7 @@ export async function downloadCandidate(target, options = {}) {
   const filename = filenameFromContentDisposition(response.headers.get("content-disposition")) || filenameFromUrl(url);
   const contentSha256 = sha256Hex(buffer);
   return {
+    bytes: Buffer.from(buffer),
     url,
     filename,
     mime_type: response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || mimeFromFilename(filename),
@@ -190,9 +193,63 @@ export function createAssetPayload(target, candidate, discoveryRunId) {
   };
 }
 
+
+export function storagePathForCandidate(target, candidate) {
+  const filename = cleanPathPart(candidate.filename.split("/").at(-1) || candidate.filename);
+  return `official/${target.source.source_code}/${candidate.content_sha256}/${filename}`;
+}
+
+export function createSourceDocumentInsert(target, candidate, storageBucket, storagePath) {
+  return {
+    source_catalog_id: target.source.id,
+    title: cleanPathPart(candidate.filename).replace(/\.[a-z0-9]+$/i, "") || target.source.name || target.source.source_code,
+    document_type: candidate.detected_document_type || "other",
+    source_url: candidate.url,
+    storage_bucket: storageBucket,
+    storage_path: storagePath,
+    mime_type: candidate.mime_type,
+    byte_size: candidate.byte_size ?? null,
+    sha256: candidate.content_sha256,
+    lifecycle_status: "draft",
+    metadata: {
+      source_code: target.source.source_code,
+      connector_code: target.connector?.connector_code ?? null,
+      connector_type: target.connector?.connector_type ?? null,
+      source_discovery_worker: "v1",
+      canonical_fact_write: false,
+    },
+  };
+}
+
+export async function materializeSourceDocument(db, target, candidate, asset, options = {}) {
+  if (!candidate?.bytes || !candidate.content_sha256) throw new Error("candidate_bytes_required");
+  const bucket = options.storageBucket || "legal-source-pdfs";
+  const storagePath = storagePathForCandidate(target, candidate);
+  const { data: existing, error: lookupError } = await db.from("source_documents")
+    .select("id,storage_path")
+    .eq("source_catalog_id", target.source.id)
+    .eq("sha256", candidate.content_sha256)
+    .maybeSingle();
+  if (lookupError) throw new Error(`source_document_lookup:${lookupError.message}`);
+  let documentId = existing?.id;
+  if (!documentId) {
+    const { error: uploadError } = await db.storage.from(bucket).upload(storagePath, candidate.bytes, { contentType: candidate.mime_type, upsert: false });
+    if (uploadError && !/already exists|duplicate/i.test(uploadError.message || "")) throw new Error(`source_document_upload:${uploadError.message}`);
+    const payload = createSourceDocumentInsert(target, candidate, bucket, storagePath);
+    const { data: created, error: insertError } = await db.from("source_documents").insert(payload).select("id").single();
+    if (insertError || !created?.id) throw new Error(`source_document_insert:${insertError?.message || "missing id"}`);
+    documentId = created.id;
+  }
+  if (asset?.external_id) {
+    const { error: assetError } = await db.from("source_assets").update({ source_document_id: documentId, discovery_status: "matched" }).eq("provider", asset.provider).eq("external_id", asset.external_id);
+    if (assetError) throw new Error(`source_asset_document_link:${assetError.message}`);
+  }
+  return { document_id: documentId, storage_bucket: bucket, storage_path: existing?.storage_path || storagePath };
+}
+
 export async function loadTargets(db, options = {}) {
   let query = db.from("source_catalog")
-    .select("id,source_code,name,source_family,official_url,access_method,automation_status,priority,update_frequency,data_domains,formats,reuse_status,reliability_level,ingestion_strategy,active,notes,authority_catalog(authority_code)")
+    .select("id,source_code,name,source_family,official_url,access_method,automation_status,priority,update_frequency,data_domains,formats,reuse_status,reliability_level,ingestion_strategy,active,notes,regulatory_source_id,authority_catalog(authority_code)")
     .eq("active", true)
     .order("priority", { ascending: true })
     .limit(options.limit || 10);
@@ -242,5 +299,9 @@ export async function processTarget(db, target, options = {}) {
   if (options.dryRun !== false) return { ...planned, status: "planned" };
   const candidate = isDownloadableConnector(target.connector.connector_type) ? await downloadCandidate(target, options) : null;
   const persisted = await persistDiscovery(db, target, decision.mode, candidate);
-  return { ...planned, status: "completed", run_id: persisted.run_id, asset_count: persisted.assets.length };
+  let document = null;
+  if (options.materializeDocuments && candidate) {
+    document = await materializeSourceDocument(db, target, candidate, persisted.assets[0], options);
+  }
+  return { ...planned, status: "completed", run_id: persisted.run_id, asset_count: persisted.assets.length, ...(document ? { document_id: document.document_id } : {}) };
 }

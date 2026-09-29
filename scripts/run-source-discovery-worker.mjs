@@ -14,6 +14,8 @@ Options:
   --connector-type TYPE     Limit to one connector type.
   --limit N                 Max sources to inspect, default 10.
   --max-bytes N             Max download size, default 52428800.
+  --materialize-documents   Upload file and create/link source_documents; requires latest migration.
+  --storage-bucket NAME     Storage bucket for materialized documents; default legal-source-pdfs.
 
 Required for non-help execution:
   SUPABASE_URL

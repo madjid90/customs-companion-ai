@@ -64,3 +64,30 @@ describe("source discovery worker core", () => {
     expect(result).toEqual({ source_code: "ADII_CIRCULAR_PDFS", connector_type: "direct_pdf_fetcher", mode: "download", dry_run: true, status: "planned" });
   });
 });
+
+import { createSourceDocumentInsert, storagePathForCandidate } from "./source-discovery-worker.mjs";
+
+describe("source document materialization payloads", () => {
+  it("builds V1 source_document rows from source catalog assets", () => {
+    const candidate = {
+      url: "https://example.gov.ma/5740.PDF",
+      filename: "5740.PDF",
+      mime_type: "application/pdf",
+      byte_size: 12,
+      content_sha256: "e".repeat(64),
+      detected_document_type: "circular",
+    };
+    const path = storagePathForCandidate(target, candidate);
+    expect(path).toBe(`official/ADII_CIRCULAR_PDFS/${"e".repeat(64)}/5740.PDF`);
+    expect(createSourceDocumentInsert(target, candidate, "legal-source-pdfs", path)).toMatchObject({
+      source_catalog_id: target.source.id,
+      title: "5740",
+      document_type: "circular",
+      storage_bucket: "legal-source-pdfs",
+      storage_path: path,
+      sha256: "e".repeat(64),
+      lifecycle_status: "draft",
+      metadata: { canonical_fact_write: false },
+    });
+  });
+});
