@@ -6,15 +6,15 @@ import { createDiscoveryRunInsert, createSourceAssetUpsert, inferRunMode, summar
 const context = {
   sourceCatalogId: "11111111-1111-4111-8111-111111111111",
   sourceConnectorConfigId: "22222222-2222-4222-8222-222222222222",
-  sourceCode: "ADII_CIRCULAR_PDFS",
-  connectorCode: "adii_circular_pdfs_connector",
+  sourceCode: "ANRT_DECISION_16_24",
+  connectorCode: "anrt_decision_16_24_connector",
   connectorType: "direct_pdf_fetcher",
-  pipelineComponent: "legal-structure-extractor",
+  pipelineComponent: "obligation-extractor",
 };
 
 describe("source discovery persistence", () => {
   it("creates a planned discovery run that never writes canonical facts", () => {
-    const source = moroccoV1SourceRegistry.sources.find((item) => item.sourceCode === "ADII_CIRCULAR_PDFS")!;
+    const source = moroccoV1SourceRegistry.sources.find((item) => item.sourceCode === "ANRT_DECISION_16_24")!;
     const plan = buildSourceAdapterPlan(source);
     const run = createDiscoveryRunInsert(context, plan);
 
@@ -23,7 +23,7 @@ describe("source discovery persistence", () => {
       source_catalog_id: context.sourceCatalogId,
       source_connector_config_id: context.sourceConnectorConfigId,
       connector_type: "direct_pdf_fetcher",
-      pipeline_component: "legal-structure-extractor",
+      pipeline_component: "obligation-extractor",
       run_mode: "download",
       status: "planned",
       blocked_reason: null,
@@ -32,22 +32,22 @@ describe("source discovery persistence", () => {
   });
 
   it("builds idempotent source asset payloads for official web files", () => {
-    const source = moroccoV1SourceRegistry.sources.find((item) => item.sourceCode === "ADII_CIRCULAR_PDFS")!;
+    const source = moroccoV1SourceRegistry.sources.find((item) => item.sourceCode === "ANRT_DECISION_16_24")!;
     const plan = buildSourceAdapterPlan(source);
     const asset = createSourceAssetUpsert(context, plan, {
-      url: "https://www.douane.gov.ma/adil/PDF/5740.PDF",
-      filename: "5740.PDF",
+      url: "https://www.anrt.ma/sites/default/files/2025-04/Decision-Agrement-16-24-Ver-exploitable-FR.pdf",
+      filename: "Decision-Agrement-16-24-Ver-exploitable-FR.pdf",
       mimeType: "application/pdf",
       byteSize: 123456,
       contentSha256: "a".repeat(64),
       detectedDocumentType: "circular",
-      metadata: { title: "Circulaire 5740" },
+      metadata: { title: "Décision ANRT 16/24" },
     }, "33333333-3333-4333-8333-333333333333");
 
     expect(asset).toMatchObject({
       provider: "official_web",
-      external_id: `ADII_CIRCULAR_PDFS:${"a".repeat(64)}`,
-      relative_path: "ADII_CIRCULAR_PDFS/5740.PDF",
+      external_id: `ANRT_DECISION_16_24:${"a".repeat(64)}`,
+      relative_path: "ANRT_DECISION_16_24/Decision-Agrement-16-24-Ver-exploitable-FR.pdf",
       discovery_status: "queued",
       source_catalog_id: context.sourceCatalogId,
       source_connector_config_id: context.sourceConnectorConfigId,
@@ -92,12 +92,12 @@ describe("source discovery persistence", () => {
   });
 
   it("summarizes discovery persistence without claiming publication", () => {
-    const source = moroccoV1SourceRegistry.sources.find((item) => item.sourceCode === "ADII_CIRCULAR_PDFS")!;
+    const source = moroccoV1SourceRegistry.sources.find((item) => item.sourceCode === "ANRT_DECISION_16_24")!;
     const plan = buildSourceAdapterPlan(source);
     const run = createDiscoveryRunInsert(context, plan);
     const asset = createSourceAssetUpsert(context, plan, {
-      url: "https://www.douane.gov.ma/adil/PDF/5740.PDF",
-      filename: "5740.PDF",
+      url: "https://www.anrt.ma/sites/default/files/2025-04/Decision-Agrement-16-24-Ver-exploitable-FR.pdf",
+      filename: "Decision-Agrement-16-24-Ver-exploitable-FR.pdf",
       mimeType: "application/pdf",
       contentSha256: "b".repeat(64),
     });

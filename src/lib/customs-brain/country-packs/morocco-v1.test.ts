@@ -16,7 +16,8 @@ describe("morocco V1 country pack", () => {
       "adii_tarif_connector",
       "anrt_equipment_approval_connector",
     ]);
-    expect(plans.filter((plan) => plan.connectorType === "direct_pdf_fetcher").length).toBe(4);
+    expect(plans.filter((plan) => plan.connectorType === "direct_pdf_fetcher")).toHaveLength(3);
+    expect(plans.filter((plan) => plan.connectorType === "pdf_link_extractor")).toHaveLength(2);
     expect(plans.find((plan) => plan.connectorCode === "wco_hs_international_connector")).toMatchObject({
       connectorType: "blocked",
       status: "blocked",

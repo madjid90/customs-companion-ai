@@ -110,7 +110,9 @@ export async function downloadOfficialAssetCandidate(
         ? "technical_control"
         : plan.pipelineComponent === "legal-structure-extractor"
           ? "circular"
-          : "other",
+          : plan.pipelineComponent === "obligation-extractor"
+            ? "technical_control"
+            : "other",
     metadata: {
       content_type_header: response.headers.get("content-type"),
       content_length_header: lengthHeader,

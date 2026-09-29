@@ -12,8 +12,8 @@ describe("source adapters", () => {
   it("routes direct PDFs, PDF indexes, portals and HTML pages to distinct adapters", () => {
     const summary = summarizeAdapterPlans(buildSourceAdapterPlans(moroccoV1SourceRegistry.sources));
     expect(summary.byConnectorType).toMatchObject({
-      direct_pdf_fetcher: 4,
-      pdf_link_extractor: 1,
+      direct_pdf_fetcher: 3,
+      pdf_link_extractor: 2,
       portal_index_monitor: 2,
       html_crawler: 9,
       blocked: 1,

@@ -15,7 +15,7 @@ function response(body: string, headers: Record<string, string> = {}, status = 2
 
 describe("source discovery fetcher", () => {
   it("downloads a direct official PDF and computes a SHA-256 candidate", async () => {
-    const source = moroccoV1SourceRegistry.sources.find((item) => item.sourceCode === "ADII_CIRCULAR_PDFS")!;
+    const source = moroccoV1SourceRegistry.sources.find((item) => item.sourceCode === "ANRT_DECISION_16_24")!;
     const plan = buildSourceAdapterPlan(source);
     const body = "%PDF-1.7 official circular";
     const expectedHash = await sha256Hex(new TextEncoder().encode(body).buffer);
@@ -24,20 +24,20 @@ describe("source discovery fetcher", () => {
       fetchImpl: async () => response(body, {
         "content-type": "application/pdf",
         "content-length": String(body.length),
-        "content-disposition": "attachment; filename=5740.PDF",
+        "content-disposition": "attachment; filename=Decision-Agrement-16-24-Ver-exploitable-FR.pdf",
         "last-modified": "Mon, 28 Sep 2026 10:00:00 GMT",
         "etag": '"rev-1"',
       }),
     });
 
     expect(candidate).toMatchObject({
-      filename: "5740.PDF",
+      filename: "Decision-Agrement-16-24-Ver-exploitable-FR.pdf",
       mimeType: "application/pdf",
       byteSize: body.length,
       contentSha256: expectedHash,
       providerModifiedAt: "2026-09-28T10:00:00.000Z",
       providerRevision: "rev-1",
-      detectedDocumentType: "circular",
+      detectedDocumentType: "technical_control",
     });
     expect(candidate.metadata).toMatchObject({ canonical_fact_write: false });
   });
@@ -76,7 +76,7 @@ describe("source discovery fetcher", () => {
   });
 
   it("rejects oversized downloads before reading the body when content-length is known", async () => {
-    const source = moroccoV1SourceRegistry.sources.find((item) => item.sourceCode === "ADII_CIRCULAR_PDFS")!;
+    const source = moroccoV1SourceRegistry.sources.find((item) => item.sourceCode === "ANRT_DECISION_16_24")!;
     const plan = buildSourceAdapterPlan(source);
     await expect(downloadOfficialAssetCandidate(plan, {
       maxBytes: 10,
