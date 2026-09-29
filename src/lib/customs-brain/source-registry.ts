@@ -84,12 +84,13 @@ export const sourceCatalogSchema = z.object({
 
 export const sourceConnectorPlanSchema = z.object({
   connectorCode: z.string().trim().min(2),
-  connectorType: z.enum(["direct_pdf_fetcher", "pdf_link_extractor", "portal_index_monitor", "html_crawler", "manual_upload", "blocked"]),
+  connectorType: z.enum(["direct_pdf_fetcher", "pdf_link_extractor", "portal_index_monitor", "html_crawler", "spreadsheet_importer", "manual_upload", "blocked"]),
   pipelineComponent: z.enum([
     "document-ingestion-worker",
     "legal-structure-extractor",
     "obligation-extractor",
     "tariff-extractor",
+    "spreadsheet-parser",
     "manual-upload-worker",
   ]),
   schedulePolicy: z.enum(["manual", "manual_until_validated", "event_driven", "daily", "weekly", "monthly", "annual"]),
@@ -191,9 +192,13 @@ export function buildSourceConnectorPlan(source: SourceCatalogEntry): SourceConn
       ? "pdf_link_extractor"
       : source.accessMethod === "portal"
         ? "portal_index_monitor"
-        : "html_crawler";
-  const pipelineComponent = source.sourceFamily === "tariff"
-    ? "tariff-extractor"
+        : source.accessMethod === "spreadsheet"
+          ? "spreadsheet_importer"
+          : "html_crawler";
+  const pipelineComponent = source.accessMethod === "spreadsheet"
+    ? "spreadsheet-parser"
+    : source.sourceFamily === "tariff"
+      ? "tariff-extractor"
     : ["legal", "circular"].includes(source.sourceFamily)
       ? "legal-structure-extractor"
       : source.ingestionStrategy === "download_and_extract"

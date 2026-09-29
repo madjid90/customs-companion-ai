@@ -72,6 +72,28 @@ describe("source registry", () => {
     expect(sourceReadinessBlockers(adiiTariff)).toEqual(["connector_not_activated"]);
   });
 
+  it("plans official spreadsheets as a generic spreadsheet importer", () => {
+    const spreadsheetSource: SourceCatalogEntry = {
+      ...adiiTariff,
+      sourceCode: "ANRT_APPROVED_EQUIPMENT",
+      authorityCode: "ADII",
+      name: "Liste officielle équipements agréés",
+      sourceFamily: "technical_control",
+      officialUrl: "https://example.gov.ma/equipements-agrees.xlsx",
+      accessMethod: "spreadsheet",
+      dataDomains: ["technical_control", "equipment", "approval"],
+      formats: ["xlsx", "csv"],
+      ingestionStrategy: "download_and_extract",
+    };
+
+    expect(buildSourceConnectorPlan(spreadsheetSource)).toMatchObject({
+      connectorCode: "anrt_approved_equipment_connector",
+      connectorType: "spreadsheet_importer",
+      pipelineComponent: "spreadsheet-parser",
+      status: "draft",
+    });
+  });
+
   it("blocks licensed international data until access is cleared", () => {
     const wco: SourceCatalogEntry = {
       ...adiiTariff,

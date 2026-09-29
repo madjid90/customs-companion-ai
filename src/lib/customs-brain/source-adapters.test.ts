@@ -38,6 +38,33 @@ describe("source adapters", () => {
     });
   });
 
+  it("treats official Excel and CSV files as auditable source assets", () => {
+    const source = {
+      ...moroccoV1SourceRegistry.sources[0],
+      sourceCode: "MIC_TECHNICAL_PRODUCTS_SPREADSHEET",
+      name: "Liste officielle produits soumis à contrôle",
+      sourceFamily: "technical_control",
+      officialUrl: "https://example.gov.ma/produits-controles.xlsx",
+      accessMethod: "spreadsheet",
+      dataDomains: ["technical_control", "license", "products"],
+      formats: ["xlsx", "csv"],
+      ingestionStrategy: "download_and_extract",
+    };
+
+    const plan = buildSourceAdapterPlan(source);
+
+    expect(plan).toMatchObject({
+      connectorType: "spreadsheet_importer",
+      pipelineComponent: "spreadsheet-parser",
+    });
+    expect(plan.actions[0]).toMatchObject({
+      actionType: "import_spreadsheet",
+      produces: "source_asset",
+      requiresBrowser: false,
+      writesCanonicalFacts: false,
+    });
+  });
+
   it("keeps licensed WCO data blocked", () => {
     const source = moroccoV1SourceRegistry.sources.find((item) => item.sourceCode === "WCO_HS_INTERNATIONAL");
     expect(source).toBeDefined();

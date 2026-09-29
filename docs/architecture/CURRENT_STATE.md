@@ -51,15 +51,15 @@ Dernière mesure : 27 septembre 2026. Projet Supabase :
 - Vérification distante du 27 septembre 2026 : les tables existent dans Supabase production `raygpbajipeyzxfxpbku` et contiennent 1 pack, 12 autorités, 17 sources, 16 sources P0 et 17 connecteurs.
 - Les connecteurs sont en `draft` pour les sources P0 automatisables et `blocked` pour WCO/OMD tant que la licence n'est pas clarifiée. Le chantier 1 est appliqué et vérifié.
 
-- La couche applicative `src/lib/customs-brain/source-registry.ts` valide un registre source sans logique Maroc en dur et génère un plan de connecteur (`direct_pdf_fetcher`, `pdf_link_extractor`, `portal_index_monitor`, `html_crawler`, `blocked`) à partir des champs du catalogue.
+- La couche applicative `src/lib/customs-brain/source-registry.ts` valide un registre source sans logique Maroc en dur et génère un plan de connecteur (`direct_pdf_fetcher`, `pdf_link_extractor`, `portal_index_monitor`, `html_crawler`, `spreadsheet_importer`, `blocked`) à partir des champs du catalogue.
 - Les tests `source-registry.test.ts` couvrent un portail ADII, une autorité manquante et une source internationale WCO/OMD bloquée par licence.
 - Le pack `src/lib/customs-brain/country-packs/morocco-v1.ts` expose ces 12 autorités et 17 sources comme configuration testable ; il n'ajoute aucune branche métier Maroc dans le noyau.
 
 ## Source adapters V1
 
 - La couche `src/lib/customs-brain/source-adapters.ts` transforme les entrées `source_catalog` et `source_connector_configs` en plans d'actions contrôlés.
-- Les adapters couvrent `direct_pdf_fetcher`, `pdf_link_extractor`, `portal_index_monitor`, `html_crawler`, `manual_upload` et `blocked`.
-- Pour le pack Maroc V1, 17 sources sont planifiées : 4 PDF directs, 1 index PDF, 2 portails nécessitant snapshot navigateur, 9 pages HTML et 1 source bloquée par licence.
+- Les adapters couvrent `direct_pdf_fetcher`, `pdf_link_extractor`, `portal_index_monitor`, `html_crawler`, `spreadsheet_importer`, `manual_upload` et `blocked`. Excel/CSV est donc une source officielle de pack pays, pas un cas legacy isolé.
+- Pour le pack Maroc V1, 17 sources sont planifiées : 4 PDF directs, 1 index PDF, 2 portails nécessitant snapshot navigateur, 9 pages HTML et 1 source bloquée par licence. Les sources HTML/portail qui publient aussi des tableurs, comme MIC et ANRT, conservent `formats=[html,pdf,spreadsheet]`; un futur pack ou une future source directe Excel utilisera `access_method=spreadsheet` et `spreadsheet_importer`.
 - Les actions de découverte produisent uniquement des assets, index ou notices bloquées ; elles n'écrivent aucun fait canonique SH, juridique ou réglementaire.
 - La migration `supabase/migrations/20260927223000_source_discovery_runs.sql` est appliquée sur Supabase production. `source_discovery_runs` existe, `source_assets` est rattachable à `source_catalog` et `source_connector_configs`, la contrainte FK est présente, et la lecture est limitée aux admins via `private.is_platform_admin()`.
 

@@ -51,7 +51,7 @@ canonique.
 | Deux modèles de données parallèles | Réponses différentes selon la page ou l'agent | Déclarer legacy en lecture/migration ; nouvelle V1 sur canonique uniquement |
 | Fonctions chat/RAG hors API cerveau | Le LLM peut présenter du contexte non publié | Construire API `/v1` avec statut `confirmed/probable/ambiguous/unknown` et preuves |
 | Pages lisant directement Supabase | Logique métier dupliquée, sécurité et incohérence | Pages finales consomment API `/v1`; admin data peut utiliser RPC contrôlées |
-| Ingestion orientée surtout PDF | MIC/ONSSA/PortNet/ANRT publient pages, tableaux et portails | Ajouter adapters source multi-format et type de contenu |
+| Ingestion orientée surtout PDF | MIC/ONSSA/PortNet/ANRT publient pages, tableaux Excel/CSV et portails | Ajouter adapters source multi-format, dont `spreadsheet_importer`, et type de contenu |
 | Modèle `regulatory_measures` trop général pour toutes les obligations | Difficile de représenter procédure, document, autorisation et contrôle | Étendre par tables spécialisées ou sous-types normalisés |
 | Source catalog P0 non matérialisé en base | Mise à jour/surveillance non pilotables | Ajouter `jurisdiction_packs`, `authority_catalog`, `source_catalog`, `source_connector_configs` |
 | Publication juridique sans cibles complètes | Relations utiles mais non validables | Résoudre versions cibles, dates d'effet et sources avant validation |
@@ -104,7 +104,7 @@ Un chantier est `done` uniquement si son critère de fin est mesuré dans
 | ---: | --- | --- | --- |
 | 0 | Audit sources/obligations Maroc | done | `MOROCCO_SOURCE_OBLIGATION_AUDIT.md` créé et relié à la documentation |
 | 1 | Alignement modèle noyau + pack Maroc | done | tables `jurisdiction_packs`, `authority_catalog`, `source_catalog`, `source_connector_configs` créées ; 1 pack, 12 autorités, 17 sources, 16 P0 et 17 connecteurs vérifiés en production |
-| 2 | Source adapters multi-format | in_progress | plans adapters V1 livrés/testés pour 17 sources Maroc ; audit `source_discovery_runs` appliqué ; prochain cran : enregistrer assets, versions, statut accès et preuves en base |
+| 2 | Source adapters multi-format | in_progress | plans adapters V1 livrés/testés pour 17 sources Maroc ; Excel/CSV intégré via `spreadsheet_importer` générique ; audit `source_discovery_runs` appliqué ; prochain cran : enregistrer assets, versions, statut accès et preuves en base |
 | 3 | Ingestion P0 Maroc | in_progress | toutes les sources P0 ont au moins une stratégie : auto, semi-auto validée, manuel versionné ou bloqué documenté |
 | 4 | OCR/layout/fusion production | in_progress | 100 % pages P0 ont état terminal ; pages faibles traitées ou quarantaine justifiée |
 | 5 | SH/tarif canonique | in_progress | tarif P0 extrait en candidats ligne/cellule, benchmark code-libellé-unité-taux atteint, promotion canonique contrôlée |
@@ -122,7 +122,7 @@ Un chantier est `done` uniquement si son critère de fin est mesuré dans
 ## Ordre de développement recommandé
 
 1. Matérialiser en base le **registre des sources et autorités** du pack Maroc.
-2. Étendre l'ingestion pour les **sources multi-format** sans casser le pipeline PDF.
+2. Étendre l'ingestion pour les **sources multi-format** sans casser le pipeline PDF : HTML, PDF, portail, RSS quand disponible, Excel/CSV et dépôt manuel versionné.
 3. Finir la **promotion SH/tarif canonique**, car le parcours douanier dépend du SH.
 4. Étendre la **base juridique ADII** aux textes P0 manquants.
 5. Ingestions P0 non-ADII : MIC, ONSSA, ANRT, AMMPS, Office des Changes.

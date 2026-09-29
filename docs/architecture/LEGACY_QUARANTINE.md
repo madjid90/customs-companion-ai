@@ -29,7 +29,7 @@ Ces fichiers peuvent encore référencer le legacy parce qu'ils alimentent ou se
 
 | Fichier | Raison temporaire | Sortie attendue |
 | --- | --- | --- |
-| `src/pages/admin/AdminUpload.tsx` | ancienne ingestion admin PDF/Claude | remplacer par console ingestion V1 basée sur `source_catalog`, jobs et preuves |
+| `src/pages/admin/AdminUpload.tsx` | ancienne ingestion admin PDF/Claude et imports ANRT Excel/CSV locaux | remplacer par console ingestion V1 basée sur `source_catalog`, `spreadsheet_importer`, jobs et preuves |
 
 | `src/components/admin/ExtractionPreviewDialog.tsx` | prévisualisation ancienne extraction | remplacer par preuves/page decisions V1 |
 | `src/pages/admin/AdminBulkImport.tsx` | import massif ancien corpus | remplacer par source assets/jobs V1 |
