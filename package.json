@@ -15,7 +15,8 @@
     "report:tariff-extraction": "node scripts/report-tariff-extraction.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "worker:legal": "node scripts/run-legal-worker.mjs --loop"
+    "worker:legal": "node scripts/run-legal-worker.mjs --loop",
+    "worker:source-discovery": "node scripts/run-source-discovery-worker.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

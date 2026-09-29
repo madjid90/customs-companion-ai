@@ -1,0 +1,66 @@
+import { describe, expect, it } from "vitest";
+import { createAssetPayload, createRunPayload, downloadCandidate, parseWorkerArgs, processTarget, shouldProcessTarget } from "./source-discovery-worker.mjs";
+
+const target = {
+  source: {
+    id: "11111111-1111-4111-8111-111111111111",
+    source_code: "ADII_CIRCULAR_PDFS",
+    official_url: "https://example.gov.ma/5740.PDF",
+    formats: ["pdf"],
+    active: true,
+  },
+  connector: {
+    id: "22222222-2222-4222-8222-222222222222",
+    connector_code: "adii_circular_pdfs_adapter",
+    connector_type: "direct_pdf_fetcher",
+    pipeline_component: "legal-structure-extractor",
+    status: "active",
+  },
+};
+
+function response(body, headers = {}) {
+  const bytes = new TextEncoder().encode(body);
+  return {
+    ok: true,
+    status: 200,
+    headers: { get: (name) => headers[name.toLowerCase()] ?? null },
+    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+  };
+}
+
+describe("source discovery worker core", () => {
+  it("parses safe dry-run defaults", () => {
+    expect(parseWorkerArgs(["--limit", "5"])).toMatchObject({ dryRun: true, execute: false, limit: 5, includeDraft: false });
+    expect(parseWorkerArgs(["--execute", "--include-draft", "--source-code", "ADII_CIRCULAR_PDFS"])).toMatchObject({ dryRun: false, execute: true, includeDraft: true, sourceCode: "ADII_CIRCULAR_PDFS" });
+  });
+
+  it("skips draft connectors unless explicitly included", () => {
+    const draftTarget = { ...target, connector: { ...target.connector, status: "draft" } };
+    expect(shouldProcessTarget(draftTarget, {})).toEqual({ ok: false, reason: "connector_not_active" });
+    expect(shouldProcessTarget(draftTarget, { includeDraft: true })).toMatchObject({ ok: true, mode: "download" });
+  });
+
+  it("creates run payloads without canonical writes", () => {
+    expect(createRunPayload(target, "download")).toMatchObject({
+      source_catalog_id: target.source.id,
+      connector_type: "direct_pdf_fetcher",
+      run_mode: "download",
+      status: "planned",
+      plan: { canonical_fact_write: false },
+    });
+  });
+
+  it("downloads candidates with SHA-256 and creates source asset payloads", async () => {
+    const candidate = await downloadCandidate(target, { fetchImpl: async () => response("%PDF official", { "content-type": "application/pdf", "content-disposition": "attachment; filename=5740.PDF" }) });
+    expect(candidate).toMatchObject({ filename: "5740.PDF", mime_type: "application/pdf", detected_document_type: "circular" });
+    expect(candidate.content_sha256).toMatch(/^[a-f0-9]{64}$/);
+    const asset = createAssetPayload(target, candidate, "33333333-3333-4333-8333-333333333333");
+    expect(asset).toMatchObject({ provider: "official_web", discovery_status: "queued", relative_path: "ADII_CIRCULAR_PDFS/5740.PDF" });
+    expect(asset.metadata).toMatchObject({ canonical_fact_write: false });
+  });
+
+  it("plans only in dry-run mode", async () => {
+    const result = await processTarget({} , target, { dryRun: true });
+    expect(result).toEqual({ source_code: "ADII_CIRCULAR_PDFS", connector_type: "direct_pdf_fetcher", mode: "download", dry_run: true, status: "planned" });
+  });
+});
