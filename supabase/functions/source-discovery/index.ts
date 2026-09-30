@@ -16,7 +16,8 @@ const PRODUCTION_ORIGIN_PATTERNS = [
 
 const DOWNLOADABLE_CONNECTORS = new Set(["direct_pdf_fetcher", "spreadsheet_importer"]);
 const PDF_INDEX_CONNECTORS = new Set(["pdf_link_extractor"]);
-const COMPLEX_CONNECTORS = new Set(["html_crawler", "portal_index_monitor"]);
+const HTML_SNAPSHOT_CONNECTORS = new Set(["html_crawler"]);
+const COMPLEX_CONNECTORS = new Set(["portal_index_monitor"]);
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 
 type SupabaseClient = ReturnType<typeof createClient>;
@@ -110,7 +111,16 @@ function mimeFromFilename(filename: string): string {
   if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
   if (lower.endsWith(".xls")) return "application/vnd.ms-excel";
   if (lower.endsWith(".csv")) return "text/csv";
+  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html";
   return "application/octet-stream";
+}
+
+function ensureFilenameExtension(filename, mimeType) {
+  if (/\.[a-z0-9]{2,8}$/i.test(filename)) return filename;
+  if (mimeType === "text/html") return `${filename || "index"}.html`;
+  if (mimeType === "application/pdf") return `${filename || "document"}.pdf`;
+  if (mimeType === "text/csv") return `${filename || "spreadsheet"}.csv`;
+  return filename || "official-source-document";
 }
 
 function normalizeLastModified(value: string | null): string | null {
@@ -143,6 +153,7 @@ function shouldProcessTarget(target: Target, options: { includeDraft: boolean; p
   if (options.connectorType && target.connector.connector_type !== options.connectorType) return { ok: false, reason: "connector_filter" };
   if (DOWNLOADABLE_CONNECTORS.has(target.connector.connector_type)) return { ok: true, mode: target.connector.connector_type === "spreadsheet_importer" ? "import" : "download" };
   if (PDF_INDEX_CONNECTORS.has(target.connector.connector_type)) return { ok: true, mode: "pdf_index" };
+  if (HTML_SNAPSHOT_CONNECTORS.has(target.connector.connector_type)) return { ok: true, mode: "html_snapshot" };
   if (options.planComplex && COMPLEX_CONNECTORS.has(target.connector.connector_type)) return { ok: true, mode: target.connector.connector_type === "portal_index_monitor" ? "snapshot" : "discovery" };
   return { ok: false, reason: `unsupported_connector:${target.connector.connector_type}` };
 }
@@ -196,13 +207,15 @@ async function downloadCandidateFromUrl(target: Target, url: string, maxBytes: n
   if (expectedLength !== null && Number.isFinite(expectedLength) && expectedLength > maxBytes) throw new Error(`download_too_large:${expectedLength}`);
   const buffer = await response.arrayBuffer();
   if (buffer.byteLength > maxBytes) throw new Error(`download_too_large:${buffer.byteLength}`);
-  const filename = filenameFromContentDisposition(response.headers.get("content-disposition")) || filenameFromUrl(url);
+  const rawFilename = filenameFromContentDisposition(response.headers.get("content-disposition")) || filenameFromUrl(url);
+  const mimeType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || mimeFromFilename(rawFilename);
+  const filename = ensureFilenameExtension(rawFilename, mimeType);
   const contentSha256 = await sha256Hex(buffer);
   return {
     bytes: buffer,
     url,
     filename,
-    mime_type: response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || mimeFromFilename(filename),
+    mime_type: mimeType,
     byte_size: buffer.byteLength,
     content_sha256: contentSha256,
     provider_modified_at: normalizeLastModified(response.headers.get("last-modified")),
@@ -363,7 +376,8 @@ async function runDiscovery(req: Request, db: SupabaseClient, input: Record<stri
     const mode = decision.ok ? decision.mode : "skipped";
     const downloadable = DOWNLOADABLE_CONNECTORS.has(target.connector.connector_type);
     const pdfIndex = PDF_INDEX_CONNECTORS.has(target.connector.connector_type);
-    const executable = downloadable || pdfIndex;
+    const htmlSnapshot = HTML_SNAPSHOT_CONNECTORS.has(target.connector.connector_type);
+    const executable = downloadable || pdfIndex || htmlSnapshot;
 
     if (!execute) {
       results.push({
@@ -391,7 +405,7 @@ async function runDiscovery(req: Request, db: SupabaseClient, input: Record<stri
     }
 
     try {
-      const candidates = downloadable ? [await downloadCandidate(target, maxBytes)] : await discoverPdfIndexCandidates(target, maxBytes, maxIndexLinks);
+      const candidates = downloadable || htmlSnapshot ? [await downloadCandidate(target, maxBytes)] : await discoverPdfIndexCandidates(target, maxBytes, maxIndexLinks);
       const assets = [];
       const documents = [];
       for (const candidate of candidates) {

@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 const DOWNLOADABLE_CONNECTORS = new Set(["direct_pdf_fetcher", "spreadsheet_importer"]);
 const PDF_INDEX_CONNECTORS = new Set(["pdf_link_extractor"]);
-const COMPLEX_CONNECTORS = new Set(["html_crawler", "portal_index_monitor"]);
+const HTML_SNAPSHOT_CONNECTORS = new Set(["html_crawler"]);
+const COMPLEX_CONNECTORS = new Set(["portal_index_monitor"]);
 
 export function parseWorkerArgs(argv = process.argv.slice(2)) {
   const args = new Map();
@@ -60,6 +61,7 @@ export function shouldProcessTarget(target, options = {}) {
   if (options.connectorType && connector.connector_type !== options.connectorType) return { ok: false, reason: "connector_filter" };
   if (isDownloadableConnector(connector.connector_type)) return { ok: true, mode: connector.connector_type === "spreadsheet_importer" ? "import" : "download" };
   if (isPdfIndexConnector(connector.connector_type)) return { ok: true, mode: "pdf_index" };
+  if (HTML_SNAPSHOT_CONNECTORS.has(connector.connector_type)) return { ok: true, mode: "html_snapshot" };
   if (options.planComplex && isComplexConnector(connector.connector_type)) return { ok: true, mode: connector.connector_type === "portal_index_monitor" ? "snapshot" : "discovery" };
   return { ok: false, reason: `unsupported_connector:${connector.connector_type}` };
 }
@@ -112,7 +114,16 @@ function mimeFromFilename(filename) {
   if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
   if (lower.endsWith(".xls")) return "application/vnd.ms-excel";
   if (lower.endsWith(".csv")) return "text/csv";
+  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html";
   return "application/octet-stream";
+}
+
+function ensureFilenameExtension(filename, mimeType) {
+  if (/\.[a-z0-9]{2,8}$/i.test(filename)) return filename;
+  if (mimeType === "text/html") return `${filename || "index"}.html`;
+  if (mimeType === "application/pdf") return `${filename || "document"}.pdf`;
+  if (mimeType === "text/csv") return `${filename || "spreadsheet"}.csv`;
+  return filename || "official-source-document";
 }
 
 function normalizeLastModified(value) {
@@ -137,13 +148,15 @@ export async function downloadCandidateFromUrl(target, url, options = {}) {
   if (expectedLength !== null && Number.isFinite(expectedLength) && expectedLength > maxBytes) throw new Error(`download_too_large:${expectedLength}`);
   const buffer = await response.arrayBuffer();
   if (buffer.byteLength > maxBytes) throw new Error(`download_too_large:${buffer.byteLength}`);
-  const filename = filenameFromContentDisposition(response.headers.get("content-disposition")) || filenameFromUrl(url);
+  const rawFilename = filenameFromContentDisposition(response.headers.get("content-disposition")) || filenameFromUrl(url);
+  const mimeType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || mimeFromFilename(rawFilename);
+  const filename = ensureFilenameExtension(rawFilename, mimeType);
   const contentSha256 = sha256Hex(buffer);
   return {
     bytes: Buffer.from(buffer),
     url,
     filename,
-    mime_type: response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || mimeFromFilename(filename),
+    mime_type: mimeType,
     byte_size: buffer.byteLength,
     content_sha256: contentSha256,
     provider_modified_at: normalizeLastModified(response.headers.get("last-modified")),
@@ -352,7 +365,7 @@ export async function processTarget(db, target, options = {}) {
   if (!decision.ok) return { source_code: target.source?.source_code, status: "skipped", reason: decision.reason };
   const planned = { source_code: target.source.source_code, connector_type: target.connector.connector_type, mode: decision.mode, dry_run: options.dryRun !== false };
   if (options.dryRun !== false) return { ...planned, status: "planned" };
-  const candidates = isDownloadableConnector(target.connector.connector_type)
+  const candidates = isDownloadableConnector(target.connector.connector_type) || target.connector.connector_type === "html_crawler"
     ? [await downloadCandidate(target, options)]
     : isPdfIndexConnector(target.connector.connector_type)
       ? await discoverPdfIndexCandidates(target, options)

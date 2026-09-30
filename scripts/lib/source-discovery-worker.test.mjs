@@ -40,6 +40,18 @@ describe("source discovery worker core", () => {
     expect(shouldProcessTarget(draftTarget, { includeDraft: true })).toMatchObject({ ok: true, mode: "download" });
   });
 
+  it("captures official HTML pages as versioned source snapshots", async () => {
+    const htmlTarget = {
+      ...target,
+      source: { ...target.source, official_url: "https://example.gov.ma/import/procedure", source_code: "ONSSA_IMPORT_EXPORT_CONTROL" },
+      connector: { ...target.connector, connector_type: "html_crawler", pipeline_component: "obligation-extractor", status: "active" },
+    };
+    expect(shouldProcessTarget(htmlTarget, {})).toMatchObject({ ok: true, mode: "html_snapshot" });
+    const candidate = await downloadCandidate(htmlTarget, { fetchImpl: async () => response("<html>official</html>", { "content-type": "text/html; charset=utf-8" }) });
+    expect(candidate).toMatchObject({ filename: "procedure.html", mime_type: "text/html", detected_document_type: "technical_control" });
+    expect(candidate.metadata).toMatchObject({ canonical_fact_write: false });
+  });
+
   it("extracts and downloads PDF links from official index pages", async () => {
     const indexTarget = {
       ...target,
