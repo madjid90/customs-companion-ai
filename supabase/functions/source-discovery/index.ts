@@ -15,7 +15,8 @@ const PRODUCTION_ORIGIN_PATTERNS = [
 ];
 
 const DOWNLOADABLE_CONNECTORS = new Set(["direct_pdf_fetcher", "spreadsheet_importer"]);
-const COMPLEX_CONNECTORS = new Set(["html_crawler", "pdf_link_extractor", "portal_index_monitor"]);
+const PDF_INDEX_CONNECTORS = new Set(["pdf_link_extractor"]);
+const COMPLEX_CONNECTORS = new Set(["html_crawler", "portal_index_monitor"]);
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 
 type SupabaseClient = ReturnType<typeof createClient>;
@@ -96,7 +97,10 @@ function filenameFromContentDisposition(value: string | null): string | null {
 }
 
 function filenameFromUrl(value: string): string {
-  const pathname = new URL(value).pathname;
+  const url = new URL(value);
+  const documentId = url.searchParams.get("documentId");
+  if (documentId) return `document-${documentId}.pdf`;
+  const pathname = url.pathname;
   return decodeURIComponent(pathname.split("/").filter(Boolean).at(-1) || "official-source-document");
 }
 
@@ -138,6 +142,7 @@ function shouldProcessTarget(target: Target, options: { includeDraft: boolean; p
   if (options.sourceCode && target.source.source_code !== options.sourceCode) return { ok: false, reason: "source_filter" };
   if (options.connectorType && target.connector.connector_type !== options.connectorType) return { ok: false, reason: "connector_filter" };
   if (DOWNLOADABLE_CONNECTORS.has(target.connector.connector_type)) return { ok: true, mode: target.connector.connector_type === "spreadsheet_importer" ? "import" : "download" };
+  if (PDF_INDEX_CONNECTORS.has(target.connector.connector_type)) return { ok: true, mode: "pdf_index" };
   if (options.planComplex && COMPLEX_CONNECTORS.has(target.connector.connector_type)) return { ok: true, mode: target.connector.connector_type === "portal_index_monitor" ? "snapshot" : "discovery" };
   return { ok: false, reason: `unsupported_connector:${target.connector.connector_type}` };
 }
@@ -182,20 +187,20 @@ async function loadTargets(db: SupabaseClient): Promise<Target[]> {
   return (connectors ?? []).map((connector: ConnectorRow) => ({ source: sourceById.get(connector.source_catalog_id)!, connector })).filter((target: Target) => !!target.source);
 }
 
-async function downloadCandidate(target: Target, maxBytes: number) {
-  if (!target.source.official_url) throw new Error("official_url_missing");
-  const response = await fetch(target.source.official_url, { headers: { "user-agent": "DouaneAI Source Discovery Edge/1.0" } });
+async function downloadCandidateFromUrl(target: Target, url: string, maxBytes: number) {
+  if (!url) throw new Error("download_url_missing");
+  const response = await fetch(url, { headers: { "user-agent": "DouaneAI Source Discovery Edge/1.0" } });
   if (!response.ok) throw new Error(`download_failed:${response.status}`);
   const contentLength = response.headers.get("content-length");
   const expectedLength = contentLength ? Number(contentLength) : null;
   if (expectedLength !== null && Number.isFinite(expectedLength) && expectedLength > maxBytes) throw new Error(`download_too_large:${expectedLength}`);
   const buffer = await response.arrayBuffer();
   if (buffer.byteLength > maxBytes) throw new Error(`download_too_large:${buffer.byteLength}`);
-  const filename = filenameFromContentDisposition(response.headers.get("content-disposition")) || filenameFromUrl(target.source.official_url);
+  const filename = filenameFromContentDisposition(response.headers.get("content-disposition")) || filenameFromUrl(url);
   const contentSha256 = await sha256Hex(buffer);
   return {
     bytes: buffer,
-    url: target.source.official_url,
+    url,
     filename,
     mime_type: response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || mimeFromFilename(filename),
     byte_size: buffer.byteLength,
@@ -210,6 +215,47 @@ async function downloadCandidate(target: Target, maxBytes: number) {
       canonical_fact_write: false,
     },
   };
+}
+
+async function downloadCandidate(target: Target, maxBytes: number) {
+  if (!target.source.official_url) throw new Error("official_url_missing");
+  return downloadCandidateFromUrl(target, target.source.official_url, maxBytes);
+}
+
+function decodeHtmlEntities(value: string): string {
+  return value.replaceAll("&amp;", "&").replaceAll("&#38;", "&").replaceAll("&quot;", "\"").replaceAll("&#39;", "'");
+}
+
+function extractPdfLinksFromHtml(html: string, baseUrl: string, maxLinks: number) {
+  const links = new Map<string, { url: string; raw_href: string }>();
+  const hrefPattern = /href\s*=\s*(["'])(.*?)\1/giu;
+  for (const match of html.matchAll(hrefPattern)) {
+    const rawHref = decodeHtmlEntities(String(match[2] || "").trim());
+    if (!rawHref || rawHref.startsWith("#") || /^(mailto:|tel:|javascript:)/i.test(rawHref)) continue;
+    let absolute: URL;
+    try { absolute = new URL(rawHref, baseUrl); } catch { continue; }
+    const normalized = absolute.toString();
+    const pathAndQuery = `${absolute.pathname}?${absolute.searchParams.toString()}`.toLowerCase();
+    if (!pathAndQuery.includes(".pdf") && !pathAndQuery.includes("/dms/loaddocument") && !absolute.searchParams.has("documentId")) continue;
+    if (!links.has(normalized)) links.set(normalized, { url: normalized, raw_href: rawHref });
+    if (links.size >= maxLinks) break;
+  }
+  return Array.from(links.values());
+}
+
+async function discoverPdfIndexCandidates(target: Target, maxBytes: number, maxLinks: number) {
+  if (!target.source.official_url) throw new Error("official_url_missing");
+  const response = await fetch(target.source.official_url, { headers: { "user-agent": "DouaneAI Source Discovery Edge/1.0" } });
+  if (!response.ok) throw new Error(`index_fetch_failed:${response.status}`);
+  const html = await response.text();
+  const links = extractPdfLinksFromHtml(html, target.source.official_url, maxLinks);
+  const candidates = [];
+  for (const link of links) {
+    const candidate = await downloadCandidateFromUrl(target, link.url, maxBytes);
+    candidate.metadata = { ...(candidate.metadata || {}), discovered_from: target.source.official_url, raw_href: link.raw_href, index_connector: "pdf_link_extractor" };
+    candidates.push(candidate);
+  }
+  return candidates;
 }
 
 function createAssetPayload(target: Target, candidate: Awaited<ReturnType<typeof downloadCandidate>>, discoveryRunId: string | null) {
@@ -303,6 +349,7 @@ async function runDiscovery(req: Request, db: SupabaseClient, input: Record<stri
   const connectorType = typeof input.connector_type === "string" && input.connector_type.trim() ? input.connector_type.trim() : null;
   const limit = clampNumber(input.limit, 10, 1, 100);
   const maxBytes = clampNumber(input.max_bytes, DEFAULT_MAX_BYTES, 1, 250 * 1024 * 1024);
+  const maxIndexLinks = clampNumber(input.max_index_links, 25, 1, 100);
   const storageBucket = typeof input.storage_bucket === "string" && input.storage_bucket.trim() ? input.storage_bucket.trim() : "legal-source-pdfs";
 
   const targets = (await loadTargets(db)).filter((target) => {
@@ -315,6 +362,8 @@ async function runDiscovery(req: Request, db: SupabaseClient, input: Record<stri
     const decision = shouldProcessTarget(target, { includeDraft, planComplex, sourceCode, connectorType });
     const mode = decision.ok ? decision.mode : "skipped";
     const downloadable = DOWNLOADABLE_CONNECTORS.has(target.connector.connector_type);
+    const pdfIndex = PDF_INDEX_CONNECTORS.has(target.connector.connector_type);
+    const executable = downloadable || pdfIndex;
 
     if (!execute) {
       results.push({
@@ -322,46 +371,49 @@ async function runDiscovery(req: Request, db: SupabaseClient, input: Record<stri
         connector_type: target.connector.connector_type,
         mode,
         status: "dry_run",
-        will_download: downloadable,
-        will_materialize_document: downloadable && materializeDocuments,
+        will_download: executable,
+        will_materialize_document: executable && materializeDocuments,
         canonical_fact_write: false,
       });
       continue;
     }
 
-    const { data: run, error: runError } = await db.from("source_discovery_runs").insert(createRunPayload(target, String(mode), downloadable ? "running" : "planned")).select("id").single();
+    const { data: run, error: runError } = await db.from("source_discovery_runs").insert(createRunPayload(target, String(mode), executable ? "running" : "planned")).select("id").single();
     if (runError || !run?.id) {
       results.push({ source_code: target.source.source_code, status: "failed", error: `run_insert:${runError?.message || "missing id"}` });
       continue;
     }
 
-    if (!downloadable) {
+    if (!executable) {
       await db.from("source_discovery_runs").update({ status: "planned", completed_at: new Date().toISOString(), blocked_reason: "complex_connector_requires_adapter", metrics: { canonical_fact_write: false } }).eq("id", run.id);
       results.push({ source_code: target.source.source_code, run_id: run.id, connector_type: target.connector.connector_type, status: "planned", canonical_fact_write: false });
       continue;
     }
 
     try {
-      const candidate = await downloadCandidate(target, maxBytes);
-      const assetPayload = createAssetPayload(target, candidate, run.id);
-      const asset = await upsertAsset(db, assetPayload);
-      let document = null;
-      if (materializeDocuments) document = await materializeSourceDocument(db, target, candidate, assetPayload, storageBucket);
+      const candidates = downloadable ? [await downloadCandidate(target, maxBytes)] : await discoverPdfIndexCandidates(target, maxBytes, maxIndexLinks);
+      const assets = [];
+      const documents = [];
+      for (const candidate of candidates) {
+        const assetPayload = createAssetPayload(target, candidate, run.id);
+        const asset = await upsertAsset(db, assetPayload);
+        assets.push(asset);
+        if (materializeDocuments) documents.push(await materializeSourceDocument(db, target, candidate, assetPayload, storageBucket));
+      }
       await db.from("source_discovery_runs").update({
         status: "completed",
         completed_at: new Date().toISOString(),
-        discovered_count: 1,
-        changed_count: 1,
-        queued_asset_count: materializeDocuments ? 0 : 1,
+        discovered_count: candidates.length,
+        changed_count: candidates.length,
+        queued_asset_count: materializeDocuments ? 0 : candidates.length,
         metrics: {
-          byte_size: candidate.byte_size,
-          content_sha256: candidate.content_sha256,
-          materialized_document: !!document,
+          asset_count: assets.length,
+          materialized_document_count: documents.length,
           canonical_fact_write: false,
         },
       }).eq("id", run.id);
       await db.from("source_connector_configs").update({ last_checked_at: new Date().toISOString(), last_success_at: new Date().toISOString(), last_error: null }).eq("id", target.connector.id);
-      results.push({ source_code: target.source.source_code, run_id: run.id, asset_id: asset.id, document, status: "completed", sha256: candidate.content_sha256, canonical_fact_write: false });
+      results.push({ source_code: target.source.source_code, run_id: run.id, asset_count: assets.length, document_count: documents.length, status: "completed", canonical_fact_write: false });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await db.from("source_discovery_runs").update({ status: "failed", completed_at: new Date().toISOString(), error_summary: message.slice(0, 2000), metrics: { canonical_fact_write: false } }).eq("id", run.id);

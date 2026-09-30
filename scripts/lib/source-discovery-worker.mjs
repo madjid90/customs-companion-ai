@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 const DOWNLOADABLE_CONNECTORS = new Set(["direct_pdf_fetcher", "spreadsheet_importer"]);
-const COMPLEX_CONNECTORS = new Set(["html_crawler", "pdf_link_extractor", "portal_index_monitor"]);
+const PDF_INDEX_CONNECTORS = new Set(["pdf_link_extractor"]);
+const COMPLEX_CONNECTORS = new Set(["html_crawler", "portal_index_monitor"]);
 
 export function parseWorkerArgs(argv = process.argv.slice(2)) {
   const args = new Map();
@@ -41,6 +42,10 @@ export function isDownloadableConnector(connectorType) {
   return DOWNLOADABLE_CONNECTORS.has(connectorType);
 }
 
+export function isPdfIndexConnector(connectorType) {
+  return PDF_INDEX_CONNECTORS.has(connectorType);
+}
+
 export function isComplexConnector(connectorType) {
   return COMPLEX_CONNECTORS.has(connectorType);
 }
@@ -54,6 +59,7 @@ export function shouldProcessTarget(target, options = {}) {
   if (options.sourceCode && target.source.source_code !== options.sourceCode) return { ok: false, reason: "source_filter" };
   if (options.connectorType && connector.connector_type !== options.connectorType) return { ok: false, reason: "connector_filter" };
   if (isDownloadableConnector(connector.connector_type)) return { ok: true, mode: connector.connector_type === "spreadsheet_importer" ? "import" : "download" };
+  if (isPdfIndexConnector(connector.connector_type)) return { ok: true, mode: "pdf_index" };
   if (options.planComplex && isComplexConnector(connector.connector_type)) return { ok: true, mode: connector.connector_type === "portal_index_monitor" ? "snapshot" : "discovery" };
   return { ok: false, reason: `unsupported_connector:${connector.connector_type}` };
 }
@@ -93,7 +99,10 @@ function filenameFromContentDisposition(value) {
 }
 
 function filenameFromUrl(value) {
-  const pathname = new URL(value).pathname;
+  const url = new URL(value);
+  const pathname = url.pathname;
+  const documentId = url.searchParams.get("documentId");
+  if (documentId) return `document-${documentId}.pdf`;
   return decodeURIComponent(pathname.split("/").filter(Boolean).at(-1) || "official-source-document");
 }
 
@@ -116,11 +125,10 @@ function sha256Hex(buffer) {
   return createHash("sha256").update(Buffer.from(buffer)).digest("hex");
 }
 
-export async function downloadCandidate(target, options = {}) {
+export async function downloadCandidateFromUrl(target, url, options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   if (!fetchImpl) throw new Error("fetch_unavailable");
-  const url = target.source.official_url;
-  if (!url) throw new Error("official_url_missing");
+  if (!url) throw new Error("download_url_missing");
   const response = await fetchImpl(url, { headers: { "user-agent": options.userAgent || "DouaneAI Source Discovery Worker/1.0" } });
   if (!response.ok) throw new Error(`download_failed:${response.status}`);
   const contentLength = response.headers.get("content-length");
@@ -148,6 +156,52 @@ export async function downloadCandidate(target, options = {}) {
       canonical_fact_write: false,
     },
   };
+}
+
+export async function downloadCandidate(target, options = {}) {
+  const url = target.source.official_url;
+  if (!url) throw new Error("official_url_missing");
+  return downloadCandidateFromUrl(target, url, options);
+}
+
+function decodeHtmlEntities(value) {
+  return value.replaceAll("&amp;", "&").replaceAll("&#38;", "&").replaceAll("&quot;", "\"").replaceAll("&#39;", "'");
+}
+
+export function extractPdfLinksFromHtml(html, baseUrl, options = {}) {
+  const maxLinks = Math.max(1, Math.min(500, Number(options.maxLinks || 100)));
+  const links = new Map();
+  const hrefPattern = /href\s*=\s*(["'])(.*?)\1/giu;
+  for (const match of html.matchAll(hrefPattern)) {
+    const rawHref = decodeHtmlEntities(String(match[2] || "").trim());
+    if (!rawHref || rawHref.startsWith("#") || /^(mailto:|tel:|javascript:)/i.test(rawHref)) continue;
+    let absolute;
+    try { absolute = new URL(rawHref, baseUrl); } catch { continue; }
+    const normalized = absolute.toString();
+    const pathAndQuery = `${absolute.pathname}?${absolute.searchParams.toString()}`.toLowerCase();
+    if (!pathAndQuery.includes(".pdf") && !pathAndQuery.includes("/dms/loaddocument") && !absolute.searchParams.has("documentId")) continue;
+    if (!links.has(normalized)) links.set(normalized, { url: normalized, raw_href: rawHref });
+    if (links.size >= maxLinks) break;
+  }
+  return Array.from(links.values());
+}
+
+export async function discoverPdfIndexCandidates(target, options = {}) {
+  const fetchImpl = options.fetchImpl || globalThis.fetch;
+  if (!fetchImpl) throw new Error("fetch_unavailable");
+  const indexUrl = target.source.official_url;
+  if (!indexUrl) throw new Error("official_url_missing");
+  const response = await fetchImpl(indexUrl, { headers: { "user-agent": options.userAgent || "DouaneAI Source Discovery Worker/1.0" } });
+  if (!response.ok) throw new Error(`index_fetch_failed:${response.status}`);
+  const html = await response.text();
+  const links = extractPdfLinksFromHtml(html, indexUrl, { maxLinks: options.maxIndexLinks || 100 });
+  const candidates = [];
+  for (const link of links.slice(0, Math.max(1, Math.min(100, Number(options.maxIndexDownloads || links.length))))) {
+    const candidate = await downloadCandidateFromUrl(target, link.url, options);
+    candidate.metadata = { ...(candidate.metadata || {}), discovered_from: indexUrl, raw_href: link.raw_href, index_connector: "pdf_link_extractor" };
+    candidates.push(candidate);
+  }
+  return candidates;
 }
 
 function detectDocumentType(target) {
@@ -265,12 +319,13 @@ export async function loadTargets(db, options = {}) {
   return sources.map((source) => ({ source, connector: bySource.get(source.id) || null }));
 }
 
-export async function persistDiscovery(db, target, mode, candidate) {
+export async function persistDiscovery(db, target, mode, candidates) {
   const runPayload = createRunPayload(target, mode, "planned");
   const { data: run, error: runError } = await db.from("source_discovery_runs").insert(runPayload).select("id").single();
   if (runError || !run?.id) throw new Error(`source_discovery_run_insert:${runError?.message || "missing id"}`);
   try {
-    const assets = candidate ? [createAssetPayload(target, candidate, run.id)] : [];
+    const candidateList = Array.isArray(candidates) ? candidates : candidates ? [candidates] : [];
+    const assets = candidateList.map((candidate) => createAssetPayload(target, candidate, run.id));
     if (assets.length) {
       const { error: assetError } = await db.from("source_assets").upsert(assets, { onConflict: "provider,external_id" });
       if (assetError) throw new Error(`source_asset_upsert:${assetError.message}`);
@@ -297,11 +352,17 @@ export async function processTarget(db, target, options = {}) {
   if (!decision.ok) return { source_code: target.source?.source_code, status: "skipped", reason: decision.reason };
   const planned = { source_code: target.source.source_code, connector_type: target.connector.connector_type, mode: decision.mode, dry_run: options.dryRun !== false };
   if (options.dryRun !== false) return { ...planned, status: "planned" };
-  const candidate = isDownloadableConnector(target.connector.connector_type) ? await downloadCandidate(target, options) : null;
-  const persisted = await persistDiscovery(db, target, decision.mode, candidate);
-  let document = null;
-  if (options.materializeDocuments && candidate) {
-    document = await materializeSourceDocument(db, target, candidate, persisted.assets[0], options);
+  const candidates = isDownloadableConnector(target.connector.connector_type)
+    ? [await downloadCandidate(target, options)]
+    : isPdfIndexConnector(target.connector.connector_type)
+      ? await discoverPdfIndexCandidates(target, options)
+      : [];
+  const persisted = await persistDiscovery(db, target, decision.mode, candidates);
+  const documents = [];
+  if (options.materializeDocuments && candidates.length) {
+    for (let index = 0; index < candidates.length; index += 1) {
+      documents.push(await materializeSourceDocument(db, target, candidates[index], persisted.assets[index], options));
+    }
   }
-  return { ...planned, status: "completed", run_id: persisted.run_id, asset_count: persisted.assets.length, ...(document ? { document_id: document.document_id } : {}) };
+  return { ...planned, status: "completed", run_id: persisted.run_id, asset_count: persisted.assets.length, ...(documents.length ? { document_ids: documents.map((document) => document.document_id) } : {}) };
 }

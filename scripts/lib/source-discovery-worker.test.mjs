@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAssetPayload, createRunPayload, downloadCandidate, parseWorkerArgs, processTarget, shouldProcessTarget } from "./source-discovery-worker.mjs";
+import { createAssetPayload, createRunPayload, discoverPdfIndexCandidates, downloadCandidate, extractPdfLinksFromHtml, parseWorkerArgs, processTarget, shouldProcessTarget } from "./source-discovery-worker.mjs";
 
 const target = {
   source: {
@@ -38,6 +38,31 @@ describe("source discovery worker core", () => {
     const draftTarget = { ...target, connector: { ...target.connector, status: "draft" } };
     expect(shouldProcessTarget(draftTarget, {})).toEqual({ ok: false, reason: "connector_not_active" });
     expect(shouldProcessTarget(draftTarget, { includeDraft: true })).toMatchObject({ ok: true, mode: "download" });
+  });
+
+  it("extracts and downloads PDF links from official index pages", async () => {
+    const indexTarget = {
+      ...target,
+      source: { ...target.source, official_url: "https://example.gov.ma/adil/PDF/" },
+      connector: { ...target.connector, connector_type: "pdf_link_extractor", status: "active" },
+    };
+    expect(shouldProcessTarget(indexTarget, {})).toMatchObject({ ok: true, mode: "pdf_index" });
+    const links = extractPdfLinksFromHtml(
+      `<a href="5740.PDF">Circulaire</a><a href="/dms/loadDocument?documentId=6636&amp;application=tarif">Document</a><a href="mailto:test@example.com">mail</a>`,
+      "https://example.gov.ma/adil/PDF/",
+    );
+    expect(links.map((link) => link.url)).toEqual([
+      "https://example.gov.ma/adil/PDF/5740.PDF",
+      "https://example.gov.ma/dms/loadDocument?documentId=6636&application=tarif",
+    ]);
+    const candidates = await discoverPdfIndexCandidates(indexTarget, {
+      fetchImpl: async (url) => String(url).endsWith("/PDF/")
+        ? { ...response(`<a href="5740.PDF">Circulaire</a><a href="/dms/loadDocument?documentId=6636&amp;application=tarif">Document</a>`, { "content-type": "text/html" }), text: async () => `<a href="5740.PDF">Circulaire</a><a href="/dms/loadDocument?documentId=6636&amp;application=tarif">Document</a>` }
+        : response("%PDF official", { "content-type": "application/pdf" }),
+    });
+    expect(candidates).toHaveLength(2);
+    expect(candidates[0]).toMatchObject({ filename: "5740.PDF", metadata: { index_connector: "pdf_link_extractor" } });
+    expect(candidates[1]).toMatchObject({ filename: "document-6636.pdf" });
   });
 
   it("creates run payloads without canonical writes", () => {
