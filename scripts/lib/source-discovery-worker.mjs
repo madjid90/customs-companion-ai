@@ -5,6 +5,7 @@ const DOWNLOADABLE_CONNECTORS = new Set(["direct_pdf_fetcher", "spreadsheet_impo
 const PDF_INDEX_CONNECTORS = new Set(["pdf_link_extractor"]);
 const HTML_SNAPSHOT_CONNECTORS = new Set(["html_crawler"]);
 const COMPLEX_CONNECTORS = new Set(["portal_index_monitor"]);
+const LEGAL_EXTRACTION_PIPELINE_VERSION = "legal-structure-extractor-v1";
 
 export function parseWorkerArgs(argv = process.argv.slice(2)) {
   const args = new Map();
@@ -288,6 +289,89 @@ export function createSourceDocumentInsert(target, candidate, storageBucket, sto
   };
 }
 
+function htmlToText(html) {
+  return String(html || "")
+    .replace(/<script[\s\S]*?<\/script>/giu, " ")
+    .replace(/<style[\s\S]*?<\/style>/giu, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/giu, " ")
+    .replace(/<[^>]+>/gu, " ")
+    .replace(/&nbsp;/giu, " ")
+    .replace(/&amp;/giu, "&")
+    .replace(/&quot;/giu, "\"")
+    .replace(/&#39;/giu, "'")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function sha256Text(value) {
+  return createHash("sha256").update(String(value || ""), "utf8").digest("hex");
+}
+
+export async function materializeHtmlSnapshotPage(db, target, candidate, documentId) {
+  if (candidate.mime_type !== "text/html") return null;
+  const html = Buffer.isBuffer(candidate.bytes) ? candidate.bytes.toString("utf8") : Buffer.from(candidate.bytes || "").toString("utf8");
+  const text = htmlToText(html);
+  const quality = text.length >= 200 ? 80 : text.length >= 40 ? 50 : 20;
+  const row = {
+    source_document_id: documentId,
+    page_number: 1,
+    text_content: text,
+    text_sha256: sha256Text(text),
+    extraction_method: "html_snapshot",
+    extraction_confidence: quality,
+    review_status: text.length >= 40 ? "unreviewed" : "needs_review",
+    metadata: {
+      source_code: target.source.source_code,
+      source_url: candidate.url,
+      html_snapshot: true,
+      byte_size: candidate.byte_size,
+      canonical_fact_write: false,
+    },
+  };
+  const { data, error } = await db.from("source_pages").upsert(row, { onConflict: "source_document_id,page_number" }).select("id").single();
+  if (error || !data?.id) throw new Error(`html_source_page_upsert:${error?.message || "missing id"}`);
+  return { source_page_id: data.id, text_length: text.length, quality_score: quality };
+}
+
+export function shouldEnqueueLegalExtraction(target, candidate, htmlPage) {
+  return target.connector?.pipeline_component === "legal-structure-extractor"
+    && candidate.mime_type === "text/html"
+    && !!candidate.content_sha256
+    && !!htmlPage
+    && htmlPage.text_length >= 40;
+}
+
+export function createLegalExtractionJob(target, candidate, documentId, htmlPage) {
+  return {
+    job_type: "extract_legal",
+    pipeline_version_id: LEGAL_EXTRACTION_PIPELINE_VERSION,
+    source_document_id: documentId,
+    source_page_id: htmlPage.source_page_id,
+    idempotency_key: `extract_legal:${documentId}:${LEGAL_EXTRACTION_PIPELINE_VERSION}:${candidate.content_sha256}`,
+    payload: {
+      source_code: target.source.source_code,
+      connector_code: target.connector?.connector_code ?? null,
+      connector_type: target.connector?.connector_type ?? null,
+      document_type: candidate.detected_document_type || "circular",
+      source_url: candidate.url,
+      content_sha256: candidate.content_sha256,
+      source_page_id: htmlPage.source_page_id,
+      page_count: 1,
+      extraction_input: "html_snapshot",
+      canonical_fact_write: false,
+    },
+    priority: 80,
+  };
+}
+
+export async function enqueueLegalExtractionJob(db, target, candidate, documentId, htmlPage) {
+  if (!shouldEnqueueLegalExtraction(target, candidate, htmlPage)) return null;
+  const job = createLegalExtractionJob(target, candidate, documentId, htmlPage);
+  const { data, error } = await db.from("ingestion_jobs").upsert(job, { onConflict: "idempotency_key", ignoreDuplicates: true }).select("id,status").maybeSingle();
+  if (error) throw new Error(`legal_extraction_job_upsert:${error.message}`);
+  return { job_id: data?.id ?? null, status: data?.status ?? "already_exists", pipeline_version_id: LEGAL_EXTRACTION_PIPELINE_VERSION };
+}
+
 export async function materializeSourceDocument(db, target, candidate, asset, options = {}) {
   if (!candidate?.bytes || !candidate.content_sha256) throw new Error("candidate_bytes_required");
   const bucket = options.storageBucket || "legal-source-pdfs";
@@ -311,7 +395,9 @@ export async function materializeSourceDocument(db, target, candidate, asset, op
     const { error: assetError } = await db.from("source_assets").update({ source_document_id: documentId, discovery_status: "matched" }).eq("provider", asset.provider).eq("external_id", asset.external_id);
     if (assetError) throw new Error(`source_asset_document_link:${assetError.message}`);
   }
-  return { document_id: documentId, storage_bucket: bucket, storage_path: existing?.storage_path || storagePath };
+  const htmlPage = await materializeHtmlSnapshotPage(db, target, candidate, documentId);
+  const legalExtractionJob = await enqueueLegalExtractionJob(db, target, candidate, documentId, htmlPage);
+  return { document_id: documentId, storage_bucket: bucket, storage_path: existing?.storage_path || storagePath, html_page: htmlPage, legal_extraction_job: legalExtractionJob };
 }
 
 export async function loadTargets(db, options = {}) {
@@ -377,5 +463,15 @@ export async function processTarget(db, target, options = {}) {
       documents.push(await materializeSourceDocument(db, target, candidates[index], persisted.assets[index], options));
     }
   }
-  return { ...planned, status: "completed", run_id: persisted.run_id, asset_count: persisted.assets.length, ...(documents.length ? { document_ids: documents.map((document) => document.document_id) } : {}) };
+  return {
+    ...planned,
+    status: "completed",
+    run_id: persisted.run_id,
+    asset_count: persisted.assets.length,
+    ...(documents.length ? {
+      document_ids: documents.map((document) => document.document_id),
+      html_page_count: documents.filter((document) => document.html_page).length,
+      legal_extraction_job_count: documents.filter((document) => document.legal_extraction_job).length,
+    } : {}),
+  };
 }

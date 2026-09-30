@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAssetPayload, createRunPayload, discoverPdfIndexCandidates, downloadCandidate, extractPdfLinksFromHtml, parseWorkerArgs, processTarget, shouldProcessTarget } from "./source-discovery-worker.mjs";
+import { createAssetPayload, createLegalExtractionJob, createRunPayload, discoverPdfIndexCandidates, downloadCandidate, extractPdfLinksFromHtml, parseWorkerArgs, processTarget, shouldEnqueueLegalExtraction, shouldProcessTarget } from "./source-discovery-worker.mjs";
 
 const target = {
   source: {
@@ -99,6 +99,44 @@ describe("source discovery worker core", () => {
   it("plans only in dry-run mode", async () => {
     const result = await processTarget({} , target, { dryRun: true });
     expect(result).toEqual({ source_code: "ADII_CIRCULAR_PDFS", connector_type: "direct_pdf_fetcher", mode: "download", dry_run: true, status: "planned" });
+  });
+
+  it("queues legal extraction only for legal HTML snapshots with enough text", () => {
+    const htmlPage = { source_page_id: "44444444-4444-4444-8444-444444444444", text_length: 240, quality_score: 80 };
+    const legalHtmlCandidate = {
+      url: "https://example.gov.ma/legal",
+      filename: "legal.html",
+      mime_type: "text/html",
+      content_sha256: "a".repeat(64),
+      detected_document_type: "circular",
+    };
+    const htmlLegalTarget = {
+      ...target,
+      source: { ...target.source, source_code: "ADII_LEGAL_BASES" },
+      connector: { ...target.connector, connector_type: "html_crawler", pipeline_component: "legal-structure-extractor" },
+    };
+    const obligationTarget = {
+      ...htmlLegalTarget,
+      source: { ...htmlLegalTarget.source, source_code: "ONSSA_IMPORT_EXPORT_CONTROL" },
+      connector: { ...htmlLegalTarget.connector, pipeline_component: "obligation-extractor" },
+    };
+
+    expect(shouldEnqueueLegalExtraction(htmlLegalTarget, legalHtmlCandidate, htmlPage)).toBe(true);
+    expect(shouldEnqueueLegalExtraction(obligationTarget, legalHtmlCandidate, htmlPage)).toBe(false);
+    expect(shouldEnqueueLegalExtraction(htmlLegalTarget, legalHtmlCandidate, { ...htmlPage, text_length: 12 })).toBe(false);
+
+    expect(createLegalExtractionJob(htmlLegalTarget, legalHtmlCandidate, "55555555-5555-4555-8555-555555555555", htmlPage)).toMatchObject({
+      job_type: "extract_legal",
+      pipeline_version_id: "legal-structure-extractor-v1",
+      source_page_id: htmlPage.source_page_id,
+      idempotency_key: `extract_legal:55555555-5555-4555-8555-555555555555:legal-structure-extractor-v1:${"a".repeat(64)}`,
+      payload: {
+        source_code: "ADII_LEGAL_BASES",
+        extraction_input: "html_snapshot",
+        canonical_fact_write: false,
+      },
+      priority: 80,
+    });
   });
 });
 

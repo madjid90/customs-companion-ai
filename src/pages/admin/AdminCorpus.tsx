@@ -22,6 +22,8 @@ type DiscoveryResult = {
   will_materialize_document?: boolean;
   asset_count?: number;
   document_count?: number;
+  html_page_count?: number;
+  legal_extraction_job_count?: number;
   error?: string;
 };
 
@@ -264,6 +266,8 @@ function SourceDiscoveryPanel() {
                     {result.status && <Badge variant={result.status === "failed" ? "destructive" : "outline"}>{result.status}</Badge>}
                     {typeof result.asset_count === "number" && <span>{result.asset_count} asset(s)</span>}
                     {typeof result.document_count === "number" && <span>{result.document_count} document(s)</span>}
+                    {typeof result.html_page_count === "number" && <span>{result.html_page_count} page(s) HTML</span>}
+                    {typeof result.legal_extraction_job_count === "number" && <span>{result.legal_extraction_job_count} extraction(s) juridique(s)</span>}
                     {result.error && <span className="text-destructive">{result.error}</span>}
                   </div>
                 </div>

@@ -19,6 +19,7 @@ const PDF_INDEX_CONNECTORS = new Set(["pdf_link_extractor"]);
 const HTML_SNAPSHOT_CONNECTORS = new Set(["html_crawler"]);
 const COMPLEX_CONNECTORS = new Set(["portal_index_monitor"]);
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
+const LEGAL_EXTRACTION_PIPELINE_VERSION = "legal-structure-extractor-v1";
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
@@ -346,7 +347,9 @@ async function sha256Text(value: string): Promise<string> {
   return sha256Hex(new TextEncoder().encode(value).buffer);
 }
 
-async function materializeHtmlSnapshotPage(db: SupabaseClient, target: Target, candidate: Awaited<ReturnType<typeof downloadCandidate>>, documentId: string) {
+type HtmlSnapshotPage = { source_page_id: string; text_length: number; quality_score: number } | null;
+
+async function materializeHtmlSnapshotPage(db: SupabaseClient, target: Target, candidate: Awaited<ReturnType<typeof downloadCandidate>>, documentId: string): Promise<HtmlSnapshotPage> {
   if (candidate.mime_type !== "text/html") return null;
   const html = new TextDecoder().decode(candidate.bytes);
   const text = htmlToText(html);
@@ -372,6 +375,45 @@ async function materializeHtmlSnapshotPage(db: SupabaseClient, target: Target, c
   return { source_page_id: data.id, text_length: text.length, quality_score: quality };
 }
 
+function shouldEnqueueLegalExtraction(target: Target, candidate: Awaited<ReturnType<typeof downloadCandidate>>, htmlPage: HtmlSnapshotPage): boolean {
+  return target.connector.pipeline_component === "legal-structure-extractor"
+    && candidate.mime_type === "text/html"
+    && !!candidate.content_sha256
+    && !!htmlPage
+    && htmlPage.text_length >= 40;
+}
+
+function createLegalExtractionJob(target: Target, candidate: Awaited<ReturnType<typeof downloadCandidate>>, documentId: string, htmlPage: NonNullable<HtmlSnapshotPage>) {
+  return {
+    job_type: "extract_legal",
+    pipeline_version_id: LEGAL_EXTRACTION_PIPELINE_VERSION,
+    source_document_id: documentId,
+    source_page_id: htmlPage.source_page_id,
+    idempotency_key: `extract_legal:${documentId}:${LEGAL_EXTRACTION_PIPELINE_VERSION}:${candidate.content_sha256}`,
+    payload: {
+      source_code: target.source.source_code,
+      connector_code: target.connector.connector_code,
+      connector_type: target.connector.connector_type,
+      document_type: candidate.detected_document_type || "circular",
+      source_url: candidate.url,
+      content_sha256: candidate.content_sha256,
+      source_page_id: htmlPage.source_page_id,
+      page_count: 1,
+      extraction_input: "html_snapshot",
+      canonical_fact_write: false,
+    },
+    priority: 80,
+  };
+}
+
+async function enqueueLegalExtractionJob(db: SupabaseClient, target: Target, candidate: Awaited<ReturnType<typeof downloadCandidate>>, documentId: string, htmlPage: HtmlSnapshotPage) {
+  if (!shouldEnqueueLegalExtraction(target, candidate, htmlPage)) return null;
+  const job = createLegalExtractionJob(target, candidate, documentId, htmlPage);
+  const { data, error } = await db.from("ingestion_jobs").upsert(job, { onConflict: "idempotency_key", ignoreDuplicates: true }).select("id,status").maybeSingle();
+  if (error) throw new Error(`legal_extraction_job_upsert:${error.message}`);
+  return { job_id: data?.id ?? null, status: data?.status ?? "already_exists", pipeline_version_id: LEGAL_EXTRACTION_PIPELINE_VERSION };
+}
+
 async function materializeSourceDocument(db: SupabaseClient, target: Target, candidate: Awaited<ReturnType<typeof downloadCandidate>>, asset: { provider: string; external_id: string }, storageBucket: string) {
   const { data: existing, error: lookupError } = await db.from("source_documents").select("id,storage_path").eq("source_catalog_id", target.source.id).eq("sha256", candidate.content_sha256).maybeSingle();
   if (lookupError) throw new Error(`source_document_lookup:${lookupError.message}`);
@@ -389,7 +431,8 @@ async function materializeSourceDocument(db: SupabaseClient, target: Target, can
   const { error: assetError } = await db.from("source_assets").update({ source_document_id: documentId, discovery_status: "matched" }).eq("provider", asset.provider).eq("external_id", asset.external_id);
   if (assetError) throw new Error(`source_asset_document_link:${assetError.message}`);
   const html_page = await materializeHtmlSnapshotPage(db, target, candidate, documentId);
-  return { document_id: documentId, storage_bucket: storageBucket, storage_path: storagePath, html_page };
+  const legal_extraction_job = await enqueueLegalExtractionJob(db, target, candidate, documentId, html_page);
+  return { document_id: documentId, storage_bucket: storageBucket, storage_path: storagePath, html_page, legal_extraction_job };
 }
 
 async function upsertAsset(db: SupabaseClient, payload: Record<string, unknown>) {
@@ -469,11 +512,21 @@ async function runDiscovery(req: Request, db: SupabaseClient, input: Record<stri
           asset_count: assets.length,
           materialized_document_count: documents.length,
           html_page_count: documents.filter((document) => document.html_page).length,
+          legal_extraction_job_count: documents.filter((document) => document.legal_extraction_job).length,
           canonical_fact_write: false,
         },
       }).eq("id", run.id);
       await db.from("source_connector_configs").update({ last_checked_at: new Date().toISOString(), last_success_at: new Date().toISOString(), last_error: null }).eq("id", target.connector.id);
-      results.push({ source_code: target.source.source_code, run_id: run.id, asset_count: assets.length, document_count: documents.length, html_page_count: documents.filter((document) => document.html_page).length, status: "completed", canonical_fact_write: false });
+      results.push({
+        source_code: target.source.source_code,
+        run_id: run.id,
+        asset_count: assets.length,
+        document_count: documents.length,
+        html_page_count: documents.filter((document) => document.html_page).length,
+        legal_extraction_job_count: documents.filter((document) => document.legal_extraction_job).length,
+        status: "completed",
+        canonical_fact_write: false,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await db.from("source_discovery_runs").update({ status: "failed", completed_at: new Date().toISOString(), error_summary: message.slice(0, 2000), metrics: { canonical_fact_write: false } }).eq("id", run.id);
