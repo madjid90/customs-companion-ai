@@ -52,7 +52,7 @@ comme source de vérité.
 ## Prochaine tranche de développement
 
 1. appliquer `supabase/migrations/20260927223000_source_discovery_runs.sql` pour auditer les découvertes source et rattacher `source_assets` au `source_catalog` ;
-2. ~~brancher les adapters V1 sur Supabase : créer `source_discovery_runs`, inscrire les assets découverts, calculer SHA-256 et ne créer que des jobs candidats ; inclure Excel/CSV via `spreadsheet_importer`, avec conservation du classeur brut, des feuilles, en-têtes, lignes et scores candidats~~ — payloads, store Supabase, fetcher PDF/Excel direct, extracteur index PDF, snapshot HTML, orchestrateur Supabase, commande worker et préparation `source_documents` codés/testés ; migration appliquée en production ; fonction en ligne `source-discovery` déployée et versionnée ; il reste le déclenchement admin produit, puis les portails ADII/tarif ;
+2. ~~brancher les adapters V1 sur Supabase : créer `source_discovery_runs`, inscrire les assets découverts, calculer SHA-256 et ne créer que des jobs candidats ; inclure Excel/CSV via `spreadsheet_importer`, avec conservation du classeur brut, des feuilles, en-têtes, lignes et scores candidats~~ — payloads, store Supabase, fetcher PDF/Excel direct, extracteur index PDF, snapshot HTML avec page texte `html_snapshot`, orchestrateur Supabase, commande worker et préparation `source_documents` codés/testés ; migrations appliquées en production ; fonction en ligne `source-discovery` déployée et versionnée ; il reste le déclenchement admin produit, puis les portails ADII/tarif ;
 3. finaliser et tester le worker d'extraction reprenable pour PDF/HTML/portail/Excel/CSV ;
 4. enrichir les 14 118 diagnostics avec géométrie et images PDF ;
 5. traiter les 2 323 tâches OCR déjà créées ;

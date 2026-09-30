@@ -328,6 +328,50 @@ function createSourceDocumentInsert(target: Target, candidate: Awaited<ReturnTyp
   };
 }
 
+function htmlToText(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/giu, " ")
+    .replace(/<style[\s\S]*?<\/style>/giu, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/giu, " ")
+    .replace(/<[^>]+>/gu, " ")
+    .replace(/&nbsp;/giu, " ")
+    .replace(/&amp;/giu, "&")
+    .replace(/&quot;/giu, "\"")
+    .replace(/&#39;/giu, "'")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+async function sha256Text(value: string): Promise<string> {
+  return sha256Hex(new TextEncoder().encode(value).buffer);
+}
+
+async function materializeHtmlSnapshotPage(db: SupabaseClient, target: Target, candidate: Awaited<ReturnType<typeof downloadCandidate>>, documentId: string) {
+  if (candidate.mime_type !== "text/html") return null;
+  const html = new TextDecoder().decode(candidate.bytes);
+  const text = htmlToText(html);
+  const quality = text.length >= 200 ? 80 : text.length >= 40 ? 50 : 20;
+  const row = {
+    source_document_id: documentId,
+    page_number: 1,
+    text_content: text,
+    text_sha256: await sha256Text(text),
+    extraction_method: "html_snapshot",
+    extraction_confidence: quality,
+    review_status: text.length >= 40 ? "unreviewed" : "needs_review",
+    metadata: {
+      source_code: target.source.source_code,
+      source_url: candidate.url,
+      html_snapshot: true,
+      byte_size: candidate.byte_size,
+      canonical_fact_write: false,
+    },
+  };
+  const { data, error } = await db.from("source_pages").upsert(row, { onConflict: "source_document_id,page_number" }).select("id").single();
+  if (error || !data?.id) throw new Error(`html_source_page_upsert:${error?.message || "missing id"}`);
+  return { source_page_id: data.id, text_length: text.length, quality_score: quality };
+}
+
 async function materializeSourceDocument(db: SupabaseClient, target: Target, candidate: Awaited<ReturnType<typeof downloadCandidate>>, asset: { provider: string; external_id: string }, storageBucket: string) {
   const { data: existing, error: lookupError } = await db.from("source_documents").select("id,storage_path").eq("source_catalog_id", target.source.id).eq("sha256", candidate.content_sha256).maybeSingle();
   if (lookupError) throw new Error(`source_document_lookup:${lookupError.message}`);
@@ -344,7 +388,8 @@ async function materializeSourceDocument(db: SupabaseClient, target: Target, can
   }
   const { error: assetError } = await db.from("source_assets").update({ source_document_id: documentId, discovery_status: "matched" }).eq("provider", asset.provider).eq("external_id", asset.external_id);
   if (assetError) throw new Error(`source_asset_document_link:${assetError.message}`);
-  return { document_id: documentId, storage_bucket: storageBucket, storage_path: storagePath };
+  const html_page = await materializeHtmlSnapshotPage(db, target, candidate, documentId);
+  return { document_id: documentId, storage_bucket: storageBucket, storage_path: storagePath, html_page };
 }
 
 async function upsertAsset(db: SupabaseClient, payload: Record<string, unknown>) {
@@ -423,11 +468,12 @@ async function runDiscovery(req: Request, db: SupabaseClient, input: Record<stri
         metrics: {
           asset_count: assets.length,
           materialized_document_count: documents.length,
+          html_page_count: documents.filter((document) => document.html_page).length,
           canonical_fact_write: false,
         },
       }).eq("id", run.id);
       await db.from("source_connector_configs").update({ last_checked_at: new Date().toISOString(), last_success_at: new Date().toISOString(), last_error: null }).eq("id", target.connector.id);
-      results.push({ source_code: target.source.source_code, run_id: run.id, asset_count: assets.length, document_count: documents.length, status: "completed", canonical_fact_write: false });
+      results.push({ source_code: target.source.source_code, run_id: run.id, asset_count: assets.length, document_count: documents.length, html_page_count: documents.filter((document) => document.html_page).length, status: "completed", canonical_fact_write: false });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await db.from("source_discovery_runs").update({ status: "failed", completed_at: new Date().toISOString(), error_summary: message.slice(0, 2000), metrics: { canonical_fact_write: false } }).eq("id", run.id);
