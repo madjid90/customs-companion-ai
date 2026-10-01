@@ -24,6 +24,7 @@ type DiscoveryResult = {
   document_count?: number;
   html_page_count?: number;
   legal_extraction_job_count?: number;
+  obligation_extraction_job_count?: number;
   error?: string;
 };
 
@@ -268,6 +269,7 @@ function SourceDiscoveryPanel() {
                     {typeof result.document_count === "number" && <span>{result.document_count} document(s)</span>}
                     {typeof result.html_page_count === "number" && <span>{result.html_page_count} page(s) HTML</span>}
                     {typeof result.legal_extraction_job_count === "number" && <span>{result.legal_extraction_job_count} extraction(s) juridique(s)</span>}
+                    {typeof result.obligation_extraction_job_count === "number" && <span>{result.obligation_extraction_job_count} extraction(s) obligation(s)</span>}
                     {result.error && <span className="text-destructive">{result.error}</span>}
                   </div>
                 </div>

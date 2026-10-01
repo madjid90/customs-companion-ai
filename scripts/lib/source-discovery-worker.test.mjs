@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAssetPayload, createLegalExtractionJob, createRunPayload, discoverPdfIndexCandidates, downloadCandidate, extractPdfLinksFromHtml, parseWorkerArgs, processTarget, shouldEnqueueLegalExtraction, shouldProcessTarget } from "./source-discovery-worker.mjs";
+import { createAssetPayload, createLegalExtractionJob, createObligationExtractionJob, createRunPayload, discoverPdfIndexCandidates, downloadCandidate, extractPdfLinksFromHtml, parseWorkerArgs, processTarget, shouldEnqueueLegalExtraction, shouldEnqueueObligationExtraction, shouldProcessTarget } from "./source-discovery-worker.mjs";
 
 const target = {
   source: {
@@ -99,6 +99,33 @@ describe("source discovery worker core", () => {
   it("plans only in dry-run mode", async () => {
     const result = await processTarget({} , target, { dryRun: true });
     expect(result).toEqual({ source_code: "ADII_CIRCULAR_PDFS", connector_type: "direct_pdf_fetcher", mode: "download", dry_run: true, status: "planned" });
+  });
+
+  it("queues obligation extraction only for obligation HTML snapshots with enough text", () => {
+    const htmlPage = { source_page_id: "66666666-6666-4666-8666-666666666666", text_length: 180, quality_score: 80 };
+    const htmlCandidate = {
+      url: "https://example.gov.ma/onssa",
+      filename: "onssa.html",
+      mime_type: "text/html",
+      content_sha256: "b".repeat(64),
+      detected_document_type: "technical_control",
+    };
+    const obligationTarget = {
+      ...target,
+      source: { ...target.source, source_code: "ONSSA_IMPORT_EXPORT_CONTROL" },
+      connector: { ...target.connector, connector_type: "html_crawler", pipeline_component: "obligation-extractor" },
+    };
+    const legalTarget = { ...obligationTarget, connector: { ...obligationTarget.connector, pipeline_component: "legal-structure-extractor" } };
+
+    expect(shouldEnqueueObligationExtraction(obligationTarget, htmlCandidate, htmlPage)).toBe(true);
+    expect(shouldEnqueueObligationExtraction(legalTarget, htmlCandidate, htmlPage)).toBe(false);
+    expect(shouldEnqueueObligationExtraction(obligationTarget, htmlCandidate, { ...htmlPage, text_length: 12 })).toBe(false);
+    expect(createObligationExtractionJob(obligationTarget, htmlCandidate, "77777777-7777-4777-8777-777777777777", htmlPage)).toMatchObject({
+      job_type: "extract_obligation",
+      pipeline_version_id: "obligation-extractor-v1",
+      priority: 70,
+      payload: { source_code: "ONSSA_IMPORT_EXPORT_CONTROL", extraction_input: "html_snapshot", canonical_fact_write: false },
+    });
   });
 
   it("queues legal extraction only for legal HTML snapshots with enough text", () => {

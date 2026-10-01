@@ -20,6 +20,7 @@ const HTML_SNAPSHOT_CONNECTORS = new Set(["html_crawler"]);
 const COMPLEX_CONNECTORS = new Set(["portal_index_monitor"]);
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 const LEGAL_EXTRACTION_PIPELINE_VERSION = "legal-structure-extractor-v1";
+const OBLIGATION_EXTRACTION_PIPELINE_VERSION = "obligation-extractor-v1";
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
@@ -414,6 +415,45 @@ async function enqueueLegalExtractionJob(db: SupabaseClient, target: Target, can
   return { job_id: data?.id ?? null, status: data?.status ?? "already_exists", pipeline_version_id: LEGAL_EXTRACTION_PIPELINE_VERSION };
 }
 
+function shouldEnqueueObligationExtraction(target: Target, candidate: Awaited<ReturnType<typeof downloadCandidate>>, htmlPage: HtmlSnapshotPage): boolean {
+  return target.connector.pipeline_component === "obligation-extractor"
+    && candidate.mime_type === "text/html"
+    && !!candidate.content_sha256
+    && !!htmlPage
+    && htmlPage.text_length >= 40;
+}
+
+function createObligationExtractionJob(target: Target, candidate: Awaited<ReturnType<typeof downloadCandidate>>, documentId: string, htmlPage: NonNullable<HtmlSnapshotPage>) {
+  return {
+    job_type: "extract_obligation",
+    pipeline_version_id: OBLIGATION_EXTRACTION_PIPELINE_VERSION,
+    source_document_id: documentId,
+    source_page_id: htmlPage.source_page_id,
+    idempotency_key: `extract_obligation:${documentId}:${OBLIGATION_EXTRACTION_PIPELINE_VERSION}:${candidate.content_sha256}`,
+    payload: {
+      source_code: target.source.source_code,
+      connector_code: target.connector.connector_code,
+      connector_type: target.connector.connector_type,
+      document_type: candidate.detected_document_type || "technical_control",
+      source_url: candidate.url,
+      content_sha256: candidate.content_sha256,
+      source_page_id: htmlPage.source_page_id,
+      page_count: 1,
+      extraction_input: "html_snapshot",
+      canonical_fact_write: false,
+    },
+    priority: 70,
+  };
+}
+
+async function enqueueObligationExtractionJob(db: SupabaseClient, target: Target, candidate: Awaited<ReturnType<typeof downloadCandidate>>, documentId: string, htmlPage: HtmlSnapshotPage) {
+  if (!shouldEnqueueObligationExtraction(target, candidate, htmlPage)) return null;
+  const job = createObligationExtractionJob(target, candidate, documentId, htmlPage);
+  const { data, error } = await db.from("ingestion_jobs").upsert(job, { onConflict: "idempotency_key", ignoreDuplicates: true }).select("id,status").maybeSingle();
+  if (error) throw new Error(`obligation_extraction_job_upsert:${error.message}`);
+  return { job_id: data?.id ?? null, status: data?.status ?? "already_exists", pipeline_version_id: OBLIGATION_EXTRACTION_PIPELINE_VERSION };
+}
+
 async function materializeSourceDocument(db: SupabaseClient, target: Target, candidate: Awaited<ReturnType<typeof downloadCandidate>>, asset: { provider: string; external_id: string }, storageBucket: string) {
   const { data: existing, error: lookupError } = await db.from("source_documents").select("id,storage_path").eq("source_catalog_id", target.source.id).eq("sha256", candidate.content_sha256).maybeSingle();
   if (lookupError) throw new Error(`source_document_lookup:${lookupError.message}`);
@@ -432,7 +472,8 @@ async function materializeSourceDocument(db: SupabaseClient, target: Target, can
   if (assetError) throw new Error(`source_asset_document_link:${assetError.message}`);
   const html_page = await materializeHtmlSnapshotPage(db, target, candidate, documentId);
   const legal_extraction_job = await enqueueLegalExtractionJob(db, target, candidate, documentId, html_page);
-  return { document_id: documentId, storage_bucket: storageBucket, storage_path: storagePath, html_page, legal_extraction_job };
+  const obligation_extraction_job = await enqueueObligationExtractionJob(db, target, candidate, documentId, html_page);
+  return { document_id: documentId, storage_bucket: storageBucket, storage_path: storagePath, html_page, legal_extraction_job, obligation_extraction_job };
 }
 
 async function upsertAsset(db: SupabaseClient, payload: Record<string, unknown>) {
@@ -513,6 +554,7 @@ async function runDiscovery(req: Request, db: SupabaseClient, input: Record<stri
           materialized_document_count: documents.length,
           html_page_count: documents.filter((document) => document.html_page).length,
           legal_extraction_job_count: documents.filter((document) => document.legal_extraction_job).length,
+          obligation_extraction_job_count: documents.filter((document) => document.obligation_extraction_job).length,
           canonical_fact_write: false,
         },
       }).eq("id", run.id);
@@ -524,6 +566,7 @@ async function runDiscovery(req: Request, db: SupabaseClient, input: Record<stri
         document_count: documents.length,
         html_page_count: documents.filter((document) => document.html_page).length,
         legal_extraction_job_count: documents.filter((document) => document.legal_extraction_job).length,
+        obligation_extraction_job_count: documents.filter((document) => document.obligation_extraction_job).length,
         status: "completed",
         canonical_fact_write: false,
       });

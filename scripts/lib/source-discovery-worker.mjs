@@ -6,6 +6,7 @@ const PDF_INDEX_CONNECTORS = new Set(["pdf_link_extractor"]);
 const HTML_SNAPSHOT_CONNECTORS = new Set(["html_crawler"]);
 const COMPLEX_CONNECTORS = new Set(["portal_index_monitor"]);
 const LEGAL_EXTRACTION_PIPELINE_VERSION = "legal-structure-extractor-v1";
+const OBLIGATION_EXTRACTION_PIPELINE_VERSION = "obligation-extractor-v1";
 
 export function parseWorkerArgs(argv = process.argv.slice(2)) {
   const args = new Map();
@@ -372,6 +373,45 @@ export async function enqueueLegalExtractionJob(db, target, candidate, documentI
   return { job_id: data?.id ?? null, status: data?.status ?? "already_exists", pipeline_version_id: LEGAL_EXTRACTION_PIPELINE_VERSION };
 }
 
+export function shouldEnqueueObligationExtraction(target, candidate, htmlPage) {
+  return target.connector?.pipeline_component === "obligation-extractor"
+    && candidate.mime_type === "text/html"
+    && !!candidate.content_sha256
+    && !!htmlPage
+    && htmlPage.text_length >= 40;
+}
+
+export function createObligationExtractionJob(target, candidate, documentId, htmlPage) {
+  return {
+    job_type: "extract_obligation",
+    pipeline_version_id: OBLIGATION_EXTRACTION_PIPELINE_VERSION,
+    source_document_id: documentId,
+    source_page_id: htmlPage.source_page_id,
+    idempotency_key: `extract_obligation:${documentId}:${OBLIGATION_EXTRACTION_PIPELINE_VERSION}:${candidate.content_sha256}`,
+    payload: {
+      source_code: target.source.source_code,
+      connector_code: target.connector?.connector_code ?? null,
+      connector_type: target.connector?.connector_type ?? null,
+      document_type: candidate.detected_document_type || "technical_control",
+      source_url: candidate.url,
+      content_sha256: candidate.content_sha256,
+      source_page_id: htmlPage.source_page_id,
+      page_count: 1,
+      extraction_input: "html_snapshot",
+      canonical_fact_write: false,
+    },
+    priority: 70,
+  };
+}
+
+export async function enqueueObligationExtractionJob(db, target, candidate, documentId, htmlPage) {
+  if (!shouldEnqueueObligationExtraction(target, candidate, htmlPage)) return null;
+  const job = createObligationExtractionJob(target, candidate, documentId, htmlPage);
+  const { data, error } = await db.from("ingestion_jobs").upsert(job, { onConflict: "idempotency_key", ignoreDuplicates: true }).select("id,status").maybeSingle();
+  if (error) throw new Error(`obligation_extraction_job_upsert:${error.message}`);
+  return { job_id: data?.id ?? null, status: data?.status ?? "already_exists", pipeline_version_id: OBLIGATION_EXTRACTION_PIPELINE_VERSION };
+}
+
 export async function materializeSourceDocument(db, target, candidate, asset, options = {}) {
   if (!candidate?.bytes || !candidate.content_sha256) throw new Error("candidate_bytes_required");
   const bucket = options.storageBucket || "legal-source-pdfs";
@@ -397,7 +437,8 @@ export async function materializeSourceDocument(db, target, candidate, asset, op
   }
   const htmlPage = await materializeHtmlSnapshotPage(db, target, candidate, documentId);
   const legalExtractionJob = await enqueueLegalExtractionJob(db, target, candidate, documentId, htmlPage);
-  return { document_id: documentId, storage_bucket: bucket, storage_path: existing?.storage_path || storagePath, html_page: htmlPage, legal_extraction_job: legalExtractionJob };
+  const obligationExtractionJob = await enqueueObligationExtractionJob(db, target, candidate, documentId, htmlPage);
+  return { document_id: documentId, storage_bucket: bucket, storage_path: existing?.storage_path || storagePath, html_page: htmlPage, legal_extraction_job: legalExtractionJob, obligation_extraction_job: obligationExtractionJob };
 }
 
 export async function loadTargets(db, options = {}) {
@@ -472,6 +513,7 @@ export async function processTarget(db, target, options = {}) {
       document_ids: documents.map((document) => document.document_id),
       html_page_count: documents.filter((document) => document.html_page).length,
       legal_extraction_job_count: documents.filter((document) => document.legal_extraction_job).length,
+      obligation_extraction_job_count: documents.filter((document) => document.obligation_extraction_job).length,
     } : {}),
   };
 }
